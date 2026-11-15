@@ -1,3 +1,8 @@
+import type { ComponentProps } from 'react';
+import {
+  WorkflowNodeSurface,
+  WorkflowNodeSection,
+} from '@canopy/ui-shared/components';
 import {
   createContext,
   useContext,
@@ -36,24 +41,24 @@ import {
   type PipelineFlowStatus,
   type PipelineJobNode,
 } from '@/lib/pipelineFlowGraph';
-import {
-  OPERATIONAL_STATUS_COLORS,
-  runStatusGlyphState,
-} from '@canopy/ui-shared/lib';
+import { runStatusGlyphState } from '@canopy/ui-shared/lib';
 import { Button, EmptyState, StatusGlyph } from '@canopy/ui-shared/components';
 import { PlusIcon, SparkleIcon } from '@canopy/ui-shared/icons/AppIcons';
 
-const STATUS_BORDER: Record<PipelineFlowStatus, string> = {
-  success: OPERATIONAL_STATUS_COLORS.success.border,
-  failure: OPERATIONAL_STATUS_COLORS.failed.border,
-  running: OPERATIONAL_STATUS_COLORS.active.border,
-  restarting: OPERATIONAL_STATUS_COLORS.active.border,
-  paused: OPERATIONAL_STATUS_COLORS.paused.border,
-  queued: '',
-  pending: '',
-  cancelled: '',
-  skipped: '',
-  none: '',
+const STATUS_TONE: Record<
+  PipelineFlowStatus,
+  ComponentProps<typeof WorkflowNodeSurface>['tone']
+> = {
+  success: 'success',
+  failure: 'failed',
+  running: 'active',
+  restarting: 'active',
+  paused: 'paused',
+  queued: 'neutral',
+  pending: 'neutral',
+  cancelled: 'neutral',
+  skipped: 'neutral',
+  none: 'neutral',
 };
 
 /**
@@ -103,12 +108,10 @@ function MatrixSummaryBody({
   }
 
   return (
-    <div
-      className="flex flex-col border-t px-3"
-      style={{
-        paddingTop: STEP_LIST_PADDING_TOP,
-        paddingBottom: STEP_LIST_PADDING_BOTTOM,
-      }}
+    <WorkflowNodeSection
+      kind="matrix"
+      top={STEP_LIST_PADDING_TOP}
+      bottom={STEP_LIST_PADDING_BOTTOM}
       data-testid={`pipeline-flow-matrix-summary-${jobId}`}
     >
       {lines.map((line) => (
@@ -120,7 +123,7 @@ function MatrixSummaryBody({
           {line}
         </span>
       ))}
-    </div>
+    </WorkflowNodeSection>
   );
 }
 
@@ -132,12 +135,10 @@ function PipelineJobNodeView({
   const { onSelectJob, onSelectStep, onAddStep } = useContext(
     FlowInteractionContext,
   );
-  const jobBorder = data.selected
-    ? 'border-line-accent ring-1 ring-line-accent/60'
-    : STATUS_BORDER[data.status];
   return (
-    <div
-      className={`flex h-full w-full flex-col overflow-hidden rounded-lg border bg-card text-left ${jobBorder}`}
+    <WorkflowNodeSurface
+      tone={STATUS_TONE[data.status]}
+      selected={data.selected}
     >
       <Handle
         type="target"
@@ -172,13 +173,11 @@ function PipelineJobNodeView({
         <MatrixSummaryBody jobId={data.jobId} summary={data.matrix} />
       )}
       {(data.steps.length > 0 || data.canAddStep === true) && (
-        <div
-          className="flex flex-col border-t px-2"
-          style={{
-            rowGap: STEP_ROW_GAP,
-            paddingTop: STEP_LIST_PADDING_TOP,
-            paddingBottom: STEP_LIST_PADDING_BOTTOM,
-          }}
+        <WorkflowNodeSection
+          kind="steps"
+          top={STEP_LIST_PADDING_TOP}
+          bottom={STEP_LIST_PADDING_BOTTOM}
+          rowGap={STEP_ROW_GAP}
         >
           {data.steps.map((step) => {
             const stepSelected = data.selectedStepIndex === step.stepIndex;
@@ -220,14 +219,14 @@ function PipelineJobNodeView({
               </Button>
             </div>
           )}
-        </div>
+        </WorkflowNodeSection>
       )}
       <Handle
         type="source"
         position={sourcePosition ?? Position.Bottom}
         className="!opacity-0"
       />
-    </div>
+    </WorkflowNodeSurface>
   );
 }
 

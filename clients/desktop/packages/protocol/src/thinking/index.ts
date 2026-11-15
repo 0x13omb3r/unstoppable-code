@@ -46,6 +46,23 @@ export function isThinkingLevel(value: unknown): value is ThinkingLevel {
   return THINKING_LEVELS.some((level) => level === value);
 }
 
+/**
+ * The concrete thinking levels Core accepts. `null` is the separate reset
+ * operation and omission means preserve, so neither is a capability value.
+ */
+export type CoreThinkingLevel = Exclude<ThinkingLevel, 'ultra'>;
+
+const CORE_THINKING_LEVELS: readonly CoreThinkingLevel[] =
+  THINKING_LEVELS.filter(
+    (level): level is CoreThinkingLevel => level !== 'ultra',
+  );
+
+export function isCoreThinkingLevel(
+  value: unknown,
+): value is CoreThinkingLevel {
+  return CORE_THINKING_LEVELS.some((level) => level === value);
+}
+
 export function isThinkingSetting(value: unknown): value is ThinkingSetting {
   return value === 'default' || isThinkingLevel(value);
 }

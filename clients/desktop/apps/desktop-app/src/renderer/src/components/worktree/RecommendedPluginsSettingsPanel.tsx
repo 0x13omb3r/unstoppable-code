@@ -200,9 +200,16 @@ function CompactRecommendationsStrip({
         </Button>
       </div>
       {expanded && (
-        <div id={rowListId} className="max-h-48 overflow-y-auto border-t p-2">
+        <Surface
+          id={rowListId}
+          variant="section"
+          boundary="top"
+          padding="tight"
+          extent="picker-scroll"
+          className="overflow-y-auto"
+        >
           {renderRowList(loadState.items)}
-        </div>
+        </Surface>
       )}
     </Surface>
   );

@@ -1,5 +1,6 @@
 'use client';
 
+import { SidebarActivityRowSurface } from '@canopy/ui-shared/components';
 import { Heading, ErrorState } from '@canopy/ui-shared/components';
 import {
   memo,
@@ -182,7 +183,7 @@ const SidebarActivityRow = memo(function SidebarActivityRow({
       {/* The shared worktree row is a plain box; this wrapper gives it the
           button semantics and keyboard activation the tree's sortable
           wrapper gives it there. */}
-      <div
+      <SidebarActivityRowSurface
         role="button"
         tabIndex={0}
         aria-current={selected ? 'true' : undefined}
@@ -193,7 +194,6 @@ const SidebarActivityRow = memo(function SidebarActivityRow({
           event.preventDefault();
           open();
         }}
-        className="focus-ring rounded-row outline-none"
       >
         <WorktreeRow
           branchLabel={entry.title}
@@ -214,7 +214,7 @@ const SidebarActivityRow = memo(function SidebarActivityRow({
           touchTarget={touch}
           onClick={open}
         />
-      </div>
+      </SidebarActivityRowSurface>
     </li>
   );
 });

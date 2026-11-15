@@ -1,5 +1,11 @@
 'use client';
 
+import {
+  MemoryEvidenceMatch,
+  MemoryEvidenceQuote,
+  MemoryTranscriptEntry,
+} from '@canopy/ui-shared/components';
+
 import { useEffect, useMemo, useRef, type JSX } from 'react';
 import { Markdown } from '@canopy/ui-shared/components/Markdown';
 import { capitalizeFirstLetter } from '@canopy/ui-shared/lib';
@@ -74,14 +80,11 @@ export function SourceTranscriptView({
             transcript.
           </p>
           {transcript.evidenceQuote !== null && (
-            <blockquote
-              className={withPrivacyClass(
-                'mt-4 rounded-lg border-l-2 border-line-accent bg-accent/5 px-4 py-3 text-s italic fg-secondary',
-                blockClassName,
-              )}
-            >
-              “{transcript.evidenceQuote}”
-            </blockquote>
+            <div className="pt-4">
+              <MemoryEvidenceQuote blockReplay={blockClassName !== ''}>
+                “{transcript.evidenceQuote}”
+              </MemoryEvidenceQuote>
+            </div>
           )}
         </div>
       </Surface>
@@ -123,22 +126,18 @@ export function SourceTranscriptView({
             {transcript.messages.map((message) => {
               const highlighted = message.localMessageId === targetMessageId;
               return (
-                <div
+                <MemoryTranscriptEntry
                   key={message.localMessageId}
                   ref={highlighted ? targetRef : undefined}
-                  className={
-                    highlighted
-                      ? 'rounded-lg border border-line-accent bg-accent/5 p-3'
-                      : 'rounded-lg p-3'
-                  }
+                  highlighted={highlighted}
                 >
                   {highlighted && transcript.evidenceQuote !== null && (
-                    <mark className="mb-3 block rounded bg-warning-subtle px-2 py-1 text-xs fg-primary">
+                    <MemoryEvidenceMatch>
                       Evidence match: “{transcript.evidenceQuote}”
-                    </mark>
+                    </MemoryEvidenceMatch>
                   )}
                   <TranscriptMessage message={message} />
-                </div>
+                </MemoryTranscriptEntry>
               );
             })}
           </div>

@@ -606,7 +606,7 @@ function PendingArchivedRow({
       aria-label={`${progressLabel} ${displayName}`}
       data-testid={`archived-overview-pending-${pending.containerId}`}
       data-state={pending.state}
-      className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left"
+      className="flex w-full items-center gap-2 px-2 py-1.5 text-left"
     >
       <span className="flex h-3.5 w-3.5 shrink-0 items-center justify-center">
         <LoadingSpinner tone="secondary" />

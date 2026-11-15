@@ -1,3 +1,10 @@
+import type { ProjectDeletionPendingRecovery } from '@canopy/protocol/portal/project-deletion-discard';
+import { isDeepStrictEqual } from 'node:util';
+import {
+  confirmedPendingArchiveRecoveries,
+  withConfirmedPendingArchiveRecoveries,
+} from './archive-recovery-confirmation-scope';
+import { describePendingArchiveRecoveries } from './archive-recovery-project-deletion';
 import {
   archiveRecoveryStore,
   readArchiveRecoveryHolds,
@@ -9,7 +16,10 @@ import {
 } from './archived-container-git';
 import { settleArchiveRecovery } from './archive-recovery-settlement';
 import type { DestructiveRecoveryRecord } from './w5-destructive-recovery';
-import { ArchiveRecoveryRefusedError } from '@canopy/desktop-shared/node/archive-recovery-store';
+import {
+  ArchiveRecoveryRefusedError,
+  archiveRecoveryDigest,
+} from '@canopy/desktop-shared/node/archive-recovery-store';
 import { rememberDestructiveFailure } from './destructive-failure-context';
 import {
   setArchiveFailurePhase,
@@ -212,6 +222,7 @@ export type WorkspaceDeletionRequest = W5BoundaryOptions & {
    * unkeyed user deletion; an older host ignores it and refuses as before.
    */
   supersedeInterruptedDeletion?: string;
+  discardPendingRecovery?: ProjectDeletionPendingRecovery[];
 } & WorkspaceDeletionKindAdmission;
 
 /** One cleanup step that runs after the deletion has committed. */
@@ -328,8 +339,12 @@ async function deleteWorkspaceAdmitted(
           { kind: 'workspace', workspaceId },
           expectedRevision,
         );
-        if (USER_DELETION_SOURCES.has(request.source))
-          await admitProjectDeletionArchiveResolutions(workspaceId);
+        const confirmedRecovery = USER_DELETION_SOURCES.has(request.source)
+          ? await admitProjectDeletionArchiveResolutions(
+              workspaceId,
+              request.discardPendingRecovery,
+            )
+          : [];
         const superseded = request.supersedeInterruptedDeletion;
         // Anything but an operation id refuses as it would without it.
         if (
@@ -349,41 +364,72 @@ async function deleteWorkspaceAdmitted(
             USER_DELETION_SOURCES.has(request.source),
           ),
         );
-        return withDestructiveLifecycle(
-          {
-            operation: 'workspace-delete',
-            trigger: USER_DELETION_SOURCES.has(request.source)
-              ? 'project-deletion'
-              : 'internal-rollback',
-            workspaceId,
-            beforeEffects: attempt?.beforeEffects,
-            projectOutcome: (result) =>
-              workspaceDeletionReceiptSchema.parse(result),
-          },
-          async () => {
-            const outcome = await deleteWorkspaceSerialized(
-              request,
-              options,
-              attempt,
-            );
-            if (
-              Object.entries(outcome.cleanup).some(
-                ([name, step]) =>
-                  name !== UNJOURNALED_CLEANUP && step.status === 'failed',
-              )
-            )
-              markDestructiveCleanupRequired();
-            return outcome;
-          },
+        return withConfirmedPendingArchiveRecoveries(
+          workspaceId,
+          confirmedRecovery,
+          () =>
+            withDestructiveLifecycle(
+              {
+                operation: 'workspace-delete',
+                trigger: USER_DELETION_SOURCES.has(request.source)
+                  ? 'project-deletion'
+                  : 'internal-rollback',
+                workspaceId,
+                beforeEffects: attempt?.beforeEffects,
+                projectOutcome: (result) =>
+                  workspaceDeletionReceiptSchema.parse(result),
+              },
+              async () => {
+                const pending = confirmedPendingArchiveRecoveries();
+                if (pending.length) {
+                  const holds = await readArchiveRecoveryHolds(workspaceId);
+                  await prepareArchiveRecoveryCleanup(
+                    holds
+                      .filter((hold) =>
+                        pending.some(
+                          (member) => member.operationId === hold.operationId,
+                        ),
+                      )
+                      .map((hold) => ({
+                        operationId: hold.operationId,
+                        revision: hold.revision,
+                        discardPending: true as const,
+                        receiptDigest: archiveRecoveryDigest(
+                          JSON.stringify(hold),
+                        ),
+                      })),
+                  );
+                }
+                const outcome = await deleteWorkspaceSerialized(
+                  request,
+                  options,
+                  attempt,
+                );
+                if (
+                  Object.entries(outcome.cleanup).some(
+                    ([name, step]) =>
+                      name !== UNJOURNALED_CLEANUP && step.status === 'failed',
+                  )
+                )
+                  markDestructiveCleanupRequired();
+                return outcome;
+              },
+            ),
         );
       }),
   );
 }
 
-/** Explicit deletion abandons only intents whose protected sources still own every effect. */
+/** Confirmation permits effect-free cancellation and scopes deferred adoption, never early payload deletion. */
 async function admitProjectDeletionArchiveResolutions(
   workspaceId: string,
-): Promise<void> {
+  confirmation: WorkspaceDeletionRequest['discardPendingRecovery'],
+): Promise<NonNullable<WorkspaceDeletionRequest['discardPendingRecovery']>> {
+  const expected = await describePendingArchiveRecoveries(workspaceId);
+  if (!isDeepStrictEqual(expected, confirmation ?? []))
+    throw new ArchiveRecoveryRefusedError(
+      `Pending archive recovery ${expected.map((member) => member.operationId).join(', ')} changed. Review and confirm discarding it before deleting the project.`,
+    );
   const store = archiveRecoveryStore();
   for (const receipt of await store.list(workspaceId)) {
     if (receipt.cancelled || receipt.stage === 'completed') continue;
@@ -402,7 +448,10 @@ async function admitProjectDeletionArchiveResolutions(
       );
     }
   }
-  await assertNoArchiveResolution(workspaceId);
+  await withConfirmedPendingArchiveRecoveries(workspaceId, expected, () =>
+    assertNoArchiveResolution(workspaceId),
+  );
+  return expected;
 }
 
 /**
@@ -436,7 +485,10 @@ async function assertNoStrandedRecoveryOrArchive(
 export async function deleteWorkspaceById(
   workspaceId: string,
   source: WorkspaceDeletionSource,
-  options: Pick<WorkspaceDeletionRequest, 'supersedeInterruptedDeletion'> = {},
+  options: Pick<
+    WorkspaceDeletionRequest,
+    'supersedeInterruptedDeletion' | 'discardPendingRecovery'
+  > = {},
 ): Promise<void> {
   await deleteWorkspace({ workspaceId, source, ...options });
 }
@@ -916,11 +968,22 @@ export async function settleWorkspaceArchiveRecoveryCleanup(
     if (member.done) continue;
     try {
       await store.normalize(record.workspaceId, member.operationId);
-      const receipt = await store.read(record.workspaceId, member.operationId);
+      let receipt = await store.read(record.workspaceId, member.operationId);
       if (!receipt || receipt.revision !== member.revision)
         throw new ArchiveRecoveryRefusedError(
           `Adopted hold ${member.operationId} changed or disappeared.`,
         );
+      if (member.discardPending && !receipt.retention) {
+        if (
+          member.receiptDigest !==
+          archiveRecoveryDigest(JSON.stringify(receipt))
+        )
+          throw new ArchiveRecoveryRefusedError(
+            'Adopted pending recovery changed.',
+          );
+        await qualifyArchiveRecoveryRefDeletion(receipt);
+        receipt = await store.beginProjectDeletionDiscard(receipt);
+      }
       await settleArchiveRecovery(receipt, 'committed-parent', {
         store,
         qualifyRefs: qualifyArchiveRecoveryRefDeletion,
@@ -1030,7 +1093,20 @@ async function deleteWorkspaceWithLease(
   const recoveryHolds = (await readArchiveRecoveryHolds(workspaceId)).filter(
     (receipt) => !receipt.cancelled && receipt.retention !== 'deleted',
   );
-  const recoveryCleanup = await prepareArchiveRecoveryCleanup(recoveryHolds);
+  const recoveryCleanup = await prepareArchiveRecoveryCleanup(
+    recoveryHolds.map((hold) => ({
+      operationId: hold.operationId,
+      revision: hold.revision,
+      ...(confirmedPendingArchiveRecoveries().some(
+        (member) => member.operationId === hold.operationId,
+      )
+        ? {
+            discardPending: true as const,
+            receiptDigest: archiveRecoveryDigest(JSON.stringify(hold)),
+          }
+        : {}),
+    })),
+  );
   const archivedGitStates: ArchivedGitState[] = [];
   for (const manifest of archivedManifests) {
     if (manifest.version === 2) {

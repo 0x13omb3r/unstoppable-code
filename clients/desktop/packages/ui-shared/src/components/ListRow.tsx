@@ -1,7 +1,9 @@
 import {
+  createElement,
   forwardRef,
   type AnchorHTMLAttributes,
   type ButtonHTMLAttributes,
+  type ComponentPropsWithRef,
   type HTMLAttributes,
   type JSX,
   type MouseEvent,
@@ -12,6 +14,7 @@ import { RowActionTray } from './RowActions';
 import {
   SIDEBAR_ITEM_IDLE_CLASSNAME,
   SIDEBAR_ITEM_SELECTED_CLASSNAME,
+  SIDEBAR_NAV_ITEM_CLASSNAME,
 } from './sidebar-item-classes';
 
 /** 28px for compact activity rows, 32px by default, 40px for logos and pickers. */
@@ -573,3 +576,86 @@ export const ListRowStatic = forwardRef<HTMLDivElement, ListRowStaticProps>(
 );
 
 ListRowStatic.displayName = 'ListRowStatic';
+
+const LIST_ROW_FRAME_LAYOUT = {
+  'file-overlap': 'flex flex-col gap-1 px-3 py-2.5 transition-colors',
+  'sidebar-workspace':
+    'group/header group/sidebar-item relative flex h-8 items-center gap-1.5 rounded-row pl-1.5 pr-1 fg-primary transition-colors duration-150',
+  'sidebar-customize': `${SIDEBAR_NAV_ITEM_CLASSNAME} cursor-default fg-primary`,
+  'harness-board':
+    'group relative flex h-8 cursor-grab items-center gap-2 rounded-md px-2 text-s fg-primary/80 transition-colors',
+  'priority-preview':
+    'flex cursor-default items-center gap-2.5 rounded-md px-3 py-2 text-s font-normal fg-primary',
+  'tray-modal': 'group/row group/drawer-item flex flex-col rounded-lg',
+  'tray-drawer': 'group/row group/drawer-item flex flex-col rounded-drawer-row',
+  'tray-header-modal': 'relative flex h-9 min-w-0 items-center pr-3 text-s',
+  'tray-header-legacy':
+    'relative flex h-9 min-w-0 items-center gap-3 pr-1 text-s',
+  'tray-header-compact':
+    'relative flex h-9 min-w-0 items-center gap-2.5 pr-1 text-s',
+  'linked-memory': 'group flex items-start gap-1 rounded-lg pr-1.5',
+  'project-columns': 'col-span-full grid grid-cols-subgrid items-center py-2',
+  'project-inline': 'flex items-center gap-3 py-2',
+  'sidebar-account':
+    'min-w-0 flex-1 focus-ring flex w-full items-center gap-2 overflow-hidden whitespace-nowrap rounded-row px-2 py-0 text-s font-normal fg-primary pointer-coarse:min-h-11',
+  'sidebar-archive': 'group relative flex min-w-0 items-center rounded-row',
+  'changed-file': 'group flex items-center gap-2 px-3 py-1',
+  'sidebar-bare': 'flex w-full min-w-0',
+  'sidebar-default':
+    'flex w-full min-w-0 group items-center gap-2 rounded-row min-h-8 px-2 py-1.5',
+  'sidebar-compact':
+    'flex w-full min-w-0 group items-center gap-2 rounded-row min-h-7 px-2 py-1',
+  'sidebar-touch':
+    'flex w-full min-w-0 group items-center gap-2 rounded-row min-h-11 px-3 py-2',
+  'workspace-repository':
+    'group flex items-center gap-2 rounded-md px-2 py-1.5 text-s',
+} as const;
+
+const LIST_ROW_FRAME_STATE = {
+  resting: '',
+  disabled: '',
+  pressable: 'cursor-pointer hover:bg-subtle',
+  'sidebar-idle': 'hover:bg-subtle',
+  'sidebar-dragging': 'opacity-60 hover:bg-subtle',
+  'drag-preview': 'bg-card shadow-md',
+  'repo-idle': 'hover:bg-secondary',
+  'repo-removing': 'opacity-60 hover:bg-secondary',
+  'harness-idle': 'focus-within:bg-subtle hover:bg-subtle',
+  'harness-dragging': 'focus-within:bg-subtle hover:bg-subtle opacity-40',
+  'tray-open': 'bg-subtle',
+  'tray-header-closed': 'rounded-lg hover:bg-subtle',
+  'project-activatable': 'focus-ring cursor-pointer rounded-sm hover:bg-subtle',
+  'account-tall': 'h-10 hover:bg-subtle',
+  'account-default': 'h-8 hover:bg-subtle',
+  'file-selectable':
+    'cursor-pointer rounded-md transition-colors hover:bg-fg-primary/[0.06]',
+  'sidebar-interactive': 'focus-ring cursor-pointer hover:bg-subtle',
+  'sidebar-selected': 'bg-muted fg-primary',
+  'sidebar-selected-interactive':
+    'bg-muted fg-primary focus-ring cursor-pointer',
+} as const;
+
+export type ListRowFrameProps<Tag extends 'div' | 'li' = 'div'> =
+  ComponentPropsWithRef<Tag> & {
+    readonly as?: Tag;
+    readonly layout: keyof typeof LIST_ROW_FRAME_LAYOUT;
+    readonly state?: keyof typeof LIST_ROW_FRAME_STATE;
+  };
+
+/** Provides shared styling for rows with custom contents and controls. */
+export function ListRowFrame<Tag extends 'div' | 'li' = 'div'>({
+  as,
+  layout,
+  state = 'resting',
+  className = '',
+  ...props
+}: ListRowFrameProps<Tag>): JSX.Element {
+  return createElement(as ?? 'div', {
+    ...props,
+    className: joinClassNames(
+      LIST_ROW_FRAME_LAYOUT[layout],
+      LIST_ROW_FRAME_STATE[state],
+      className,
+    ),
+  });
+}

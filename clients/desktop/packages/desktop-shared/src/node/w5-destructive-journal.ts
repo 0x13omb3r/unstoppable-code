@@ -52,6 +52,11 @@ export const journalSchema = z.object({
         operationId: z.string().uuid(),
         revision: z.string().regex(/^[a-f0-9]{64}$/),
         done: z.boolean().optional(),
+        discardPending: z.literal(true).optional(),
+        receiptDigest: z
+          .string()
+          .regex(/^[a-f0-9]{64}$/)
+          .optional(),
       }),
     )
     .optional(),

@@ -1,5 +1,7 @@
 import type { AgentExecutionHarness } from '@canopy/protocol/models';
 import type { PluginProviderSupport } from '@canopy/protocol/plugins';
+import type { PluginHookMember } from './types';
+import { opencodeSupportsCommandHook } from './opencode-support';
 import {
   cursorPluginFacetSupport,
   type CursorLoadablePluginDetails,
@@ -92,9 +94,17 @@ export interface PluginHarnessRowsInput {
   providerSupport: PluginProviderSupport;
   /** The Claude plugin's Codex compatibility setting is off. */
   codexCompatDisabled?: boolean;
+  /** Remote hosts must explicitly confirm hook execution; local callers share this runtime. */
+  opencodeCommandHooks?: boolean;
   /** Hosts pass facets only for providers they support; the rule does not filter them. */
   facets: {
-    claude?: { details?: CursorLoadablePluginDetails | null };
+    claude?: {
+      details?:
+        | (CursorLoadablePluginDetails & {
+            hooks?: readonly PluginHookMember[];
+          })
+        | null;
+    };
     codex?: { details?: CursorLoadablePluginDetails | null };
   };
   /** Per-provider truth, or one flag when the host only has that (web). `false` never claims Installed. */
@@ -163,8 +173,18 @@ export function pluginHarnessRows(
         );
       case 'cursor':
       case 'copilot':
-      case 'opencode':
         return row(id, facetSupport.supported, facetSupport.provider);
+      case 'opencode':
+        return row(
+          id,
+          facetSupport.supported ||
+            (input.opencodeCommandHooks !== false &&
+              (facets.claude?.details?.hooks?.some(
+                opencodeSupportsCommandHook,
+              ) ??
+                false)),
+          facetSupport.provider,
+        );
     }
   });
 }

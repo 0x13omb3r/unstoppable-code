@@ -1,3 +1,4 @@
+import { untrackedProtectionWork, type NativeProtectionWork } from './work';
 import type {
   PlatformKeySlot,
   PlatformKeySlotCallOptions,
@@ -68,6 +69,7 @@ export function createLinuxSecretProtection(
   native: () => SecretServiceNative | undefined,
   namespace: KeychainNamespace,
   unavailable: PlatformSecretProtectionUnavailableReason = 'backend_failed',
+  work: NativeProtectionWork = untrackedProtectionWork,
 ): PlatformSecretProtectionServices {
   const identity = { ...namespace };
 
@@ -90,13 +92,15 @@ export function createLinuxSecretProtection(
     if (failures.has(backend.run)) return { code: 'unavailable' };
     const mutating = operation !== 'read' && operation !== 'status';
     try {
-      const value = await backend.run(
-        operation,
-        identity.service,
-        keychainAccount(identity, name),
-        bytes,
-        interaction,
-        signal,
+      const value = await work.track(() =>
+        backend.run(
+          operation,
+          identity.service,
+          keychainAccount(identity, name),
+          bytes,
+          interaction,
+          signal,
+        ),
       );
       // Corrupt duplicates are refused before submission, not transport loss.
       // Unknown mutation replies, like explicit uncertain replies, must latch.

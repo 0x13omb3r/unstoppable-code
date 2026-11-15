@@ -48,7 +48,8 @@ import type { ChatTabPanelSeed } from './chat-panel-binding';
  * `pipeline-execution` and `subagent-chat` are omitted for the same reason as
  * `browser`: they bind a concrete run or chat/subagent pair of the captured
  * worktree, which no other worktree has. Unbound `subagents` stays portable.
- * `chat-visuals` is omitted too: it binds one chat of the captured worktree.
+ * `chat-visuals` is omitted too: it binds one chat of the captured worktree,
+ * and so is `mod-pane`, which binds one pane of one of its chats.
  */
 const INSTANCE_BOUND_KINDS: ReadonlySet<PanelKind> = new Set<PanelKind>([
   'chat',
@@ -59,6 +60,7 @@ const INSTANCE_BOUND_KINDS: ReadonlySet<PanelKind> = new Set<PanelKind>([
   'plan',
   'plan-diagram',
   'chat-visuals',
+  'mod-pane',
 ]);
 
 function isWorktreeBoundPanel(panel: ISerializedPanelEntry): boolean {

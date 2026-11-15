@@ -93,6 +93,7 @@ export function delegateAgentMeta(snapshot: AgentDelegationSnapshot): string {
     route?.runtimeModelLabel ??
     route?.selectedModelLabel ??
     route?.runtimeModelId ??
+    snapshot.requestedModelLabel ??
     snapshot.requestedModelId;
   return model ? `Delegate · ${model}` : 'Delegate';
 }

@@ -1,5 +1,6 @@
 'use client';
 
+import { SidebarPageNavFrame } from '@canopy/ui-shared/components';
 import { useId, type JSX, type ReactNode, type Ref } from 'react';
 import { Stack, SidebarNavRow } from '@canopy/ui-shared/components';
 import { BackIcon } from '@canopy/ui-shared/icons/AppIcons';
@@ -39,12 +40,6 @@ export interface SidebarPageNavProps {
   readonly controlsInDragRegion?: boolean;
 }
 
-const SURFACE_CLASSNAME: Readonly<Record<SidebarPageNavSurface, string>> = {
-  'app-material':
-    'app-sidebar-material sidebar-resizable-surface sidebar-instant-interactions relative h-full shrink-0 select-none font-normal',
-  sidebar: 'bg-sidebar relative h-full shrink-0 select-none font-normal',
-};
-
 const CONTENT_CLASSNAME: Readonly<Record<SidebarPageNavSurface, string>> = {
   'app-material': 'settings-sidebar-content absolute inset-0 flex flex-col',
   sidebar: 'absolute inset-0 flex flex-col',
@@ -72,13 +67,10 @@ export function SidebarPageNav({
   controlsInDragRegion = false,
 }: SidebarPageNavProps): JSX.Element {
   return (
-    <aside
+    <SidebarPageNavFrame
       aria-label={ariaLabel}
-      className={
-        width === undefined
-          ? `${SURFACE_CLASSNAME[surface]} w-full`
-          : SURFACE_CLASSNAME[surface]
-      }
+      material={surface === 'app-material'}
+      className={width === undefined ? 'w-full' : undefined}
       style={width === undefined ? undefined : { width }}
       data-testid={sidebarTestId}
     >
@@ -116,7 +108,7 @@ export function SidebarPageNav({
         </SidebarScrollArea>
       </div>
       {trailing}
-    </aside>
+    </SidebarPageNavFrame>
   );
 }
 

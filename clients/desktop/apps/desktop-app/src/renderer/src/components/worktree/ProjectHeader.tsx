@@ -1,3 +1,4 @@
+import { WorkspaceIconSlot } from '@canopy/ui-shared/components';
 import {
   memo,
   useCallback,
@@ -200,17 +201,14 @@ export const ProjectHeader = memo(function ProjectHeader({
     // collapse (label button + background fallthrough), and hiding the
     // affordance while keeping the action lets clicks silently flip the
     // collapse state. Mirrors the cowork header's disableDrag branch.
-    <span
-      aria-hidden="true"
-      className="relative inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full"
-    >
+    <WorkspaceIconSlot aria-hidden="true">
       <WorkspaceIconDisclosureSwap
         collapsed={collapsed}
         testIdSuffix={testIdSuffix}
       >
         {projectIcon}
       </WorkspaceIconDisclosureSwap>
-    </span>
+    </WorkspaceIconSlot>
   ) : (
     <button
       type="button"

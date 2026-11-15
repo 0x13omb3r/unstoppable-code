@@ -9,11 +9,9 @@ import {
 } from 'react';
 import type {
   BillingTopUpIntent,
-  PaidBillingPlanKey,
   SettingsPaymentOwner,
 } from '@canopy/protocol/billing';
 import type {
-  BillingSummary,
   BillingSummaryPaymentMethod,
   CreditsAutoTopUpSettings,
   PaymentMethodSummary,
@@ -23,23 +21,22 @@ import type {
  * Web-only billing UI the shared billing sections render inline.
  *
  * Card entry, Stripe, checkout, card deletion, the automatic top-up editor,
- * subscription changes, and the billing page's one-shot payment intents stay
+ * and the billing page's one-shot payment intents stay
  * in `apps/web`. A web billing route mounts a provider that supplies them;
  * hosts without inline checkout (desktop) mount none, and the shared sections
  * render the payment handoff from `PaymentArea` instead. A section never
  * renders a missing slot and never asks which host it runs in.
  */
 
-/** Which modal a billing page opens on arrival, from its URL intent. */
+/**
+ * Which modal a billing page opens on arrival, from its URL intent. The
+ * retired `subscription` intent that shipped builds still send never reaches
+ * here: the URL parser reads it as no intent.
+ */
 export type BillingSettingsIntentTarget =
   | { readonly kind: 'top-up'; readonly intent: BillingTopUpIntent }
   | { readonly kind: 'payment-method'; readonly requestId: string }
-  | { readonly kind: 'auto-top-up'; readonly requestId: string }
-  | {
-      readonly kind: 'subscription';
-      readonly requestId: string;
-      readonly plan?: PaidBillingPlanKey;
-    };
+  | { readonly kind: 'auto-top-up'; readonly requestId: string };
 
 /** Reads the page's top-up and payment modal intents once. Renders nothing. */
 export interface BillingIntentControllerSlotProps {
@@ -61,38 +58,6 @@ export interface CreditPoolSubscriptionSlotProps {
   readonly organizationId?: string;
   readonly onSignal: () => void;
   readonly onReconnect: () => void;
-}
-
-/** The personal plan card's subscribe CTA and its checkout. */
-export interface PersonalPlanSubscribeCtaSlotProps {
-  readonly summary: BillingSummary;
-  readonly onSubscribed: () => void;
-  /** `?plan=` (or subscription intent) plan the page was opened for. */
-  readonly intentPlanKey: string | null;
-}
-
-/** The organization plan card's subscribe CTA (trial conversion) and checkout. */
-export interface OrganizationPlanSubscribeCtaSlotProps {
-  readonly summary: BillingSummary;
-  readonly organizationId: string;
-  readonly onSubscribed: (summary: PaymentMethodSummary) => void;
-  readonly intentPlanKey: string | null;
-}
-
-/** The organization plan card's paid-tier upgrade CTA and its confirmation. */
-export interface OrganizationPlanUpgradeCtaSlotProps {
-  readonly summary: BillingSummary;
-  readonly organizationId: string;
-  readonly intentPlanKey: string | null;
-  readonly onChanged: () => void | Promise<void>;
-}
-
-/** The plan card's cancel / resume menu. */
-export interface SubscriptionActionsMenuSlotProps {
-  readonly scope: 'user' | 'org';
-  readonly orgId?: string;
-  readonly summary: BillingSummary;
-  readonly onChanged: () => void | Promise<void>;
 }
 
 /** The personal saved card's Add / Edit / Delete affordances and their dialogs. */
@@ -125,10 +90,12 @@ export interface OrganizationPaymentMethodActionsSlotProps {
   ) => ReactNode;
 }
 
-/** Pieces of the "Buy credits" affordance, placed by the credits card. */
+/**
+ * The "Buy AI Credits" affordance, placed by the credits card. Its checkout is
+ * the purchase provider's one sheet, so the card places no dialog.
+ */
 export interface CreditsTopUpParts {
   readonly trigger: ReactNode;
-  readonly dialog: ReactNode;
 }
 
 export interface CreditsTopUpSlotProps {
@@ -164,10 +131,6 @@ export interface BillingSettingsSlots {
   readonly publishableKey: string | null;
   readonly IntentController: ComponentType<BillingIntentControllerSlotProps>;
   readonly CreditPoolSubscription: ComponentType<CreditPoolSubscriptionSlotProps>;
-  readonly PersonalPlanSubscribeCta: ComponentType<PersonalPlanSubscribeCtaSlotProps>;
-  readonly OrganizationPlanSubscribeCta: ComponentType<OrganizationPlanSubscribeCtaSlotProps>;
-  readonly OrganizationPlanUpgradeCta: ComponentType<OrganizationPlanUpgradeCtaSlotProps>;
-  readonly SubscriptionActionsMenu: ComponentType<SubscriptionActionsMenuSlotProps>;
   readonly PersonalPaymentMethodActions: ComponentType<PersonalPaymentMethodActionsSlotProps>;
   readonly OrganizationPaymentMethodActions: ComponentType<OrganizationPaymentMethodActionsSlotProps>;
   readonly CreditsTopUp: ComponentType<CreditsTopUpSlotProps>;

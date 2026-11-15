@@ -54,7 +54,11 @@ const TARGET: CatalogPluginTarget = {
   pluginName: 'notes',
   install: 'managed',
 };
-const PKG = { analysisId: 'analysis-1', selectedOptionalResourceIds: [] };
+const PKG = {
+  analysisId: 'analysis-1',
+  selectedOptionalResourceIds: [],
+  keepInStep: false,
+};
 const SOURCE = { id: 'local-tools', label: 'Local tools' };
 const CONTEXT = { baseUrl: 'https://cloud.example', apiKey: 'key-1' };
 

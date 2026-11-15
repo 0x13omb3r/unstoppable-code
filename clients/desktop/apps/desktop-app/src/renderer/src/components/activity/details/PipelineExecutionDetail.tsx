@@ -1,3 +1,4 @@
+import { WorkflowReportRegion } from '@canopy/ui-shared/components';
 import {
   useCallback,
   useEffect,
@@ -995,14 +996,13 @@ export function PipelineExecutionDetail({
                         ) : null
                       }
                       reportSlot={
-                        <div
+                        <WorkflowReportRegion
                           ref={reportRegionRef}
                           // Focus target for an inline View Report; not a
                           // tab stop.
                           tabIndex={-1}
                           role="region"
                           aria-label="Report"
-                          className="focus-ring focus-ring-inset rounded-xl"
                           data-testid="pipeline-report-region"
                         >
                           {state.report_outputs ? (
@@ -1014,7 +1014,7 @@ export function PipelineExecutionDetail({
                           ) : (
                             <EmptyState title="No report has been generated for this run yet." />
                           )}
-                        </div>
+                        </WorkflowReportRegion>
                       }
                     />
                   </>

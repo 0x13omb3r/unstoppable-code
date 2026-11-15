@@ -27,9 +27,8 @@ export interface AccountSettingsNavFlags {
    */
   appearanceEnabled?: boolean;
   /**
-   * Free app access is on (CAN-3926). The Billing item keeps its route and
-   * key but is named "AI Credits", for what it still sells. Optional so a
-   * caller that never shows Billing need not resolve it.
+   * Free app access is on (CAN-3926).
+   * @deprecated Retained for shipped clients, which require it; the server always sends `true`. Current navigation always names the Billing item "AI Credits".
    */
   freeAccess?: boolean;
 }

@@ -1,5 +1,6 @@
 'use client';
 
+import { Button, CostBreakdownEntry } from '@canopy/ui-shared/components';
 import { useStore } from 'zustand';
 import type { CostClient, CostNavigator } from '@canopy/app-core';
 import type { PipelineRunCostStore } from '@canopy/app-state/cost';
@@ -115,8 +116,6 @@ function StepCostRow({
       />
     </>
   );
-  const className =
-    'flex w-full flex-col gap-1.5 rounded-md px-2 py-2 text-left text-xs pointer-coarse:min-h-11';
   // Account names stay out of the accessible name: session replay records
   // attributes, and the visible names are blocked from it.
   const accountsLabel =
@@ -129,26 +128,23 @@ function StepCostRow({
     .filter(Boolean)
     .join(', ');
 
-  if (navigator.openPipelineJob !== undefined) {
-    return (
-      <button
-        type="button"
-        data-testid={`pipeline-run-cost-step-${step.jobId}`}
-        aria-label={ariaLabel}
-        onClick={open}
-        className={`${className} focus-ring transition-colors hover:bg-subtle`}
-      >
-        {content}
-      </button>
-    );
-  }
-  return (
-    <div
+  return navigator.openPipelineJob !== undefined ? (
+    <Button
+      type="button"
       data-testid={`pipeline-run-cost-step-${step.jobId}`}
-      className={className}
+      aria-label={ariaLabel}
+      onClick={open}
+      variant="cost-row-stack"
     >
       {content}
-    </div>
+    </Button>
+  ) : (
+    <CostBreakdownEntry
+      layout="stack"
+      testId={`pipeline-run-cost-step-${step.jobId}`}
+    >
+      {content}
+    </CostBreakdownEntry>
   );
 }
 
@@ -246,32 +242,27 @@ function ChildRunCostRow({
       />
     </>
   );
-  const className =
-    'flex w-full flex-col gap-1.5 rounded-md px-2 py-2 text-left text-xs pointer-coarse:min-h-11';
   const open = (): void => {
     navigator.openPipelineRun?.(scope, child.executionId);
   };
 
-  if (navigator.openPipelineRun !== undefined) {
-    return (
-      <button
-        type="button"
-        data-testid={`pipeline-run-cost-child-${child.executionId}`}
-        aria-label={`${child.pipelineName}, ${metadata}, ${amount}`}
-        onClick={open}
-        className={`${className} focus-ring transition-colors hover:bg-subtle`}
-      >
-        {content}
-      </button>
-    );
-  }
-  return (
-    <div
+  return navigator.openPipelineRun !== undefined ? (
+    <Button
+      type="button"
       data-testid={`pipeline-run-cost-child-${child.executionId}`}
-      className={className}
+      aria-label={`${child.pipelineName}, ${metadata}, ${amount}`}
+      onClick={open}
+      variant="cost-row-stack"
     >
       {content}
-    </div>
+    </Button>
+  ) : (
+    <CostBreakdownEntry
+      layout="stack"
+      testId={`pipeline-run-cost-child-${child.executionId}`}
+    >
+      {content}
+    </CostBreakdownEntry>
   );
 }
 

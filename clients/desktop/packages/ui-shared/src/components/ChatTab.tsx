@@ -16,6 +16,8 @@ export interface ChatTabProps {
   unread?: boolean;
   /** Click handler. Also triggered by Enter/Space when focused. */
   onSelect?: () => void;
+  /** A visual placeholder until the host has a real chat to select. */
+  staticPlaceholder?: boolean;
   /** When provided AND `closable` is true, a small close button is
    * rendered. The button stops propagation so it does not trigger
    * `onSelect`. */
@@ -98,6 +100,7 @@ export function ChatTab({
   busy = false,
   unread = false,
   onSelect,
+  staticPlaceholder = false,
   onClose,
   closable,
   closeDisabled = false,
@@ -162,9 +165,9 @@ export function ChatTab({
 
   return (
     <div
-      role="tab"
-      tabIndex={0}
-      aria-selected={active}
+      role={staticPlaceholder ? undefined : 'tab'}
+      tabIndex={staticPlaceholder ? undefined : 0}
+      aria-selected={staticPlaceholder ? undefined : active}
       aria-label={pinned ? (tooltip ?? label) : undefined}
       data-testid={dataTestId}
       data-chat-id={dataChatId}
@@ -178,13 +181,17 @@ export function ChatTab({
       onPointerEnter={onPointerEnter}
       onPointerLeave={onPointerLeave}
       onClick={onSelect}
-      onKeyDown={(e): void => {
-        if (e.key === 'Enter' || e.key === ' ') {
-          e.preventDefault();
-          onSelect?.();
-        }
-      }}
-      className={`group relative flex shrink-0 cursor-pointer items-center border-r text-xs transition-opacity ${
+      onKeyDown={
+        staticPlaceholder
+          ? undefined
+          : (e): void => {
+              if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault();
+                onSelect?.();
+              }
+            }
+      }
+      className={`group relative flex shrink-0 items-center border-r text-xs transition-opacity ${staticPlaceholder ? '' : 'cursor-pointer'} ${
         pinned
           ? 'justify-center gap-0 px-2.5 py-3'
           : 'max-w-45 gap-1.5 px-3 py-3'

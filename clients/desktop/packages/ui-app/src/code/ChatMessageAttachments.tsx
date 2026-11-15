@@ -1,5 +1,6 @@
 'use client';
 
+import { ImageThumbnail } from '@canopy/ui-shared/components';
 import {
   createContext,
   memo,
@@ -22,7 +23,6 @@ import {
   MessageMediaTile,
   type MessageImageAttachment,
 } from '@canopy/ui-shared/components';
-import { REPLAY_BLOCK_CLASS } from '@canopy/ui-shared/lib/replay-privacy';
 import { VIDEO_FILENAME } from '@canopy/ui-shared/lib';
 
 /**
@@ -159,10 +159,11 @@ export function ChatAssetImage({
           disabled={!interaction?.onOpenImage}
           onClick={() => interaction?.onOpenImage?.(reference)}
         >
-          <img
+          <ImageThumbnail
+            variant="tool-image"
             src={image.src}
             alt={reference.filename ?? 'Tool image'}
-            className={`${REPLAY_BLOCK_CLASS} max-h-80 max-w-full rounded-md object-contain`}
+            replay="block"
           />
         </button>
       )}

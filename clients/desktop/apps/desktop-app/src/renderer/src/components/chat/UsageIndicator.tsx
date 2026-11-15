@@ -107,6 +107,11 @@ interface UsageIndicatorProps {
   turnActive?: boolean;
   /** The Codex chat's own context window choice; absent uses the default. */
   contextWindowSetting?: CodexContextWindowSetting;
+  /**
+   * Shows no USD: a cloud chat bills every turn to AI Credits, so its meter
+   * hides the cost as the web's cloud composer does (CAN-5028, CAN-6755).
+   */
+  hideCost?: boolean;
 }
 
 const NO_CREDIT_TARGET: ComposerAiCreditsTarget = {};
@@ -132,6 +137,7 @@ export function UsageIndicator({
   aiCreditsBilled = false,
   turnActive = false,
   contextWindowSetting,
+  hideCost = false,
 }: UsageIndicatorProps): JSX.Element {
   useSyncExternalStore(
     subscribeRendererModelFacts,
@@ -204,7 +210,7 @@ export function UsageIndicator({
   // An account that bills every turn to AI Credits sees no USD for a chat
   // billed that way: AI Credits is its only money figure (CAN-5028).
   const creditsOnly = useAiCreditsOnlyBilling();
-  const costHidden = creditsOnly && aiCreditsBilled;
+  const costHidden = hideCost || (creditsOnly && aiCreditsBilled);
   const costScope: CostScopeRef = {
     kind: 'entry',
     projectId: costTarget?.projectId ?? '',

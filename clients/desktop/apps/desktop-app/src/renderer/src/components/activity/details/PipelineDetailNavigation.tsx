@@ -1,3 +1,4 @@
+import { WorkflowNavFrame } from '@canopy/ui-shared/components';
 /**
  * The collapsible job list of a pipeline run panel: the toolbar toggle and
  * the list itself, docked as a rail while expanded or shown as a preview
@@ -8,6 +9,7 @@
  *
  * The compatibility modal passes no navigation and keeps its static rail.
  */
+import { Surface } from '@canopy/ui-shared/components';
 import {
   useCallback,
   useSyncExternalStore,
@@ -60,11 +62,14 @@ export function PipelineNavToggleZone({
   const previewOpen = usePreviewOpen(controller);
   const label = expanded ? 'Hide jobs' : 'Show jobs';
   return (
-    <div
+    <Surface
       ref={controller.setTriggerElement}
       // Draws its own part of the toolbar's bottom rule, so the zone reaches
       // the row the preview opens in with no gap between them.
-      className="flex shrink-0 items-center self-stretch border-b py-1.5 pl-3 pr-1"
+      variant="section"
+      boundary="bottom"
+      padding="toolbar-trigger"
+      className="flex shrink-0 items-center self-stretch"
       data-testid="pipeline-panel-nav-trigger"
       onPointerEnter={(event): void => {
         if (isHoverPointer(event)) controller.pointerEnterTrigger();
@@ -76,7 +81,7 @@ export function PipelineNavToggleZone({
       }}
       onFocus={(event): void => controller.focusTrigger(event.target)}
       onBlur={(event): void => controller.focusLeave(event.relatedTarget)}
-      onKeyDown={(event: KeyboardEvent<HTMLDivElement>): void => {
+      onKeyDown={(event: KeyboardEvent<HTMLElement>): void => {
         if (event.defaultPrevented) return;
         if (event.key === 'Escape') {
           if (controller.escape()) event.preventDefault();
@@ -110,7 +115,7 @@ export function PipelineNavToggleZone({
         }
         onClick={controller.toggleClick}
       />
-    </div>
+    </Surface>
   );
 }
 
@@ -143,18 +148,11 @@ export function PipelineCollapsibleNav({
 
   if (!expanded && !previewOpen) return null;
   return (
-    <div
+    <WorkflowNavFrame
+      preview={previewing}
       ref={previewing ? overlayRef : undefined}
       data-testid={
         previewing ? 'pipeline-panel-nav-preview' : 'pipeline-panel-nav'
-      }
-      className={
-        previewing
-          ? // Over the body, never beside it: the body keeps its geometry.
-            // Its top edge meets the toggle cell's bottom edge, so the
-            // pointer path from the toggle never crosses a gap.
-            'absolute inset-y-0 left-0 z-10 flex min-h-0 shadow-xl transition-[opacity,translate] duration-150 ease-out starting:-translate-x-2 starting:opacity-0 motion-reduce:transition-none'
-          : 'flex min-h-0 shrink-0'
       }
       onPointerEnter={
         previewing
@@ -198,6 +196,6 @@ export function PipelineCollapsibleNav({
       }
     >
       {children}
-    </div>
+    </WorkflowNavFrame>
   );
 }

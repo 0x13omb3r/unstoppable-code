@@ -334,6 +334,8 @@ import {
 import { getCoworkManagedSubdir } from '@canopy/desktop-shared/node/lib/cowork-managed-dir';
 import { buildWorktreeInjectedToolPrompt } from '../canopy-tools/prompting';
 import { buildCoworkDispatchSystemPromptAppend } from '../lib/cowork-chat-system-prompt';
+import { chatAddressPrompt } from '@canopy/desktop-shared/lib/chat-address-prompt';
+import { agentChatAddress } from '../lib/agent-chat-address';
 import {
   composeSubmittedText,
   joinHiddenBlocks,
@@ -2825,7 +2827,7 @@ export function registerChatHandlers(
     const coworkMemoryPolicy = isCoworkChat
       ? await resolveLocalMemoryPolicy({ projectId, worktreeId })
       : null;
-    const systemPromptAppend = isCoworkChat
+    const systemPromptBody = isCoworkChat
       ? buildCoworkDispatchSystemPromptAppend(
           effectiveExecutionHarness,
           preferences?.localMemoryEnabled === true,
@@ -2839,6 +2841,9 @@ export function registerChatHandlers(
           true,
           chatVisualsPromptEligible(effectiveProviderType, 'worktree'),
         );
+    const systemPromptAppend = `${systemPromptBody}\n\n${chatAddressPrompt(
+      agentChatAddress(projectId, worktreeId, chatId),
+    )}`;
 
     if (isCoworkChat) {
       // Start owner-scoped memory retrieval before the resource guard, as the

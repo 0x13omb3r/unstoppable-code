@@ -1,3 +1,4 @@
+import { SidebarWorkspaceHoverPanel } from '@canopy/ui-shared/components';
 import { ORCHESTRATOR_LABEL } from '@canopy/protocol';
 import {
   Fragment,
@@ -843,7 +844,7 @@ function measureStickySelectedPin(
   );
   const header =
     workspaceRoot?.querySelector<HTMLElement>(
-      '.sidebar-workspace-sticky-header',
+      '.sidebar-workspace-sticky-header, [data-sidebar-workspace-header]',
     ) ?? null;
   if (!workspaceRoot) return null;
   const sidebarRoot = viewport.closest<HTMLElement>(SIDEBAR_ROOT_SELECTOR);
@@ -1447,7 +1448,9 @@ function getStickyWorkspaceRailLayout(
     stickyControlsElement,
   );
   for (const header of Array.from(
-    viewport.querySelectorAll<HTMLElement>('.sidebar-workspace-sticky-header'),
+    viewport.querySelectorAll<HTMLElement>(
+      '.sidebar-workspace-sticky-header, [data-sidebar-workspace-header]',
+    ),
   )) {
     const workspaceRoot = header.closest<HTMLElement>(
       '[data-sidebar-workspace-id]',
@@ -3198,35 +3201,11 @@ export function AppSidebar({
             overlayPresented ? 'overflow-visible' : 'overflow-hidden'
           }`}
         >
-          <div
+          <SidebarWorkspaceHoverPanel
             inert={concealed}
-            // Docked, the sidebar is part of the window surface, so
-            // `app-sidebar-material` stays transparent and lets the window
-            // material through. As a hover preview it floats ABOVE page
-            // content, so `app-sidebar-preview-surface` paints an opaque
-            // elevated surface over it. The material class stays on in both
-            // states so its child rules (notably the `.bg-sidebar`
-            // neutralization for workspace headers) keep applying.
-            className={`app-sidebar-material sidebar-resizable-divider flex h-full flex-col text-s font-normal ${
-              overlayPresented
-                ? // Revealed: the panel escapes the 0-width aside and slides in
-                  // from the left. `shadow-xl` is the design system's largest
-                  // surface shadow (`--shadow-surface-xl`). The `-instant`
-                  // modifier applies only on the first frame, pinning the
-                  // off-screen start position without animating to it.
-                  `app-sidebar-preview-surface sidebar-preview-slide absolute left-0 top-0 shadow-xl ${
-                    // Only the very first presentation frame is instant.
-                    // During the slide-OUT — and on re-entry while it is still
-                    // sliding — the panel is already presented and must
-                    // animate.
-                    entryFrame ? 'sidebar-preview-instant' : ''
-                  }`
-                : 'relative'
-            } ${
-              concealed
-                ? 'border-0 pointer-events-none'
-                : 'border-y-0 border-l-0 border-r '
-            }`}
+            preview={overlayPresented}
+            entering={entryFrame}
+            concealed={concealed}
             style={{
               width,
               minWidth: sidebarMinWidthCss(reserveTrafficLights),
@@ -3793,7 +3772,7 @@ export function AppSidebar({
                         {window.devInfo.isDev && (
                           <div>
                             <SidebarFooterBanner
-                              className="bg-warning-subtle fg-primary shadow-md"
+                              surface="development"
                               title={window.devInfo.branch ?? 'DEV'}
                               testId="sidebar-dev-item"
                             >
@@ -3830,7 +3809,7 @@ export function AppSidebar({
                 </div>
               </DropdownMenuRowStyleProvider>
             </div>
-          </div>
+          </SidebarWorkspaceHoverPanel>
         </div>
         {!hidden && (
           <SidebarResizeHandle

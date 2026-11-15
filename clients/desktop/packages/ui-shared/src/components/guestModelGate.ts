@@ -1,5 +1,7 @@
-import { AI_CREDITS_GUEST_PURCHASE_LABEL } from './aiCreditsPurchaseCopy';
-import { MODEL_LIBRARY_UNLOCK_COPY } from './modelLibraryLock';
+import {
+  AI_CREDITS_GUEST_PURCHASE_LABEL,
+  MODEL_LIBRARY_UNLOCK_COPY,
+} from './creditsPromptCopy';
 
 /**
  * The reassurance clause guest-facing sign-in prompts close on: nothing
@@ -8,9 +10,6 @@ import { MODEL_LIBRARY_UNLOCK_COPY } from './modelLibraryLock';
  */
 export const GUEST_WORK_PRESERVED_COPY =
   'Your guest work comes with you, nothing is lost.';
-
-/** The guest model gate's dismiss label: a declined offer, not a cancel. */
-export const GUEST_MODEL_GATE_DISMISS_COPY = 'Not now';
 
 export interface GuestModelGateCopyInput {
   /** Display label of the gated model the guest picked. */
@@ -44,7 +43,6 @@ export interface GuestModelGateCopy {
   readonly signInAction: string;
   /** Present exactly when a fallback label was supplied. */
   readonly fallbackAction?: string;
-  readonly dismissAction: string;
 }
 
 /**
@@ -95,7 +93,6 @@ export function guestModelGateCopy({
       ),
       signInAction: AI_CREDITS_GUEST_PURCHASE_LABEL,
       ...withFallback,
-      dismissAction: MODEL_LIBRARY_UNLOCK_COPY.dismissAction,
     };
   }
 
@@ -109,6 +106,5 @@ export function guestModelGateCopy({
     ),
     signInAction: `Sign in to use ${modelLabel}`,
     ...withFallback,
-    dismissAction: GUEST_MODEL_GATE_DISMISS_COPY,
   };
 }

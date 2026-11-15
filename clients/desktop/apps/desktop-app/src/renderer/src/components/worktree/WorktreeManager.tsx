@@ -1,3 +1,4 @@
+import { Surface } from '@canopy/ui-shared/components';
 import { Button } from '@canopy/ui-shared/components';
 import {
   reportClientAppError,
@@ -2116,11 +2117,23 @@ export function WorktreeManager(): JSX.Element {
           className="flex h-full min-h-0 flex-col lg:flex-row"
         >
           {kanbanView && (
-            <section
+            <Surface
               data-testid="worktree-panel"
-              className="relative flex h-[52vh] min-h-105 w-full min-w-0 flex-1 flex-col overflow-hidden bg-base lg:h-full"
+              as="section"
+              variant="pane"
+              extent="worktree-split"
+              className="relative flex w-full min-w-0 flex-1 flex-col overflow-hidden"
             >
-              <div className="electron-drag relative flex max-h-10.75 items-center gap-2 border-b px-2.5 py-2">
+              <Surface
+                variant="section"
+                boundary="bottom"
+                extent="window-toolbar"
+                padding="board-header"
+                dragRegion
+                direction="row"
+                gap="inline"
+                className="relative items-center"
+              >
                 {/* When the sidebar is hidden its Create Task / Add workspace
  actions aren't reachable, so surface them here — inset past
  the persistent titlebar corner so they aren't hidden behind
@@ -2192,7 +2205,7 @@ export function WorktreeManager(): JSX.Element {
                     </Button>
                   </Tooltip>
                 </span>
-              </div>
+              </Surface>
 
               <div className="relative flex min-h-0 flex-1 flex-col">
                 <div
@@ -2329,7 +2342,7 @@ export function WorktreeManager(): JSX.Element {
                   )}
                 </div>
               </div>
-            </section>
+            </Surface>
           )}
 
           {chatPanelVisible && (
@@ -2376,22 +2389,30 @@ export function WorktreeManager(): JSX.Element {
           window-drag instead of clicks (real mice only; Playwright's
           synthetic clicks bypass app-region, so E2E cannot catch it). */}
       {archivedWorktreeViewer !== null ? (
-        <div className="electron-no-drag absolute inset-0 z-30 bg-base">
+        <Surface
+          variant="pane"
+          dragRegion={false}
+          className="absolute inset-0 z-30"
+        >
           <ArchivedContainerView
             workspaceId={archivedWorktreeViewer.workspaceId}
             containerId={archivedWorktreeViewer.containerId}
             onClose={closeArchivedViewerToOverview}
           />
-        </div>
+        </Surface>
       ) : archivedOverviewWorkspaceId !== null ? (
-        <div className="electron-no-drag absolute inset-0 z-30 bg-base">
+        <Surface
+          variant="pane"
+          dragRegion={false}
+          className="absolute inset-0 z-30"
+        >
           <MoreWorktreesOverviewPage
             // One page per project: its load state never carries over.
             key={archivedOverviewWorkspaceId}
             workspaceId={archivedOverviewWorkspaceId}
             onClose={closeArchivedOverview}
           />
-        </div>
+        </Surface>
       ) : null}
 
       {/* Shared-container recipient surface: same absolute overlay slot as the
@@ -2403,17 +2424,25 @@ export function WorktreeManager(): JSX.Element {
           share viewer mounts after it, so an accepted share opened from the
           page covers it while the page closes. */}
       {sharedContainerPastSharesOpen && (
-        <div className="electron-no-drag absolute inset-0 z-30 bg-base">
+        <Surface
+          variant="pane"
+          dragRegion={false}
+          className="absolute inset-0 z-30"
+        >
           <SharedContainerPastSharesPage
             onClose={closeSharedContainerPastShares}
           />
-        </div>
+        </Surface>
       )}
 
       {sharedContainerViewerOpen && (
-        <div className="electron-no-drag absolute inset-0 z-30 bg-base">
+        <Surface
+          variant="pane"
+          dragRegion={false}
+          className="absolute inset-0 z-30"
+        >
           <SharedContainerWorkspace onClose={closeSharedContainerViewer} />
-        </div>
+        </Surface>
       )}
 
       {modalLayer}

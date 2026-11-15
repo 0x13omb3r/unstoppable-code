@@ -3,7 +3,7 @@ import {
   isLocalMemoryConsolidationRunning,
   isLocalMemoryRebuildRunning,
 } from './consolidation-run-tracker';
-import { readConsolidationState } from './consolidation-state';
+import { readConsolidationStatusState } from './consolidation-state';
 import { listPendingInboxNotes } from './pending-sources';
 
 /** Pending inbox notes, as consolidation reads them; unreadable counts none. */
@@ -16,10 +16,11 @@ export async function readLocalMemoryConsolidationStatus(
 ): Promise<LocalMemoryConsolidationStatus> {
   const [pendingNotes, state] = await Promise.all([
     countPendingInboxNotes(scopeDir),
-    readConsolidationState(scopeDir).catch(() => null),
+    readConsolidationStatusState(scopeDir).catch(() => null),
   ]);
   return {
     pendingNotes,
+    metrics: state?.history?.[state.history.length - 1]?.metrics ?? null,
     running: isLocalMemoryConsolidationRunning(scopeDir),
     rebuilding: isLocalMemoryRebuildRunning(scopeDir),
     lastRunAt: state?.lastRunAt ?? state?.lastConsolidatedAt ?? null,

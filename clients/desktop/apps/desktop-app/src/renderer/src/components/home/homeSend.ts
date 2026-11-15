@@ -30,10 +30,26 @@ import type {
 } from '@canopy/desktop-shared/types';
 import { isChatAttachmentPromptKind } from '@canopy/desktop-shared/types';
 import { composerDraftContentEquals } from '@canopy/ui-app';
+import {
+  buildEditorValueFromMessage,
+  serializeEditorValue,
+} from '@canopy/ui-rich/editor';
+import { beginCloudTask } from '@/cloud-chats/useCloudCoworkSidebar';
+import { setFilesNotAttached } from '@/cloud-chats/cloud-task-deletion';
+import {
+  INSERT_CHAT_TEXT_EVENT,
+  type InsertChatTextDetail,
+} from '@/lib/editorSelectionContext';
+import {
+  getHomeCloudSource,
+  getHomeScope,
+  isHomeCloudTarget,
+} from './homeScope';
 import { isCoworkChatTarget } from '@/lib/cowork';
 import { workspaceRepoPathForCreateFrom } from '@/lib/createFromSource';
 import {
   importChatAttachments,
+  importWebCoreChatFiles,
   type AttachmentImportTarget,
 } from '@/lib/chatAttachments';
 import { extractIpcErrorMessage } from '@/lib/errors';
@@ -47,6 +63,11 @@ import { getWorkspaceDisplayName } from '@/lib/workspaceDisplayName';
 import { showAutomationCreatedToast } from '@/lib/automationToasts';
 import { ensureWorktreePanelLayout } from '@/lib/panels/persistence-bridge';
 import { useChatStore } from '@/stores/chatStore';
+import { pressedWebCorePrincipal } from '@/stores/chat/web-core/send-binding';
+import {
+  pressCloudSend,
+  releaseUnclaimedCloudSend,
+} from '@/stores/chat/web-core/send-order';
 import { nextMsgId } from '@/stores/chat/ids';
 import type { ChatTab } from '@/stores/chat/types';
 import { isTabAiCreditsRouted } from '@/stores/chat/tab-utils';
@@ -163,6 +184,7 @@ function isSubmittedHomeDraftCurrent(
     current.workspaceId === draft.workspaceId &&
     composerDraftContentEquals(current, draft) &&
     attachmentsEqual(current.attachments, draft.attachments) &&
+    current.cloudFiles === draft.cloudFiles &&
     scheduleEqual(current.scheduledSendDraft, draft.scheduledSendDraft)
   );
 }
@@ -636,6 +658,227 @@ async function preflightSourceHead(
   return 'stop';
 }
 
+/** Said when a cloud send can't start: the cloud chats' own offline words. */
+const CLOUD_OFFLINE_SEND_ERROR =
+  'Cloud chats are offline. Reconnect from the sidebar, then send again.';
+const CLOUD_PROJECT_GONE_SEND_ERROR =
+  "That cloud project isn't available any more. Choose another project.";
+const CLOUD_ATTACHMENTS_SEND_ERROR =
+  "Files staged for a local project can't go to a cloud project. Remove them, then attach them again.";
+const CLOUD_SCHEDULE_SEND_ERROR =
+  "A cloud project can't take a scheduled message. Remove the schedule, then send.";
+
+/** How long a Home cloud send waits for its new task's chat to open. */
+const CLOUD_CHAT_OPEN_TIMEOUT_MS = 30_000;
+
+/**
+ * Resolves once the chat store holds the chat, or `false` after the bound, so
+ * a page that never opens leaves the message as that chat's draft.
+ */
+function whenCloudChatOpens(
+  scopeKey: string,
+  chatId: string,
+): Promise<boolean> {
+  const opened = (): boolean =>
+    useChatStore
+      .getState()
+      .worktreeChats[scopeKey]?.tabs.some((tab) => tab.id === chatId) === true;
+  if (opened()) return Promise.resolve(true);
+  return new Promise((resolve) => {
+    const settle = (result: boolean): void => {
+      clearTimeout(timer);
+      unsubscribe();
+      resolve(result);
+    };
+    const timer = setTimeout(() => settle(false), CLOUD_CHAT_OPEN_TIMEOUT_MS);
+    const unsubscribe = useChatStore.subscribe(() => {
+      if (opened()) settle(true);
+    });
+  });
+}
+
+/**
+ * CAN-6757: a Home send to a cloud cowork project starts a task there, as the
+ * project's "+" in the sidebar does, and sends the draft as its first message.
+ * The task takes the web core's default model and settings, never Home's
+ * local model, plugins, plan mode or branch, and no local IPC carries its id.
+ * A send that can't start (the cloud offline, the project gone from this
+ * context, or something only this computer can carry) creates nothing and
+ * keeps the whole draft in Home with the reason. A message the web core
+ * refuses once the task opens goes back to that task's composer, as its own
+ * send would.
+ */
+async function dispatchHomeCloudSend(
+  draft: ReturnType<typeof useHomeComposerStore.getState>,
+  projectId: string,
+): Promise<boolean> {
+  const refuse = (error: string): boolean => {
+    useHomeComposerStore.getState().setSendError(error);
+    return false;
+  };
+  if (!getHomeCloudSource().online) return refuse(CLOUD_OFFLINE_SEND_ERROR);
+  if (!getHomeScope().cloudProjects.some((project) => project.id === projectId))
+    return refuse(CLOUD_PROJECT_GONE_SEND_ERROR);
+  if (draft.attachments.length > 0) return refuse(CLOUD_ATTACHMENTS_SEND_ERROR);
+  if (draft.scheduledSendDraft) return refuse(CLOUD_SCHEDULE_SEND_ERROR);
+  const submittedAccountEpoch =
+    useWorkspaceContextStore.getState().accountEpoch;
+  // The account this send is pressed under, when the web core can refuse it
+  // under another (CAN-6828).
+  const webCorePrincipalId = pressedWebCorePrincipal();
+  let worktreeId: string;
+  let created: Promise<unknown>;
+  try {
+    ({ worktreeId, created } = beginCloudTask(projectId));
+  } catch (error) {
+    reportClientAppError(error);
+    return refuse(CLOUD_OFFLINE_SEND_ERROR);
+  }
+  const text = draft.text;
+  const files = draft.cloudFiles;
+  if (text.trim().length > 0 || files.length > 0) {
+    const target = { projectId, worktreeId, chatId: worktreeId };
+    // Its place in the new chat's order is taken now, on the click, so a
+    // message typed in that chat while this one waits posts after it
+    // (CAN-6828).
+    const press = pressCloudSend(target);
+    // Each picked file uploads to the new chat, on its own, once the task's
+    // create settles (CAN-6763). An upload opens only while this send is
+    // still the account's and its chat may still take it: none goes up
+    // under an account it wasn't pressed in, or to a chat that never opened.
+    let abandoned = false;
+    const uploadsCurrent = (): boolean =>
+      !abandoned && isHomeSendAccountCurrent(submittedAccountEpoch);
+    const uploads: Promise<(AttachmentMeta | null)[]> =
+      files.length === 0
+        ? Promise.resolve([])
+        : Promise.allSettled([created]).then(() =>
+            Promise.all(
+              files.map(async ({ file }): Promise<AttachmentMeta | null> => {
+                if (!uploadsCurrent()) return null;
+                try {
+                  const { attachments } = await importWebCoreChatFiles(
+                    target,
+                    [file],
+                    uploadsCurrent,
+                  );
+                  return attachments[0] ?? null;
+                } catch (error) {
+                  reportClientAppError(error);
+                  return null;
+                }
+              }),
+            ),
+          );
+    let uploaded: AttachmentMeta[] = [];
+    // A refused message goes back to the new chat's composer: into the
+    // editor when it is open, so its own draft save keeps it, else as the
+    // draft it opens with, and its uploaded files join that composer's
+    // attachments. `true` tells the send the composer holds it, so it drops
+    // the refused message from the transcript and says why.
+    const keepAsDraft = (): boolean => {
+      // Another account's composer never takes this one's prompt.
+      if (!isHomeSendAccountCurrent(submittedAccountEpoch)) return true;
+      if (uploaded.length > 0)
+        useChatStore.getState().addPendingAttachments(uploaded, target);
+      if (text.trim().length === 0) return true;
+      let handled = false;
+      const detail: InsertChatTextDetail = {
+        text,
+        targetTabId: worktreeId,
+        markHandled: (): void => {
+          handled = true;
+        },
+      };
+      document.dispatchEvent(
+        new CustomEvent(INSERT_CHAT_TEXT_EVENT, { detail }),
+      );
+      if (!handled) {
+        // A draft typed in the new chat meanwhile stays, after the message.
+        const chat = useChatStore.getState();
+        const typed = chat.getTabDraft(worktreeId);
+        const typedText =
+          typed === undefined ? '' : serializeEditorValue(typed).text.trim();
+        const refused = buildEditorValueFromMessage(text, []);
+        chat.saveTabDraft(
+          worktreeId,
+          typed !== undefined && typedText !== '' && typedText !== text.trim()
+            ? [...refused, ...typed]
+            : refused,
+        );
+      }
+      return true;
+    };
+    // The task's chat joins the chat store once its page opens, and the
+    // message waits for it. Home keeps the draft until the message is sent
+    // or handed to that chat's composer, and an account change meanwhile
+    // sends and restores nothing. Bound to its account, the message goes to
+    // the chat as soon as it opens, so it shows at once, and posts once the
+    // task exists: the web core refuses it if the account changes before it
+    // posts. Unbound, as against a web core that can't refuse it, it also
+    // waits for the task's create before it goes to the chat, as a local
+    // send waits for its worktree, so the account is checked last.
+    useHomeComposerStore.setState({ isSending: true });
+    let handedOff = true;
+    const opened = await whenCloudChatOpens(
+      `${projectId}/${worktreeId}`,
+      worktreeId,
+    );
+    // A refused create is the send's to report, as for a send typed there.
+    if (webCorePrincipalId === undefined) await Promise.allSettled([created]);
+    // The message goes with every file or not at all: one that didn't
+    // upload leaves the message and the files that did in the new chat's
+    // composer, and names the rest there, for the person to send without it
+    // or attach it again. A chat that never opened waits for none of them.
+    if (!opened) abandoned = true;
+    const settled = opened ? await uploads : [];
+    uploaded = settled.filter(
+      (attachment): attachment is AttachmentMeta => attachment !== null,
+    );
+    if (!isHomeSendAccountCurrent(submittedAccountEpoch)) {
+      releaseUnclaimedCloudSend(press);
+      return true;
+    }
+    const notAttached = files
+      .filter((_, index) => (settled[index] ?? null) === null)
+      .map(({ file }) => file.name);
+    if (opened && notAttached.length === 0) {
+      try {
+        await useChatStore
+          .getState()
+          .sendMessage(text, undefined, target, undefined, {
+            onPreDispatchRejected: keepAsDraft,
+            webCoreSendPress: press,
+            ...(uploaded.length > 0
+              ? {
+                  attachmentPaths: uploaded.map(
+                    (attachment) => attachment.absolutePath,
+                  ),
+                  // Files attached in the new chat meanwhile stay there.
+                  composerAttachmentsReserved: true,
+                }
+              : {}),
+            ...(webCorePrincipalId === undefined ? {} : { webCorePrincipalId }),
+          });
+      } catch (error: unknown) {
+        reportClientAppError(error);
+        handedOff = false;
+      }
+    } else {
+      keepAsDraft();
+      // A chat that never opened takes no files: each one is named.
+      setFilesNotAttached(worktreeId, notAttached);
+    }
+    releaseUnclaimedCloudSend(press);
+    if (!isHomeSendAccountCurrent(submittedAccountEpoch)) return true;
+    useHomeComposerStore.setState({ isSending: false });
+    if (!handedOff) return true;
+  }
+  if (isSubmittedHomeDraftCurrent(draft))
+    useHomeComposerStore.getState().reset();
+  return true;
+}
+
 export async function dispatchHomeSend(): Promise<boolean> {
   const submittedAccountEpoch =
     useWorkspaceContextStore.getState().accountEpoch;
@@ -654,6 +897,8 @@ export async function dispatchHomeSend(): Promise<boolean> {
   ) {
     return false;
   }
+  if (isHomeCloudTarget(draft.workspaceId))
+    return dispatchHomeCloudSend(draft, draft.workspaceId);
   const submissionIdentity = {
     userMessageId: nextMsgId(),
     submittedAt: Date.now(),

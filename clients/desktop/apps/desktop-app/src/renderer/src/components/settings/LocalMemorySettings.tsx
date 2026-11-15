@@ -4,6 +4,9 @@ import {
   type PreferencesData,
   type ThinkingLevel,
 } from '@canopy/desktop-shared/types';
+import { CLIENT_FEATURE_FLAGS } from '@canopy/protocol/feature-flags';
+import { LearnFromChatsSetting } from '@canopy/ui-app/local-memory';
+import { useFeatureFlagsStore } from '@/stores/featureFlagsStore';
 import { Button, ToggleSwitch } from '@canopy/ui-shared/components';
 import { useCurrentUiStateReporter } from '@/hooks/useCurrentUiStateReporter';
 import { ModelThinkingPreferenceRow } from './ModelThinkingPreferenceRow';
@@ -32,6 +35,10 @@ export function LocalMemorySettings(): JSX.Element {
   // Keep the toggle off until preferences load so the control never flashes
   // an assumed enabled state before the persisted opt-out is known.
   const [enabled, setEnabled] = useState(false);
+  const [learnFromChats, setLearnFromChats] = useState(false);
+  const learningAvailable = useFeatureFlagsStore((state) =>
+    state.isEnabled(CLIENT_FEATURE_FLAGS.canopyDesktopMemoryLearnFromChats.key),
+  );
   const [loaded, setLoaded] = useState(false);
   const [selection, setSelection] = useState<LocalMemoryModelSelection>(() => ({
     model: defaultLocalMemoryModel(),
@@ -40,6 +47,7 @@ export function LocalMemorySettings(): JSX.Element {
   // Set once a preferences-synced broadcast has delivered a value, so a
   // late-resolving initial load cannot overwrite the newer synced state.
   const syncedRef = useRef(false);
+  const syncedRevision = useRef(0);
 
   useEffect(() => {
     let cancelled = false;
@@ -48,6 +56,7 @@ export function LocalMemorySettings(): JSX.Element {
       .then((preferences) => {
         if (cancelled || syncedRef.current) return;
         setEnabled(preferences.localMemoryEnabled);
+        setLearnFromChats(preferences.localMemoryLearnFromChats);
         setSelection(modelSelection(preferences));
         setLoaded(true);
       })
@@ -68,7 +77,9 @@ export function LocalMemorySettings(): JSX.Element {
     // action); the main process broadcasts every normal preferences save.
     return window.api.onPreferencesSynced((preferences) => {
       syncedRef.current = true;
+      syncedRevision.current += 1;
       setEnabled(preferences.localMemoryEnabled);
+      setLearnFromChats(preferences.localMemoryLearnFromChats);
       setSelection(modelSelection(preferences));
       setLoaded(true);
     });
@@ -77,6 +88,8 @@ export function LocalMemorySettings(): JSX.Element {
   useCurrentUiStateReporter('settings.localMemory', {
     loaded,
     enabled,
+    learnFromChats,
+    learningAvailable,
   });
 
   const handleEnabledChange = useCallback((nextEnabled: boolean): void => {
@@ -130,6 +143,19 @@ export function LocalMemorySettings(): JSX.Element {
             />
           }
         />
+        {learningAvailable && (
+          <LearnFromChatsSetting
+            enabled={learnFromChats}
+            disabled={!loaded || !enabled}
+            save={async (next) => {
+              const revision = syncedRevision.current;
+              await window.api.savePreferences({
+                localMemoryLearnFromChats: next,
+              });
+              if (syncedRevision.current === revision) setLearnFromChats(next);
+            }}
+          />
+        )}
         <ModelThinkingPreferenceRow
           title="Memory model"
           description="Model used to consolidate and rebuild memories"

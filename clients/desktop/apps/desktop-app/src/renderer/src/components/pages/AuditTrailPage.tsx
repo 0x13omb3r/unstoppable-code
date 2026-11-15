@@ -1,3 +1,4 @@
+import { CodeBlock } from '@canopy/ui-shared/components';
 import { type BadgeTone } from '@canopy/ui-shared/components/Badge';
 import {
   type JSX,
@@ -278,6 +279,10 @@ function formatInjectedPromptCondition(
       return 'Applied after deferred tools were enabled';
     case 'org_memory_enabled_for_turn':
       return 'Applied when organization memory is enabled for the turn';
+    case 'local_memory_enabled_for_turn':
+      return 'Applied when local memory is enabled for the turn';
+    case 'local_memory_withheld_for_turn':
+      return 'Local memory withheld for this internal sample';
   }
 }
 
@@ -1136,7 +1141,9 @@ export function AuditTrailPage(): JSX.Element {
                                   ? 'System prompt'
                                   : prompt.kind === 'org_memory'
                                     ? 'Organization memory'
-                                    : 'Plan mode developer instructions'}
+                                    : prompt.kind === 'local_memory'
+                                      ? 'Local memory'
+                                      : 'Plan mode developer instructions'}
                               </p>
                               <p className="text-xs fg-secondary">
                                 {prompt.provider} ·{' '}
@@ -1182,12 +1189,13 @@ export function AuditTrailPage(): JSX.Element {
                     Transcript not available.
                   </div>
                 ) : transcriptViewMode === 'raw' ? (
-                  <pre
-                    className={`${POSTHOG_REPLAY_BLOCK_CLASS} min-h-60 overflow-auto rounded-lg border bg-base/40 p-4 font-mono text-xs leading-6 fg-secondary`}
+                  <CodeBlock
+                    variant="audit-transcript"
+                    wrap="none"
                     data-testid="audit-transcript-raw"
                   >
                     {transcriptResponse.lines.join('\n')}
-                  </pre>
+                  </CodeBlock>
                 ) : (
                   <Surface variant="group">
                     <div className="px-3 py-2">

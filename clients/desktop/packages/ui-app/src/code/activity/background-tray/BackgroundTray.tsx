@@ -1,6 +1,10 @@
 'use client';
 
 import {
+  BackgroundTrayGroupLabel,
+  BackgroundTrayKindMark,
+} from '@canopy/ui-shared/components';
+import {
   useCallback,
   useEffect,
   useId,
@@ -72,6 +76,7 @@ import {
 import {
   ComposerWorkDrawer,
   type ComposerWorkDrawerSections,
+  type ComposerWorkExtraKind,
 } from '../../ComposerWorkDrawer';
 
 export type {
@@ -149,6 +154,8 @@ export interface BackgroundTrayProps {
     readonly count: number;
     readonly panel: ReactNode;
   };
+  /** `grouped`: pills after the work kinds, such as a Claude Mod's band. */
+  readonly composerExtraKinds?: readonly ComposerWorkExtraKind[];
   /** Wrap the list while retaining its detail owner outside conditional panels. */
   readonly renderWithDetails?: (
     list: ReactNode,
@@ -251,6 +258,7 @@ export function BackgroundTray({
   renderRunWatcher,
   presentation = 'drawer',
   composerQueue,
+  composerExtraKinds,
   renderWithDetails,
 }: BackgroundTrayProps): JSX.Element | null {
   const grouped = presentation === 'grouped';
@@ -654,6 +662,7 @@ export function BackgroundTray({
           viewportRef: setListRef,
           onExpandedChange: setCardExpanded,
         }}
+        {...(composerExtraKinds ? { extraKinds: composerExtraKinds } : {})}
       />,
     );
   const list = (
@@ -700,12 +709,9 @@ export function BackgroundTray({
             data-tray-group={group}
           >
             {(labelled || group === 'watching') && (
-              <p
-                className="sticky top-0 z-10 flex h-7 items-end bg-depth px-2.75 pb-1 text-s fg-tertiary"
-                data-testid="background-tray-group-label"
-              >
+              <BackgroundTrayGroupLabel>
                 {GROUP_LABELS[group]}
-              </p>
+              </BackgroundTrayGroupLabel>
             )}
             <ul className="flex flex-col">{rows}</ul>
           </section>
@@ -913,15 +919,14 @@ function CollapsedKinds({
             </span>
           }
         >
-          <span
-            className="inline-flex h-6 shrink-0 items-center gap-0.5 rounded-sm px-1 fg-tertiary"
+          <BackgroundTrayKindMark
             aria-label={`${KIND_LABELS[kind]}: ${count}`}
             role="img"
             data-testid={`background-tray-kind-${kind}`}
           >
             {TASK_KIND_GLYPHS[kind]}
             {count > 1 && <Count value={count} aria-hidden />}
-          </span>
+          </BackgroundTrayKindMark>
         </Tooltip>
       ))}
       {(['pipeline', 'github', 'github-pr'] as const).map((kind) => {
@@ -943,8 +948,8 @@ function CollapsedKinds({
               </span>
             }
           >
-            <span
-              className="relative inline-flex h-6 shrink-0 items-center gap-0.5 rounded-sm px-1 fg-tertiary"
+            <BackgroundTrayKindMark
+              anchored
               aria-label={`${RUN_KIND_LABELS[kind]}: ${ofKind.length}`}
               role="img"
               data-testid={`background-tray-kind-${kind}`}
@@ -964,7 +969,7 @@ function CollapsedKinds({
                   className="absolute right-0.5 top-0.5"
                 />
               )}
-            </span>
+            </BackgroundTrayKindMark>
           </Tooltip>
         );
       })}

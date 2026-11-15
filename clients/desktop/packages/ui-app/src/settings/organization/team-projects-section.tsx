@@ -118,7 +118,6 @@ import {
 interface TeamProjectsSectionProps {
   detail: OrganizationDetail;
   onDetailChange: (detail: OrganizationDetail) => void;
-  orgLapsed?: boolean;
   projectsEnabled: boolean;
   /** The Add projects dialog; the page header opens it. */
   creating: boolean;
@@ -404,12 +403,10 @@ function ManagedProjectDialogs({
 export function teamProjectsRepositoriesAvailable(
   detail: OrganizationDetail,
   projectsEnabled: boolean,
-  orgLapsed = false,
 ): boolean {
   return (
     canManageProjects(detail.viewerRole) &&
     projectsEnabled &&
-    !orgLapsed &&
     detail.githubConnection.connected
   );
 }
@@ -622,7 +619,6 @@ function isAbortError(error: unknown): boolean {
 
 function ProjectList({
   detail,
-  orgLapsed = false,
   projectsEnabled,
   creating,
   onCreatingChange,
@@ -671,11 +667,10 @@ function ProjectList({
   // Deleting a project removes the row that opened the dialog, so focus
   // returns to the section, which survives the mutation.
   const containerRef = useRef<HTMLDivElement>(null);
-  const growthDisabled = orgLapsed || !projectsEnabled;
+  const growthDisabled = !projectsEnabled;
   const repositoriesAvailable = teamProjectsRepositoriesAvailable(
     detail,
     projectsEnabled,
-    orgLapsed,
   );
   const managed = useManagedProject(detail, {
     growthDisabled,
@@ -1003,7 +998,6 @@ function ProjectList({
   const showChecklist =
     managesProjects &&
     projectsEnabled &&
-    !orgLapsed &&
     !loading &&
     error === null &&
     orgVisibleCount === 0;
@@ -1011,7 +1005,6 @@ function ProjectList({
     managesProjects &&
     connected &&
     projectsEnabled &&
-    !orgLapsed &&
     !loading &&
     (orgVisibleCount > 0 || error !== null);
 

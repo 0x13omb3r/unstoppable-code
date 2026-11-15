@@ -76,6 +76,16 @@ export interface CloudCapabilityRowsInput {
   readonly cloud: readonly CatalogEntry[];
   /** The cloud chat's harness; a plugin is usable only where it loads (CAN-6034). */
   readonly harness: CatalogHarnessId;
+  /**
+   * The cloud snapshot marks the plugins this desktop uploaded (revision 4,
+   * CAN-6725), so a local plugin is matched to its copy by them.
+   */
+  readonly thisDesktopUploads?: boolean;
+  /**
+   * This computer's built-in and curated marketplaces: their plugins are in
+   * the cloud catalog already and are never copied.
+   */
+  readonly bundledMarketplaceIds?: ReadonlySet<string>;
 }
 
 const CAPABILITY_KINDS: ReadonlySet<CatalogEntry['kind']> = new Set([
@@ -158,6 +168,8 @@ interface RowScope {
   readonly cloud: readonly CatalogEntry[];
   readonly cloudById: ReadonlyMap<string, CatalogEntry>;
   readonly harness: CatalogHarnessId;
+  readonly thisDesktopUploads: boolean;
+  readonly bundledMarketplaceIds: ReadonlySet<string>;
 }
 
 function skillState(
@@ -222,16 +234,53 @@ function skillState(
   };
 }
 
+/**
+ * The cloud copy this desktop uploaded of a local plugin: the same name from
+ * the same local marketplace. One of that name another desktop, or another of
+ * this desktop's marketplaces, uploaded is a different plugin.
+ */
+function uploadedCopy(
+  entry: CatalogEntry,
+  scope: RowScope,
+): CatalogEntry | undefined {
+  const ref =
+    entry.content.kind === 'plugin' ? entry.content.selectionRef : undefined;
+  if (!scope.thisDesktopUploads || ref === undefined) return undefined;
+  return scope.cloud.find((candidate) => {
+    const upload =
+      candidate.content.kind === 'plugin'
+        ? candidate.content.uploadedFromThisDesktop
+        : undefined;
+    return (
+      upload !== undefined &&
+      upload.sourcePluginKey === ref.pluginName &&
+      upload.sourceMarketplaceId === ref.marketplaceId
+    );
+  });
+}
+
 /** A plugin, or a skill a plugin brings: both reach the cloud as the plugin. */
 function pluginState(
   entry: CatalogEntry,
   scope: RowScope,
 ): { state: CloudCapabilityState; cloudEntry: CatalogEntry | null } {
-  const twin = scope.cloudById.get(entry.entryId);
+  const twin = scope.cloudById.get(entry.entryId) ?? uploadedCopy(entry, scope);
   if (twin !== undefined)
     return {
       state: fromCloudFor(twin, scope.cloud, scope.harness),
       cloudEntry: twin,
+    };
+  const marketplaceId =
+    entry.content.kind === 'plugin'
+      ? entry.content.selectionRef?.marketplaceId
+      : undefined;
+  if (
+    marketplaceId !== undefined &&
+    scope.bundledMarketplaceIds.has(marketplaceId)
+  )
+    return {
+      state: { kind: 'unavailable', reason: 'desktop_builtin' },
+      cloudEntry: null,
     };
   return {
     state: loadsIn(entry, scope.local, scope.harness)
@@ -309,6 +358,8 @@ export function cloudCapabilityRows(
     cloud,
     cloudById,
     harness: input.harness,
+    thisDesktopUploads: input.thisDesktopUploads === true,
+    bundledMarketplaceIds: input.bundledMarketplaceIds ?? new Set(),
   };
   const claimed = new Set<string>();
   const rows: CloudCapabilityRow[] = [];

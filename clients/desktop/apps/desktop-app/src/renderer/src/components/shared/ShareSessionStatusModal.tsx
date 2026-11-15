@@ -1,3 +1,5 @@
+import { Surface } from '@canopy/ui-shared/components';
+import { DialogActionFooter } from '@canopy/ui-shared/components';
 import { type JSX } from 'react';
 import { formatByteSize } from '@canopy/ui-shared/lib';
 import { Button } from '@/components/shared/Button';
@@ -69,14 +71,15 @@ export function ShareSessionStatusModal(): JSX.Element | null {
               </p>
             </Stack>
             {status.response.warnings.length > 0 && (
-              <ul
-                className="flex flex-col list-disc rounded-lg border border-line-attention/30 bg-warning-subtle px-7 py-2 text-xs fg-secondary gap-1"
+              <Surface
+                as="ul"
+                variant="share-status-list"
                 data-testid="share-session-status-warnings"
               >
                 {status.response.warnings.map((warning, index) => (
                   <li key={`${index}:${warning}`}>{warning}</li>
                 ))}
-              </ul>
+              </Surface>
             )}
           </Stack>
         )}
@@ -91,7 +94,7 @@ export function ShareSessionStatusModal(): JSX.Element | null {
         )}
 
         {!sharing && (
-          <div className="flex justify-end gap-2 border-t pt-4">
+          <DialogActionFooter padding="top">
             {status.phase === 'error' && (
               <Button variant="outline" size="lg" onClick={close}>
                 Close
@@ -115,7 +118,7 @@ export function ShareSessionStatusModal(): JSX.Element | null {
                 Done
               </Button>
             )}
-          </div>
+          </DialogActionFooter>
         )}
       </Stack>
     </DialogModal>

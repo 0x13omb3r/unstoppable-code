@@ -711,6 +711,7 @@ export async function buildPortalSnapshot(
                   await import('../agents/agent-default-model')
                 ).resolveCatalogAgentDefaultModel(workspaceLocalId)
               : undefined,
+            workspaceLocalId,
           )
         : workspaceEntities),
     );

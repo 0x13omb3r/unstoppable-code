@@ -116,13 +116,18 @@ export async function withLeasedWebCoreClient<
     readonly label: string;
     readonly definitions: { readonly queries: Q; readonly instructions: I };
     readonly signal: AbortSignal;
+    /** Opens the connection; `connectWebCore` unless the caller needs another. */
+    readonly connect?: typeof connectWebCore;
   },
   run: (client: CanopyClient<Q, I, Record<never, never>>) => Promise<T>,
 ): Promise<T> {
   // The client owns the connection: closing it, or a failed handshake,
   // closes the connection too.
   const client = await createCanopyClient<Q, I>({
-    connection: await connectWebCore(binding, options.signal),
+    connection: await (options.connect ?? connectWebCore)(
+      binding,
+      options.signal,
+    ),
     clientName: options.clientName,
     clientVersion: options.clientVersion,
     definitions: { ...options.definitions, streams: {} },

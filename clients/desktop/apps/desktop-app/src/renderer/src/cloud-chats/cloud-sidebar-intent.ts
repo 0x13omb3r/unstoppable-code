@@ -1,4 +1,5 @@
 import { isWebCoreScope } from '@/lib/chat-authority';
+import type { ChatPrefetchTarget } from '@/stores/chat/chat-prefetch';
 
 /**
  * Whether a sidebar row's hover or focus may warm the local chat store. A
@@ -14,4 +15,23 @@ export function shouldPrefetchWorktreeChat(
     !isWebCoreScope(projectId) &&
     !cloudWorktreeKeys.has(`${projectId}/${worktreeId}`)
   );
+}
+
+/**
+ * What resting on, or focusing, a sidebar row reads ahead. A local row warms
+ * the local chat store. A web core task is read ahead through the web core
+ * alone (CAN-6774): chat reads only, so its sandbox never wakes, and nothing
+ * is installed, followed or sent to main until a click opens it. Another
+ * cloud row reads nothing.
+ */
+export function sidebarRowPrefetchTarget(
+  projectId: string,
+  worktreeId: string,
+  cloudWorktreeKeys: ReadonlySet<string>,
+): ChatPrefetchTarget | null {
+  if (shouldPrefetchWorktreeChat(projectId, worktreeId, cloudWorktreeKeys))
+    return { kind: 'worktree', projectId, worktreeId };
+  if (isWebCoreScope(projectId) && isWebCoreScope(worktreeId))
+    return { kind: 'cloudTask', projectId, worktreeId };
+  return null;
 }

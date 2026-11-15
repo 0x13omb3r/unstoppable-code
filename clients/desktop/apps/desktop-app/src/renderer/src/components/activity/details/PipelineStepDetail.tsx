@@ -1,3 +1,4 @@
+import { InlineCode } from '@canopy/ui-shared/components';
 import { useEffect, useMemo, useRef, useState, type JSX } from 'react';
 import { Stack, Notice, Surface } from '@canopy/ui-shared/components';
 import type { AgentProviderType } from '@canopy/desktop-shared/types';
@@ -420,13 +421,13 @@ export function PipelineStepDetail({
 
       {stepResult?.agent_provider && (
         <div className="flex flex-wrap items-center gap-2 text-2xs fg-secondary">
-          <span className="rounded border bg-fg-primary/[0.04] px-1.5 py-0.5 font-mono fg-primary/70">
+          <InlineCode variant="workflow-model">
             {stepResult.agent_provider}
-          </span>
+          </InlineCode>
           {stepResult.agent_model && (
-            <span className="rounded border bg-fg-primary/[0.04] px-1.5 py-0.5 font-mono fg-primary/70">
+            <InlineCode variant="workflow-model">
               {stepResult.agent_model}
-            </span>
+            </InlineCode>
           )}
         </div>
       )}

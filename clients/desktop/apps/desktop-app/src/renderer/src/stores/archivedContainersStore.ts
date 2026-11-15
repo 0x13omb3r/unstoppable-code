@@ -23,6 +23,7 @@ import {
   type ArchivedContainersChangedEvent,
   type ChangedFileInfo,
 } from '@canopy/desktop-shared/types';
+import { isWebCoreScope } from '@/lib/chat-authority';
 
 /**
  * Stable empty list for per-workspace selectors. Never allocate `[]` inside a
@@ -829,6 +830,9 @@ export const useArchivedContainersStore = create<ArchivedContainersState>(
     },
 
     loadForWorkspace: (workspaceId, options): Promise<void> => {
+      // A cloud project keeps no archive on this computer; its More page reads
+      // the web core instead (CAN-6511).
+      if (isWebCoreScope(workspaceId)) return Promise.resolve();
       if (__CANOPY_E2E__ && options?.trailing === true) {
         e2eArchivedContainersTrailingLoadRequestCount += 1;
       }

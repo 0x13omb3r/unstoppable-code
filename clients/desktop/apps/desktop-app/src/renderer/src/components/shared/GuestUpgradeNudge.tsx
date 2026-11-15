@@ -1,3 +1,4 @@
+import { Surface } from '@canopy/ui-shared/components';
 import { type JSX, useEffect, useRef, useState } from 'react';
 import { Stack, Button } from '@canopy/ui-shared/components';
 import { CloseMediumIcon } from '@canopy/ui-shared/icons/AppIcons';
@@ -105,11 +106,14 @@ export function GuestUpgradeNudge(): JSX.Element | null {
   };
 
   return (
-    <div
+    <Surface
+      variant="guest-nudge"
+      padding="default"
+      gap="item"
       role="status"
       aria-live="polite"
       data-testid="guest-upgrade-nudge"
-      className="flex flex-col pointer-events-auto animate-slide-up rounded-xl bg-card/95 p-4 fg-primary shadow-lg backdrop-blur-sm gap-3"
+      className="pointer-events-auto"
     >
       <div className="flex items-start gap-3">
         <Stack gap="tight" className="min-w-0 flex-1">
@@ -139,6 +143,6 @@ export function GuestUpgradeNudge(): JSX.Element | null {
           Sign in
         </Button>
       </div>
-    </div>
+    </Surface>
   );
 }

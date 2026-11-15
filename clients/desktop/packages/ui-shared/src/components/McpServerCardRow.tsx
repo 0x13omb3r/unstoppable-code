@@ -1,6 +1,7 @@
 import type { JSX, ReactNode } from 'react';
 import { COMPACT_ACTIVITY_ITEM_CLASS_NAME } from './activity-item-density';
 import { Button, buttonClassName } from './Button';
+import { Surface } from './Surface';
 
 /** Hosts resolve identities; the shared row only renders the supplied control. */
 export type McpRowDestination =
@@ -39,6 +40,28 @@ export function McpRowSettings({
         </a>
       )}
     </div>
+  );
+}
+
+export function McpManageRowSurface({
+  children,
+  group,
+  enabled,
+}: {
+  readonly children: ReactNode;
+  readonly group: string;
+  readonly enabled: boolean;
+}): JSX.Element {
+  return (
+    <Surface
+      as="li"
+      variant="mcp-manage-row"
+      data-testid="mcp-manage-row"
+      data-group={group}
+      data-on={enabled ? 'true' : 'false'}
+    >
+      {children}
+    </Surface>
   );
 }
 

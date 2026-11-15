@@ -1,3 +1,4 @@
+import { Surface } from '@canopy/ui-shared/components';
 import { Stack } from '@canopy/ui-shared/components';
 import { Heading } from '@canopy/ui-shared/components';
 import { useEffect, useMemo, useState, type JSX } from 'react';
@@ -737,21 +738,26 @@ export function ResourceDiagnosticsPopover({
       </div>
 
       {snapshot && (
-        <div
-          className="flex shrink-0 items-center gap-3 border-t border-subtle pt-2 text-xs"
+        <Surface
+          variant="section"
+          boundary="top"
+          padding="section-top-tight"
+          className="shrink-0"
           data-testid="resource-diagnostics-popover-app-totals"
         >
-          <span className="flex w-5 shrink-0 items-center" aria-hidden="true">
-            {SOURCE_GLYPHS.app}
-          </span>
-          <span className="min-w-0 flex-1 truncate fg-secondary">
-            App processes
-          </span>
-          <span className="flex gap-2 tabular-nums fg-secondary">
-            <span>{formatCpuPercent(appManagedTotals.cpuPercent)}% CPU</span>
-            <span>{formatMemoryBytes(appManagedTotals.memoryRssBytes)}</span>
-          </span>
-        </div>
+          <div className="flex items-center gap-3 text-xs">
+            <span className="flex w-5 shrink-0 items-center" aria-hidden="true">
+              {SOURCE_GLYPHS.app}
+            </span>
+            <span className="min-w-0 flex-1 truncate fg-secondary">
+              App processes
+            </span>
+            <span className="flex gap-2 tabular-nums fg-secondary">
+              <span>{formatCpuPercent(appManagedTotals.cpuPercent)}% CPU</span>
+              <span>{formatMemoryBytes(appManagedTotals.memoryRssBytes)}</span>
+            </span>
+          </div>
+        </Surface>
       )}
 
       <MemoryReportFooter onClose={onClose} />
@@ -798,51 +804,56 @@ function MemoryReportFooter({
 
   if (!enabled) return null;
   return (
-    <div
-      className="flex shrink-0 flex-col gap-2 border-t border-subtle pt-2 text-xs"
+    <Surface
+      variant="section"
+      boundary="top"
+      padding="section-top-tight"
+      className="shrink-0"
       data-testid="resource-diagnostics-popover-memory-report"
     >
-      {revealFailed && (
-        <ErrorBanner
-          errorSource="memory-report-footer"
-          className=""
-          error="Couldn't open the folder"
-        />
-      )}
-      <div className="flex items-center gap-2">
-        <span className="min-w-0 flex-1 truncate fg-secondary">
-          Memory report
-        </span>
-        {lastReport ? (
+      <div className="flex flex-col gap-2 text-xs">
+        {revealFailed && (
+          <ErrorBanner
+            errorSource="memory-report-footer"
+            className=""
+            error="Couldn't open the folder"
+          />
+        )}
+        <div className="flex items-center gap-2">
+          <span className="min-w-0 flex-1 truncate fg-secondary">
+            Memory report
+          </span>
+          {lastReport ? (
+            <Button
+              size="compact"
+              variant="secondary"
+              data-testid="resource-diagnostics-popover-open-report"
+              onClick={() => {
+                void revealReport(lastReport.reportId).then((revealed) => {
+                  setRevealFailed(!revealed);
+                });
+              }}
+            >
+              Open folder
+            </Button>
+          ) : null}
           <Button
             size="compact"
             variant="secondary"
-            data-testid="resource-diagnostics-popover-open-report"
+            disabled={reportBusy}
+            data-testid="resource-diagnostics-popover-create-report"
+            // The row's label names the report, so the action can stay short.
+            aria-label="Create memory report"
             onClick={() => {
-              void revealReport(lastReport.reportId).then((revealed) => {
-                setRevealFailed(!revealed);
-              });
+              onClose();
+              void requestReport();
             }}
           >
-            Open folder
+            Create
           </Button>
-        ) : null}
-        <Button
-          size="compact"
-          variant="secondary"
-          disabled={reportBusy}
-          data-testid="resource-diagnostics-popover-create-report"
-          // The row's label names the report, so the action can stay short.
-          aria-label="Create memory report"
-          onClick={() => {
-            onClose();
-            void requestReport();
-          }}
-        >
-          Create
-        </Button>
+        </div>
       </div>
-    </div>
+    </Surface>
   );
 }
 

@@ -166,8 +166,9 @@ const defaultViewportSize = { width: 1400, height: 900 };
 // - `canopy-shared-auto-model-routing`: not-configured default is `true` but
 //   the enabled-unavailable default is `false`. Pin it `true` so Auto-routing
 //   specs exercise the ordinary no-LaunchDarkly desktop baseline.
-// - `canopy-desktop-account-proxy`: off in both defaults (launched dark).
-//   Pin it `true` so the account proxy specs can reach the Experiments opt-in;
+// - `canopy-desktop-account-proxy`: not-configured default is `true` but the
+//   enabled-unavailable default is `false`. Pin it `true` so the account
+//   proxy specs can reach the Experiments opt-in;
 //   the per-user preference still hides every surface until a spec opts in.
 // - `canopy-shared-space-notification-settings`: not-configured default is
 //   `true` but the enabled-unavailable default is `false`. Pin it `true` so
@@ -182,10 +183,6 @@ const defaultViewportSize = { width: 1400, height: 900 };
 // - `canopy-desktop-skill-suggestions`: not-configured default is `true` but
 //   the enabled-unavailable default is `false`. Pin it `true` so the
 //   suggestion banner and Settings section keep the no-LaunchDarkly baseline.
-// - `canopy-desktop-hosted-settings`: not-configured default is `true` but the
-//   enabled-unavailable default is `false`. Pin it `true` so the hosted
-//   Account and Organizations settings appear as they do without
-//   LaunchDarkly.
 // - `canopy-desktop-external-agents-menu`: not-configured default is `true`
 //   but the enabled-unavailable default is `false`. Pin it `true` so signed-in
 //   account menus show the External agents row as they do without
@@ -225,7 +222,6 @@ const DEFAULT_E2E_CLIENT_FEATURE_FLAGS = {
   'canopy-desktop-account-proxy': true,
   'canopy-device-remote-control': true,
   'canopy-desktop-skill-suggestions': true,
-  'canopy-desktop-hosted-settings': true,
   'canopy-desktop-external-agents-menu': true,
   // MUST stay pinned: this flag's LaunchDarkly-enabled-unavailable default is
   // `false` (deployed environments fail closed until a revision producer

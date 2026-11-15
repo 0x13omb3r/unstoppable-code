@@ -34,6 +34,10 @@ import { materializeDelegationAgentPlugins } from './agent-projection';
 import { delegationAgentCapabilityError } from './agent-capability-error';
 import { isDelegationModelRejected } from './model-rejections';
 import {
+  managedDelegationModelPolicyDiscoveryReason,
+  readManagedDelegationModelPolicy,
+} from './model-policy';
+import {
   DELEGATION_FILE_HELPER_MISSING_MESSAGE,
   delegationFileBoundaryAvailable,
   openDelegationFiles,
@@ -67,6 +71,7 @@ export async function discoverManagedDelegationModels(
     workspaceId: owner.projectId,
   }).environment;
   const nativeAuth = peekFreshProviderNativeAuthAvailability();
+  const modelPolicy = await readManagedDelegationModelPolicy();
   const agentAdmission = new Map<string, Promise<boolean>>();
   return discoverDelegationModels({
     modelIds: [
@@ -196,6 +201,12 @@ export async function discoverManagedDelegationModels(
         if (!model?.enabled) return disabled('This model is disabled.');
         if (await isModelBlockedByStoredPolicy(runtime.runtimeModel, workOwner))
           return disabled('This model is blocked by organization policy.');
+        // An Agent is judged by its resolved base model, never its own ID.
+        const notAllowed = managedDelegationModelPolicyDiscoveryReason(
+          modelPolicy,
+          runtime.runtimeModel,
+        );
+        if (notAllowed) return disabled(notAllowed);
         if (!boundary) return disabled(DELEGATION_FILE_HELPER_MISSING_MESSAGE);
         if (runtime.providerType === 'ollama')
           return disabled(

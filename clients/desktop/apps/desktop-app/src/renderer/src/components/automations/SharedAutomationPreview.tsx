@@ -1,6 +1,7 @@
 import { Badge, type BadgeTone } from '@canopy/ui-shared/components/Badge';
 import type { JSX } from 'react';
 import {
+  CodeBlock,
   Stack,
   Heading,
   SettingsRowsGroup,
@@ -247,12 +248,17 @@ export function SharedAutomationPreview({
         {preview && (
           <Stack gap="tight">
             <p className="text-xs fg-secondary">Prompt</p>
-            <pre
-              className={`${POSTHOG_REPLAY_BLOCK_CLASS} max-h-40 overflow-auto whitespace-pre-wrap rounded-md border bg-fg-primary/[0.03] px-3 py-2 text-xs fg-primary`}
+            <CodeBlock
+              variant="tint"
+              font="sans"
+              wrap="words"
+              tone="primary"
+              replay="block"
+              className="max-h-40"
               data-testid="shared-automation-preview-prompt"
             >
               {preview}
-            </pre>
+            </CodeBlock>
           </Stack>
         )}
 

@@ -5494,6 +5494,20 @@ export class ChatStateV2Backend {
   /** Capture preview file handles while the repository owns its short scope
    * lease. No callback or transcript projection runs in this serializer.
    */
+  public async captureCommittedTranscriptPreview(
+    chatId: string,
+  ): Promise<CapturedTranscriptPreview> {
+    return this.serial(async () => {
+      const entry = await this.requireChat(chatId);
+      if (!entry.transcript)
+        throw new Error('Chat learning requires a transcript descriptor');
+      return this.storage.transcripts.captureCommittedPreview(
+        chatId,
+        entry.transcript,
+      );
+    });
+  }
+
   public async captureTranscriptPreview(
     chatId: string,
   ): Promise<CapturedTranscriptPreview> {

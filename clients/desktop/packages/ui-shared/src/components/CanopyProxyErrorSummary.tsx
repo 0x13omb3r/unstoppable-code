@@ -1,7 +1,7 @@
 import type { JSX } from 'react';
 import type { CanopyProxyError } from '@canopy/protocol';
 import { AiCreditsStopLine } from './AiCreditsStopLine';
-import { MODEL_LIBRARY_UNLOCK_COPY } from './modelLibraryLock';
+import { MODEL_LIBRARY_UNLOCK_COPY } from './creditsPromptCopy';
 import { CanopyProxyErrorPresentation } from './CanopyProxyErrorPresentation';
 
 /**

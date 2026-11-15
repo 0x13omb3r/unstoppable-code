@@ -268,6 +268,10 @@ export interface WireModelRegistry {
   readonly copilot?: readonly WireModelRegistryEntry[];
   readonly antigravity?: readonly WireModelRegistryEntry[];
   readonly opencode?: readonly WireModelRegistryEntry[];
+  readonly aiGatewayModels?: readonly {
+    readonly id: string;
+    readonly recommendedHarness: string;
+  }[];
   /** Custom Agents run on their base model's provider. */
   readonly agents?: readonly {
     readonly id: string;

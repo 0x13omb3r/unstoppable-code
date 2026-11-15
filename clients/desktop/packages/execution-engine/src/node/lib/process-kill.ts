@@ -116,6 +116,30 @@ export function signalExitedProcessGroup(
   }
 }
 
+/**
+ * Whether any process remains in the group of a detached child that has
+ * already exited: descendants that outlived it. False on Windows, which has
+ * no process groups. A zombie member that nobody has reaped still counts,
+ * and once the group empties its id can name a new group, so callers poll
+ * it only for a short, bounded window right after the child exits.
+ */
+export function hasExitedProcessGroupMembers(pid: number): boolean {
+  if (!Number.isInteger(pid) || pid <= 0 || hostOperatingSystem() === 'win32') {
+    return false;
+  }
+  try {
+    process.kill(-pid, 0);
+    return true;
+  } catch (error) {
+    // EPERM still means a member exists; only ESRCH proves the group empty.
+    return !(
+      error instanceof Error &&
+      'code' in error &&
+      error.code === 'ESRCH'
+    );
+  }
+}
+
 export function killChildProcessGroup(
   child: ChildProcess,
   signal: NodeJS.Signals = 'SIGTERM',

@@ -2,6 +2,7 @@ import { useMemo, useState, type JSX } from 'react';
 import type { PipelinePackageAnalysisSummary } from '@canopy/protocol/pipelines';
 import {
   Button,
+  ChoiceField,
   DialogModal,
   ErrorBanner,
   Heading,
@@ -53,6 +54,14 @@ export type CloudCopyConsentAudience =
   | 'team'
   | 'organization';
 
+/** Who sees the kept copy, for the "Keep the cloud copy up to date" note. */
+const KEEP_IN_STEP_AUDIENCE: Record<CloudCopyConsentAudience, string> = {
+  private: 'its private copy',
+  team: 'the copy your team sees',
+  organization: 'the copy your organization sees',
+  public_link: 'the copy anyone with its public link sees',
+};
+
 const SHARED_AUDIENCE_COPY: Record<
   Exclude<CloudCopyConsentAudience, 'private'>,
   string
@@ -61,6 +70,15 @@ const SHARED_AUDIENCE_COPY: Record<
   organization: 'your organization, so everyone in it sees these changes too',
   public_link: 'a public link, so anyone with the link sees these changes too',
 };
+
+/** What the person chose beyond the files, sent with Add. */
+export interface CloudCopyConsentChoice {
+  /**
+   * Ticked, a later change to the skill uploads without asking again, to
+   * the same account and audience and within the same files.
+   */
+  readonly keepInStep: boolean;
+}
 
 export interface CloudCopyConsentDialogProps {
   /** The skill or plugin going to the cloud, by its display name. */
@@ -80,8 +98,12 @@ export interface CloudCopyConsentDialogProps {
   readonly selectedOptionalResourceIds: readonly string[];
   readonly onToggleOptionalResource: (resourceId: string) => void;
   readonly onRetry: () => void;
-  /** Resolves when the copy is made; rejects with a message to show. */
-  readonly onAdd: () => Promise<void>;
+  /**
+   * Resolves when the copy is made; rejects with a message to show.
+   * `keepInStep` is the skill's "Keep the cloud copy up to date", unticked
+   * until the person ticks it, and always false for a plugin.
+   */
+  readonly onAdd: (choice: CloudCopyConsentChoice) => Promise<void>;
   readonly onClose: () => void;
 }
 
@@ -107,6 +129,7 @@ export function CloudCopyConsentDialog({
 }: CloudCopyConsentDialogProps): JSX.Element {
   const [adding, setAdding] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [keepInStep, setKeepInStep] = useState(false);
   // A failed check leaves nothing to agree to, even an earlier analysis.
   const ready =
     analysis?.state === 'ready' && !loading && analysisError === null;
@@ -120,7 +143,7 @@ export function CloudCopyConsentDialog({
     setAdding(true);
     setError(null);
     try {
-      await onAdd();
+      await onAdd({ keepInStep: subject.kind === 'skill' && keepInStep });
     } catch (caught) {
       setError(
         caught instanceof Error && caught.message !== ''
@@ -230,6 +253,18 @@ export function CloudCopyConsentDialog({
               ))}
             </ul>
           </div>
+        )}
+        {subject.kind === 'skill' && (
+          <ChoiceField
+            data-testid="cloud-copy-consent-keep-in-step"
+            checked={keepInStep}
+            disabled={adding}
+            onChange={(event): void => {
+              setKeepInStep(event.target.checked);
+            }}
+            label="Keep the cloud copy up to date"
+            description={`Ticked, your later changes to this skill upload without asking you again, when a cloud chat uses it. They go only to this cloud account and ${KEEP_IN_STEP_AUDIENCE[audience]}, with only the files listed here; any other file asks first.`}
+          />
         )}
       </div>
     </DialogModal>

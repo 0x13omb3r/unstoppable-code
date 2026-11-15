@@ -1,5 +1,5 @@
 {
-  "protocolVersion": 20,
+  "protocolVersion": 22,
   "tunneledChannels": [
     "account-proxy:changed",
     "account-proxy:connect",
@@ -471,6 +471,7 @@
     "managed-delegation:lifetime-changed",
     "managed-delegation:lifetime-status",
     "managed-delegation:message",
+    "managed-delegation:model-policy-catalog",
     "managed-delegation:roots",
     "managed-delegation:stop",
     "managed-delegation:stop-all",

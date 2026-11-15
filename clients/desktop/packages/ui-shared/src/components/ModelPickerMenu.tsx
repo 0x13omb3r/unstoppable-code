@@ -15,6 +15,7 @@ import {
   type CSSProperties,
   type JSX,
   type KeyboardEvent as ReactKeyboardEvent,
+  type MouseEvent as ReactMouseEvent,
   type ReactNode,
   type RefObject,
 } from 'react';
@@ -39,7 +40,6 @@ import {
   AutoModelIcon,
   CloseMediumIcon,
   DotIcon,
-  Lock,
   MoreHorizontalIcon,
   ExperimentIcon,
   Network as GatewayIcon,
@@ -82,6 +82,7 @@ import { Skeleton } from './Skeleton';
 import { Stack } from './Stack';
 import { AI_CREDITS_LABEL } from './aiCreditsLabel';
 import { EmptyState } from './StatusBlocks';
+import { LockedModelRow, type LockedModelRowLock } from './LockedModelRow';
 import { IconToggleButton } from './IconToggleButton';
 import { Tooltip } from './Tooltip';
 import { CompactToggleIndicator } from './ToggleSwitch';
@@ -100,7 +101,7 @@ const PICKER_RAIL_GLYPH_SIZE = 18;
 const PICKER_ROW_GLYPH_SIZE = 14;
 /**
  * The longest row recovery label the default picker width fits, as the
- * former 15-character credits tag did (`Sign in and buy` still fits).
+ * former 15-character credits tag did (`Buy AI Credits` still fits).
  */
 const DEFAULT_WIDTH_ROW_LABEL_MAX_LENGTH = 15;
 
@@ -142,26 +143,13 @@ export interface ModelPickerOptionState {
   readonly disabled: boolean;
   readonly unavailableReason?: string;
   /**
-   * A library lock the user can clear (sign in, or purchase AI Credits). The
-   * row stays reachable and activating it runs `onUnlock` instead of selecting
-   * the model. Ignored when `disabled`: a policy or provider restriction that
-   * unlocking cannot fix must keep its own reason.
+   * A lock the user can clear (sign in, or purchase AI Credits), rendered by
+   * the shared {@link LockedModelRow}. The row stays reachable and activating
+   * it runs `onActivate` instead of selecting the model. Ignored when
+   * `disabled`: a policy or provider restriction that unlocking cannot fix
+   * must keep its own reason.
    */
-  readonly locked?: {
-    readonly hint: string;
-    /**
-     * Short remedy shown beside the lock, in place of the credits tag. The
-     * host derives it from access; the full `hint` stays the description.
-     */
-    readonly label?: string;
-    readonly onUnlock: () => void;
-    /**
-     * Keep the row where it was instead of sinking it below usable rows. A
-     * lock that describes recovery the row always had (CAN-5213: turning on
-     * free daily credits) must not reorder the section it annotates.
-     */
-    readonly keepsOrder?: boolean;
-  };
+  readonly locked?: LockedModelRowLock;
   /**
    * CAN-5213 — settled evidence says this row runs a new turn now, so a
    * library-locked viewer sees no credits tag; a usable row needs no label.
@@ -188,7 +176,7 @@ export const MODEL_PICKER_AUTO_DETAIL =
 /** Canonical disabled reasons (plan Phase 3 §2). */
 export const MODEL_PICKER_AUTO_REASONS = {
   creditsLoading: 'Checking AI Credits…',
-  noCredits: 'Add AI Credits to use this',
+  noCredits: 'Buy AI Credits to use this',
   tooFewCandidates: 'Needs two or more models',
   organizationBlocked: 'Turned off by your organization',
   unsupportedHarness: 'Auto model selection is not available for this harness.',
@@ -1837,7 +1825,7 @@ export function ModelPickerMenu({
       if (lock) {
         // Recovery opens a dialog or leaves the app, so focus is not handed
         // back to the trigger.
-        lock.onUnlock();
+        lock.onActivate();
         dismissMenu();
         return 'dismiss';
       }
@@ -2941,7 +2929,7 @@ export function ModelPickerMenu({
           !state.disabled &&
           // A short label fits the default width; only longer recovery
           // text widens it.
-          (activeLock(state)?.label?.trim().length ?? 0) >
+          (activeLock(state)?.lock.label.trim().length ?? 0) >
             DEFAULT_WIDTH_ROW_LABEL_MAX_LENGTH
         );
       }),
@@ -3940,8 +3928,8 @@ function ModelPickerOption({
   const reasonId = `${tooltipId}-reason`;
   const rowRef = useRef<HTMLButtonElement | null>(null);
   const [reasonRevealed, setReasonRevealed] = useState(false);
-  const lock = activeLock(state);
-  const lockLabel = lock?.label?.trim() || undefined;
+  const lock = activeLock(state)?.lock;
+  const lockLabel = lock?.label.trim() || undefined;
   const available =
     state.available === true && !state.disabled && !lock && !isAutoMode;
   const visibleDetail = hidden ? false : detailOpen;
@@ -3954,8 +3942,9 @@ function ModelPickerOption({
     },
     [visibleDetail, inFlyout, onDetailChange, option.id],
   );
-  // A sign-in label replaces the credits tag: the row cannot run on credits
-  // until the user signs in. An available row drops it too; the detail names billing.
+  // A lock's cue replaces the credits tag in the same slot, so a locked row
+  // never shows the tag a usable one does. An available row drops it too;
+  // the detail names billing.
   const showsCreditsTag =
     usesAiCredits &&
     !isAutoMode &&
@@ -3992,7 +3981,6 @@ function ModelPickerOption({
   useEffect((): void => {
     setReasonRevealed(false);
   }, [state.disabled, state.unavailableReason]);
-
   const trailingSlots: PickerMenuOptionTrailingSlots = leadingFavorite
     ? trailingHarnessSlot
       ? 'one'
@@ -4010,26 +3998,159 @@ function ModelPickerOption({
         : onToggleFavorite
           ? 'one'
           : 'none';
+  // A locked row adds its hint ahead of these (LockedModelRow).
   const describedBy = state.disabled
     ? tooltipVisible
       ? `${reasonId} ${tooltipId}`
       : reasonId
-    : [lock ? lockHintId : undefined, tooltipVisible ? tooltipId : undefined]
-        .filter(Boolean)
-        .join(' ') || undefined;
-  const lockGlyph = (
-    <Lock
-      width={PICKER_ROW_GLYPH_SIZE}
-      height={PICKER_ROW_GLYPH_SIZE}
-      aria-hidden="true"
-      className="shrink-0 fg-secondary"
-      data-testid={
-        uniformTestIds
-          ? `${testIdPrefix}-option-unlock`
-          : `${testIdPrefix}-option-unlock-${option.id}`
-      }
-    />
+    : tooltipVisible
+      ? tooltipId
+      : undefined;
+  const activate = (event: ReactMouseEvent<HTMLButtonElement>): void => {
+    const disposition = onSelect(option);
+    if (disposition === 'dismiss') event.preventDefault();
+  };
+  // What a locked and an ordinary row share; LockedModelRow adds the lock's
+  // role, hint and cue.
+  const rowProps = {
+    hidden,
+    'data-available': available ? 'true' : undefined,
+    'aria-disabled': state.disabled ? true : uniformTestIds ? false : undefined,
+    'aria-describedby': describedBy,
+    selected,
+    'data-testid': uniformTestIds
+      ? // Auto keeps the flat layout's hook; it has no model id.
+        isAutoMode
+        ? `${testIdPrefix}-option-auto`
+        : `${testIdPrefix}-option`
+      : `${testIdPrefix}-option-${option.id}`,
+    // Host Auto is a selection mode, not a model.
+    'data-model-id': option.id === AUTO_ROW_ID ? undefined : option.id,
+    onMouseEnter: (): void => onDetailChange(option.id, 'hover', true),
+    onMouseMove: detailOpen
+      ? undefined
+      : (): void => onDetailChange(option.id, 'hover', true),
+    onMouseLeave: (): void => onDetailChange(option.id, 'hover', false),
+    onFocus: (): void => onDetailChange(option.id, 'focus', true, inFlyout),
+    onBlur: (): void => onDetailChange(option.id, 'focus', false, inFlyout),
+    onMouseDown: (event: ReactMouseEvent<HTMLButtonElement>): void =>
+      event.preventDefault(),
+    unavailable: state.disabled,
+    trailingSlots,
+    rowHoverSurface: Boolean(onToggleFavorite) && !state.disabled,
+  };
+  const rowContent = (
+    <>
+      {leadingFavorite ? (
+        <span aria-hidden="true" className="size-4 shrink-0" />
+      ) : selected && pickerChrome && !highlightSelection ? (
+        <PickerMenuOptionLeading tone="accent">
+          <PickerMenuOptionCheck selected />
+        </PickerMenuOptionLeading>
+      ) : (
+        <PickerMenuOptionLeading
+          tone={selected && !pickerChrome ? 'accent' : 'tertiary'}
+          style={
+            highlightSelection && selected && pickerChrome
+              ? {
+                  color: isAutoMode
+                    ? 'var(--fg-accent)'
+                    : selectedModelIconColor(option),
+                }
+              : undefined
+          }
+        >
+          {leadingIcon ??
+            (selected && !highlightSelection ? <CheckMark /> : null)}
+        </PickerMenuOptionLeading>
+      )}
+      <PickerMenuOptionContent
+        className={reasonRevealed ? '!overflow-visible' : ''}
+      >
+        <PickerMenuOptionLabel
+          data-testid={
+            uniformTestIds
+              ? `${testIdPrefix}-option-label`
+              : `${testIdPrefix}-option-label-${option.id}`
+          }
+          tone={!state.disabled && !pickerChrome ? 'quiet' : 'inherit'}
+        >
+          {isAutoMode ? (
+            <span className="flex w-full min-w-0 items-baseline justify-between gap-2">
+              <span className="shrink-0">{option.label}</span>{' '}
+              <span
+                className="min-w-0 truncate text-right text-2xs fg-tertiary"
+                data-testid="model-picker-auto-subtitle"
+              >
+                {autoState?.reason ?? MODEL_PICKER_AUTO_DESCRIPTION}
+              </span>
+            </span>
+          ) : option.provider === 'cursor' && option.id === 'cursor-default' ? (
+            'Default'
+          ) : (
+            option.label
+          )}
+        </PickerMenuOptionLabel>
+        {state.disabled ? (
+          <span
+            id={reasonId}
+            data-testid={
+              uniformTestIds
+                ? undefined
+                : `${testIdPrefix}-option-locked-${option.provider}`
+            }
+            className={
+              reasonRevealed
+                ? 'mt-0.5 block whitespace-normal text-3xs leading-snug fg-secondary'
+                : 'sr-only'
+            }
+          >
+            {state.unavailableReason ?? 'unavailable'}
+          </span>
+        ) : null}
+      </PickerMenuOptionContent>
+      {autoState?.actionable ? (
+        // The hint sits on the label's baseline, 1px under the row's
+        // center; the 2px top margin moves the arrow's center there.
+        <ArrowUpRightIcon
+          size="sm"
+          className="mt-0.5 shrink-0 fg-tertiary"
+          data-testid={`${testIdPrefix}-option-auto-action-icon`}
+        />
+      ) : null}
+      {showsCreditsTag ? (
+        <span
+          className="-mx-2 -my-2 inline-flex shrink-0 items-center self-stretch px-2 py-2"
+          data-testid={`${testIdPrefix}-credits-area-${option.id}`}
+          onMouseEnter={(): void => setCreditsHovered(true)}
+          onMouseLeave={(): void => setCreditsHovered(false)}
+          onFocusCapture={(): void => setCreditsFocused(true)}
+          onBlurCapture={(): void => setCreditsFocused(false)}
+        >
+          <span
+            className="shrink-0 text-2xs fg-secondary"
+            data-testid={`${testIdPrefix}-row-credits-${option.id}`}
+          >
+            {AI_CREDITS_LABEL}
+          </span>
+        </span>
+      ) : null}
+    </>
   );
+  const extraCharge =
+    extraChargeMarker && hasExtraCharge ? (
+      <span
+        data-testid={
+          uniformTestIds
+            ? `${testIdPrefix}-option-extra-charge`
+            : `${testIdPrefix}-option-extra-charge-${option.id}`
+        }
+        className={`${EXTRA_CHARGE_TEXT_CLASS} shrink-0 font-mono text-2xs font-semibold leading-none`}
+        aria-label="AI Credits only"
+      >
+        $
+      </span>
+    ) : null;
 
   return (
     <>
@@ -4050,7 +4171,7 @@ function ModelPickerOption({
           creditsTooltipActive || isAutoMode ? (
             <span className="block w-40 text-xs font-normal">
               {creditsTooltipActive
-                ? 'This model uses your AI credit balance.'
+                ? 'This model uses your AI Credits balance.'
                 : (autoState?.reason ??
                   'Auto picks the best model for each message')}
             </span>
@@ -4081,199 +4202,42 @@ function ModelPickerOption({
         <div
           className={`group/model-row relative w-full rounded-md ${highlightSelection && selected ? 'bg-subtle' : ''}`}
         >
-          <PickerMenuOption
-            ref={rowRef}
-            hidden={hidden}
-            // An Auto row whose reason has a fix is a command, not a choice.
-            // So is a locked row: activating it starts recovery.
-            role={autoState?.actionable || lock ? 'menuitem' : 'menuitemradio'}
-            aria-checked={autoState?.actionable || lock ? undefined : selected}
-            data-locked={lock ? 'true' : undefined}
-            data-available={available ? 'true' : undefined}
-            aria-disabled={
-              state.disabled ? true : uniformTestIds ? false : undefined
-            }
-            aria-describedby={describedBy}
-            selected={selected}
-            data-testid={
-              uniformTestIds
-                ? // Auto keeps the flat layout's hook; it has no model id.
-                  isAutoMode
-                  ? `${testIdPrefix}-option-auto`
-                  : `${testIdPrefix}-option`
-                : `${testIdPrefix}-option-${option.id}`
-            }
-            // Host Auto is a selection mode, not a model.
-            data-model-id={option.id === AUTO_ROW_ID ? undefined : option.id}
-            onMouseEnter={(): void => onDetailChange(option.id, 'hover', true)}
-            onMouseMove={
-              detailOpen
-                ? undefined
-                : (): void => onDetailChange(option.id, 'hover', true)
-            }
-            onMouseLeave={(): void => onDetailChange(option.id, 'hover', false)}
-            onFocus={(): void =>
-              onDetailChange(option.id, 'focus', true, inFlyout)
-            }
-            onBlur={(): void =>
-              onDetailChange(option.id, 'focus', false, inFlyout)
-            }
-            onMouseDown={(event): void => event.preventDefault()}
-            onClick={(event): void => {
-              if (state.disabled) {
-                event.preventDefault();
-                setReasonRevealed(true);
-                return;
+          {lock ? (
+            <LockedModelRow
+              ref={rowRef}
+              {...rowProps}
+              lock={lock}
+              hintId={lockHintId}
+              cueTestId={
+                uniformTestIds
+                  ? `${testIdPrefix}-option-lock-label`
+                  : `${testIdPrefix}-option-lock-label-${option.id}`
               }
-              const disposition = onSelect(option);
-              if (disposition === 'dismiss') event.preventDefault();
-            }}
-            unavailable={state.disabled}
-            trailingSlots={trailingSlots}
-            rowHoverSurface={Boolean(onToggleFavorite) && !state.disabled}
-          >
-            {leadingFavorite ? (
-              <span aria-hidden="true" className="size-4 shrink-0" />
-            ) : selected && pickerChrome && !highlightSelection ? (
-              <PickerMenuOptionLeading tone="accent">
-                <PickerMenuOptionCheck selected />
-              </PickerMenuOptionLeading>
-            ) : (
-              <PickerMenuOptionLeading
-                tone={selected && !pickerChrome ? 'accent' : 'tertiary'}
-                style={
-                  highlightSelection && selected && pickerChrome
-                    ? {
-                        color: isAutoMode
-                          ? 'var(--fg-accent)'
-                          : selectedModelIconColor(option),
-                      }
-                    : undefined
-                }
-              >
-                {leadingIcon ??
-                  (selected && !highlightSelection ? <CheckMark /> : null)}
-              </PickerMenuOptionLeading>
-            )}
-            <PickerMenuOptionContent
-              className={reasonRevealed ? '!overflow-visible' : ''}
+              onActivate={activate}
+              trailing={extraCharge}
             >
-              <PickerMenuOptionLabel
-                data-testid={
-                  uniformTestIds
-                    ? `${testIdPrefix}-option-label`
-                    : `${testIdPrefix}-option-label-${option.id}`
+              {rowContent}
+            </LockedModelRow>
+          ) : (
+            <PickerMenuOption
+              ref={rowRef}
+              {...rowProps}
+              // An Auto row whose reason has a fix is a command, not a choice.
+              role={autoState?.actionable ? 'menuitem' : 'menuitemradio'}
+              aria-checked={autoState?.actionable ? undefined : selected}
+              onClick={(event): void => {
+                if (state.disabled) {
+                  event.preventDefault();
+                  setReasonRevealed(true);
+                  return;
                 }
-                tone={!state.disabled && !pickerChrome ? 'quiet' : 'inherit'}
-              >
-                {isAutoMode ? (
-                  <span className="flex w-full min-w-0 items-baseline justify-between gap-2">
-                    <span className="shrink-0">{option.label}</span>{' '}
-                    <span
-                      className="min-w-0 truncate text-right text-2xs fg-tertiary"
-                      data-testid="model-picker-auto-subtitle"
-                    >
-                      {autoState?.reason ?? MODEL_PICKER_AUTO_DESCRIPTION}
-                    </span>
-                  </span>
-                ) : option.provider === 'cursor' &&
-                  option.id === 'cursor-default' ? (
-                  'Default'
-                ) : (
-                  option.label
-                )}
-              </PickerMenuOptionLabel>
-              {state.disabled ? (
-                <span
-                  id={reasonId}
-                  data-testid={
-                    uniformTestIds
-                      ? undefined
-                      : `${testIdPrefix}-option-locked-${option.provider}`
-                  }
-                  className={
-                    reasonRevealed
-                      ? 'mt-0.5 block whitespace-normal text-3xs leading-snug fg-secondary'
-                      : 'sr-only'
-                  }
-                >
-                  {state.unavailableReason ?? 'unavailable'}
-                </span>
-              ) : null}
-            </PickerMenuOptionContent>
-            {autoState?.actionable ? (
-              // The hint sits on the label's baseline, 1px under the row's
-              // center; the 2px top margin moves the arrow's center there.
-              <ArrowUpRightIcon
-                size="sm"
-                className="mt-0.5 shrink-0 fg-tertiary"
-                data-testid={`${testIdPrefix}-option-auto-action-icon`}
-              />
-            ) : null}
-            {showsCreditsTag ? (
-              <span
-                className="-mx-2 -my-2 inline-flex shrink-0 items-center self-stretch px-2 py-2"
-                data-testid={`${testIdPrefix}-credits-area-${option.id}`}
-                onMouseEnter={(): void => setCreditsHovered(true)}
-                onMouseLeave={(): void => setCreditsHovered(false)}
-                onFocusCapture={(): void => setCreditsFocused(true)}
-                onBlurCapture={(): void => setCreditsFocused(false)}
-              >
-                <span
-                  className="shrink-0 text-2xs fg-secondary"
-                  data-testid={`${testIdPrefix}-row-credits-${option.id}`}
-                >
-                  {AI_CREDITS_LABEL}
-                </span>
-              </span>
-            ) : null}
-            {lock && lockLabel ? (
-              // Same slot, type and padding as the credits tag it replaces.
-              // The lock's hint already names the remedy for assistive
-              // technology, so the visible label is not read twice.
-              <span
-                aria-hidden="true"
-                className="-mx-2 -my-2 inline-flex shrink-0 items-center self-stretch px-2 py-2"
-              >
-                <span
-                  className="shrink-0 text-2xs fg-secondary"
-                  data-testid={
-                    uniformTestIds
-                      ? `${testIdPrefix}-option-lock-label`
-                      : `${testIdPrefix}-option-lock-label-${option.id}`
-                  }
-                >
-                  {lockLabel}
-                </span>
-              </span>
-            ) : null}
-            {extraChargeMarker && hasExtraCharge ? (
-              <span
-                data-testid={
-                  uniformTestIds
-                    ? `${testIdPrefix}-option-extra-charge`
-                    : `${testIdPrefix}-option-extra-charge-${option.id}`
-                }
-                className={`${EXTRA_CHARGE_TEXT_CLASS} shrink-0 font-mono text-2xs font-semibold leading-none`}
-                aria-label="AI Credits only"
-              >
-                $
-              </span>
-            ) : null}
-            {/* CAN-5213: the state cue renders last, its icon after its
-                label, so locks and checks line up in one column beside the
-                harness icon. */}
-            {lock ? (
-              <>
-                <span id={lockHintId} className="sr-only">
-                  {lock.hint}
-                </span>
-                {/* A labelled lock shows only its label, in the credits tag's
-                    slot above; a bare lock keeps the glyph. */}
-                {lockLabel ? null : lockGlyph}
-              </>
-            ) : null}
-          </PickerMenuOption>
+                activate(event);
+              }}
+            >
+              {rowContent}
+              {extraCharge}
+            </PickerMenuOption>
+          )}
           {state.disabled ? (
             <span aria-live="polite" className="sr-only">
               {reasonRevealed ? (state.unavailableReason ?? 'unavailable') : ''}

@@ -320,13 +320,14 @@ export function ResumeQueueModal(): JSX.Element | null {
         <Surface variant="group" className="flex min-h-0 flex-col">
           <div className="overflow-hidden">
             <ol
-              className="max-h-[45vh] overflow-y-auto px-3 [&>li+li]:border-t [&>li+li]:border-[var(--line-base)]"
+              className="max-h-[45vh] overflow-y-auto px-3"
               aria-label="Sessions to resume"
             >
-              {snapshot?.entries.map((entry) => (
+              {snapshot?.entries.map((entry, index) => (
                 <InterruptedSessionRow
                   childrenGap="tight"
                   as="li"
+                  separated={index > 0}
                   key={entry.id}
                   data-testid={`resume-queue-entry-${entry.id}`}
                   layout="queue"

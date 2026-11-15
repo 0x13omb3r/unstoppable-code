@@ -1,5 +1,4 @@
 import { type JSX } from 'react';
-import type { ModelLibraryAccess } from '@canopy/protocol/models';
 import { CreditCard } from '../icons/AppIcons';
 import { AI_CREDITS_LABEL } from './aiCreditsLabel';
 import { DropdownMenuItem, DropdownMenuItemIcon } from './DropdownMenu';
@@ -99,11 +98,6 @@ function AiCreditsBalancePill({
 export interface SidebarAiCreditsMenuItemProps {
   /** Balance in credits, or null while it is unknown (loading or failed). */
   balanceCredits: number | null;
-  /**
-   * The signed-in person's own model-library access. Ignored: the row
-   * always reads `AI Credits` (CAN-4769). Kept until hosts stop passing it.
-   */
-  libraryAccess?: ModelLibraryAccess;
   onSelect: () => void;
   selected?: boolean;
   'data-testid'?: string;
@@ -113,7 +107,8 @@ export interface SidebarAiCreditsMenuItemProps {
  * Account-menu row that names the AI Credits destination and, when the host
  * knows it, the balance in a pill tinted by how much headroom it leaves.
  * Display-only: the host loads the balance and decides where selecting the
- * row goes.
+ * row goes. Hosts render it as `BalanceSurface`'s menu row
+ * (`@canopy/ui-app/credits`), never directly.
  */
 export function SidebarAiCreditsMenuItem({
   balanceCredits,

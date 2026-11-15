@@ -1,3 +1,4 @@
+import { Surface } from '@canopy/ui-shared/components';
 import { Badge, type BadgeTone } from '@canopy/ui-shared/components/Badge';
 import type { JSX, KeyboardEvent, MouseEvent } from 'react';
 import type { Notification } from '@/stores/toastStore';
@@ -170,7 +171,10 @@ function NotificationCard({
   };
 
   return (
-    <div
+    <Surface
+      variant="card"
+      size="small"
+      interactive={clickable}
       role={clickable ? 'button' : undefined}
       tabIndex={clickable ? 0 : undefined}
       onClick={clickable ? activate : undefined}
@@ -178,48 +182,49 @@ function NotificationCard({
       data-testid="overview-notification-card"
       data-project-id={projectId}
       data-worktree-id={worktreeId}
-      className={`w-full text-left rounded-md border bg-card transition-colors duration-150 focus-ring px-3 py-2.5 flex flex-col gap-1.5 ${
-        clickable ? 'cursor-pointer hover:bg-secondary/40' : ''
-      }`}
+      focusRing
+      className={clickable ? 'w-full cursor-pointer' : 'w-full'}
     >
-      <div className="flex items-center gap-2">
-        <Badge tone={badgeTone(notification.type)}>
-          {badgeLabel(notification)}
-        </Badge>
-        <div className="min-w-0 flex-1 text-2xs font-mono fg-secondary truncate">
-          <span className={POSTHOG_REPLAY_MASK_CLASS}>
-            {meta?.workspaceName ?? ''}
-          </span>
-          {meta?.workspaceName && meta?.worktreeId && (
-            <span className="mx-1 opacity-60">·</span>
-          )}
-          {placeLabel && (
-            <span className={`${POSTHOG_REPLAY_MASK_CLASS} fg-primary/80`}>
-              {placeLabel}
+      <div className="flex flex-col gap-1.5 px-3 py-2.5 text-left">
+        <div className="flex items-center gap-2">
+          <Badge tone={badgeTone(notification.type)}>
+            {badgeLabel(notification)}
+          </Badge>
+          <div className="min-w-0 flex-1 text-2xs font-mono fg-secondary truncate">
+            <span className={POSTHOG_REPLAY_MASK_CLASS}>
+              {meta?.workspaceName ?? ''}
             </span>
-          )}
+            {meta?.workspaceName && meta?.worktreeId && (
+              <span className="mx-1 opacity-60">·</span>
+            )}
+            {placeLabel && (
+              <span className={`${POSTHOG_REPLAY_MASK_CLASS} fg-primary/80`}>
+                {placeLabel}
+              </span>
+            )}
+          </div>
+          <span className="shrink-0 text-3xs fg-secondary/80">
+            {formatRelativeTime(new Date(notification.createdAt).toISOString())}
+          </span>
+          <Tooltip label="Dismiss notification">
+            <Button
+              variant="ghost-quiet"
+              size="sm"
+              iconOnly
+              onClick={handleDismissClick}
+              aria-label="Dismiss notification"
+              data-testid="overview-notification-dismiss"
+            >
+              <AppCatalogCloseIcon size="sm" aria-hidden="true" />
+            </Button>
+          </Tooltip>
         </div>
-        <span className="shrink-0 text-3xs fg-secondary/80">
-          {formatRelativeTime(new Date(notification.createdAt).toISOString())}
-        </span>
-        <Tooltip label="Dismiss notification">
-          <Button
-            variant="ghost-quiet"
-            size="sm"
-            iconOnly
-            onClick={handleDismissClick}
-            aria-label="Dismiss notification"
-            data-testid="overview-notification-dismiss"
-          >
-            <AppCatalogCloseIcon size="sm" aria-hidden="true" />
-          </Button>
-        </Tooltip>
+        <div
+          className={`text-xs fg-secondary line-clamp-3 whitespace-pre-line ${toastMessageReplayClass(notification.type, notification.meta?.category, notification.meta?.blockMessageFromReplay)}`}
+        >
+          {notification.message}
+        </div>
       </div>
-      <div
-        className={`text-xs fg-secondary line-clamp-3 whitespace-pre-line ${toastMessageReplayClass(notification.type, notification.meta?.category, notification.meta?.blockMessageFromReplay)}`}
-      >
-        {notification.message}
-      </div>
-    </div>
+    </Surface>
   );
 }

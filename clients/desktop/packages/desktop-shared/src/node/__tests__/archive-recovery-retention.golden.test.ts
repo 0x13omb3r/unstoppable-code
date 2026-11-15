@@ -717,6 +717,8 @@ test.each([
   'replaced-after-freeze',
   'partial-deletion',
   'deleted',
+  'project-deletion-tombstone',
+  'project-deletion-retired-tombstone',
   'cancelled-keep',
   'cancelled-release',
   'cancelled-discard',
@@ -804,7 +806,8 @@ test.each([
       });
       const sourceNames = [
         `${operationId}.json`,
-        ...(binding.startsWith('cancelled-')
+        ...(binding.startsWith('cancelled-') ||
+        binding === 'project-deletion-retired-tombstone'
           ? [`${archiveRecoveryDigest(JSON.stringify(['ws', 'tree']))}.json`]
           : []),
       ].sort();
@@ -851,6 +854,30 @@ test.each([
         if (binding === 'cancelled-zero-refs')
           receipt = await store.writeStage(receipt, 'reset-intent');
         receipt = await store.cancel(receipt);
+      } else if (binding.startsWith('project-deletion-')) {
+        receipt = await store.publishRetention(receipt);
+        receipt = await store.resetStaging(receipt);
+        for (const copy of binding === 'project-deletion-retired-tombstone'
+          ? receipt.copies.slice(1)
+          : receipt.copies)
+          await rm(join(source, 'w5/destructive-lifecycles', copy.name));
+        if (binding === 'project-deletion-retired-tombstone') {
+          const first = receipt.copies[0];
+          if (!first) throw new Error('Missing first copy');
+          const journals = join(store.directory(receipt), 'journals');
+          await mkdir(journals);
+          await rename(
+            join(source, 'w5/destructive-lifecycles', first.name),
+            join(journals, first.name),
+          );
+          await expect(store.withdrawJournals(receipt)).rejects.toThrow();
+          const interrupted = await store.read('ws', operationId);
+          if (!interrupted) throw new Error('Missing interrupted withdrawal');
+          receipt = interrupted;
+        }
+        receipt = await store.beginProjectDeletionDiscard(receipt);
+        git('update-ref', '-d', ref, oid);
+        receipt = await store.deletePayload(receipt);
       } else if (!binding.startsWith('unfinished-')) {
         receipt = await store.publishRetention(receipt);
         receipt = await store.resetStaging(receipt);
@@ -1089,6 +1116,17 @@ test.each([
       }
       let hold = await copied.read('ws', receipt.operationId);
       if (!hold) throw new Error('Missing migrated hold');
+      if (binding.startsWith('project-deletion-')) {
+        expect(hold).toEqual(receipt);
+        expect(
+          await inventoryArchiveRecoveryTree(copied.payloadPath(hold)),
+        ).toBeNull();
+        expect((await copied.inspect(hold)).classification).toMatchObject({
+          disposition: 'deleted',
+          payloadRule: 'absent',
+        });
+        return;
+      }
       if (cancelled) {
         const live = await inventoryArchiveRecoveryTree(
           copied.stagingPath(hold),

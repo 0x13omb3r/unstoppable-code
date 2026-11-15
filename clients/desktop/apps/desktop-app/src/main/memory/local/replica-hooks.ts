@@ -7,6 +7,7 @@ import {
   type MemoryUsageAggregate,
 } from '@canopy/protocol/memory-sync';
 import type { MemoryConsolidationResult } from '@canopy/memory-consolidation/run';
+import type { MemoryConsolidationMeasurement } from '@canopy/protocol/local-memory/metrics';
 import { isNodeError } from './memory-files';
 
 /*
@@ -109,6 +110,7 @@ export interface LocalMemorySyncedConsolidation {
   /** False once the lease is lost or past its hard cap. */
   shouldContinue(): boolean;
   commit(request: {
+    consolidation: MemoryConsolidationMeasurement;
     changes: MemoryDocumentChange[];
     consumedNoteIds: string[];
     /**

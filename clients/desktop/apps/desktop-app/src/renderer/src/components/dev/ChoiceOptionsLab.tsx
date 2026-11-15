@@ -1,5 +1,6 @@
 import { useState, type JSX, type ReactNode } from 'react';
 import {
+  Surface,
   Checkbox,
   ChoiceField,
   ChoiceMark,
@@ -58,9 +59,6 @@ function States(): JSX.Element {
 }
 
 const ROW_LABELS = ['Search', 'Analytics', 'Team spaces'] as const;
-const ROW_CLASS =
-  'flex min-h-9 cursor-pointer items-start gap-2.5 rounded-lg px-2 py-2 text-s fg-primary hover:bg-subtle has-[:focus-visible]:bg-subtle';
-
 function Rows({ multi }: { multi: boolean }): JSX.Element {
   const [picked, setPicked] = useState<readonly string[]>(['Analytics']);
   const toggle = (label: string): void =>
@@ -74,33 +72,35 @@ function Rows({ multi }: { multi: boolean }): JSX.Element {
   return (
     <div className="-mx-2 flex flex-col gap-0.5">
       {ROW_LABELS.map((label) => (
-        <div key={label} className={ROW_CLASS}>
-          <ChoiceField
-            kind={multi ? 'checkbox' : 'radio'}
-            label={label}
-            name={multi ? undefined : 'lab-radio-rows'}
-            checked={picked.includes(label)}
-            onChange={() => toggle(label)}
-          />
-        </div>
+        <ChoiceField
+          key={label}
+          kind={multi ? 'checkbox' : 'radio'}
+          layout="row"
+          label={label}
+          name={multi ? undefined : 'lab-radio-rows'}
+          checked={picked.includes(label)}
+          onChange={() => toggle(label)}
+        />
       ))}
     </div>
   );
 }
 
-function Surface({
+function ChoicePreview({
   label,
-  className,
+  variant,
   children,
 }: {
   label: string;
-  className: string;
+  variant: 'raised' | 'inset';
   children: ReactNode;
 }): JSX.Element {
   return (
     <div className="flex min-w-0 flex-1 flex-col gap-1.5">
       <span className="px-1 text-xs fg-tertiary">{label}</span>
-      <div className={className}>{children}</div>
+      <Surface variant={variant} padding="compact" gap="item">
+        {children}
+      </Surface>
     </div>
   );
 }
@@ -127,18 +127,12 @@ export function ChoiceOptionsLab(): JSX.Element {
         description="The shared Checkbox, Radio, and ChoiceMark. Click the rows to toggle them, or Tab to see the focus halo."
       />
       <div className="flex flex-col gap-3 md:flex-row">
-        <Surface
-          label="In the question card"
-          className="flex flex-col gap-3 rounded-2xl bg-tertiary p-3 shadow-lg"
-        >
+        <ChoicePreview label="In the question card" variant="raised">
           <Contents />
-        </Surface>
-        <Surface
-          label="On a page"
-          className="flex flex-col gap-3 rounded-2xl bg-base p-3"
-        >
+        </ChoicePreview>
+        <ChoicePreview label="On a page" variant="inset">
           <Contents />
-        </Surface>
+        </ChoicePreview>
       </div>
     </div>
   );

@@ -17,7 +17,6 @@ import {
   useSettingsRouter,
   useSettingsSearchParams,
 } from '../../host';
-import { TeamLapsedState } from '../team-lapsed-state';
 import { useViewerDataSharing } from '../use-viewer-data-sharing';
 import { OrganizationDataSharingOptIn } from '../web-data-sharing-opt-in';
 import { ProfileHeader } from './ProfileHeader';
@@ -72,26 +71,6 @@ export interface MemberProfilePageProps {
    */
   editContext: ProfileEditTarget | null;
   /**
-   * The org has lost the `teams` capability (CAN-2311).
-   *
-   * The tab sections below all read gated per-member services (`getTeamUsage`,
-   * `listSharedRunsByMember`, `listSharedPlansByMember`,
-   * `listSharedPipelinesByMember`), so rendering them on a lapsed org produces
-   * four panes of raw error banners. This page is reachable from the Members
-   * tab, which stays LIVE while lapsed so the exempt offboarding actions remain
-   * usable, so it cannot simply be blanked — instead the identity header stays
-   * (read-only) and the tabs are replaced with the lapse explanation.
-   */
-  orgLapsed?: boolean;
-  orgTrialEndedAt?: string | null;
-  orgLapseReason?:
-    | 'trial_ended'
-    | 'payment_failed'
-    | 'subscription_ended'
-    | null;
-  requiredPlanName?: string | null;
-  viewerCanEditOrg?: boolean;
-  /**
    * Whether the contextual Digests tab is offered. Resolved server-side: the
    * subject always gets it (behind the digest flag), and any other viewer gets
    * it only when the subject has at least one READY digest featured for THIS
@@ -118,11 +97,6 @@ export function MemberProfilePage({
   member,
   viewerCanViewStats,
   editContext,
-  orgLapsed = false,
-  orgTrialEndedAt = null,
-  orgLapseReason = null,
-  requiredPlanName = null,
-  viewerCanEditOrg = false,
   showDigestsTab = false,
   isOwnProfile = false,
   mobileBrowser,
@@ -170,8 +144,8 @@ export function MemberProfilePage({
   );
 
   // CAN-3383: only the viewer's own profile may explain missing work, and
-  // never another member's. A lapsed org replaces the tabs, so no hint there.
-  const showSharingHint = isOwnProfile && !orgLapsed;
+  // never another member's.
+  const showSharingHint = isOwnProfile;
   const viewerSharing = useViewerDataSharing(
     showSharingHint ? org.id : null,
     member.id,
@@ -200,124 +174,110 @@ export function MemberProfilePage({
 
         <ProfileHeader member={member} editContext={editContext} />
 
-        {orgLapsed ? (
-          // Header stays so the page still identifies who you navigated to (and
-          // an admin can still see the role they are about to offboard); the
-          // tabs are replaced rather than left to 403 four times.
-          <TeamLapsedState
-            orgId={org.id}
-            orgName={org.name}
-            trialEndedAt={orgTrialEndedAt}
-            lapseReason={orgLapseReason}
-            requiredPlanName={requiredPlanName}
-            canEdit={viewerCanEditOrg}
-          />
-        ) : (
-          <>
-            {showSharingHint && (
-              <OrganizationDataSharingOptIn
-                feature="member-profiles"
-                orgId={org.id}
-                organizationName={org.name}
-                mobileBrowser={mobileBrowser}
-                sharing={viewerSharing}
-              />
-            )}
-            {/* Digests makes this five icon-and-label tabs, past what a
-                390px viewport fits, so the strip scrolls sideways. */}
-            <TabBar
-              items={visibleTabs.map((tab) => {
-                const Icon = tab.icon;
-                return {
-                  id: tab.key,
-                  label: tab.label,
-                  icon: <Icon size="sm" />,
-                  dataTestId: `profile-tab-${tab.key}`,
-                };
-              })}
-              value={activeTab}
-              onChange={(next): void => selectTab(next)}
-              label="Member profile views"
-              scrollable
-              dataTestId="profile-tabs"
+        <>
+          {showSharingHint && (
+            <OrganizationDataSharingOptIn
+              feature="member-profiles"
+              orgId={org.id}
+              organizationName={org.name}
+              mobileBrowser={mobileBrowser}
+              sharing={viewerSharing}
             />
+          )}
+          {/* Digests makes this five icon-and-label tabs, past what a
+                390px viewport fits, so the strip scrolls sideways. */}
+          <TabBar
+            items={visibleTabs.map((tab) => {
+              const Icon = tab.icon;
+              return {
+                id: tab.key,
+                label: tab.label,
+                icon: <Icon size="sm" />,
+                dataTestId: `profile-tab-${tab.key}`,
+              };
+            })}
+            value={activeTab}
+            onChange={(next): void => selectTab(next)}
+            label="Member profile views"
+            scrollable
+            dataTestId="profile-tabs"
+          />
 
-            {activeTab === 'overview' && (
-              <ProfileOverviewSection
+          {activeTab === 'overview' && (
+            <ProfileOverviewSection
+              orgId={org.id}
+              userId={member.id}
+              viewerCanViewStats={viewerCanViewStats}
+              memberName={member.name}
+              subject={subject}
+            />
+          )}
+          {activeTab === 'digests' && (
+            <ProfileDigestsSection
+              orgId={org.id}
+              userId={member.id}
+              memberName={member.name}
+              isOwnProfile={isOwnProfile}
+            />
+          )}
+          {activeTab === 'runs' && (
+            <div
+              className="flex flex-col gap-8"
+              data-testid="profile-sessions-tab"
+            >
+              <section className="flex flex-col gap-3">
+                <Heading level={2} variant="title">
+                  Shared sessions
+                </Heading>
+                <ProfileSharedRunsSection
+                  orgId={org.id}
+                  userId={member.id}
+                  memberName={member.name}
+                />
+              </section>
+              <ProfileRunsSection
                 orgId={org.id}
                 userId={member.id}
                 viewerCanViewStats={viewerCanViewStats}
                 memberName={member.name}
-                subject={subject}
               />
-            )}
-            {activeTab === 'digests' && (
-              <ProfileDigestsSection
-                orgId={org.id}
-                userId={member.id}
-                memberName={member.name}
-                isOwnProfile={isOwnProfile}
-              />
-            )}
-            {activeTab === 'runs' && (
-              <div
-                className="flex flex-col gap-8"
-                data-testid="profile-sessions-tab"
-              >
-                <section className="flex flex-col gap-3">
-                  <Heading level={2} variant="title">
-                    Shared sessions
-                  </Heading>
-                  <ProfileSharedRunsSection
-                    orgId={org.id}
-                    userId={member.id}
-                    memberName={member.name}
-                  />
-                </section>
-                <ProfileRunsSection
+            </div>
+          )}
+          {activeTab === 'plans' && (
+            <div
+              className="flex flex-col gap-8"
+              data-testid="profile-plans-tab"
+            >
+              <section className="flex flex-col gap-3">
+                <Heading level={2} variant="title">
+                  Shared plans
+                </Heading>
+                <ProfilePlansSection
                   orgId={org.id}
                   userId={member.id}
-                  viewerCanViewStats={viewerCanViewStats}
                   memberName={member.name}
                 />
-              </div>
-            )}
-            {activeTab === 'plans' && (
-              <div
-                className="flex flex-col gap-8"
-                data-testid="profile-plans-tab"
-              >
-                <section className="flex flex-col gap-3">
-                  <Heading level={2} variant="title">
-                    Shared plans
-                  </Heading>
-                  <ProfilePlansSection
-                    orgId={org.id}
-                    userId={member.id}
-                    memberName={member.name}
-                  />
-                </section>
-                <section className="flex flex-col gap-3">
-                  <Heading level={2} variant="title">
-                    Implemented plans
-                  </Heading>
-                  <ProfileApprovedPlansSection
-                    orgId={org.id}
-                    userId={member.id}
-                    memberName={member.name}
-                  />
-                </section>
-              </div>
-            )}
-            {activeTab === 'pipelines' && (
-              <ProfilePipelinesSection
-                orgId={org.id}
-                userId={member.id}
-                memberName={member.name}
-              />
-            )}
-          </>
-        )}
+              </section>
+              <section className="flex flex-col gap-3">
+                <Heading level={2} variant="title">
+                  Implemented plans
+                </Heading>
+                <ProfileApprovedPlansSection
+                  orgId={org.id}
+                  userId={member.id}
+                  memberName={member.name}
+                />
+              </section>
+            </div>
+          )}
+          {activeTab === 'pipelines' && (
+            <ProfilePipelinesSection
+              orgId={org.id}
+              userId={member.id}
+              memberName={member.name}
+            />
+          )}
+        </>
       </div>
     </SettingsPageColumn>
   );

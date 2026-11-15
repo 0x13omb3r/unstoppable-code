@@ -137,8 +137,9 @@ export function CloudChatDeletedNotice({
 }
 
 /**
- * A new chat started from a deleted one names the files it couldn't take
- * (CAN-6614): a pasted file, or one that moved on disk since.
+ * A new chat names the files it couldn't take: from a deleted chat, a pasted
+ * file or one that moved on disk since (CAN-6614); from New task, one whose
+ * upload failed (CAN-6763).
  */
 export function CloudChatFilesNotAttachedNotice({
   tabId,

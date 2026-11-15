@@ -3,6 +3,7 @@ import type { SidebarItem } from '@canopy/desktop-shared/types';
 import { useHomeComposerStore } from '@/stores/homeComposerStore';
 import { useProjectsStore } from '@/stores/projectsStore';
 import type { HomeLinkTargetState } from './homeLinkTarget';
+import { isHomeCloudTarget } from './homeScope';
 
 /**
  * What the Home project picker shows while a pasted link proposes a
@@ -29,7 +30,8 @@ export function homeLinkProjectPreview({
   workspaceSelectionExplicit,
   projects,
 }: HomeLinkProjectPreviewInput): HomeLinkProjectPreview | null {
-  if (mode !== 'chat') return null;
+  // A cloud project never previews a local link destination (CAN-6757).
+  if (mode !== 'chat' || isHomeCloudTarget(workspaceId)) return null;
   // A code project the user picked always wins over the link; the chip asks
   // them to resolve any mismatch instead.
   const selected = projects.find((project) => project.id === workspaceId);

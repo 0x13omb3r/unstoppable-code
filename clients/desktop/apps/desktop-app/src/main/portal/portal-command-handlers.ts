@@ -1,3 +1,4 @@
+import { handlePortalWorktreeRecovery } from './adapters/worktree-recovery-adapter';
 import { handlePortalWatcherDelete } from './adapters/watchers-adapter';
 import {
   handlePortalLifecycleJournalInspect,
@@ -98,6 +99,7 @@ import {
   handlePortalOnboardingTipsUpdate,
 } from './adapters/onboarding-tips-adapter';
 import {
+  handlePortalClaudeModSurfaceCommand,
   handlePortalClaudeModsGet,
   handlePortalClaudeModsUpdate,
 } from './adapters/claude-mods-adapter';
@@ -600,6 +602,7 @@ const FEATURE_ADAPTERS: Partial<
   'portal.onboarding_tips.update': handlePortalOnboardingTipsUpdate,
   'portal.claude_mods.get': handlePortalClaudeModsGet,
   'portal.claude_mods.update': handlePortalClaudeModsUpdate,
+  'portal.claude_mods.surface_command': handlePortalClaudeModSurfaceCommand,
   // The census handler span below stays as on develop until the Portal
   // standalone chat slice moves it (CAN-3745); TypeScript 7 no longer needs
   // its cast.
@@ -715,6 +718,9 @@ const FEATURE_ADAPTERS: Partial<
     handlePortalWorktreeCreate as PortalCommandAdapter<unknown>,
   'portal.worktree.archive':
     handlePortalWorktreeArchive as PortalCommandAdapter<unknown>,
+  'portal.worktree.recovery.list': handlePortalWorktreeRecovery,
+  'portal.worktree.recovery.resolve': handlePortalWorktreeRecovery,
+  'portal.worktree.recovery.finish': handlePortalWorktreeRecovery,
   'portal.worktree.discard.describe': handlePortalWorktreeDiscardDescribe,
   'portal.worktree.discard': handlePortalWorktreeDiscard,
   'portal.worktree.update': handlePortalWorktreeUpdate,

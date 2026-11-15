@@ -33,6 +33,10 @@ export interface CanopyDaemonHeldClaim {
 }
 
 export interface CanopyDaemonPublicationOptions {
+  /** Trusted startup stop; no later publication admission. */
+  readonly signal?: AbortSignal;
+  /** Transfers a submitted publication to ordinary stop, bounded by this signal. */
+  readonly admitPublication?: () => AbortSignal;
   readonly dataRoot: string;
   readonly runtimeMode: CanopyRuntimeMode;
   readonly platform: PlatformServices;
@@ -105,6 +109,7 @@ export async function publishCanopyDaemon(
   options: CanopyDaemonPublicationOptions,
 ): Promise<CanopyDaemonPublication> {
   const { platform, claims, dataRoot, heldClaim } = options;
+  options.signal?.throwIfAborted();
   // A held claim on a pipe must be the caller's own acquisition: the core
   // daemon refuses a launcher's there before adopting it (CAN-5530).
   if (
@@ -153,14 +158,17 @@ export async function publishCanopyDaemon(
     'daemon',
     STORAGE_OWNERSHIP,
   );
+  options.signal?.throwIfAborted();
   await prepareCanopyDaemonRuntimeDirectory(dataRoot, platform);
   // Verify inherited ACLs before writing secret bytes; POSIX creates with 0600.
   async function exclusiveFile(path: string, contents: string): Promise<void> {
+    options.signal?.throwIfAborted();
     const file = await open(path, 'wx', 0o600);
     if (path === tokenPath) tokenCreated = true;
     if (path === temporaryPath) temporaryCreated = true;
     try {
       await privatePath(platform, path, 'file', 'verify');
+      options.signal?.throwIfAborted();
       await file.writeFile(contents, 'utf8');
       await file.sync();
     } finally {
@@ -251,6 +259,7 @@ export async function publishCanopyDaemon(
   let temporaryCreated = false;
   const secret = randomBytes(32).toString('hex');
   try {
+    options.signal?.throwIfAborted();
     const binding = await bindCanopyDaemonEndpoint({
       dataRoot,
       platform,
@@ -266,9 +275,12 @@ export async function publishCanopyDaemon(
     // Stale-owner recovery (CAN-3932) fails closed without the bound socket's identity.
     if (binding.socketIdentity)
       descriptor.socketIdentity = { ...binding.socketIdentity };
+    options.signal?.throwIfAborted();
     await removeDepartedToken();
     await exclusiveFile(tokenPath, secret);
     await exclusiveFile(temporaryPath, JSON.stringify(descriptor));
+    options.signal?.throwIfAborted();
+    const completionSignal = options.admitPublication?.() ?? options.signal;
     publicationAttempted = true;
     const renamed = await platform.secureFiles.rename({
       from: temporaryPath,
@@ -278,8 +290,12 @@ export async function publishCanopyDaemon(
     if (renamed.kind !== 'renamed' || renamed.sourceState !== 'removed')
       throw new Error('Descriptor publication uncertain.');
     temporaryCreated = false;
+    // A submitted rename may outlive its deadline; roll it back under the claim.
+    completionSignal?.throwIfAborted();
     await platform.secureFiles.syncDirectory(directory);
+    completionSignal?.throwIfAborted();
     await release(handle);
+    completionSignal?.throwIfAborted();
     if (heldClaim) heldClaim.released = true;
   } catch (error) {
     let cleanupHandle = handle;

@@ -1,6 +1,8 @@
 import { createStore, type StoreApi } from 'zustand/vanilla';
 import {
+  ArchiveContainerListResultSchema,
   CanopyErrorPayloadSchema,
+  CoreArchiveContainerRestoreResultSchema,
   CanopyStreamCursorSchema,
   CoreChatLifecycleResultSchema,
   CoreChatTaskEventsItemSchema,
@@ -32,6 +34,23 @@ export interface CoreCoworkProject {
   ownerOrganizationId: string | null;
   /** The listing's revision, which a delete must name. */
   revision?: number;
+}
+
+/**
+ * A cloud task the web core kept when it was archived or deleted
+ * (CAN-6511): its `work-entry` container, named by the task's chat.
+ */
+export interface CoreCoworkArchivedTask {
+  /** The container's opaque id, as a restore names it. */
+  archiveId: string;
+  /** The container's revision, which a restore is fenced by. */
+  revision: number;
+  worktreeId: string;
+  title: string;
+  archivedAt: string;
+  /** Archived is kept until restored; deleted waits in the trash. */
+  state: 'archived' | 'deleted';
+  expiresAt: string | null;
 }
 
 export interface CoreCoworkTask {
@@ -101,6 +120,21 @@ export interface CoreCoworkState {
   ): Promise<CoreCoworkTask> | undefined;
   archiveTask(workspaceId: string, worktreeId: string): Promise<void>;
   /**
+   * `core.archive.container.list` for the project: its archived and deleted
+   * tasks, newest first (CAN-6511).
+   */
+  listArchivedTasks(
+    workspaceId: string,
+  ): Promise<readonly CoreCoworkArchivedTask[]>;
+  /**
+   * `core.archive.container.restore` of an archived task, in place and at
+   * the revision it was listed at, then re-lists the project's tasks.
+   */
+  restoreTask(
+    workspaceId: string,
+    task: Pick<CoreCoworkArchivedTask, 'archiveId' | 'revision' | 'worktreeId'>,
+  ): Promise<void>;
+  /**
    * `core.workspace.reorder`: moves `active` to `over`'s slot among the
    * projects the caller shows, then re-lists. The list moves at once.
    */
@@ -145,6 +179,13 @@ export interface CoreCoworkStoreOptions {
    * or disconnected; without it, only the host reconnects it.
    */
   readonly reconnect?: () => CoreCoworkInvoker | null;
+  /**
+   * Also list a git project's tasks (its worktree root chats, CAN-6106) and
+   * re-read them on its task events. Off by default: only cowork projects'
+   * tasks are held, as the desktop cloud sidebar reads them. The web's
+   * background chats turn it on for their working marks (CAN-6509).
+   */
+  readonly repositoryTasks?: boolean;
 }
 
 /** A generation that moved on while a reply was in flight. */
@@ -376,12 +417,15 @@ export function createCoreCoworkStore(
       return projects;
     };
 
+    /** A cowork project's tasks; a git project's only with `repositoryTasks`. */
+    const listsTasks = (kind: string): boolean =>
+      kind === 'cowork' || options.repositoryTasks === true;
+
     const relistAll = async (generation: number): Promise<void> => {
       const projects = await listProjects(generation);
-      // `core.chat.task.list` refuses a repository project.
       const lists = await Promise.all(
         projects.map((project) =>
-          project.kind === 'cowork'
+          listsTasks(project.kind)
             ? listTasks(generation, project.workspaceId)
             : Promise.resolve<CoreCoworkTask[]>([]),
         ),
@@ -674,7 +718,7 @@ export function createCoreCoworkStore(
           );
           // A task in a project this list does not hold yet: a new project.
           if (listed === undefined) pendingResync = true;
-          else if (listed.kind === 'cowork') pendingRereads.add(workspaceId);
+          else if (listsTasks(listed.kind)) pendingRereads.add(workspaceId);
           else continue;
         }
         scheduleReread(generation);
@@ -863,6 +907,70 @@ export function createCoreCoworkStore(
               [key]: tasks.filter((task) => task.worktreeId !== worktreeId),
             },
           });
+        await serialized(() => rereadProject(generation, workspaceId)).catch(
+          () => undefined,
+        );
+      },
+
+      listArchivedTasks: async (
+        workspaceId,
+      ): Promise<readonly CoreCoworkArchivedTask[]> => {
+        const generation = get().generation;
+        if (get().status !== 'online')
+          throw new Error('Cloud chats are offline.');
+        const listed = ArchiveContainerListResultSchema.parse(
+          await call(generation, 'core.archive.container.list', {
+            workspaceId,
+          }),
+        );
+        return listed.containers
+          .flatMap((container): CoreCoworkArchivedTask[] => {
+            const chatId = container.scope?.chatId;
+            // A task is a work-entry container the web core names by its
+            // chat; anything else, or one with no revision, is not ours.
+            if (
+              container.kind !== 'work-entry' ||
+              container.workspaceId !== workspaceId ||
+              chatId === undefined ||
+              container.revision === null
+            )
+              return [];
+            return [
+              {
+                archiveId: container.archiveId,
+                revision: container.revision,
+                worktreeId: chatId,
+                title: container.name,
+                archivedAt: container.archivedAt,
+                state: container.locked ? 'archived' : 'deleted',
+                expiresAt: container.expiresAt,
+              },
+            ];
+          })
+          .sort((a, b) => Date.parse(b.archivedAt) - Date.parse(a.archivedAt));
+      },
+
+      restoreTask: async (workspaceId, task): Promise<void> => {
+        const generation = get().generation;
+        if (get().status !== 'online')
+          throw new Error('Cloud chats are offline.');
+        const idempotencyKey = globalThis.crypto.randomUUID();
+        const result = CoreArchiveContainerRestoreResultSchema.parse(
+          await call(generation, 'core.archive.container.restore', {
+            archiveId: task.archiveId,
+            expectedRevision: task.revision,
+            destinationScope: { workspaceId },
+            conflictPolicy: 'fail',
+            _meta: { idempotencyKey },
+          }),
+        );
+        if (result.operation.status !== 'completed')
+          throw new Error('The cloud task was not restored.');
+        // A row this window kept for the task as deleted (CAN-6614) would
+        // hide the listing's live row: the restored task replaces it.
+        get().forgetTask(workspaceId, task.worktreeId);
+        // The restore stands once the web core completed it; a re-read that
+        // fails only waits for the next one.
         await serialized(() => rereadProject(generation, workspaceId)).catch(
           () => undefined,
         );

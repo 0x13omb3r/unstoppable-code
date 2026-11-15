@@ -1,5 +1,6 @@
 'use client';
 
+import { UnresolvedCollectionMember } from '@canopy/ui-shared/components';
 import { type JSX, type ReactNode } from 'react';
 import type {
   CollectionMcpRef,
@@ -183,10 +184,9 @@ export function CollectionReadDetail({
                   const member = resolvedByRef.get(refKey);
                   if (!member) {
                     return (
-                      <div
+                      <UnresolvedCollectionMember
                         key={refKey}
                         data-testid="collection-read-unresolved"
-                        className="bg-secondary/20 px-3 py-2"
                       >
                         <p className="text-s font-medium fg-primary">
                           {unresolvedLabel(ref)}
@@ -196,7 +196,7 @@ export function CollectionReadDetail({
                             ? 'Couldn\u2019t verify this member \u2014 the catalog list was truncated in transfer.'
                             : 'This collection member is not available in the current catalog.'}
                         </p>
-                      </div>
+                      </UnresolvedCollectionMember>
                     );
                   }
                   const content = (
@@ -226,14 +226,18 @@ export function CollectionReadDetail({
                       {content}
                     </button>
                   ) : (
-                    <div
+                    <Surface
                       key={refKey}
                       data-testid="collection-read-member"
                       data-entry-key={member.entryKey}
-                      className="flex items-center gap-3 bg-base px-3 py-2"
+                      variant="pane"
+                      gap="item"
+                      direction="row"
+                      padding="section-compact"
+                      className="items-center"
                     >
                       {content}
-                    </div>
+                    </Surface>
                   );
                 })}
               </div>

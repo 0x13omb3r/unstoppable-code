@@ -21,7 +21,10 @@ export async function settleArchiveRecovery(
 ): Promise<ArchiveRecoveryReceipt> {
   const { store } = ports;
   await store.normalize(receipt.workspaceId, receipt.operationId);
-  if (receipt.cancelled) {
+  if (
+    receipt.cancelled &&
+    !(goal === 'committed-parent' && receipt.retention !== undefined)
+  ) {
     if (goal !== 'resolve')
       throw new ArchiveRecoveryRefusedError('The resolution was cancelled.');
     await ports.admitResolution(receipt);

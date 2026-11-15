@@ -20,11 +20,6 @@ export function OrganizationMemberPage({
       member={data.member}
       viewerCanViewStats={data.viewerCanViewStats}
       editContext={data.editContext}
-      orgLapsed={data.orgLapsed}
-      orgTrialEndedAt={data.orgTrialEndedAt}
-      orgLapseReason={data.orgLapseReason}
-      requiredPlanName={data.requiredPlanName}
-      viewerCanEditOrg={data.viewerCanEditOrg}
       showDigestsTab={data.showDigestsTab}
       isOwnProfile={data.isOwnProfile}
       mobileBrowser={data.mobileBrowser}

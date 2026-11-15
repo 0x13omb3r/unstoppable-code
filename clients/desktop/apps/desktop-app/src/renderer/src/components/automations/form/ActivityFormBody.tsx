@@ -77,6 +77,7 @@ import type { AutomationScope } from '@/hooks/useAutomationScope';
 import { ProjectIcon } from '@/components/shared/ProjectIcon';
 import { Tooltip } from '@canopy/ui-shared';
 import {
+  Badge,
   Stack,
   AutomationPipelineTargetFields,
   Button,
@@ -1695,14 +1696,12 @@ export function ActivityFormBody({
                           </div>
                           <div className="mt-0.5 flex flex-wrap items-center gap-1.5 text-2xs fg-secondary">
                             {state.pipelineSource && (
-                              <span className="rounded bg-fg-primary/[0.06] px-1.5 py-0.5">
+                              <Badge size="compact">
                                 {state.pipelineSource}
-                              </span>
+                              </Badge>
                             )}
                             {state.repoId && (
-                              <span className="rounded bg-fg-primary/[0.06] px-1.5 py-0.5">
-                                {state.repoId}
-                              </span>
+                              <Badge size="compact">{state.repoId}</Badge>
                             )}
                             <span>
                               {state.pipelineInputs.length === 1
@@ -1782,7 +1781,12 @@ export function ActivityFormBody({
         )}
       </div>
       {chatTargetBlockingMessage && (
-        <div className="shrink-0 border-t px-4 pt-3">
+        <Surface
+          variant="section"
+          boundary="top"
+          padding="panel-actions"
+          className="shrink-0"
+        >
           <Notice
             errorSource="automations-form-chat-target-error"
             displayErrorCode="external.state_changed"
@@ -1793,7 +1797,7 @@ export function ActivityFormBody({
           >
             {chatTargetBlockingMessage}
           </Notice>
-        </div>
+        </Surface>
       )}
       {error && (
         <div className="shrink-0 px-4 pb-3">

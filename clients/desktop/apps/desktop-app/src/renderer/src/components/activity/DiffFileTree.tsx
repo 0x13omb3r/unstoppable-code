@@ -9,7 +9,6 @@ import {
 } from 'react';
 import type {
   ChangedFileInfo,
-  ChangedFileStatus,
   FileDiffSource,
 } from '@canopy/desktop-shared/types';
 import { Surface, DiffLineCounts } from '@canopy/ui-shared/components';
@@ -28,19 +27,7 @@ import { normalizeRepoKey } from '@/components/code-review/codeReviewLayout';
 import { ResizeHandle } from '@/components/shared/ResizeHandle';
 import { RichHoverTooltip } from '@/components/shared/RichHoverTooltip';
 import { Button } from '@canopy/ui-shared/components';
-
-const STATUS_DOT_COLORS: Record<ChangedFileStatus, string> = {
-  added: 'bg-fg-success-strong',
-  modified: 'bg-warning',
-  deleted: 'bg-fg-destructive-strong',
-  // Copied shares the renamed identity: a file that came from another path.
-  renamed: 'bg-fg-info',
-  copied: 'bg-fg-info',
-  unmerged: 'bg-destructive',
-  'type-changed': 'bg-fg-special-strong',
-  untracked: 'bg-fg-success-strong',
-  unknown: 'bg-fg-primary/40',
-};
+import { DiffFileStatusMarker } from '@canopy/ui-shared/components';
 
 type FileContextMenu = (
   file: ChangedFileInfo,
@@ -273,7 +260,6 @@ function FileNodeRow({
   const fileName = showFullPath
     ? `${entry.file.repoName ? `${entry.file.repoName}/` : ''}${entry.file.path}`
     : (entry.file.path.split(/[\\/]/).pop() ?? entry.file.path);
-  const dotClass = STATUS_DOT_COLORS[entry.file.status];
 
   return (
     <RichHoverTooltip
@@ -307,7 +293,7 @@ function FileNodeRow({
           paddingLeft: `${depth * 16 + 8}px`,
         }}
       >
-        <span className={`h-1.75 w-1.75 shrink-0 rounded-full ${dotClass}`} />
+        <DiffFileStatusMarker status={entry.file.status} review />
         <span
           className={
             showFullPath ? 'min-w-0 truncate text-left' : 'whitespace-nowrap'
@@ -697,14 +683,14 @@ export function DiffFileTree({
 
   return (
     <>
-      <div
+      <Surface
+        variant="section"
+        boundary="right"
         ref={panelRef}
         data-testid="diff-file-tree"
         data-view={listView ? 'list' : 'tree'}
-        style={{
-          width: `${isResizingRef.current ? pendingWidthRef.current : width}px`,
-        }}
-        className="flex shrink-0 flex-col border-r"
+        paneWidth={isResizingRef.current ? pendingWidthRef.current : width}
+        className="flex shrink-0 flex-col"
       >
         {!hideHeader && (
           <Surface variant="section" boundary="bottom" className="shrink-0">
@@ -788,7 +774,7 @@ export function DiffFileTree({
             />
           )}
         </div>
-      </div>
+      </Surface>
       {resizable && (
         <ResizeHandle
           orientation="horizontal"

@@ -1,3 +1,4 @@
+import { DialogActionFooter } from '@canopy/ui-shared/components';
 import {
   useCallback,
   useEffect,
@@ -703,7 +704,7 @@ export function ImportSessionModal({
           </Notice>
         )}
 
-        <div className="flex items-center justify-end gap-2 border-t pt-4">
+        <DialogActionFooter center padding="top">
           {inspection && phase === 'ready' && (
             <Button
               variant="ghost"
@@ -731,7 +732,7 @@ export function ImportSessionModal({
               {phase === 'importing' ? 'Importing…' : 'Import session'}
             </Button>
           )}
-        </div>
+        </DialogActionFooter>
       </div>
     </DialogModal>
   );

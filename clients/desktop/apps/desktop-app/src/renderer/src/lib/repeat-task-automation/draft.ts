@@ -1,6 +1,7 @@
 import { APP_ADVISOR_PROJECT_ID } from '@canopy/desktop-shared/types';
 import { IDLE_HOME_LINK_TARGET } from '@/components/home/homeLinkTarget';
 import { isCoworkChatTarget } from '@/lib/cowork';
+import { isWebCoreScope } from '@/lib/chat-authority';
 import { useHomeComposerStore } from '@/stores/homeComposerStore';
 import { useWorkspaceContextStore } from '@/stores/workspaceContextStore';
 import type { AutomationDraftSeed } from '@/lib/workflows/edit-target';
@@ -30,6 +31,9 @@ export function isEligibleHomeTask(snapshot: HomeTaskSnapshot): boolean {
     snapshot.text.trim() !== '' &&
     snapshot.workspaceId !== null &&
     snapshot.workspaceId !== APP_ADVISOR_PROJECT_ID &&
+    // A cloud project's task runs in the cloud; a local automation made from
+    // it would start a chat in a project no local IPC resolves (CAN-6757).
+    !isWebCoreScope(snapshot.workspaceId) &&
     snapshot.fileReferenceCount === 0 &&
     snapshot.attachmentCount === 0 &&
     !snapshot.scheduled &&

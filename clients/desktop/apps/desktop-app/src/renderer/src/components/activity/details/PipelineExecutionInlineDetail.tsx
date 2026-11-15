@@ -1,3 +1,4 @@
+import { AttachedNotice } from '@canopy/ui-shared/components';
 import {
   useCallback,
   useEffect,
@@ -135,14 +136,14 @@ function InlineStepDetail({
       )}
 
       {resolved.stepResult?.error && (
-        <div className="border-b bg-destructive-subtle px-3 py-2">
+        <AttachedNotice variant="workflow-error">
           <div className="mb-0.5 text-2xs font-medium fg-destructive-strong">
             Error
           </div>
           <div className="font-mono text-2xs fg-destructive-strong">
             {resolved.stepResult.error}
           </div>
-        </div>
+        </AttachedNotice>
       )}
 
       {hasConfig && (
@@ -225,10 +226,7 @@ function InlineMatrixJobSummary({
       </div>
       <ul className="flex flex-col max-h-45 overflow-y-auto gap-0.5 [&>*]:shrink-0">
         {variants.map(({ id, definition, result }) => (
-          <li
-            key={id}
-            className="flex items-center gap-2 rounded px-1.5 py-0.5"
-          >
+          <li key={id} className="flex items-center gap-2 px-1.5 py-0.5">
             <StatusGlyph
               state={pipelineStatusGlyphState(result.status)}
               size={12}
@@ -406,7 +404,12 @@ export function PipelineExecutionInlineDetail({
   }, [selectedStep, state]);
 
   return (
-    <div className="flex flex-col gap-2 border-l-2 border-line-accent pl-3">
+    <Surface
+      variant="section"
+      gap="inline"
+      boundary="active-rail"
+      padding="nested-compact"
+    >
       {state?.error && (
         <Notice
           errorSource="pipeline-execution-inline-detail"
@@ -687,6 +690,6 @@ export function PipelineExecutionInlineDetail({
           </Stack>
         </Stack>
       )}
-    </div>
+    </Surface>
   );
 }

@@ -1,21 +1,13 @@
 import { useLayoutEffect, useRef, useState, type JSX } from 'react';
-import {
-  getModelDisplayName,
-  type ArchivedChatSummary,
-} from '@canopy/desktop-shared/types';
-import {
-  ArchivedChatsCard,
-  ListRow,
-  type ArchivedChatsCardItem,
-} from '@canopy/ui-shared/components';
-import { ModelProviderIcon } from '@canopy/ui-shared/components';
-import { getArchivedChatDisplayLabel } from '@/components/standalone-chat/chat-label';
+import type { ArchivedChatSummary } from '@canopy/desktop-shared/types';
+import { ArchivedChatsCard } from '@canopy/ui-shared/components';
+import { useMinuteClock } from '@canopy/ui-shared/lib';
 import {
   ANCHORED_POPOVER_PADDING,
   computePopoverViewportShift,
   findPopoverBoundary,
 } from '@/lib/anchoredPopoverPosition';
-import { ArchivedChatRow } from './ArchivedChatRow';
+import { toCardItem } from './archivedChatItems';
 
 const POPOVER_LIMIT = 5;
 
@@ -35,40 +27,6 @@ export interface ArchivedChatsPopoverProps {
    * down-and-right so a left-edge trigger is not clipped by the window.
    */
   align?: 'left' | 'right';
-  /**
-   * `card` draws the shared `ArchivedChatsCard` (the Archived chats card
-   * Labs experiment); `classic` (default) keeps today's popover.
-   */
-  look?: 'classic' | 'card';
-}
-
-/** The sub-line facts: the model and the turn count. */
-function archivedChatMeta(summary: ArchivedChatSummary): string {
-  const turns = `${summary.turnCount} ${
-    summary.turnCount === 1 ? 'turn' : 'turns'
-  }`;
-  return summary.model
-    ? `${getModelDisplayName(summary.model)} · ${turns}`
-    : turns;
-}
-
-function toCardItem(
-  summary: ArchivedChatSummary,
-  summarizingIds: ReadonlySet<string>,
-  restoringIds: ReadonlySet<string>,
-): ArchivedChatsCardItem {
-  return {
-    id: summary.chatId,
-    title: getArchivedChatDisplayLabel(summary),
-    meta: archivedChatMeta(summary),
-    icon: summary.providerType ? (
-      <ModelProviderIcon provider={summary.providerType} size="sm" />
-    ) : undefined,
-    unread: summary.unread,
-    restorable: summary.restorable,
-    restoring: restoringIds.has(summary.chatId),
-    summarizing: summarizingIds.has(summary.chatId),
-  };
 }
 
 /**
@@ -85,10 +43,10 @@ export function ArchivedChatsPopover({
   summarizingIds,
   restoringIds,
   align = 'right',
-  look = 'classic',
 }: ArchivedChatsPopoverProps): JSX.Element {
   const visible = summaries.slice(0, POPOVER_LIMIT);
   const overflow = summaries.length - visible.length;
+  const now = useMinuteClock();
   const cardRef = useRef<HTMLDivElement | null>(null);
   const [shiftX, setShiftX] = useState(0);
   const [maxWidth, setMaxWidth] = useState<number | null>(null);
@@ -148,44 +106,17 @@ export function ArchivedChatsPopover({
         ...(maxWidth === null ? {} : { maxWidth: `${maxWidth}px` }),
       }}
     >
-      {look === 'card' ? (
-        <ArchivedChatsCard
-          items={visible.map((summary) =>
-            toCardItem(summary, summarizingIds, restoringIds),
-          )}
-          overflowCount={overflow}
-          onOpen={onOpenChat}
-          onRestore={onRestore}
-          onSummarize={onSummarize}
-          onShowAll={onOpenModal}
-          className="w-full"
-        />
-      ) : (
-        <div className="overflow-hidden rounded-lg bg-popover p-1 shadow-xl">
-          <p className="px-3 py-1.5 text-3xs font-semibold fg-secondary">
-            Archived chats
-          </p>
-          <div className="max-h-80 overflow-y-auto">
-            {visible.map((summary) => (
-              <ArchivedChatRow
-                key={summary.chatId}
-                summary={summary}
-                dataTestId="chat-tab-archive-popover-row"
-                onOpen={() => onOpenChat(summary.chatId)}
-                onRestore={() => onRestore(summary.chatId)}
-                onSummarize={() => onSummarize(summary.chatId)}
-                summarizing={summarizingIds.has(summary.chatId)}
-                restoring={restoringIds.has(summary.chatId)}
-              />
-            ))}
-          </div>
-          {overflow > 0 && (
-            <ListRow onClick={onOpenModal} data-testid="chat-tab-archive-more">
-              {overflow} more…
-            </ListRow>
-          )}
-        </div>
-      )}
+      <ArchivedChatsCard
+        items={visible.map((summary) =>
+          toCardItem(summary, summarizingIds, restoringIds, now),
+        )}
+        overflowCount={overflow}
+        onOpen={onOpenChat}
+        onRestore={onRestore}
+        onSummarize={onSummarize}
+        onShowAll={onOpenModal}
+        className="w-full"
+      />
     </div>
   );
 }

@@ -251,8 +251,10 @@ export function createNativeArtifactAuthorizer(
       throw new Error('Native artifact storage is not private.');
   }
   async function storage(): Promise<void> {
+    if (retired) throw new Error('Native artifact owner retired.');
     canonicalDirectory(options.canonicalDataRoot);
     await privateNode(options.canonicalDataRoot, 'directory');
+    if (retired) throw new Error('Native artifact owner retired.');
     try {
       mkdirSync(root, { mode: 0o700 });
     } catch (error) {
@@ -326,6 +328,7 @@ export function createNativeArtifactAuthorizer(
       );
       verify(captured.bytes, catalog);
       await storage();
+      if (retired) return undefined;
       const processIdentity = await options.supervision.inspectProcess({
         pid: process.pid,
       });
@@ -440,6 +443,7 @@ export function createNativeArtifactAuthorizer(
         return;
       }
       for (const run of readdirSync(root).slice(0, 256)) {
+        if (retired) return;
         if (!RUN_NAME.test(run)) continue;
         const directory = join(root, run);
         try {
@@ -457,9 +461,11 @@ export function createNativeArtifactAuthorizer(
           const owner = capture(join(directory, OWNER_FILE), 4096);
           const parsed: unknown = JSON.parse(owner.bytes.toString('utf8'));
           if (!isOwner(parsed, run)) continue;
+          if (retired) return;
           const observed = await options.supervision.inspectProcess({
             pid: parsed.pid,
           });
+          if (retired) return;
           if (observed.state !== 'absent') continue;
           // PID reuse, an unknown observer and a live owner never authorize deletion.
           const snapshot = capture(

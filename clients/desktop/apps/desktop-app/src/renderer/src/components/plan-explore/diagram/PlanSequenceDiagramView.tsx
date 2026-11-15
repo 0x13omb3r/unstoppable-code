@@ -1,3 +1,5 @@
+import { DiagramNodeSurface } from '@canopy/ui-shared/components';
+import { PlanExcerpt } from '@canopy/ui-shared/components';
 import { Stack } from '@canopy/ui-shared/components';
 import {
   forwardRef,
@@ -64,18 +66,12 @@ interface SelectedNode {
 /** Custom React Flow node: bold title + muted description, phase/task styling. */
 function PlanFlowNodeView({ data }: NodeProps<PlanFlowNode>): JSX.Element {
   const isPhase = data.kind === 'phase';
-  const searchRing =
-    data.searchState === 'active'
-      ? 'ring-2 ring-line-attention'
-      : data.searchState === 'match'
-        ? 'ring-1 ring-line-attention/60'
-        : '';
   return (
-    <div
-      className={`flex h-full w-full flex-col justify-center gap-0.5 rounded-md border px-3 py-2 text-left ${
-        isPhase ? 'border-line-accent/60 bg-accent/[0.08]' : 'bg-card'
-      } ${searchRing}`}
-      style={{ width: PLAN_NODE_WIDTH, height: PLAN_NODE_HEIGHT }}
+    <DiagramNodeSurface
+      width={PLAN_NODE_WIDTH}
+      height={PLAN_NODE_HEIGHT}
+      phase={isPhase}
+      search={data.searchState}
     >
       <Handle
         id="top"
@@ -116,7 +112,7 @@ function PlanFlowNodeView({ data }: NodeProps<PlanFlowNode>): JSX.Element {
         position={Position.Bottom}
         className="!opacity-0"
       />
-    </div>
+    </DiagramNodeSurface>
   );
 }
 
@@ -213,9 +209,7 @@ function SelectedNodeDetail({
                     </p>
                   )}
                   {data.quote && (
-                    <p className="border-l-2 pl-2 text-2xs italic fg-secondary">
-                      {data.quote}
-                    </p>
+                    <PlanExcerpt variant="diagram">{data.quote}</PlanExcerpt>
                   )}
                 </div>
               </div>

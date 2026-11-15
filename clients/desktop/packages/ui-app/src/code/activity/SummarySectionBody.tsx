@@ -1,5 +1,6 @@
 'use client';
 
+import { SummaryHighlightMark } from '@canopy/ui-shared/components';
 import { useState, type JSX } from 'react';
 import { WORKTREE_UNIT_LABEL } from '@canopy/protocol';
 import {
@@ -122,10 +123,7 @@ export function SummarySectionBody({
                       key={`highlight-${index}`}
                     >
                       <div className="flex items-start gap-3">
-                        <span
-                          className="mt-1 h-2 w-2 rounded-full bg-accent"
-                          data-testid="summary-highlight-dot"
-                        />
+                        <SummaryHighlightMark />
                         <p className="text-s leading-6 fg-primary/90">
                           {highlight}
                         </p>

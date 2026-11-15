@@ -1,3 +1,4 @@
+import { isConfirmedPendingArchiveRecovery } from './archive-recovery-confirmation-scope';
 import { realpath, lstat } from 'node:fs/promises';
 import { getCanopyDataDir } from '@canopy/desktop-shared/canopy-paths';
 import {
@@ -102,6 +103,7 @@ export async function assertNoArchiveResolution(
   const holds = await readArchiveRecoveryHolds(workspaceId);
   const pending = holds.find(
     (receipt) =>
+      !isConfirmedPendingArchiveRecovery(receipt) &&
       (worktreeId === undefined || parentOperation === 'workspace-delete'
         ? classifyArchiveRecovery(receipt).projectFence
         : classifyArchiveRecovery(receipt).worktreeFence) &&

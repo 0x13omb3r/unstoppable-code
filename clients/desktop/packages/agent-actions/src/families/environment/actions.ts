@@ -27,10 +27,11 @@ export const ENVIRONMENT_MAX_CURSOR_LENGTH = 2048;
 export const ENVIRONMENT_MAX_LABEL_LENGTH = 200;
 
 const idSchema = z.string().trim().min(1).max(ENVIRONMENT_MAX_ID_LENGTH);
+// Nonblank, sent with its whitespace, as the project actions send text.
 const messageSchema = z
   .string()
-  .trim()
   .min(1)
+  .regex(/\S/)
   .max(ENVIRONMENT_MAX_MESSAGE_LENGTH);
 const labelSchema = z.string().trim().min(1).max(ENVIRONMENT_MAX_LABEL_LENGTH);
 const limitSchema = z.number().int().min(1).max(ENVIRONMENT_MAX_PAGE_SIZE);

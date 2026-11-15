@@ -1,3 +1,4 @@
+import type { CloudSendPress } from './web-core/send-order';
 import type {
   AgentModelConfig,
   AgentProviderType,
@@ -266,6 +267,17 @@ export interface SendMessageDispatchOptions {
   packageOverlay?: ChatSendMessageRequest['packageOverlay'];
   /** Caller-assigned id for an exact link to the user-authored turn. */
   userMessageId?: string;
+  /**
+   * The account a cloud send was pressed under, as the web core named this
+   * window's connection (CAN-6828). Set when the send is pressed, and copied
+   * into queued copies, so a later flush or retry is still bound to it.
+   */
+  webCorePrincipalId?: string;
+  /**
+   * This cloud send's place in its chat's order, taken when it was pressed
+   * (CAN-6828). Never copied into a queued copy: a flush presses anew.
+   */
+  webCoreSendPress?: CloudSendPress;
   /** Renderer submission time, retained through first-send adoption. */
   submittedAt?: number;
   watcherFired?: ChatSendMessageRequest['watcherFired'];
@@ -318,6 +330,7 @@ export interface ClaudeTerminalLaunchOptions {
 
 export type QueuedChatDispatchOptions = Omit<
   SendMessageDispatchOptions,
+  | 'webCoreSendPress'
   | 'attachmentPaths'
   | 'attachmentPromptContexts'
   | 'composerAttachmentsReserved'

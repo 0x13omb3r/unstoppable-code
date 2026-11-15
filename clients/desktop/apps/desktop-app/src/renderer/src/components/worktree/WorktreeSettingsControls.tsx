@@ -1,3 +1,4 @@
+import { WorktreeApplyControlSurface } from '@canopy/ui-shared/components';
 import { Stack, Heading, Surface } from '@canopy/ui-shared/components';
 import {
   Button,
@@ -395,7 +396,7 @@ export function AddToWorktreeActionControls({
 
   return (
     <div className="relative">
-      <div className="inline-flex rounded-md shadow-sm">
+      <WorktreeApplyControlSurface>
         <button
           type="button"
           onClick={() =>
@@ -429,7 +430,7 @@ export function AddToWorktreeActionControls({
             <AppCatalogChevronDownMediumIcon size="sm" />
           </button>
         )}
-      </div>
+      </WorktreeApplyControlSurface>
       {canChooseExisting && (
         <FloatingPickerMenu
           open={existingDropdownOpen}

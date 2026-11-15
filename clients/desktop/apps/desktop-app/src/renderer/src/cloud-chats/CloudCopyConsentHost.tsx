@@ -6,6 +6,7 @@ import type { CloudCopyAnalyzeResult } from '@canopy/desktop-shared/types';
 import {
   CloudCopyConsentDialog,
   type CloudCopyConsentAudience,
+  type CloudCopyConsentChoice,
 } from '@canopy/ui-app/capability';
 import { ConfirmDialog } from '@canopy/ui-shared';
 import { toAppError } from '@canopy/protocol/app-errors';
@@ -115,7 +116,7 @@ export function CloudCopyConsentHost({
       />
     );
 
-  const add = async (): Promise<void> => {
+  const add = async (choice: CloudCopyConsentChoice): Promise<void> => {
     if (analysis === null) return;
     const reply = await window.canopyCore.invoke({
       kind: 'request',
@@ -130,6 +131,8 @@ export function CloudCopyConsentHost({
         package: {
           analysisId: analysis.analysisId,
           selectedOptionalResourceIds: [...selected],
+          // The dialog offers it for a skill only.
+          keepInStep: kind === 'skill' && choice.keepInStep,
         },
         expectedAccountId: accountId,
         _meta: { idempotencyKey: crypto.randomUUID() },

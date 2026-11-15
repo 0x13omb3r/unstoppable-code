@@ -1,13 +1,13 @@
 'use client';
 
-import type { JSX, ReactNode } from 'react';
+import { Fragment, type JSX, type ReactNode } from 'react';
 import {
+  AI_CREDITS_PURCHASE_LABEL,
   CONTACT_ORG_ADMIN_COPY,
   MESSAGE_QUEUED_TITLE,
   CREDIT_HELD_MESSAGE_WARNING_COPY,
-} from './creditsRecoveryCopy';
+} from './creditsPromptCopy';
 import { Notice, NoticeButton, type NoticeProps } from './Notice';
-import { AI_CREDITS_PURCHASE_LABEL } from './aiCreditsPurchaseCopy';
 
 type RecoveryNoticeProps<Props> = Props extends unknown
   ? Omit<Props, 'detail' | 'children'>
@@ -27,19 +27,35 @@ export type CreditsRecoveryNoticeProps = RecoveryNoticeProps<NoticeProps> & {
   readonly onBuyCredits?: () => void;
   /** The saved credit-held prompt occupies the same recovery surface on every host. */
   readonly queued?: boolean;
-  /** Supporting lines under the message, one per line, in this order. */
+  /**
+   * Supporting sentences after the message, in this order. They run on in
+   * the same paragraph rather than starting lines of their own.
+   */
   readonly detailLines?: readonly ReactNode[];
-  /** Close the detail with the line telling an org member to ask an admin. */
+  /**
+   * Follow the message with the sentence telling an org member to ask an
+   * admin, ahead of `detailLines`, so an alternative there reads as one to
+   * asking.
+   */
   readonly contactAdmin?: boolean;
   readonly contactAdminTestId?: string;
   readonly 'data-testid'?: string;
 };
+
+/** Whether a sentence renders anything, so no stray space joins it. */
+function rendersContent(node: ReactNode): boolean {
+  return node !== undefined && node !== null && node !== false && node !== '';
+}
 
 /**
  * CAN-4764 — the in-chat out-of-credits recovery notice, shared by the desktop
  * no-billing-source banner and the web cloud credit recovery notice. Purely
  * presentational: the host decides whether it shows, which copy applies, and
  * what the actions do.
+ *
+ * Everything after the title reads as one paragraph: the message, the
+ * contact-admin sentence, then the detail sentences, wrapping together with
+ * no line of their own.
  */
 export function CreditsRecoveryNotice({
   queued = false,
@@ -52,7 +68,18 @@ export function CreditsRecoveryNotice({
   children,
   ...props
 }: CreditsRecoveryNoticeProps): JSX.Element {
-  const hasDetail = detailLines.length > 0 || contactAdmin;
+  const message = queued ? CREDIT_HELD_MESSAGE_WARNING_COPY : children;
+  const sentences = [
+    message,
+    ...(contactAdmin
+      ? [
+          <span key="contact-admin" data-testid={contactAdminTestId}>
+            {CONTACT_ORG_ADMIN_COPY}
+          </span>,
+        ]
+      : []),
+    ...detailLines,
+  ].filter(rendersContent);
   return (
     <Notice
       {...props}
@@ -81,29 +108,16 @@ export function CreditsRecoveryNotice({
           </>
         ) : undefined
       }
-      {...(hasDetail
-        ? {
-            detail: (
-              <>
-                {detailLines.map((line, index) => (
-                  // A host may drop a line between renders, shifting the
-                  // others' indexes. Lines are stateless display content, so
-                  // an index key only re-renders them.
-                  <span key={index} className="block">
-                    {line}
-                  </span>
-                ))}
-                {contactAdmin ? (
-                  <span className="block" data-testid={contactAdminTestId}>
-                    {CONTACT_ORG_ADMIN_COPY}
-                  </span>
-                ) : null}
-              </>
-            ),
-          }
-        : {})}
     >
-      {queued ? CREDIT_HELD_MESSAGE_WARNING_COPY : children}
+      {sentences.map((sentence, index) => (
+        // A host may drop a sentence between renders, shifting the others'
+        // indexes. Sentences are stateless display content, so an index key
+        // only re-renders them.
+        <Fragment key={index}>
+          {index > 0 && ' '}
+          {sentence}
+        </Fragment>
+      ))}
     </Notice>
   );
 }

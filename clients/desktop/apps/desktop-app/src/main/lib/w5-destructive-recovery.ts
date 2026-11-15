@@ -2236,7 +2236,12 @@ export async function protectDestructivePath(
 
 /** Exact membership is saved before the parent's canonical removal can run. */
 export async function prepareArchiveRecoveryCleanup(
-  holds: readonly { operationId: string; revision: string }[],
+  holds: readonly {
+    operationId: string;
+    revision: string;
+    discardPending?: true;
+    receiptDigest?: string;
+  }[],
 ): Promise<DestructiveRecoveryRecord | null> {
   const lifecycle = current();
   if (!lifecycle) {
@@ -2247,7 +2252,11 @@ export async function prepareArchiveRecoveryCleanup(
   if (lifecycle.record.operation !== 'workspace-delete')
     throw recoveryRequired(lifecycle.record);
   lifecycle.record.archiveRecoveryCleanup = holds.map(
-    ({ operationId, revision }) => ({ operationId, revision }),
+    ({ operationId, revision, discardPending, receiptDigest }) => ({
+      operationId,
+      revision,
+      ...(discardPending ? { discardPending, receiptDigest } : {}),
+    }),
   );
   await lifecycle.queue(() => save(lifecycle.record));
   return lifecycle.record;
@@ -2260,7 +2269,11 @@ function archiveRecoveryCleanupParentBinding(
   const binding = {
     ...record,
     archiveRecoveryCleanup: record.archiveRecoveryCleanup?.map(
-      ({ operationId, revision }) => ({ operationId, revision }),
+      ({ operationId, revision, discardPending, receiptDigest }) => ({
+        operationId,
+        revision,
+        ...(discardPending ? { discardPending, receiptDigest } : {}),
+      }),
     ),
     steps: record.steps.map((step) => {
       if (step.phase !== 'archive-recovery-holds') return step;

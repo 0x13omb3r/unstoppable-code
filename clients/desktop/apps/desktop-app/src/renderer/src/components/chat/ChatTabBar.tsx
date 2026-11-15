@@ -43,7 +43,7 @@ import { resolveOverallDefault } from '@canopy/desktop-shared/types';
 import { ThinkingSpinner } from '../shared/loading/spinners/ThinkingSpinner';
 import { FileTypeIcon } from '@canopy/ui-shared/icons';
 import { resolveChatTabProvider } from '@/lib/providerUi';
-import { ModelProviderIcon } from '@canopy/ui-shared/components';
+import { ModelProviderIcon, Surface } from '@canopy/ui-shared/components';
 import { copyTextToClipboard } from '@/lib/clipboard';
 import { formatFileReferencePath } from '@/lib/file-reference-paths';
 import { TabContextMenu, type TabContextMenuItem } from './TabContextMenu';
@@ -768,14 +768,20 @@ export const ChatTabBar = memo(function ChatTabBar({
   };
 
   return (
-    <div
+    <Surface
       data-testid={dataTestId}
-      className={`${dragRegion ? 'electron-drag' : 'electron-no-drag'} flex items-center border-b bg-fg-primary/[0.02]`}
+      variant="quiet-panel"
+      boundary="bottom"
+      dragRegion={dragRegion}
+      className="flex items-center"
     >
       {pinnedTabs.length > 0 && (
-        <div
+        <Surface
           ref={pinnedListRef}
-          className="electron-no-drag flex max-w-2/5 shrink-0 overflow-x-auto border-r"
+          variant="section"
+          boundary="right"
+          dragRegion={false}
+          className="flex max-w-2/5 shrink-0 overflow-x-auto"
           onDragOver={handlePinnedListDragOver}
           onDrop={handleDrop}
         >
@@ -783,7 +789,7 @@ export const ChatTabBar = memo(function ChatTabBar({
             const tabIndex = tabIndexById.get(tab.id) ?? -1;
             return renderTab(tab, tabIndex);
           })}
-        </div>
+        </Surface>
       )}
       <div
         ref={tabListRef}
@@ -1083,6 +1089,6 @@ export const ChatTabBar = memo(function ChatTabBar({
         />
       )}
       {chatTabRename.dialog}
-    </div>
+    </Surface>
   );
 });

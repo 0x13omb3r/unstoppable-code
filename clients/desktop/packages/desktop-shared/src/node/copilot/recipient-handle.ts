@@ -1,4 +1,3 @@
-import type { CopilotClient } from '@github/copilot-sdk';
 import type { CopilotAccount } from '../../types/copilot-connection';
 import type { CopilotModelEntry } from '@canopy/execution-engine/types/copilot-models';
 import type {
@@ -6,9 +5,17 @@ import type {
   CopilotTurnResult,
 } from '@canopy/copilot-recipient/turn-driver';
 
-export type CopilotQuotaResult = Awaited<
-  ReturnType<CopilotClient['rpc']['account']['getQuota']>
->;
+export interface CopilotQuotaResult {
+  quotaSnapshots: Record<
+    string,
+    | {
+        remainingPercentage: number;
+        isUnlimitedEntitlement: boolean;
+        resetDate?: string;
+      }
+    | undefined
+  >;
+}
 
 /**
  * What a consumer holds for one admitted Copilot recipient: results, an

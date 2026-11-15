@@ -73,6 +73,33 @@ export function cloudAttachmentRefusal(file: {
 export const CLOUD_ATTACHMENT_LIMIT_MESSAGE =
   'Attach up to eight files per message. Remove a file before adding more.';
 
+/**
+ * The files a cloud message would take, up to `room` more, each with its
+ * media type, and one line per file left out in the web's words. Nothing is
+ * read.
+ */
+export function screenCloudAttachmentFiles(
+  files: readonly File[],
+  room: number,
+): {
+  readonly accepted: { file: File; mediaType: CloudAttachmentMediaType }[];
+  readonly problems: string[];
+} {
+  const problems: string[] = [];
+  const takeable = files.flatMap((file) => {
+    const refusal = cloudAttachmentRefusal(file);
+    const mediaType = cloudAttachmentMediaType(file);
+    if (refusal === null && mediaType !== null) return [{ file, mediaType }];
+    problems.push(
+      `${file.name}: ${refusal ?? 'Attachment type is not supported'}`,
+    );
+    return [];
+  });
+  const kept = Math.max(0, room);
+  if (takeable.length > kept) problems.push(CLOUD_ATTACHMENT_LIMIT_MESSAGE);
+  return { accepted: takeable.slice(0, kept), problems };
+}
+
 const TEXT_PREVIEW_BYTES = 64 * 1024;
 /** Uploaded files whose previews stay in memory; older ones show no preview. */
 const MAX_PREVIEWS = 32;

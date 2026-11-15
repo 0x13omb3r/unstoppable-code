@@ -11,7 +11,11 @@ import {
   DEFAULT_CODEX_APP_SERVER_IDLE_TIMEOUT_MINUTES,
   type ResourceMetadata,
 } from '@canopy/execution-engine/execution-types';
-import { killChildProcessGroup } from '@canopy/execution-engine/node/lib/process-kill';
+import {
+  hasExitedProcessGroupMembers,
+  killChildProcessGroup,
+  signalExitedProcessGroup,
+} from '@canopy/execution-engine/node/lib/process-kill';
 import { extractApprovalThreadId } from './approval-thread-id';
 import type { ClientNotification } from './generated/ClientNotification';
 import type { ClientRequest } from './generated/ClientRequest';
@@ -412,6 +416,8 @@ const DISPOSED_TURN_TERMINAL_GRACE_MS = 5_000;
  */
 const MAX_BACKLOG_DEADLINE_EXTENSION_MS = 5 * 60_000;
 const FORCE_KILL_PROCESS_GROUP_DELAY_MS = 5_000;
+/** How often a terminated app-server's process group is checked for members left behind. */
+const PROCESS_GROUP_DRAIN_POLL_MS = 25;
 const MAX_CAPTURED_STDERR_CHARS = 12 * 1024;
 const MAX_REPORTED_STDERR_CHARS = 4 * 1024;
 const STARTUP_STATE_DB_RETRY_DELAY_MS = 5_000;
@@ -756,10 +762,14 @@ function isRetryableStateDbStartupFailure(text: string): boolean {
   );
 }
 
-function delay(ms: number): Promise<void> {
+/**
+ * Resolves after `ms`. The timer is unref'd unless `keepAlive` is set, for a
+ * wait that must finish even when nothing else holds the event loop open.
+ */
+function delay(ms: number, keepAlive = false): Promise<void> {
   return new Promise((resolve) => {
     const timer = setTimeout(resolve, ms);
-    timer.unref?.();
+    if (!keepAlive) timer.unref?.();
   });
 }
 
@@ -784,6 +794,21 @@ function waitForProcessExit(
     proc.once('exit', finish);
     proc.once('close', finish);
   });
+}
+
+/** Waits up to `timeoutMs` for the exited leader's group to empty; true once it has. */
+async function waitForProcessGroupDrain(
+  pid: number,
+  timeoutMs: number,
+): Promise<boolean> {
+  const deadline = Date.now() + timeoutMs;
+  while (hasExitedProcessGroupMembers(pid)) {
+    if (Date.now() >= deadline) return false;
+    // Kept alive: with the leader and its stdio gone, nothing else may hold
+    // a short-lived host's event loop open until the caller's shutdown settles.
+    await delay(PROCESS_GROUP_DRAIN_POLL_MS, true);
+  }
+  return true;
 }
 
 function parseParentThreadIdFromThreadStarted(
@@ -4955,6 +4980,7 @@ export class CodexAppServerConnection {
     }
     await waitForProcessExit(proc, FORCE_KILL_PROCESS_GROUP_DELAY_MS);
     if (!this.isProcessAlive(proc)) {
+      await this.drainExitedProcessGroup(proc);
       return;
     }
     try {
@@ -4968,6 +4994,24 @@ export class CodexAppServerConnection {
         `Codex app-server process ${String(proc.pid ?? 'unknown')} did not terminate`,
       );
     }
+    await this.drainExitedProcessGroup(proc);
+  }
+
+  /**
+   * The group signal above also reached the app-server's own children, such
+   * as its code-mode host, but they may still be exiting, and writing to
+   * the Codex home directory, after the leader has gone. Termination settles once they
+   * have exited too, killing any that outlast a grace period, so a caller
+   * that removes the runtime's directories after shutdown never races them.
+   */
+  private async drainExitedProcessGroup(
+    proc: ChildProcessWithoutNullStreams,
+  ): Promise<void> {
+    const pid = proc.pid;
+    if (pid === undefined) return;
+    if (await waitForProcessGroupDrain(pid, INTERRUPT_PROCESS_GRACE_MS)) return;
+    signalExitedProcessGroup(pid, 'SIGKILL');
+    await waitForProcessGroupDrain(pid, INTERRUPT_PROCESS_GRACE_MS);
   }
 
   private buildProcessFailureError(

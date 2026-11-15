@@ -1,6 +1,12 @@
 'use client';
 
 import {
+  FileOverlapChoiceSurface,
+  FileOverlapChangeMark,
+} from '@canopy/ui-shared/components';
+
+import { Surface } from '@canopy/ui-shared/components';
+import {
   useEffect,
   useId,
   useLayoutEffect,
@@ -250,10 +256,8 @@ function OverlapOption({
     onChoose();
   };
   return (
-    <div
-      className={`flex flex-col gap-1 px-3 py-2.5 transition-colors ${
-        disabled ? '' : 'cursor-pointer hover:bg-subtle'
-      }`}
+    <FileOverlapChoiceSurface
+      disabled={disabled}
       data-testid={`file-overlap-side-${side}`}
       data-selected={selected}
       onClick={chooseFromRow}
@@ -310,7 +314,7 @@ function OverlapOption({
           </div>
         )}
       </div>
-    </div>
+    </FileOverlapChoiceSurface>
   );
 }
 
@@ -346,13 +350,9 @@ function QuoteSegments({
           );
         }
         return segment.changed ? (
-          <mark
-            key={index}
-            className="rounded-sm bg-accent-subtle fg-primary"
-            data-testid="file-overlap-mark"
-          >
+          <FileOverlapChangeMark key={index} data-testid="file-overlap-mark">
             {text}
-          </mark>
+          </FileOverlapChangeMark>
         ) : (
           <span key={index}>{text}</span>
         );
@@ -500,9 +500,12 @@ export function FileOverlapNotice({
   };
 
   return (
-    <div
+    <Surface
       ref={noticeRef}
-      className="flex flex-col gap-2 border-b px-3 pt-1 pb-3"
+      variant="section"
+      boundary="bottom"
+      padding="file-overlap"
+      gap="inline"
       data-testid="file-overlap-notice"
       data-origin={saveConflict ? 'save' : 'refresh'}
     >
@@ -625,6 +628,6 @@ export function FileOverlapNotice({
           );
         })}
       </div>
-    </div>
+    </Surface>
   );
 }

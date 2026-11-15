@@ -1,3 +1,4 @@
+import type { PreparedInboxNote } from './prepared-note';
 import type {
   LocalMemoryConsolidationStatus,
   LocalMemoryDocument,
@@ -22,6 +23,7 @@ import {
   readMemoryIndex,
   readRecentInboxNoteEntries,
   saveInboxNote,
+  savePreparedInboxNote,
   searchMemory,
   type RecentInboxNote,
 } from './store';
@@ -59,6 +61,13 @@ export interface LocalMemoryStore {
       source: MemorySource;
       origin?: LocalMemoryNoteOrigin;
     },
+    /** Rechecked under the scope lock before publication is admitted. */
+    maySave?: () => boolean | Promise<boolean>,
+  ): Promise<string>;
+  savePreparedNote(
+    scope: LocalMemoryScopeRequest,
+    note: PreparedInboxNote,
+    maySave?: () => boolean | Promise<boolean>,
   ): Promise<string>;
   search(
     scopes: readonly LocalMemoryScopeRequest[],
@@ -176,8 +185,10 @@ async function listWithUsage(
 // replica it resolved while it waits for the scope's lock.
 export const localMemoryStore: LocalMemoryStore = {
   resolve: resolveLocalMemoryScope,
-  saveNote: (scope, note) =>
-    saveInboxNote(() => resolveLocalMemoryScope(scope), note),
+  saveNote: (scope, note, maySave) =>
+    saveInboxNote(() => resolveLocalMemoryScope(scope), note, maySave),
+  savePreparedNote: (scope, note, maySave) =>
+    savePreparedInboxNote(() => resolveLocalMemoryScope(scope), note, maySave),
   search: (scopes, query) =>
     searchMemory(
       scopes.map((scope) => ({ scope: scope.scope, dir: dir(scope) })),

@@ -29,3 +29,31 @@ export {
   type UseClaudeModsResult,
   type ClaudeModsHookError,
 } from './useClaudeMods';
+export {
+  ClaudeModLogNotices,
+  ClaudeModPaneView,
+  focusClaudeModPane,
+  readClaudeModSurface,
+  watchClaudeModPaneRosters,
+  useClaudeModComposerAnswerer,
+  type ChatSurface as ClaudeModChatSurface,
+  type ClaudeModComposerAnswerer,
+  type ClaudeModPaneRosterListener,
+  ClaudeModStatusDrawer,
+  useClaudeModSurface,
+  useClaudeModSurfaceToasts,
+  useClaudeModBandKinds,
+  type ClaudeModSurfaceChat,
+  type ClaudeModSurfaceLine,
+  type ClaudeModSurfaceLogLine,
+  type ClaudeModSurfaceToast,
+} from './ClaudeModSurface';
+export {
+  installClaudeModPanePanelSync,
+  modPanePanelInstanceKey,
+  modPanePanelSeed,
+  MOD_PANE_PANEL_NAME,
+  type ClaudeModPanePanelHost,
+  type ClaudeModPanePanelOpenResult,
+  type ClaudeModPanePanelSeed,
+} from './mod-pane-panel-sync';

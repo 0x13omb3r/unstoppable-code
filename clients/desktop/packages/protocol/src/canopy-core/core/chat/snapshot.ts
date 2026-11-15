@@ -187,6 +187,23 @@ export type CoreChatQueueEntry = z.output<
   typeof CoreChatQueueSummarySchema
 >['entries'][number];
 
+/**
+ * A cloud chat's sandbox as the web core last knew it (CAN-6766): `asleep`
+ * (stopped or stopping, or its runner session ended), `waking` (a wake is
+ * under way), `ready`, or `unknown` (failed, gone, unreadable, or not
+ * observed yet).
+ */
+export const CORE_CHAT_SANDBOX_STATES = Object.freeze([
+  'asleep',
+  'waking',
+  'ready',
+  'unknown',
+] as const);
+export const CoreChatSandboxSchema = z.strictObject({
+  state: z.enum(CORE_CHAT_SANDBOX_STATES),
+});
+export type CoreChatSandbox = z.output<typeof CoreChatSandboxSchema>;
+
 export const CoreChatSnapshotGetResultSchema = z.object({
   workspaceId: id,
   worktreeId: id,
@@ -231,6 +248,12 @@ export const CoreChatSnapshotGetResultSchema = z.object({
   unreadQuestionChatIds: z.array(id).optional(),
   todos: z.array(CanopyJsonValueSchema).optional(),
   tasks: z.array(CanopyJsonValueSchema).optional(),
+  /**
+   * The task's sandbox, which all its chats share, as the web core last knew
+   * it (CAN-6766); `sandbox.changed` reports later changes. Null: the scope
+   * has no cloud sandbox. Absent from a host that doesn't serve it.
+   */
+  sandbox: CoreChatSandboxSchema.nullable().optional(),
 });
 
 export const CoreChatSnapshotGetErrorSchema = CanopyErrorPayloadSchema.extend({

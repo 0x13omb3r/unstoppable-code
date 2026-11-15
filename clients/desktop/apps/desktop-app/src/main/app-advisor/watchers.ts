@@ -1,3 +1,7 @@
+import {
+  assertAdmittedWriter,
+  STORAGE_OWNERSHIP,
+} from '@canopy/core-runtime/storage';
 import { publishAutoDeleteActivity } from '../lib/work-entry-auto-delete/activity';
 import { collectWatcherTargetKeys } from '../lib/auto-archive';
 import { z } from 'zod';
@@ -117,6 +121,7 @@ import {
   backgroundExecutionRetryMessage,
 } from '@canopy/desktop-shared/node/background-execution-context';
 import type { ResourceContextDecision } from '@canopy/execution-engine/lib/resource-context-policy';
+import { BackgroundExecutionRefusedError } from '../services/background-execution-refusal';
 import {
   pipelineContextResources,
   type PipelineContextResource,
@@ -3572,6 +3577,21 @@ export async function retryTransientWatcherAuthorization(
   return authorization;
 }
 
+/** A typed refusal, so tool callers can return its copy instead of failing. */
+function watcherRefusal(
+  decision: Extract<ResourceContextDecision, { allow: false }>,
+): BackgroundExecutionRefusedError {
+  return new BackgroundExecutionRefusedError(
+    decision.transient
+      ? backgroundExecutionRetryMessage('watcher')
+      : backgroundExecutionDeniedMessage(decision.reason, {
+          ...(decision.subject ? { subject: decision.subject } : {}),
+        }),
+    decision.reason,
+    decision.transient === true,
+  );
+}
+
 async function authorizeWatcherDelivery(
   watcher: AppAdvisorWatcher,
 ): Promise<void> {
@@ -3593,16 +3613,7 @@ async function authorizeWatcherDelivery(
       watcher.destination,
     ),
   );
-  if (!authorization.allow)
-    throw new Error(
-      authorization.transient
-        ? backgroundExecutionRetryMessage('watcher')
-        : backgroundExecutionDeniedMessage(authorization.reason, {
-            ...(authorization.subject
-              ? { subject: authorization.subject }
-              : {}),
-          }),
-    );
+  if (!authorization.allow) throw watcherRefusal(authorization);
   if (destination && watcher.executionContext !== undefined) {
     // Defer the heavy chat-state repository/transcript graph until a flagged delivery.
     const { getChatStateService } =
@@ -3671,14 +3682,7 @@ async function authorizeWatcherArming(
     ),
     destination,
   );
-  if (!decision.allow)
-    throw new Error(
-      decision.transient
-        ? backgroundExecutionRetryMessage('watcher')
-        : backgroundExecutionDeniedMessage(decision.reason, {
-            ...(decision.subject ? { subject: decision.subject } : {}),
-          }),
-    );
+  if (!decision.allow) throw watcherRefusal(decision);
 }
 
 /** Bind and authorize before arming, using the same context delivery retains. */
@@ -14006,6 +14010,18 @@ class AppAdvisorWatcherService implements InlineChatWatcherReservationPort {
     removedLegacyDelegateIds: ReadonlySet<string> = new Set(),
   ): Promise<void> {
     checkRegistrationSignal(signal);
+    // Refuse the pair before either installer can publish a partial mutation.
+    for (const namespace of [
+      'app_advisor_watchers',
+      'app_advisor_watchers_canonical',
+    ] as const) {
+      assertAdmittedWriter(
+        namespace,
+        'electron_main',
+        'main/app-advisor/watchers',
+        STORAGE_OWNERSHIP,
+      );
+    }
     const filePath = getAppAdvisorWatchersFilePath();
     const dir = dirname(filePath);
     await mkdir(dir, { recursive: true });

@@ -81,6 +81,8 @@ export interface OpenCodeTurnRequest extends Pick<
 
 export interface OpenCodeTurnHost {
   authorize: OpenCodeRuntimeOptions['authorize'];
+  beforeTool?: OpenCodeRuntimeOptions['beforeTool'];
+  afterTool?: OpenCodeRuntimeOptions['afterTool'];
   displayTool?: (tool: { name: string; input: unknown; kind?: string }) => {
     name: string;
     input: unknown;
@@ -220,6 +222,8 @@ export async function runOpenCodeTurn(
     runtime = await startOpenCodeRuntime({
       ...request,
       inferenceRoute: inference?.route,
+      beforeTool: host.beforeTool,
+      afterTool: host.afterTool,
       authorize: async (input) => {
         const outcome = await host.authorize(input);
         tools.set(input.toolCallId, {

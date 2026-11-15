@@ -532,6 +532,27 @@ async function collectFeedbackFiles(
   includeDumps: boolean,
 ): Promise<CollectedFeedbackFiles> {
   await includeCoreDiagnostics(builder);
+  const [{ readConsolidationState }, { resolveLocalMemoryScope }] =
+    await Promise.all([
+      import('../memory/local/consolidation-state'),
+      import('../memory/local/scope-resolver'),
+    ]);
+  const memoryScopes = [
+    { scope: 'user' as const },
+    ...request.workspaceSelections.map((selection) => ({
+      scope: 'workspace' as const,
+      workspaceId: selection.workspaceId,
+    })),
+  ];
+  for (const scope of memoryScopes) {
+    const state = await readConsolidationState(
+      resolveLocalMemoryScope(scope).dir,
+    ).catch(() => null);
+    builder.addGeneratedJson(
+      `memory-health/${scope.scope === 'user' ? 'user' : scope.workspaceId}.json`,
+      { history: state?.history ?? [] },
+    );
+  }
   await includeAppLogs(builder);
   const crashDumps = includeDumps
     ? await includeCrashDumps(builder)

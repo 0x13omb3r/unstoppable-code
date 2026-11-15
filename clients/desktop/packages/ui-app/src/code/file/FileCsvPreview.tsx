@@ -1,5 +1,6 @@
 'use client';
 
+import { AttachedNotice, CsvPreviewTable } from '@canopy/ui-shared/components';
 import { memo, useMemo, type JSX } from 'react';
 import { REPLAY_BLOCK_CLASS } from '@canopy/ui-shared/lib/replay-privacy';
 import type { FileContentScrollBinding } from './FileViewer';
@@ -150,11 +151,11 @@ function FileCsvPreviewImpl({
   if (parsed.error || !parsed.rows || parsed.rows.length === 0) {
     return (
       <div className="flex min-h-0 flex-1 flex-col">
-        <div className="border-b bg-warning-subtle px-4 py-2 text-xs fg-warning">
+        <AttachedNotice variant="csv-fallback">
           {parsed.error
             ? `Could not parse as CSV: ${parsed.error}. Showing raw text.`
             : 'No CSV rows detected. Showing raw text.'}
-        </div>
+        </AttachedNotice>
         <pre
           ref={scrollBinding?.ref}
           onScroll={scrollBinding?.onScroll}
@@ -175,36 +176,7 @@ function FileCsvPreviewImpl({
       data-selectable
       className={`${REPLAY_BLOCK_CLASS} min-h-0 flex-1 overflow-auto`}
     >
-      <table className="w-full border-collapse text-xs">
-        {table.header && (
-          <thead className="sticky top-0 bg-base">
-            <tr>
-              {table.header.map((cell, index) => (
-                <th
-                  key={`h-${index}`}
-                  className="border-b px-3 py-2 text-left font-semibold fg-primary"
-                >
-                  {cell}
-                </th>
-              ))}
-            </tr>
-          </thead>
-        )}
-        <tbody>
-          {table.rows.map((item, rowIndex) => (
-            <tr key={`r-${rowIndex}`} className="hover:bg-fg-primary/[0.04]">
-              {item.map((cell, cellIndex) => (
-                <td
-                  key={`r-${rowIndex}-c-${cellIndex}`}
-                  className="border-b px-3 py-1.5 align-top fg-primary/90"
-                >
-                  {cell}
-                </td>
-              ))}
-            </tr>
-          ))}
-        </tbody>
-      </table>
+      <CsvPreviewTable header={table.header} rows={table.rows} />
     </div>
   );
 }

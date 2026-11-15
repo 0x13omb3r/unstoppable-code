@@ -17,6 +17,7 @@ import { useEffect, useId, useMemo, useRef, useState, type JSX } from 'react';
 import type { XlsxSheetModel } from './office-parse';
 import { parseOfficeDocument } from './office-parse-client';
 import { OfficePreviewBanner } from './OfficePreviewBanner';
+import { OfficeDocumentRegion } from './OfficeDocumentSurface';
 import { cellKey, columnLabel, coveredCells, spanByAnchor } from './xlsx-grid';
 
 const ROW_HEIGHT_PX = 28;
@@ -227,24 +228,26 @@ function SheetGrid({
            * corner, so the header and the gutter read as one edge rather than
            * a filled strip with a hole at its origin.
            */}
-          <div
+          <OfficeDocumentRegion
             role="row"
             aria-rowindex={1}
-            className="sticky top-0 z-10 grid bg-secondary"
+            kind="frozen-edge"
+            className="sticky top-0 z-10 grid"
             style={{ gridTemplateColumns, height: ROW_HEIGHT_PX }}
           >
             <div role="columnheader" aria-label="Row number" />
             {Array.from({ length: visibleCols }, (_, col) => (
-              <div
+              <OfficeDocumentRegion
                 key={col}
                 role="columnheader"
                 aria-colindex={col + 2}
-                className="border px-2 font-medium fg-secondary"
+                kind="document-edge"
+                className="px-2 font-medium fg-secondary"
               >
                 {columnLabel(col)}
-              </div>
+              </OfficeDocumentRegion>
             ))}
-          </div>
+          </OfficeDocumentRegion>
           <div
             role="rowgroup"
             className="relative"
@@ -272,20 +275,21 @@ function SheetGrid({
                  * both, below the header row, so the top-left corner stays
                  * the header's.
                  */}
-                <div
+                <OfficeDocumentRegion
                   role="rowheader"
                   aria-colindex={1}
-                  className="sticky left-0 z-2 col-start-1 border bg-secondary px-2 text-right fg-secondary"
+                  kind="frozen-cell"
+                  className="sticky left-0 z-2 col-start-1 px-2 text-right fg-secondary"
                 >
                   {item.index + 1}
-                </div>
+                </OfficeDocumentRegion>
                 {Array.from({ length: visibleCols }, (_, col) => {
                   const key = cellKey(item.index, col);
                   if (covered.has(key)) return null;
                   const span = spans.get(key);
                   const value = sheet.rows[item.index]?.[col] ?? '';
                   return (
-                    <div
+                    <OfficeDocumentRegion
                       key={col}
                       role="cell"
                       aria-colindex={col + 2}
@@ -294,7 +298,8 @@ function SheetGrid({
                       data-testid="xlsx-cell"
                       data-cell={`${columnLabel(col)}${item.index + 1}`}
                       title={value}
-                      className="relative box-border min-w-0 overflow-hidden text-ellipsis whitespace-nowrap border px-2"
+                      kind="document-edge"
+                      className="relative box-border min-w-0 overflow-hidden text-ellipsis whitespace-nowrap px-2"
                       style={{
                         gridColumn: `${col + 2} / span ${span?.colSpan ?? 1}`,
                         height: (span?.rowSpan ?? 1) * ROW_HEIGHT_PX,
@@ -302,7 +307,7 @@ function SheetGrid({
                       }}
                     >
                       {value}
-                    </div>
+                    </OfficeDocumentRegion>
                   );
                 })}
               </div>

@@ -336,6 +336,50 @@ export async function materializeCursorCapabilityRoot(
 }
 
 /** Portable selected-capability projection, also used by the Copilot SDK. */
+/** Freeze selected plugin code with the same bounded, verified copy as skills. */
+export async function materializeSelectedPluginRoots(
+  root: string,
+  sources: readonly string[],
+  signal: AbortSignal,
+): Promise<string[]> {
+  await privateDirectory(root);
+  const destinationRoot = await realpath(root);
+  const limits = {
+    maxSkillBytes: DEFAULT_MAX_SKILL_BYTES,
+    maxSkillFiles: DEFAULT_MAX_SKILL_FILES,
+  };
+  const result: string[] = [];
+  for (const [index, source] of sources.entries()) {
+    signal.throwIfAborted();
+    const canonical = await realpath(source);
+    const tree = await scanSkill(canonical, limits, true, signal);
+    if ('tooLarge' in tree || tree.skipped.length > 0)
+      throw new Error(
+        'Selected hook plugin exceeds the file limits or contains symbolic links.',
+      );
+    const target = join(destinationRoot, String(index));
+    await copySkill(canonical, tree.files, target, destinationRoot, {
+      maxBytes: limits.maxSkillBytes,
+      signal,
+      verify: async (temporary) => {
+        const copy = await scanSkill(temporary, limits, true, signal);
+        if (
+          'tooLarge' in copy ||
+          copy.skipped.length > 0 ||
+          copy.fingerprint !== tree.fingerprint
+        )
+          throw new Error('Selected hook plugin changed while being copied.');
+      },
+    });
+    result.push(target);
+  }
+  for (const name of await readdir(destinationRoot)) {
+    if (!result.includes(join(destinationRoot, name)))
+      await rm(join(destinationRoot, name), { recursive: true, force: true });
+  }
+  return result;
+}
+
 export async function materializeSelectedCapabilityRoot(
   cursorDir: string,
   projection: CursorCapabilityProjection,

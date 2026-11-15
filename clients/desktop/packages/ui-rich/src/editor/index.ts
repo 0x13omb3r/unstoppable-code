@@ -41,5 +41,6 @@ export {
   restoreEditorContent,
   serializeEditorValue,
 } from './slate-utils';
+export { fillEditorDraft, readEditorDraft } from './editor-draft';
 export { createEmptyValue } from '../types';
 export { appendDraftText, richDraftHasContent } from './append-draft-text';

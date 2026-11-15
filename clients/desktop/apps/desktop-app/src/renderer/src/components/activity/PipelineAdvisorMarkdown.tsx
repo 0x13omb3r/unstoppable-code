@@ -1,3 +1,5 @@
+import { AdvisorCodeExcerpt } from '@canopy/ui-shared/components';
+import { InlineCode } from '@canopy/ui-shared/components';
 import type { JSX } from 'react';
 import {
   Markdown,
@@ -31,18 +33,10 @@ const ADVISOR_MARKDOWN_COMPONENTS: MarkdownOverrides = {
         <code className={`${className} whitespace-pre-wrap`}>{children}</code>
       );
     }
-    return (
-      <code className="rounded bg-fg-primary/[0.08] px-1 py-0.5 font-mono text-xs fg-info">
-        {children}
-      </code>
-    );
+    return <InlineCode variant="advisor-markdown">{children}</InlineCode>;
   },
   pre({ children }): JSX.Element {
-    return (
-      <span className="my-1 block overflow-x-auto rounded bg-fg-primary/[0.06] p-2 font-mono text-xs fg-primary/85">
-        {children}
-      </span>
-    );
+    return <AdvisorCodeExcerpt>{children}</AdvisorCodeExcerpt>;
   },
   ul({ children }): JSX.Element {
     return <span className="mt-1 flex flex-col gap-0.5">{children}</span>;

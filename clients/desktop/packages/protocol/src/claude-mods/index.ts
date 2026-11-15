@@ -7,6 +7,8 @@
  * desktop, so both surfaces agree.
  */
 
+import type { ClaudeModSurfaceCommandArgs } from '../extension-ui';
+
 /** How a plugin's Mod stands for the next Claude chat that starts. */
 export type ClaudeModPluginStatus =
   /** Allowed at the plugin's current content. */
@@ -305,5 +307,14 @@ export interface ClaudeModsCommandMap {
   'claudeMods.update': {
     args: ClaudeModsUpdate;
     result: ClaudeModsUpdateResult;
+  };
+  /**
+   * What the person did on a chat's Mod surface. A host without
+   * `CanopyCapabilities.claudeModSurface` rejects it; one whose session is
+   * not drawing the surface ignores it.
+   */
+  'claudeMods.surfaceCommand': {
+    args: ClaudeModSurfaceCommandArgs;
+    result: void;
   };
 }

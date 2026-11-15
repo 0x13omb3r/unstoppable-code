@@ -10,11 +10,18 @@ import {
   type CloudTabModel,
   type WebCoreAttachmentFile,
   type WebCoreChatBackendCore,
+  type WebCoreReadAhead,
 } from './web-core-chat-backend';
 import type { LiveChat } from './live-follower';
 import { clearTaskCreations } from './task-creations';
 import { clearCloudTaskDeletions } from './task-deletions';
 import { useWebCoreLiveReplyStore } from './live-replies';
+import { useCloudSandboxStateStore } from './sandbox-states';
+import {
+  subscribeWebCoreDescription,
+  webCoreAdvertises,
+} from './web-core-description';
+import { CORE_CHAT_EVENTS_SANDBOX_REVISION } from '@canopy/protocol/canopy-core';
 import { useWebCoreStartingTurnStore } from './starting-turns';
 import { tryChatStoreApi } from '../store-ref';
 import { runtimeRunsTurn } from '../runtime-runs-turn';
@@ -161,6 +168,14 @@ export function setWebCoreUnsentWorkCheck(check: typeof unsentWorkCheck): void {
 }
 
 /** Sets, or with `null` clears, what handles a cloud task deleted elsewhere. */
+/** A task deleted elsewhere was restored: its stream follows it again. */
+export function webCoreTaskRestored(scope: {
+  readonly projectId: string;
+  readonly worktreeId: string;
+}): void {
+  core?.taskRestored(scope);
+}
+
 export function setWebCoreTaskDeletionHandler(
   handler: typeof taskDeletionHandler,
 ): void {
@@ -186,15 +201,52 @@ function followStoreRuntimes(): void {
   });
 }
 
+/**
+ * Whether this window's web core sends `sandbox.changed` on a task's events,
+ * which keeps a published sandbox state current: it advertises events
+ * revision 3, which main then asks for (CAN-6841). False until the
+ * connection is described, or when that fails.
+ */
+function sandboxStatesServed(): boolean {
+  return webCoreAdvertises(
+    'core.chat.events',
+    CORE_CHAT_EVENTS_SANDBOX_REVISION,
+  );
+}
+
+let followingSandboxStates = false;
+
+/**
+ * Publishes the sandbox states held while unserved once the connection is
+ * described as serving them, and forgets the published ones when a
+ * connection no longer does (CAN-6841).
+ */
+function followSandboxStates(): void {
+  if (followingSandboxStates) return;
+  followingSandboxStates = true;
+  let served = sandboxStatesServed();
+  subscribeWebCoreDescription(() => {
+    const now = sandboxStatesServed();
+    if (now === served) return;
+    served = now;
+    if (now) core?.releaseSandboxStates();
+    else useCloudSandboxStateStore.getState().clear();
+  });
+}
+
 /** The one web core backend, so the store can compare backends by identity. */
 export function webCoreChatBackend(): ChatBackend {
   if (backend !== null) return backend;
+  followSandboxStates();
   core = createWebCoreChatBackendCore({
     invoker: relayInvoker,
     publishLive: (key, chat) =>
       useWebCoreLiveReplyStore.getState().set(key, chat),
     publishTurnStarting: (key, starting) =>
       useWebCoreStartingTurnStore.getState().set(key, starting),
+    publishSandbox: (key, sandbox, revision) =>
+      useCloudSandboxStateStore.getState().set(key, sandbox.state, revision),
+    sandboxStatesServed,
     storeRunsTurn: (target) => {
       followStoreRuntimes();
       return runtimeRunsTurn(
@@ -239,6 +291,19 @@ export function webCoreChatBackend(): ChatBackend {
   return backend;
 }
 
+/**
+ * Reads a cloud task ahead of a likely open, as a hover on its sidebar row
+ * asks (CAN-6774): chat reads only, so its sandbox never wakes, and nothing
+ * is installed or followed until the open takes them.
+ */
+export function readAheadWebCoreScope(scope: {
+  readonly projectId: string;
+  readonly worktreeId: string;
+}): WebCoreReadAhead | null {
+  webCoreChatBackend();
+  return core?.readAhead(scope) ?? null;
+}
+
 /** Uploads a file the composer attaches to a web core chat (CAN-6175 R6). */
 export function uploadWebCoreChatAttachment(
   target: { projectId: string; worktreeId: string; chatId: string },
@@ -264,6 +329,7 @@ export function closeWebCoreChatBackend(): void {
   clearCloudTaskDeletions();
   useWebCoreLiveReplyStore.getState().clear();
   useWebCoreStartingTurnStore.getState().clear();
+  useCloudSandboxStateStore.getState().clear();
   clearWebCoreModelCatalog();
 }
 

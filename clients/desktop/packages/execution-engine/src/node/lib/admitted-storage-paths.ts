@@ -25,7 +25,10 @@ export interface AdmittedWriterTarget {
 
 // Mirrors the rows' patterns in storage-ownership.yaml; a test compares them.
 const DATA_ROOT_FILES: ReadonlyMap<string, AdmittedStorageNamespace> = new Map([
+  ['app-advisor-watchers.json', 'app_advisor_watchers'],
+  ['app-advisor-watchers-canonical.json', 'app_advisor_watchers_canonical'],
   ['preferences.json', 'preferences'],
+  ['preferences.json.usage-data-denied.json', 'preferences'],
   ['preferences.last-good.json', 'preferences'],
   ['preferences.generation.json', 'preferences'],
   ['migrations.json', 'startup_migrations'],

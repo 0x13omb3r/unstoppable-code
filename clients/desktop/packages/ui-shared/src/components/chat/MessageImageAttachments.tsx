@@ -72,6 +72,25 @@ export const ATTACHMENT_TILE_EDGE_CLASS = 'inset-ring inset-ring-fg-primary/16';
  */
 export const IMAGE_THUMBNAIL_EDGE_CLASS = `pointer-events-none absolute inset-0 rounded-lg ${ATTACHMENT_TILE_EDGE_CLASS}`;
 
+/** Compact attachment cards in the composer have the same edge as the preview tiles. */
+export function ComposerAttachmentSurface({
+  kind,
+  children,
+}: {
+  readonly kind: 'image' | 'file' | 'selection';
+  readonly children: ReactNode;
+}): JSX.Element {
+  const image = kind === 'image';
+  return (
+    <span
+      data-attachment-kind={kind}
+      className={`h-30 overflow-hidden rounded-lg bg-secondary ${image ? `${REPLAY_BLOCK_CLASS} relative block w-30` : `flex w-40 flex-col text-left ${ATTACHMENT_TILE_EDGE_CLASS}`}`}
+    >
+      {children}
+    </span>
+  );
+}
+
 /** The same layer for a sent message's 64px thumbnail and its 6px corner. */
 const IMAGE_EDGE_CLASS = `pointer-events-none absolute inset-0 rounded-md ${ATTACHMENT_TILE_EDGE_CLASS}`;
 

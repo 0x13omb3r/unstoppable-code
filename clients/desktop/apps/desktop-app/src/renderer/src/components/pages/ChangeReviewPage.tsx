@@ -1,3 +1,4 @@
+import { PanelPreviewLines } from '@canopy/ui-shared/components';
 import {
   useCallback,
   useState,
@@ -374,12 +375,7 @@ function SleepPausedPillAfter(): JSX.Element {
             <TerminalIcon size={14} />
             Panel
           </div>
-          <div className="flex flex-col px-3 gap-2">
-            <div className="h-2.5 w-3/5 rounded-full bg-subtle" />
-            <div className="h-2.5 w-4/5 rounded-full bg-subtle" />
-            <div className="h-2.5 w-2/5 rounded-full bg-subtle" />
-            <div className="h-2.5 w-3/4 rounded-full bg-subtle" />
-          </div>
+          <PanelPreviewLines />
           {/* Same anchoring as the app's bottom status host: `right-3 bottom-3`
             in the shell's bottom-right corner, floating over the content. */}
           <div className="pointer-events-none absolute right-3 bottom-3 z-10 flex items-center justify-end [&>*]:pointer-events-auto">

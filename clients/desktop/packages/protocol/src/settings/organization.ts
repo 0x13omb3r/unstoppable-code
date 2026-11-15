@@ -38,6 +38,9 @@ export type OrgTeamsLapseReason =
 /**
  * Body of the 403 returned when an organization loses its teams capability.
  * `code` is the reliable discriminator from permission 403s on the same route.
+ *
+ * @deprecated The server no longer sends it: organizations do not lapse since
+ * subscription tiers were retired. Kept so shipped clients' handlers still type.
  */
 export interface OrgTeamsLapsedError {
   error: string;

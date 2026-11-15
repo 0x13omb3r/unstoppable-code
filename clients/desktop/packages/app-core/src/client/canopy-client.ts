@@ -1,4 +1,12 @@
 import type {
+  WorktreeRecoveryListParams,
+  WorktreeRecoveryListResult,
+  WorktreeRecoveryResolveParams,
+  WorktreeRecoveryResolveResult,
+  WorktreeRecoveryFinishParams,
+  WorktreeRecoveryFinishResult,
+} from '@canopy/protocol/canopy-core';
+import type {
   WorkEntryAutoDeleteWorkspaceSnapshot,
   WorkEntryAutoDeleteDisarmRequest,
   WorkEntryAutoDeleteResolveBranchRequest,
@@ -183,7 +191,7 @@ import type {
 } from '../events/domain-events';
 import type { SessionViewModel } from '../view-model';
 import type { CanopyCapabilities } from './capabilities';
-import type { BillingClient } from './billing-client';
+import type { BillingClient, CreditsHandoffClient } from './billing-client';
 import type { TranscriptReadClient } from '../transcripts';
 import type { ExternalAgentsClient } from './external-agents-client';
 import type { MarketplaceSourcesClient } from './marketplace-sources-client';
@@ -666,6 +674,18 @@ export interface CommandMap
    * CAN-5336: what a permanent discard of a worktree whose removal can't
    * finish would delete. Read-only; gated by `worktreeDiscard`.
    */
+  'worktree.recovery.list': {
+    args: WorktreeRecoveryListParams;
+    result: WorktreeRecoveryListResult;
+  };
+  'worktree.recovery.resolve': {
+    args: WorktreeRecoveryResolveParams;
+    result: WorktreeRecoveryResolveResult;
+  };
+  'worktree.recovery.finish': {
+    args: WorktreeRecoveryFinishParams;
+    result: WorktreeRecoveryFinishResult;
+  };
   'worktree.discard.describe': {
     args: PortalWorktreeDiscardDescribePayload;
     result: WorktreeDiscardDescription;
@@ -912,6 +932,11 @@ export interface CanopyClient {
   readonly marketplaceSources?: MarketplaceSourcesClient;
   /** Absent on hosts without inline checkout; all operations stay host-bound. */
   readonly billing?: BillingClient;
+  /**
+   * AI Credits purchases that open the owner's web billing page. Absent on
+   * hosts with inline checkout and on hosts that cannot hand off.
+   */
+  readonly creditsHandoff?: CreditsHandoffClient;
   /**
    * Child stream pages and stored field bodies. Present only where the host
    * reads them, together with the `delegationTranscriptReads` capability.

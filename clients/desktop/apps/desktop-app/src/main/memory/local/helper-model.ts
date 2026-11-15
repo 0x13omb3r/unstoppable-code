@@ -1,3 +1,4 @@
+import type { WorkOwner } from '@canopy/protocol/llm-gateway';
 import {
   getExecutionHarnessForModel,
   getProviderForModel,
@@ -108,6 +109,7 @@ function failureReason(error: unknown): string {
 export async function resolveLocalMemoryRunModel(
   preferences: Parameters<typeof resolveLocalMemoryHelperModel>[0],
   workspaceId?: string,
+  owner?: { workOwner: WorkOwner | null },
 ): Promise<
   { helperModel: LocalMemoryHelperModel } | { refusal: ConsolidationRunOutcome }
 > {
@@ -128,7 +130,11 @@ export async function resolveLocalMemoryRunModel(
     const { isLocalMemoryModelBlockedByPolicy } =
       await import('./model-policy');
     if (
-      await isLocalMemoryModelBlockedByPolicy(helperModel.model, workspaceId)
+      await isLocalMemoryModelBlockedByPolicy(
+        helperModel.model,
+        workspaceId,
+        owner,
+      )
     ) {
       return {
         refusal: {

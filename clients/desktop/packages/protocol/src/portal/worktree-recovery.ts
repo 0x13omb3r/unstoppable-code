@@ -45,7 +45,7 @@ export type WorktreeRecoveryAction =
         | 'future-capability';
     };
 
-/** Diagnosis is not execution admission. Keep/Release await retention and receipts. */
+/** Diagnosis is not execution admission; exact resolution rechecks retention and receipts. */
 export interface StrandedArchiveDiagnosis {
   operationId: string;
   revision: string;
@@ -252,4 +252,23 @@ export function unavailableWorktreeRecovery(
     },
     destination: { kind: 'recovery' },
   };
+}
+
+/** A current host's diagnosis chooses the exact resolver; execution re-admits it. */
+export function worktreeRecoveryResolutionAction(
+  recovery: WorktreeRecoveryDescription,
+): 'keep-worktree' | 'release' | 'finish' | null {
+  if (recovery.destination.kind !== 'recovery') return null;
+  switch (recovery.diagnosis?.verdict) {
+    case 'keep-worktree':
+      return 'keep-worktree';
+    case 'release':
+      return 'release';
+    case 'finish-tail':
+    case 'finish-journal':
+    case 'cleanup-debt':
+      return 'finish';
+    default:
+      return null;
+  }
 }

@@ -1,4 +1,5 @@
 import { isWebCoreScope } from '@/lib/chat-authority';
+import { dismissPageLikeViewers } from '@/lib/dismissPageLikeViewers';
 import { reportRendererConsoleError } from '@/lib/renderer-error-logging';
 import { useGitHubStore } from '@/stores/githubStore';
 import { useNavigationStore } from '@/stores/navigationStore';
@@ -69,4 +70,18 @@ export function selectCoworkWorkspaceFromSidebar(projectId: string): void {
         .getState()
         .addToast("Couldn't open the workspace. Try again.", 'error');
     });
+}
+
+/**
+ * A user's click on a task row in any sidebar host. An explicit navigation to
+ * a live entry closes the page-like viewers first, the More page included, so
+ * the task never opens under them (CAN-2551, CAN-6791). Programmatic opens
+ * call `openCoworkWorkEntryFromSidebar` and leave them as they are.
+ */
+export function openCoworkWorkEntryOnClick(
+  projectId: string,
+  entryId: string,
+): void {
+  dismissPageLikeViewers();
+  openCoworkWorkEntryFromSidebar(projectId, entryId);
 }

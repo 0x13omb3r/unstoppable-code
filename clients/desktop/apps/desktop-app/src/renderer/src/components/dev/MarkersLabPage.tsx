@@ -347,10 +347,12 @@ function ContextRow({
   readonly children: ReactNode;
 }): JSX.Element {
   return (
-    <div className="flex min-h-8 items-center justify-between gap-3 border-b px-3 py-1.5 text-s fg-primary last:border-b-0">
-      <span className="min-w-0 truncate">{label}</span>
-      <span className="flex shrink-0 items-center gap-1.5">{children}</span>
-    </div>
+    <Surface variant="section" boundary="between-rows">
+      <div className="flex min-h-8 items-center justify-between gap-3 px-3 py-1.5 text-s fg-primary">
+        <span className="min-w-0 truncate">{label}</span>
+        <span className="flex shrink-0 items-center gap-1.5">{children}</span>
+      </div>
+    </Surface>
   );
 }
 

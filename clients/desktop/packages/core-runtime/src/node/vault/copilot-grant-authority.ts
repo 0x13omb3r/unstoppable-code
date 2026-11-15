@@ -366,6 +366,17 @@ export function createCopilotVaultGrantAuthority(
       throw error;
     }
   }
+  function pending(operation: {
+    operationId: string;
+    kind: CopilotGrantMutation['kind'] | 'remove';
+    origin: CopilotGrantHead['origin'];
+  }): CopilotGrantResult {
+    return {
+      kind: 'pending',
+      operationId: operation.operationId,
+      operation: { kind: operation.kind, origin: operation.origin },
+    };
+  }
   async function safe(
     run: () => Promise<CopilotGrantResult>,
   ): Promise<CopilotGrantResult> {
@@ -440,7 +451,7 @@ export function createCopilotVaultGrantAuthority(
       )
         return blocked('unconfirmed');
       setupCustody.delete(m.operationId);
-      return { kind: 'pending', operationId: m.operationId };
+      return pending(m);
     }
     return blocked('changed');
   }
@@ -609,7 +620,7 @@ export function createCopilotVaultGrantAuthority(
         : { kind: 'ready', head: state.head };
     }
     if (attempt.phase === 'preparing' || attempt.phase === 'presenting')
-      return { kind: 'pending', operationId: attempt.mutation.operationId };
+      return pending(attempt.mutation);
     const m = attempt.mutation;
     if (!state.mutation) {
       if (
@@ -633,9 +644,7 @@ export function createCopilotVaultGrantAuthority(
         return blocked('changed');
     }
     if (m.kind === 'delete')
-      return state.removal
-        ? { kind: 'pending', operationId: m.operationId }
-        : deleteMutation(m);
+      return state.removal ? pending(m) : deleteMutation(m);
     const recovered = await recover(state);
     if (recovered?.kind === 'ready') transition(attempt, { kind: 'confirmed' });
     return recovered ?? blocked('unconfirmed');
@@ -688,6 +697,16 @@ export function createCopilotVaultGrantAuthority(
         ? blocked('expired')
         : { kind: 'ready', head: state.head };
     }
+    if (
+      options.selection.abandon &&
+      state.mutation?.operationId === operationId &&
+      (state.mutation.cancelling ||
+        (state.mutation.kind === 'create' &&
+          state.mutation.origin === 'setup' &&
+          !state.mutation.probeConfirmed &&
+          !setupCustody.has(operationId)))
+    )
+      return completeCancellation(operationId, await cancel(operationId));
     if (
       state.mutation?.operationId !== operationId ||
       state.mutation.cancelling ||
@@ -910,7 +929,7 @@ export function createCopilotVaultGrantAuthority(
         effect.outcome = 'unknown';
       if (result.kind !== 'committed') return mutationFailure(result);
     }
-    const latest = await read();
+    let latest = await read();
     if (latest.completed?.operationId === m.operationId)
       return { kind: 'removed' };
     if (
@@ -919,6 +938,23 @@ export function createCopilotVaultGrantAuthority(
       cancelling.has(m.operationId)
     )
       return blocked('changed');
+    if (latest.head && !latest.removal && !finishRemoval) {
+      if (latest.head.epoch !== m.epoch || !samePin(latest.head.pin, from))
+        return blocked('changed');
+      // Retain rejected-grant lineage until its exact host receipt is retired.
+      const disabled = await options.selection.disable({
+        operationId: m.operationId,
+        head: latest.head,
+      });
+      if (disabled.kind !== 'disabled') return blocked('unconfirmed');
+      latest = await read();
+      if (
+        latest.mutation?.operationId !== m.operationId ||
+        latest.mutation.cancelling ||
+        cancelling.has(m.operationId)
+      )
+        return blocked('changed');
+    }
     if (
       !(await save(latest, {
         head: latest.removal && !finishRemoval ? latest.head : null,
@@ -1165,6 +1201,14 @@ export function createCopilotVaultGrantAuthority(
     }
     return result;
   }
+  function completeCancellation(
+    operationId: string,
+    result: CopilotGrantResult,
+  ): CopilotGrantResult {
+    const setup = setupClosures.get(operationId);
+    if (result.kind === 'removed' && setup) completeRemoval(setup.epoch);
+    return result;
+  }
   function remove(expectedEpoch: string): Promise<CopilotGrantResult> {
     const current = removals.get(expectedEpoch);
     if (current) return current;
@@ -1321,6 +1365,13 @@ export function createCopilotVaultGrantAuthority(
       if (outcome.kind === 'unconfirmed' || outcome.kind === 'retryable')
         return blocked('unconfirmed');
       if (outcome.kind === 'not_accepted') {
+        if (options.selection.abandon)
+          await options.selection.abandon({
+            operationId: m.operationId,
+            epoch: m.epoch,
+            account: account(m.account),
+            origin: m.origin,
+          });
         if (
           !(await save(state, {
             mutation: null,
@@ -1380,7 +1431,7 @@ export function createCopilotVaultGrantAuthority(
     return deleteMutation(deletion);
   }
   return {
-    create: (input, origin) => {
+    create: (input, origin, onCheckpoint) => {
       const parsed = CopilotVaultGrantSchema.safeParse(input);
       return safe(async () => {
         if (!parsed.success || (origin !== 'setup' && origin !== 'import'))
@@ -1417,6 +1468,7 @@ export function createCopilotVaultGrantAuthority(
           reason: setupReason,
         });
         setupCustody.set(m.operationId, { epoch: m.epoch, grant });
+        onCheckpoint?.(m.operationId);
         if (!(await save(state, { mutation: m }))) {
           setupClosures.delete(m.operationId);
           setupCustody.delete(m.operationId);
@@ -1432,6 +1484,20 @@ export function createCopilotVaultGrantAuthority(
               AbortSignal.timeout(30_000),
             );
           } catch {
+            if (options.selection.abandon) {
+              // Retain the journal identity until its prepared receipt is retired.
+              setupCustody.delete(m.operationId);
+              const latest = await read();
+              if (
+                latest.mutation?.operationId === m.operationId &&
+                !latest.mutation.cancelling
+              )
+                completeCancellation(
+                  m.operationId,
+                  await cancel(m.operationId),
+                );
+              return blocked('unavailable');
+            }
             const latest = await read();
             if (latest.mutation?.operationId === m.operationId)
               await save(latest, { mutation: null });
@@ -1449,23 +1515,26 @@ export function createCopilotVaultGrantAuthority(
           )
             return blocked('changed');
           m = { ...m, probeConfirmed: true };
-          if (!(await save(latest, { mutation: m })))
-            return { kind: 'pending', operationId: m.operationId };
+          if (!(await save(latest, { mutation: m }))) return pending(m);
         }
         const stored = await persist(m);
-        if (stored.kind === 'blocked')
-          return { kind: 'pending', operationId: m.operationId };
+        if (stored.kind === 'blocked') return pending(m);
         return completeSetup(await resume(m.operationId));
       });
     },
     resume: (id) => safe(async () => completeSetup(await resume(id))),
+    recipientGeneration: () =>
+      admissionClosures.size === 0 ? generation : undefined,
     status: () =>
       safe(async () => {
         const state = await read();
-        if (state.removal)
-          return { kind: 'pending', operationId: state.removal.operationId };
-        if (state.mutation)
-          return { kind: 'pending', operationId: state.mutation.operationId };
+        if (state.removal && state.head)
+          return pending({
+            ...state.head,
+            operationId: state.removal.operationId,
+            kind: 'remove',
+          });
+        if (state.mutation) return pending(state.mutation);
         if (
           state.head &&
           state.completed?.kind === 'delete' &&
@@ -1477,12 +1546,7 @@ export function createCopilotVaultGrantAuthority(
           : blocked('absent');
       }),
     cancel: (id) =>
-      safe(async () => {
-        const result = await cancel(id);
-        const setup = setupClosures.get(id);
-        if (result.kind === 'removed' && setup) completeRemoval(setup.epoch);
-        return result;
-      }),
+      safe(async () => completeCancellation(id, await cancel(id))),
     present: (handle, epoch) => {
       const ticket: DemandTicket = { id: ++requestSequence, epoch, generation };
       const current = attempts.get(epoch);

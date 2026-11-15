@@ -1,3 +1,4 @@
+import { Surface } from '@canopy/ui-shared/components';
 import { type JSX } from 'react';
 import type {
   ReviewAnnotation,
@@ -66,9 +67,9 @@ export function ReviewLinePopover({
           `shrink-0` so a long list never squeezes them into header-only
           slivers (they keep their full body + reply composer). */}
       <div className="max-h-[60vh] overflow-auto">
-        <div className="sticky top-0 z-10 border-b bg-quaternary px-3 py-1.5 text-2xs font-medium fg-secondary">
+        <Surface variant="annotation-header" className="sticky top-0 z-10">
           {header}
-        </div>
+        </Surface>
         <div className="flex flex-col p-2 gap-2">
           {annotations.map((annotation) => (
             <div key={annotation.id} className="shrink-0">

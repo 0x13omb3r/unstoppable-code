@@ -1,3 +1,6 @@
+import { createNativeSecretProtectionOwner } from '../secret-protection/owner';
+import * as nativeFactory from '../secret-protection';
+import { createVaultKeyHolder } from '../../../core-runtime/src/node/vault/repository/key-holder';
 import { createHash, randomUUID } from 'node:crypto';
 import {
   chmodSync,
@@ -17,6 +20,7 @@ import {
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type {
+  PlatformKeySlotReadResult,
   PlatformProcessInspection,
   PlatformSecureFileServices,
 } from '@canopy/core-runtime';
@@ -439,4 +443,138 @@ test('owner record replacement before native entry refuses loading', async () =>
   writeFileSync(path, '{}');
   expect((await port(capability).status(call())).state).toBe('unavailable');
   expect(load).not.toHaveBeenCalled();
+});
+
+function runOwner(): ReturnType<typeof createNativeSecretProtectionOwner> {
+  return createNativeSecretProtectionOwner({
+    os: process.platform,
+    brandId: 'canopy',
+    build: 'dev',
+    authorityId: 'a'.repeat(64),
+    windowsPrincipalSid: 'S-1-5-21-123-456-789-1001',
+    canonicalDataRoot: data,
+    distributionDirectory: distribution,
+    supervision: { inspectProcess: () => Promise.resolve(owner) },
+    secureFiles: { permissions: () => Promise.resolve({ state: 'private' }) },
+  });
+}
+
+test('startup owner composes the authorized factory and drains before retiring its services', async () => {
+  const load = native();
+  const running = runOwner();
+  try {
+    const services = await running.services;
+    expect(services).not.toBeNull();
+    expect((await services?.status(call()))?.state).toBe('available');
+    expect(load).toHaveBeenCalledTimes(1);
+    running.closeAdmission();
+    expect(await running.drain(new AbortController().signal)).toBe(true);
+    await expect(services?.status(call())).rejects.toThrow();
+    expect(load).toHaveBeenCalledTimes(1);
+  } finally {
+    await running.drain(new AbortController().signal);
+  }
+});
+
+test('owner refuses a mismatched compiled pair before native load', async () => {
+  jest
+    .mocked(catalog.compiledNativeArtifactCatalog)
+    .mockReturnValue({ ...expected(), build: 'stable' });
+  const load = native();
+  const running = runOwner();
+  expect(await running.services).toBeNull();
+  expect(await running.drain(new AbortController().signal)).toBe(true);
+  expect(load).not.toHaveBeenCalled();
+});
+
+test('owner cancellation during preparation prevents later factory admission', async () => {
+  const load = native();
+  let enter = (): void => undefined;
+  const entered = new Promise<void>((resolve) => {
+    enter = resolve;
+  });
+  let release = (): void => undefined;
+  const barrier = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const running = createNativeSecretProtectionOwner({
+    os: process.platform,
+    brandId: 'canopy',
+    build: 'dev',
+    authorityId: 'a'.repeat(64),
+    windowsPrincipalSid: 'S-1-5-21-123-456-789-1001',
+    canonicalDataRoot: data,
+    distributionDirectory: distribution,
+    secureFiles: { permissions: () => Promise.resolve({ state: 'private' }) },
+    supervision: {
+      inspectProcess: async () => {
+        enter();
+        await barrier;
+        return owner;
+      },
+    },
+  });
+  await entered;
+  running.closeAdmission();
+  const draining = running.drain(new AbortController().signal);
+  release();
+  expect(await running.services).toBeNull();
+  expect(await draining).toBe(true);
+  expect(load).not.toHaveBeenCalled();
+});
+
+test('owner drain includes secret cleanup for a key-holder read abandoned before native completion', async () => {
+  const material = new Uint8Array(32).fill(19);
+  let enter = (): void => undefined;
+  const entered = new Promise<void>((resolve) => {
+    enter = resolve;
+  });
+  let release = (): void => undefined;
+  const reply = new Promise<PlatformKeySlotReadResult>((resolve) => {
+    release = (): void => resolve({ kind: 'present', material });
+  });
+  jest.spyOn(nativeFactory, 'createSecretProtectionServices').mockReturnValue({
+    backend: 'macos_keychain',
+    status: () => Promise.resolve({ state: 'available' }),
+    readKeySlot: () => {
+      enter();
+      return reply;
+    },
+    writeKeySlot: () => Promise.resolve({ kind: 'written' }),
+    deleteKeySlot: () => Promise.resolve({ kind: 'deleted' }),
+  });
+  const running = runOwner();
+  const slots = await running.services;
+  if (!slots) throw new Error('Controlled native composition missing.');
+  const holder = createVaultKeyHolder({
+    slots,
+    header: {
+      vaultId: 'a'.repeat(20),
+      wrappedDataKey: {
+        nonce: new Uint8Array(12),
+        ciphertext: new Uint8Array(32),
+        tag: new Uint8Array(16),
+      },
+      createdAt: new Date().toISOString(),
+    },
+    clock: () => new Date(),
+    probeTimeoutMs: 5_000,
+    minProbeIntervalMs: 0,
+  });
+  try {
+    const probe = holder.refresh();
+    await entered;
+    holder.dispose();
+    await probe;
+    const draining = running.drain(new AbortController().signal);
+    // Let authorizer disposal settle while the native reply is still pending.
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    release();
+    expect(await draining).toBe(true);
+    expect(material).toEqual(new Uint8Array(32));
+  } finally {
+    holder.dispose();
+    release();
+    await running.drain(new AbortController().signal);
+  }
 });

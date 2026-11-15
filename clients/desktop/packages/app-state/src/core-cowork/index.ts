@@ -7,6 +7,7 @@ export {
 export {
   createCoreCoworkStore,
   RECONNECT_DELAYS_MS,
+  type CoreCoworkArchivedTask,
   type CoreCoworkProject,
   type CoreCoworkStoreOptions,
   type CoreCoworkState,
@@ -21,8 +22,8 @@ export {
   type CoreCoworkSidebarRowsOptions,
 } from './sidebar-rows';
 export {
+  cloudChatModels,
   createCloudChatCatalog,
-  mapCloudChatCatalog,
   type CloudChatCatalog,
   type CloudChatCatalogScope,
   type CloudChatCatalogState,

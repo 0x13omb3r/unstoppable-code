@@ -1,5 +1,6 @@
 'use client';
 
+import { CompletedRunSurface } from '@canopy/ui-shared/components';
 import { useEffect, useState, type JSX, type ReactNode } from 'react';
 import {
   Stack,
@@ -236,11 +237,6 @@ function HookCompletedRunCard({
 }): JSX.Element {
   const isSuccess = run.status === 'success';
   const isStopped = run.status === 'stopped';
-  const containerClass = isSuccess
-    ? 'bg-fg-primary/[0.015]'
-    : isStopped
-      ? 'border-line-attention bg-warning/[0.06]'
-      : 'border-fg-destructive-strong/20 bg-fg-destructive-strong/[0.06]';
   const colorClass = isSuccess
     ? 'fg-success-strong'
     : isStopped
@@ -256,7 +252,9 @@ function HookCompletedRunCard({
           ? 'Failed'
           : `Exit ${run.exitCode}`;
   return (
-    <div className={`rounded-lg border p-2.5 text-xs ${containerClass}`}>
+    <CompletedRunSurface
+      tone={isSuccess ? 'neutral' : isStopped ? 'stopped' : 'failed'}
+    >
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
           {onEnlarge && (
@@ -277,7 +275,7 @@ function HookCompletedRunCard({
           {statusText} · {Math.round(run.durationMs / 1000)}s
         </span>
       </div>
-    </div>
+    </CompletedRunSurface>
   );
 }
 

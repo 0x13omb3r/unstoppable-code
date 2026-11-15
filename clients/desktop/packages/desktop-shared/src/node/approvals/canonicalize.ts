@@ -1,7 +1,7 @@
-import { hostOperatingSystem } from '@canopy/core-platform/host-platform';
 import { realpath } from 'node:fs/promises';
 import { homedir, userInfo } from 'node:os';
 import { join, parse, resolve } from 'node:path';
+import { hostOperatingSystem } from '@canopy/core-platform/host-platform';
 import type { ApprovalCheck } from '../../types';
 import {
   recursiveForcedRemoveOperations,

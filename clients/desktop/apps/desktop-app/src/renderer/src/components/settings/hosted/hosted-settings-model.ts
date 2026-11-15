@@ -32,7 +32,6 @@ export const SIGNED_OUT_SETTINGS_NAV_MODEL: SettingsNavModel = {
     billingEnabled: false,
     digestsEnabled: false,
     integrationsEnabled: true,
-    freeAccess: false,
   },
   adminVisible: false,
   organization: null,
@@ -108,7 +107,6 @@ export interface PersistedSettingsNavModel {
   readonly account: {
     readonly billingEnabled: boolean;
     readonly digestsEnabled: boolean;
-    readonly freeAccess: boolean;
   };
   /** Keyed by organization id. */
   readonly organizations: Readonly<
@@ -131,7 +129,6 @@ export interface PersistedOrganizationSettingsNav {
 export interface SettingsNavFlagSnapshot {
   readonly billingEnabled: boolean;
   readonly digestsEnabled: boolean;
-  readonly freeAccess: boolean;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -195,8 +192,7 @@ export function parsePersistedSettingsNavModel(
   if (
     !isRecord(account) ||
     typeof account.billingEnabled !== 'boolean' ||
-    typeof account.digestsEnabled !== 'boolean' ||
-    typeof account.freeAccess !== 'boolean'
+    typeof account.digestsEnabled !== 'boolean'
   )
     return null;
   const organizations: Record<string, PersistedOrganizationSettingsNav> = {};
@@ -211,7 +207,6 @@ export function parsePersistedSettingsNavModel(
     account: {
       billingEnabled: account.billingEnabled,
       digestsEnabled: account.digestsEnabled,
-      freeAccess: account.freeAccess,
     },
     organizations,
   };
@@ -249,7 +244,6 @@ export function persistedSettingsNavModelFrom(
     account: {
       billingEnabled: bootstrap.account.billingEnabled,
       digestsEnabled: bootstrap.account.digestsEnabled,
-      freeAccess: bootstrap.account.freeAccess,
     },
     organizations,
   };
@@ -306,7 +300,6 @@ export function hostedSettingsNavFallback({
       billingEnabled: account.billingEnabled,
       digestsEnabled: account.digestsEnabled,
       integrationsEnabled: true,
-      freeAccess: account.freeAccess,
     },
     adminVisible: false,
     organization,

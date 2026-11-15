@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { MemoryConsolidationMeasurementSchema } from '../local-memory/metrics';
 import { MEMORY_SYNC_LIMITS, MEMORY_SYNC_QUOTAS } from './constants';
 import {
   MemoryChangeCursorSchema,
@@ -426,6 +427,7 @@ export const MemoryCommitRequestSchema = z
       promptVersion: z.string().min(1).max(64).nullable(),
       consolidationPackageVersion: z.string().min(1).max(64).nullable(),
       inputHash: MemorySha256Schema.nullable(),
+      consolidation: MemoryConsolidationMeasurementSchema.optional(),
     }),
     /**
      * Topics this commit deletes because nothing used them (design §15).
@@ -439,6 +441,16 @@ export const MemoryCommitRequestSchema = z
       .optional(),
   })
   .superRefine((commit, context): void => {
+    if (
+      commit.metadata.consolidation !== undefined &&
+      ((commit.kind !== 'consolidation' && commit.kind !== 'merge') ||
+        !['success', 'partial'].includes(commit.metadata.consolidation.result))
+    ) {
+      context.addIssue({
+        code: 'custom',
+        message: 'Only an applied consolidation or merge carries measurements',
+      });
+    }
     const deleted = new Set(
       commit.changes.flatMap((change) =>
         change.op === 'delete' ? [memoryDocumentIdentity(change.path)] : [],

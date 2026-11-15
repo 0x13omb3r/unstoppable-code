@@ -1,3 +1,4 @@
+import { Surface } from '@canopy/ui-shared/components';
 import type { JSX } from 'react';
 import { useAppAdvisorStore } from '@/stores/appAdvisorStore';
 
@@ -13,11 +14,14 @@ export function AppAdvisorPanelShadow(): JSX.Element | null {
   const size = useAppAdvisorStore((s) => s.floatingSize);
   if (!floating) return null;
   return (
-    <div
+    <Surface
       aria-hidden="true"
       data-testid="app-advisor-panel-shadow"
-      style={{ width: size.width, height: size.height }}
-      className="pointer-events-none fixed bottom-4 right-4 z-drawer max-h-[calc(100vh-32px)] max-w-[calc(100vw-32px)] rounded-2xl shadow-xl"
+      paneWidth={size.width}
+      paneHeight={size.height}
+      variant="advisor-shadow"
+      extent="advisor-overlay"
+      className="pointer-events-none fixed bottom-4 right-4 z-drawer max-w-[calc(100vw-32px)]"
     />
   );
 }

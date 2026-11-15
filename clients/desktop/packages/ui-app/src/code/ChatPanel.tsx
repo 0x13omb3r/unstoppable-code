@@ -45,7 +45,6 @@ import {
   ComposerTrayProvider,
   MessageEditSurface,
   QueuedMessageRow,
-  Notice,
   QueuedMessageReason,
   UnsavedMessageEdits,
   useCompactQueue,
@@ -68,8 +67,18 @@ import { ChatWaitingDelegationsContext } from './ChatPartView';
 import { QueuedMessageStack } from './QueuedMessageStack';
 import { useChatTranscriptFind } from '../find/useChatTranscriptFind';
 import { isPersonPromptText } from './sent-prompt-summary';
+import {
+  CreditsNotice,
+  type CreditsNoticeOwner,
+  type CreditsNoticePurchase,
+} from '../credits/CreditsNotice';
 
 const EMPTY_QUEUED_MESSAGES: readonly PortalQueuedMessage[] = [];
+
+// A held message's notice names no wallet and starts no purchase: the queued
+// row retries and the composer's own notice sells the credits.
+const QUEUED_CREDITS_OWNER: CreditsNoticeOwner = { kind: 'unknown' };
+const QUEUED_CREDITS_PURCHASE: CreditsNoticePurchase = { kind: 'elsewhere' };
 
 const LazyChatTranscript = lazy(async () => {
   const module = await import('./ChatTranscript');
@@ -185,6 +194,11 @@ export interface ChatPanelProps {
    * Supplying it keeps the transcript mounted on a chat with no messages.
    */
   readonly footerStatus?: ReactNode;
+  /**
+   * Rendered after the queue at the transcript's end, scrolling with it, as
+   * the desktop transcript ends with a Claude Mod's log notices.
+   */
+  readonly transcriptTail?: ReactNode;
   readonly firstSendStartingEnabled?: boolean;
   /** The chat's worktree setup, for the first turn's starting status. */
   readonly worktreeSetup?: ChatTranscriptProps['worktreeSetup'];
@@ -304,6 +318,7 @@ export function ChatPanel({
   appIcon,
   emptyState,
   footerStatus,
+  transcriptTail,
   firstSendStartingEnabled = true,
   worktreeSetup,
   renderLatestTurnAction,
@@ -978,10 +993,14 @@ export function ChatPanel({
         data-testid="queued-message-list"
       >
         {creditHeld && (
-          <Notice intent="attention">
-            Your queued message is still saved. Add credits, then click Try
-            again.
-          </Notice>
+          // The queued row offers Try again and the composer's notice the
+          // purchase, so this one only says the message is kept.
+          <CreditsNotice
+            condition="queued_held"
+            owner={QUEUED_CREDITS_OWNER}
+            placement="composer"
+            purchase={QUEUED_CREDITS_PURCHASE}
+          />
         )}
         {queueTarget && queueActionsEnabled && (
           <InputDeliveryList
@@ -1140,7 +1159,16 @@ export function ChatPanel({
                     appIcon={appIcon}
                     emptyState={emptyState}
                     renderLatestTurnAction={renderLatestTurnAction}
-                    footerSlot={queuedList}
+                    footerSlot={
+                      transcriptTail == null ? (
+                        queuedList
+                      ) : (
+                        <>
+                          {queuedList}
+                          {transcriptTail}
+                        </>
+                      )
+                    }
                     footerStatus={footerStatus}
                     firstSendStartingEnabled={firstSendStartingEnabled}
                     worktreeSetup={worktreeSetup}

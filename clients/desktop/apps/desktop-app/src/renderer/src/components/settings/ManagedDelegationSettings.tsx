@@ -1,5 +1,13 @@
 import type { PreferencesData } from '@canopy/desktop-shared/types';
-import { useEffect, useState, type JSX } from 'react';
+import { useCallback, useEffect, useState, type JSX } from 'react';
+import {
+  normalizeManagedDelegationModelPolicy,
+  type ManagedDelegationModelPolicy,
+} from '@canopy/protocol/delegation/model-policy';
+import {
+  ManagedDelegationModelPolicyRow,
+  type ManagedDelegationPolicyCatalogState,
+} from '@canopy/ui-app/managed-delegation';
 import {
   normalizeManagedDelegationMode,
   normalizeManagedDelegationMaxConcurrent,
@@ -52,6 +60,7 @@ interface ManagedDelegationSettingsProps {
   initialMaxConcurrent?: number;
   initialMaxDepth?: number;
   initialLifetimeLimit?: number;
+  initialModelPolicy?: ManagedDelegationModelPolicy;
 }
 
 /** Host-neutral policy choices; model/runtime discovery belongs to the parent tool. */
@@ -60,8 +69,32 @@ export function ManagedDelegationSettings({
   initialMaxConcurrent,
   initialMaxDepth,
   initialLifetimeLimit,
+  initialModelPolicy,
   initialRevocationIncomplete = false,
 }: ManagedDelegationSettingsProps): JSX.Element {
+  const [modelPolicy, setModelPolicy] = useState(() =>
+    normalizeManagedDelegationModelPolicy(initialModelPolicy),
+  );
+  const [catalog, setCatalog] = useState<ManagedDelegationPolicyCatalogState>({
+    status: 'loading',
+  });
+  const loadCatalog = useCallback((): void => {
+    setCatalog({ status: 'loading' });
+    window.api.managedDelegation.getModelPolicyCatalog().then(
+      (result) =>
+        setCatalog(
+          result.ok
+            ? { status: 'ready', catalog: result.catalog }
+            : { status: 'error', error: result.error },
+        ),
+      () =>
+        setCatalog({
+          status: 'error',
+          error: "Couldn't load the model catalog.",
+        }),
+    );
+  }, []);
+  useEffect(loadCatalog, [loadCatalog]);
   const [mode, setMode] = useState(initialMode);
   const [maxConcurrent, setMaxConcurrent] = useState(
     normalizeManagedDelegationMaxConcurrent(initialMaxConcurrent),
@@ -117,6 +150,12 @@ export function ManagedDelegationSettings({
             if (preferences.managedDelegationMode !== undefined) {
               setMode(preferences.managedDelegationMode);
             }
+            if ('managedDelegationModelPolicy' in preferences)
+              setModelPolicy(
+                normalizeManagedDelegationModelPolicy(
+                  preferences.managedDelegationModelPolicy,
+                ),
+              );
             if (
               preferences.__managedDelegationRevocationIncomplete !== undefined
             ) {
@@ -138,6 +177,7 @@ export function ManagedDelegationSettings({
     maxDepth,
     lifetimeLimit,
     revocationIncomplete,
+    allowedModels: modelPolicy?.mode ?? 'all',
   });
 
   async function save(
@@ -148,6 +188,7 @@ export function ManagedDelegationSettings({
         | 'managedDelegationMaxConcurrent'
         | 'managedDelegationMaxDepth'
         | 'managedDelegationLifetimeLimit'
+        | 'managedDelegationModelPolicy'
       >
     >,
   ): Promise<void> {
@@ -168,6 +209,11 @@ export function ManagedDelegationSettings({
       );
       setMaxConcurrent(nextMaxConcurrent);
       setMode(saved.managedDelegationMode ?? 'off');
+      setModelPolicy(
+        normalizeManagedDelegationModelPolicy(
+          saved.managedDelegationModelPolicy,
+        ),
+      );
       setRevocationIncomplete(
         saved.__managedDelegationRevocationIncomplete === true,
       );
@@ -254,6 +300,16 @@ export function ManagedDelegationSettings({
               }}
             />
           }
+        />
+        <ManagedDelegationModelPolicyRow
+          policy={modelPolicy}
+          catalog={catalog}
+          onRetryCatalog={loadCatalog}
+          onChange={(next): void => {
+            void save({ managedDelegationModelPolicy: next });
+          }}
+          disabled={!supported || saving}
+          delegationOff={mode === 'off'}
         />
         <SettingsRow
           label="Maximum concurrent subagents"

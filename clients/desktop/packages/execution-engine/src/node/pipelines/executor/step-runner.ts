@@ -5405,6 +5405,13 @@ export async function resolveActionAiCreditsEnv(
       `Action "${step.uses}" runs directly on the Claude harness and cannot use the ${harnessLabel}-harness model "${agentModel}". Choose a Claude-harness model for this action.`,
     );
   }
+  const provider = directClaude
+    ? 'claude'
+    : (capturedHarness ??
+      modelHarness ??
+      (routingProbe?.source === 'provider-default' ? 'claude' : undefined));
+  // OpenCode owns its managed inference lease in the turn host.
+  if (provider === 'opencode' && runtime.opencodePromptRunner) return empty;
   if (!runtime.resolveAiCreditsRouting) {
     if (gatewayOnly) {
       throw new Error(
@@ -5413,11 +5420,6 @@ export async function resolveActionAiCreditsEnv(
     }
     return empty;
   }
-  const provider = directClaude
-    ? 'claude'
-    : (capturedHarness ??
-      modelHarness ??
-      (routingProbe?.source === 'provider-default' ? 'claude' : undefined));
   if (!provider) {
     return empty;
   }
@@ -6397,7 +6399,12 @@ async function runStepBody(
     if (
       selectedAgentModel &&
       isGatewayOnlyModel(selectedAgentModel) &&
-      !options.runtime.resolveAiCreditsRouting
+      !options.runtime.resolveAiCreditsRouting &&
+      !(
+        (recoveryCheckpoint?.harness ??
+          getExecutionHarnessForModel(selectedAgentModel)) === 'opencode' &&
+        options.runtime.opencodePromptRunner
+      )
     ) {
       throw new Error(
         `Model "${selectedAgentModel}" requires AI Credits, but this runtime cannot route AI Credits requests.`,

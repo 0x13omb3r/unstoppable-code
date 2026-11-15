@@ -21290,6 +21290,10 @@ describe('chat state service', () => {
       model: 'gpt-5.5',
       pendingSystemInstructions: [
         { id: 'handoff', text: 'Canonical handoff summary' },
+        {
+          id: 'chat-address-changed',
+          text: expect.stringContaining('chatId "continued"'),
+        },
       ],
     });
     expect(continued?.messages).toHaveLength(620);

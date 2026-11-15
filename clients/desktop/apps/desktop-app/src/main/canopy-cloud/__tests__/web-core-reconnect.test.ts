@@ -102,19 +102,22 @@ const windowOf = (event: RendererRelayEvent): DesktopAppWindow => ({
 
 /** Main's real trusted-surface check over the app's own two windows. */
 function registerHandlers(): void {
-  registerCloudChatsHandlers((event) =>
-    resolveTrustedRelaySurface(
-      event,
-      [
-        { surface: 'main', window: windowOf(mainEvent), url: MAIN_URL },
-        {
-          surface: 'app-advisor',
-          window: windowOf(advisorEvent),
-          url: ADVISOR_URL,
-        },
-      ],
-      [],
-    ),
+  registerCloudChatsHandlers(
+    (event) =>
+      resolveTrustedRelaySurface(
+        event,
+        [
+          { surface: 'main', window: windowOf(mainEvent), url: MAIN_URL },
+          {
+            surface: 'app-advisor',
+            window: windowOf(advisorEvent),
+            url: ADVISOR_URL,
+          },
+        ],
+        [],
+      ),
+    // No chat is open; Reconnect doesn't ask.
+    () => false,
   );
 }
 

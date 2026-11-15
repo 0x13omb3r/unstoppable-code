@@ -1,4 +1,7 @@
 import { useChatDetailPreference } from '@/stores/chatDetailStore';
+import { useLabsExperimentEnabled } from '@/stores/labsExperimentsStore';
+import { CustomizeDiscoveryProvider } from '@canopy/ui-app/customize-discovery';
+import { CUSTOMIZE_DISCOVERY_EXPERIMENT } from '@canopy/protocol/experiments';
 import { brand } from '@/lib/brand';
 import {
   StandardPresentationProvider,
@@ -20,6 +23,10 @@ export function EarlyAccessUiProviders({
   readonly children: ReactNode;
 }): JSX.Element {
   const chatDetail = useChatDetailPreference();
+  // New Customize (CAN-6809): main's resolved Labs verdict, off until ready.
+  const customizeDiscovery = useLabsExperimentEnabled(
+    CUSTOMIZE_DISCOVERY_EXPERIMENT.id,
+  );
 
   return (
     <PanelTabLiveReorderContext.Provider value={usePanelTabLiveReorder}>
@@ -30,7 +37,9 @@ export function EarlyAccessUiProviders({
               <IconStyleProvider value={'central'}>
                 <ChatDetailProvider value={chatDetail}>
                   <ChatAppNameProvider value={brand.displayName}>
-                    {children}
+                    <CustomizeDiscoveryProvider enabled={customizeDiscovery}>
+                      {children}
+                    </CustomizeDiscoveryProvider>
                   </ChatAppNameProvider>
                 </ChatDetailProvider>
               </IconStyleProvider>

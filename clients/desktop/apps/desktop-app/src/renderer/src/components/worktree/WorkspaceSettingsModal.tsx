@@ -1,4 +1,6 @@
 import {
+  WorkspaceRepositoryRow,
+  RepositoryAttentionCard,
   Stack,
   Button,
   DelayedLoadingPlaceholder,
@@ -2265,7 +2267,7 @@ export function WorkspaceSettingsModal({
 
             {healthData?.referenceRepoStatus &&
               healthData.referenceRepoStatus.warnings.length > 0 && (
-                <div className="flex flex-col gap-1 rounded-lg border border-line-attention bg-warning/5 p-4">
+                <RepositoryAttentionCard>
                   <Heading level={3} variant="title" tone="warning">
                     Reference repo status
                   </Heading>
@@ -2274,7 +2276,7 @@ export function WorkspaceSettingsModal({
                       {w.message}
                     </p>
                   ))}
-                </div>
+                </RepositoryAttentionCard>
               )}
 
             {!isTemporaryWorkspace &&
@@ -2633,7 +2635,7 @@ export function WorkspaceSettingsModal({
                       </FormField>
 
                       {reuseClonePrompt ? (
-                        <div className="flex flex-col gap-2 rounded-md border border-line-attention bg-warning/5 p-2.5 text-xs">
+                        <RepositoryAttentionCard compact>
                           <Stack gap="tight">
                             <p className="font-medium fg-warning">
                               Repo already exists at this destination
@@ -2669,7 +2671,7 @@ export function WorkspaceSettingsModal({
                               Cancel
                             </Button>
                           </div>
-                        </div>
+                        </RepositoryAttentionCard>
                       ) : (
                         <div className="flex items-center gap-2">
                           <Button
@@ -2707,9 +2709,9 @@ export function WorkspaceSettingsModal({
                   const pendingSourceControlAdd =
                     pendingSourceControlRepoIds.includes(repo.id);
                   return (
-                    <div
+                    <WorkspaceRepositoryRow
                       key={repo.id}
-                      className={`group flex items-center gap-2 rounded-md px-2 py-1.5 text-s hover:bg-secondary ${markedForRemoval ? 'opacity-60' : ''}`}
+                      pendingRemoval={markedForRemoval}
                     >
                       <span
                         className={`font-medium ${markedForRemoval ? 'fg-secondary line-through' : 'fg-primary'}`}
@@ -2781,14 +2783,11 @@ export function WorkspaceSettingsModal({
                           {markedForRemoval ? 'Undo' : 'Remove'}
                         </Button>
                       </span>
-                    </div>
+                    </WorkspaceRepositoryRow>
                   );
                 })}
                 {pendingAdds.map((add) => (
-                  <div
-                    key={add.repoPath}
-                    className="group flex items-center gap-2 rounded-md px-2 py-1.5 text-s hover:bg-secondary"
-                  >
+                  <WorkspaceRepositoryRow key={add.repoPath}>
                     <span className="font-medium fg-primary">{add.name}</span>
                     <Badge tone="info">New</Badge>
                     {workspace.sourceRepoPath && !isTemporaryWorkspace && (
@@ -2836,7 +2835,7 @@ export function WorkspaceSettingsModal({
                         Remove
                       </Button>
                     </span>
-                  </div>
+                  </WorkspaceRepositoryRow>
                 ))}
               </Stack>
             )}

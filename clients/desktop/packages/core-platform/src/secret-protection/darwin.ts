@@ -1,3 +1,4 @@
+import { untrackedProtectionWork, type NativeProtectionWork } from './work';
 import type {
   PlatformKeySlot,
   PlatformKeySlotCallOptions,
@@ -96,6 +97,7 @@ export function createDarwinSecretProtection(
   native: () => KeychainNative | undefined,
   namespace: KeychainNamespace,
   unavailable: PlatformSecretProtectionUnavailableReason = 'backend_failed',
+  work: NativeProtectionWork = untrackedProtectionWork,
 ): PlatformSecretProtectionServices {
   const unavailableQueue: NativeQueue = { tail: Promise.resolve() };
   const identity = { ...namespace };
@@ -121,18 +123,20 @@ export function createDarwinSecretProtection(
         resolve(Promise.resolve().then(aborted));
       };
       signal.addEventListener('abort', abort, { once: true });
-      const work = queue.tail.then(async (): Promise<void> => {
-        signal.removeEventListener('abort', abort);
-        if (cancelled) return;
-        if (signal.aborted) {
-          abort();
-          return;
-        }
-        started = true;
-        resolve(await run());
-      });
-      void work.catch(reject);
-      queue.tail = work.then(
+      const pending = work.track(() =>
+        queue.tail.then(async (): Promise<void> => {
+          signal.removeEventListener('abort', abort);
+          if (cancelled) return;
+          if (signal.aborted) {
+            abort();
+            return;
+          }
+          started = true;
+          resolve(await run());
+        }),
+      );
+      void pending.catch(reject);
+      queue.tail = pending.then(
         (): void => undefined,
         (): void => undefined,
       );
@@ -147,11 +151,13 @@ export function createDarwinSecretProtection(
   ): Promise<unknown> {
     try {
       if (!backend) return { code: 'unavailable' };
-      return await backend.run(
-        operation,
-        identity.service,
-        keychainAccount(identity, name),
-        bytes,
+      return await work.track(() =>
+        backend.run(
+          operation,
+          identity.service,
+          keychainAccount(identity, name),
+          bytes,
+        ),
       );
     } catch {
       // No backend error text, path or native diagnostic is allowed to escape.
@@ -171,16 +177,20 @@ export function createDarwinSecretProtection(
     signal.throwIfAborted();
     if (!queue.unlocking) {
       const callers = new Set<AbortSignal>();
-      const promise = queue.tail.then(async (): Promise<unknown> => {
-        if (![...callers].some((caller) => !caller.aborted))
-          return { code: 'locked' };
-        return invoke(backend, 'unlock');
-      });
+      const promise = work.track(() =>
+        queue.tail.then(async (): Promise<unknown> => {
+          if (![...callers].some((caller) => !caller.aborted))
+            return { code: 'locked' };
+          return invoke(backend, 'unlock');
+        }),
+      );
       const pending = { promise, callers };
       queue.unlocking = pending;
-      queue.tail = promise.then((): void => {
-        if (queue.unlocking === pending) queue.unlocking = undefined;
-      });
+      queue.tail = work.track(() =>
+        promise.then((): void => {
+          if (queue.unlocking === pending) queue.unlocking = undefined;
+        }),
+      );
     }
     const pending = queue.unlocking;
     pending.callers.add(signal);

@@ -44,10 +44,78 @@ export const CopilotRecipientTurnSchema = z
     model: id,
     reasoningEffort: z.enum(COPILOT_RECIPIENT_REASONING_EFFORTS).optional(),
     recoverMissingSession: z.boolean(),
+    observeTools: z.boolean().optional(),
   })
   .strict();
 export type CopilotRecipientTurn = z.infer<typeof CopilotRecipientTurnSchema>;
+const observationEnvelope = {
+  id,
+  parentId: id.nullable(),
+  timestamp: id,
+  ephemeral: z.boolean().optional(),
+  agentId: id.optional(),
+};
+export const CopilotToolObservationSchema = z.discriminatedUnion('type', [
+  z.object({
+    ...observationEnvelope,
+    type: z.literal('tool.execution_start'),
+    data: z.object({
+      toolCallId: id,
+      toolName: id,
+      arguments: z.json().optional(),
+      mcpConfigServerName: id.optional(),
+      mcpServerName: id.optional(),
+      mcpToolName: id.optional(),
+    }),
+  }),
+  z.object({
+    ...observationEnvelope,
+    type: z.literal('tool.execution_complete'),
+    data: z.object({
+      toolCallId: id,
+      success: z.boolean(),
+      parentToolCallId: id.optional(),
+      result: z
+        .object({
+          content: text,
+          detailedContent: text.optional(),
+          contents: z
+            .array(z.object({ type: z.literal('text'), text }))
+            .max(256)
+            .optional(),
+        })
+        .optional(),
+    }),
+  }),
+]);
+export const CopilotToolReplyResultSchema = z.object({
+  textResultForLlm: text,
+  resultType: z.enum(['success', 'failure', 'rejected', 'denied', 'timeout']),
+  error: text.optional(),
+  sessionLog: text.optional(),
+  binaryResultsForLlm: z
+    .array(
+      z.object({
+        data: text,
+        mimeType: id,
+        type: z.enum(['image', 'resource']),
+        description: text.optional(),
+      }),
+    )
+    .max(16)
+    .optional(),
+  toolTelemetry: z
+    .record(z.string(), z.record(z.string(), z.json()).optional())
+    .optional(),
+  toolReferences: z.array(id).max(256).optional(),
+});
 export const CopilotCallbackRequestSchema = z.discriminatedUnion('kind', [
+  z
+    .object({
+      kind: z.literal('observation'),
+      event: CopilotToolObservationSchema,
+    })
+    .strict(),
   z
     .object({
       kind: z.literal('approval'),
@@ -97,15 +165,23 @@ export type CopilotCallbackRequest = z.infer<
   typeof CopilotCallbackRequestSchema
 >;
 export const CopilotCallbackReplySchema = z.discriminatedUnion('kind', [
+  z.object({ kind: z.literal('observation'), accepted: z.boolean() }).strict(),
   z
     .object({
       kind: z.literal('approval'),
       allow: z.boolean(),
+      message: text.optional(),
       modifiedArgumentsJson: text.optional(),
     })
     .strict(),
   z.object({ kind: z.literal('permission'), allow: z.boolean() }).strict(),
-  z.object({ kind: z.literal('tool'), result: text }).strict(),
+  z
+    .object({
+      kind: z.literal('tool'),
+      result: text,
+      structured: CopilotToolReplyResultSchema.optional(),
+    })
+    .strict(),
   z
     .object({
       kind: z.literal('input'),

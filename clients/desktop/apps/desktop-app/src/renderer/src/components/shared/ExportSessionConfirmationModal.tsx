@@ -1,3 +1,4 @@
+import { DialogActionFooter } from '@canopy/ui-shared/components';
 import { type JSX } from 'react';
 import { Button } from '@/components/shared/Button';
 import { DialogModal } from '@/components/shared/DialogModal';
@@ -44,7 +45,7 @@ export function ExportSessionConfirmationModal({
           the snapshot.
         </p>
       </div>
-      <div className="flex justify-end gap-2 border-t px-6 py-3">
+      <DialogActionFooter>
         <Button variant="outline" size="lg" onClick={onCancel}>
           Cancel
         </Button>
@@ -56,7 +57,7 @@ export function ExportSessionConfirmationModal({
         >
           Export session
         </Button>
-      </div>
+      </DialogActionFooter>
     </DialogModal>
   );
 }

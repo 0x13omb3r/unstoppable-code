@@ -1,3 +1,4 @@
+import { ScheduledSendCapsule } from '@canopy/ui-shared/components/chat';
 import type { JSX } from 'react';
 import { CAPSULE_TOUCH_FLOOR_CLASS } from '@canopy/ui-shared';
 import {
@@ -45,21 +46,13 @@ export function ScheduledSendChip({
   now,
 }: ScheduledSendChipProps): JSX.Element {
   const date = new Date(runAt);
-  const tone =
-    error === null
-      ? 'bg-info-subtle fg-info'
-      : 'bg-destructive-subtle fg-destructive';
   const tooltip =
     error ??
     (editable
       ? `Sends ${formatScheduledSendFullLabel(date)}. Click to change.`
       : 'Clear this schedule to send with Cursor');
   return (
-    <span
-      data-testid="chat-input-scheduled-send-chip"
-      data-scheduled-send-state={error === null ? 'scheduled' : 'failed'}
-      className={`flex h-8 shrink-0 items-center rounded-full text-xs ${tone}`}
-    >
+    <ScheduledSendCapsule failed={error !== null}>
       <RichHoverTooltip
         surfaceClassName="w-max max-w-72"
         surfacePadding="relaxed"
@@ -96,6 +89,6 @@ export function ScheduledSendChip({
       >
         <CloseMediumIcon size="sm" aria-hidden />
       </button>
-    </span>
+    </ScheduledSendCapsule>
   );
 }

@@ -1,3 +1,4 @@
+import { DiagramNodeSurface } from '@canopy/ui-shared/components';
 import {
   forwardRef,
   useCallback,
@@ -81,20 +82,17 @@ interface SelectedNode {
 
 const CHANGE_STYLES: Record<
   LogicChangeType,
-  { border: string; tone: BadgeTone; label: string }
+  { tone: BadgeTone; label: string }
 > = {
   added: {
-    border: 'border-l-line-positive',
     tone: 'success',
     label: 'Added',
   },
   removed: {
-    border: 'border-l-line-destructive',
     tone: 'danger',
     label: 'Removed',
   },
   changed: {
-    border: 'border-l-line-attention',
     tone: 'warning',
     label: 'Changed',
   },
@@ -104,18 +102,12 @@ const CHANGE_STYLES: Record<
 function LogicFlowNodeView({ data }: NodeProps<LogicFlowNode>): JSX.Element {
   const change = data.changeType;
   const style = change ? CHANGE_STYLES[change] : undefined;
-  const searchRing =
-    data.searchState === 'active'
-      ? 'ring-2 ring-line-attention'
-      : data.searchState === 'match'
-        ? 'ring-1 ring-line-attention/60'
-        : '';
   return (
-    <div
-      className={`flex h-full w-full flex-col justify-center gap-0.5 rounded-md border bg-card px-3 py-2 text-left ${
-        style ? `border-l-4 ${style.border}` : ''
-      } ${searchRing}`}
-      style={{ width: LOGIC_NODE_WIDTH, height: LOGIC_NODE_HEIGHT }}
+    <DiagramNodeSurface
+      width={LOGIC_NODE_WIDTH}
+      height={LOGIC_NODE_HEIGHT}
+      change={change}
+      search={data.searchState}
     >
       <Handle type="target" position={Position.Top} className="!opacity-0" />
       <div className="flex items-center gap-1.5">
@@ -139,7 +131,7 @@ function LogicFlowNodeView({ data }: NodeProps<LogicFlowNode>): JSX.Element {
         </p>
       )}
       <Handle type="source" position={Position.Bottom} className="!opacity-0" />
-    </div>
+    </DiagramNodeSurface>
   );
 }
 
@@ -674,9 +666,14 @@ export const PlanLogicDiffDiagram = forwardRef<
       data-testid="plan-logic-diff-diagram"
       className="relative flex min-h-0 flex-1 flex-col"
     >
-      <div
+      <Surface
         data-testid="logic-diff-toolbar"
-        className="flex shrink-0 flex-wrap items-center gap-2 border-b px-2 py-1.5"
+        variant="section"
+        boundary="bottom"
+        gap="inline"
+        direction="row"
+        padding="picker-section"
+        className="shrink-0 flex-wrap items-center"
       >
         <div
           data-testid="logic-diff-view-toggle"
@@ -696,9 +693,14 @@ export const PlanLogicDiffDiagram = forwardRef<
           />
         </div>
         {primaryView === 'diff' && (
-          <div
+          <Surface
             data-testid="logic-diff-presentation-toggle"
-            className="flex items-center gap-1 border-l pl-2"
+            variant="section"
+            boundary="left"
+            gap="tight"
+            direction="row"
+            padding="nested-tight"
+            className="items-center"
           >
             <SegmentedControl
               label="Diff layout"
@@ -711,10 +713,10 @@ export const PlanLogicDiffDiagram = forwardRef<
                 { value: 'split', label: 'Split' },
               ]}
             />
-          </div>
+          </Surface>
         )}
         {toolbarActions && <div className="ml-auto">{toolbarActions}</div>}
-      </div>
+      </Surface>
 
       <div className="relative flex min-h-0 flex-1 flex-col">
         {isUpdating && (

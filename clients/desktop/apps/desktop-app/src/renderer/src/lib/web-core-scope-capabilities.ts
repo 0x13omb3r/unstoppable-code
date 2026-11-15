@@ -52,14 +52,17 @@ export function cloudTerminalsEnabled(
  * access modes, queue
  * edits, forks, reset to point, closing the task's own chat, scheduled sends
  * (the desktop scheduler can't run a cloud chat), the Claude Code terminal
- * view, context usage, session transfer,
+ * view, session transfer,
  * Feed, cost, subagents, and "Open in". Rows that serve one of these turn
  * it on here, from the web core manifest where the operation can be
  * unavailable.
  *
  * Served so far: the sandbox's files, read and written through the web core
- * (CAN-6175 R9), its terminals when the desktop binds them (R10), and its
- * cost when the web core's manifest serves the cost reads (CAN-6180).
+ * (CAN-6175 R9), its terminals when the desktop binds them (R10), its
+ * cost when the web core's manifest serves the cost reads (CAN-6180), and
+ * the composer's context usage, folded from each answer's meter, which the
+ * web core serves at revision 2 of the chat's transcript and events
+ * (CAN-6509, CAN-6755); a chat whose answers carry no meter shows none.
  * Scripts stay off: a cloud terminal can't run a startup command.
  */
 function buildWebCoreScopeCapabilities(
@@ -105,7 +108,8 @@ function buildWebCoreScopeCapabilities(
     chatAttachments: true,
     chatFileMentions: false,
     chatInterfaceModes: false,
-    chatContextUsage: false,
+    // Folded from each answer's revision 2 meter (CAN-6755).
+    chatContextUsage: true,
     chatSessionTransfer: false,
     chatTranscriptSearch: true,
     chatReadState: false,

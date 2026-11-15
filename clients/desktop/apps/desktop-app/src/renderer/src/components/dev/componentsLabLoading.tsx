@@ -1,5 +1,6 @@
 import { SettingsChartLoading } from '@canopy/ui-app/settings/pages';
 import {
+  DisplayAvatar,
   AskUserQuestionPreparingRow,
   Heading,
   Surface,
@@ -43,9 +44,7 @@ function SampleAgentCard(): JSX.Element {
       </Heading>
       {['Release notes writer', 'Support triage'].map((name) => (
         <div key={name} className="flex items-center gap-3">
-          <span className="flex size-8 shrink-0 items-center justify-center rounded-full bg-accent-subtle text-xs fg-accent-strong">
-            {name.slice(0, 1)}
-          </span>
+          <DisplayAvatar name={name} size="lg" />
           <div className="flex min-w-0 flex-1 flex-col">
             <span className="text-s fg-primary">{name}</span>
             <span className="text-xs fg-secondary">Last run 2 hours ago</span>

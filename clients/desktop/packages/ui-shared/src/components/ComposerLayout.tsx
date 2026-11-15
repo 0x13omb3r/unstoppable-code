@@ -587,6 +587,24 @@ export function useStatusRowCompact(
   return compact;
 }
 
+/** Covers the compact composer controls while the current send owns the footer. */
+export function ComposerFooterStatusOverlay({
+  children,
+  testId,
+}: {
+  readonly children: ReactNode;
+  readonly testId: string;
+}): JSX.Element {
+  return (
+    <div
+      className="pointer-events-none absolute inset-x-0 bottom-0 z-10 flex h-12 items-center justify-end bg-base/95 px-3"
+      data-testid={testId}
+    >
+      {children}
+    </div>
+  );
+}
+
 export interface ComposerStatusRowProps {
   /** Leading settings: the permission level. */
   start: ReactNode;

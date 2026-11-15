@@ -92,7 +92,13 @@ export function BrowserConsolePanel({
             {visible.map((entry) => {
               const location = sourceLocation(entry);
               return (
-                <li key={entry.id} className="border-b px-2 py-1.5">
+                <Surface
+                  key={entry.id}
+                  as="li"
+                  variant="section"
+                  boundary="bottom"
+                  padding="picker-section"
+                >
                   <div className="flex items-start gap-2">
                     <div className="min-w-0 flex-1">
                       <span
@@ -118,7 +124,7 @@ export function BrowserConsolePanel({
                       <span>{CHAT_UNIT_LABEL}</span>
                     </Button>
                   </div>
-                </li>
+                </Surface>
               );
             })}
           </ul>

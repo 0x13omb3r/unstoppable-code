@@ -4,7 +4,6 @@ import type { JSX } from 'react';
 import type { OrganizationSettingsSubtab } from '@canopy/protocol/settings';
 import type { OrganizationDetail } from '@canopy/protocol/settings/organization';
 import { canEditOrgEnforcedSettings } from '@canopy/protocol/settings/organization-permissions';
-import type { TeamLapsedInfo } from '../team-page';
 import { TeamBrandingSettingsSection } from '../team-branding-settings-section';
 import { TeamDigestSettingsSection } from '../team-digest-settings-section';
 import { TeamGitHubConnectionSection } from '../team-github-connection-section';
@@ -37,25 +36,12 @@ interface TeamSettingsSectionProps {
   onBillingChanged?: () => void;
   /** Whether organization memory is rolled out for this org. */
   memoryEnabled: boolean;
-  /**
-   * Server-resolved free app access (CAN-3926). Billing keeps its `billing`
-   * key and `?tab=billing` URL, so existing deep links still land, but shows
-   * credits, payment method, and receipts without the subscription plan.
-   */
-  freeAccess?: boolean;
-  /**
-   * Non-null when the org has LOST the `teams` capability (CAN-2311). Carried
-   * as the info object (not a boolean) so this stays a straight move of the
-   * `lapsed === null` conditions from `team-page.tsx`.
-   */
-  lapsed: TeamLapsedInfo | null;
   /** Called after the org is deleted so the page can navigate away. */
   onDeleted: () => void;
   /**
    * Whether outside agents (the hosted MCP servers) are on for this viewer.
    * With it, and a host that supplies `renderExternalAgentsPolicy`, an OWNER
-   * of a non-Personal org gets the External agents card in Policies, even
-   * while the org is lapsed.
+   * of a non-Personal org gets the External agents card in Policies.
    */
   externalAgentsEnabled?: boolean;
   /**
@@ -77,42 +63,27 @@ export function TeamSettingsSection({
   onDetailChange,
   onBillingChanged,
   memoryEnabled,
-  freeAccess = false,
-  lapsed,
   onDeleted,
   externalAgentsEnabled = false,
   aiGatewayEnabled = false,
 }: TeamSettingsSectionProps): JSX.Element {
   const { renderExternalAgentsPolicy } = useOrganizationSettingsSubtabSlots();
 
-  // While lapsed, render only the sections whose actions the server still
-  // permits. Branding (`updateOrganization` / `setOrganizationLogo`), GitHub
-  // disconnect, and the danger zone (`deleteOrganization` /
-  // `leaveOrganization`) are all EXEMPT, so they stay. The config sections
-  // route through `updateOrganizationConfig`, which IS gated — showing them
-  // would offer controls whose every save 403s.
-  const healthy = lapsed === null;
-
-  // The owner's control over members' outside agents. Deliberately NOT gated
-  // on `healthy`: the policy and per-agent removal are security controls the
-  // server keeps editable while lapsed, so a lapsed OWNER must still reach
-  // them. Only a host that serves the hosted MCP servers supplies the card.
+  // The owner's control over members' outside agents. Only a host that serves
+  // the hosted MCP servers supplies the card.
   const showExternalAgents =
     renderExternalAgentsPolicy !== undefined &&
     canManageOrganizationExternalAgents(detail, externalAgentsEnabled);
   // Data sharing, model policy and memory gate on
   // `canEditOrgEnforcedSettings`; memory additionally needs `memoryEnabled`
   // and checks that itself.
-  const showEnforcedPolicies =
-    healthy && canEditOrgEnforcedSettings(detail.viewerRole);
+  const showEnforcedPolicies = canEditOrgEnforcedSettings(detail.viewerRole);
 
   /**
    * Renders one page's sections. Only ever called with a page that passed
    * `visibleOrganizationSettingsSubtabs`, so this must NOT re-check the
    * visibility predicates: that rule is the single source of truth, and
-   * duplicating it here lets the two copies drift into a silently blank page. Guards that are narrower
-   * than their tab's predicate (the `healthy` check on the stats-visibility
-   * card, which Usage can outlive via `canViewUsageStats`) do still belong.
+   * duplicating it here lets the two copies drift into a silently blank page.
    *
    * The `JSX.Element` return type (not `| null`) is what enforces that: a tab
    * that tries to gate itself here fails to compile rather than degrading to a
@@ -146,14 +117,10 @@ export function TeamSettingsSection({
           </>
         );
       case 'billing':
-        // Reads `?plan=` via `useSearchParams` to honour the upgrade intent
-        // forwarded by `/subscribe`; the Suspense boundary it needs for that is
-        // already around this whole section in `team-page.tsx`.
         return (
           <TeamBillingSection
             detail={detail}
             onBillingChanged={onBillingChanged}
-            freeAccess={freeAccess}
           />
         );
       case 'policies':
@@ -170,10 +137,7 @@ export function TeamSettingsSection({
                  * Sits directly after data sharing: the two org-enforced
                  * MEMBER policies belong together, ahead of feature config.
                  */}
-                <TeamModelPolicySection
-                  detail={detail}
-                  freeAccess={freeAccess}
-                />
+                <TeamModelPolicySection detail={detail} />
 
                 {/*
                  * Last of the three member policies: model access says WHICH
@@ -184,18 +148,14 @@ export function TeamSettingsSection({
                 {aiGatewayEnabled ? (
                   <TeamAiGatewayRequirementSection detail={detail} />
                 ) : (
-                  <TeamModelGatewaySection
-                    detail={detail}
-                    freeAccess={freeAccess}
-                  />
+                  <TeamModelGatewaySection detail={detail} />
                 )}
               </>
             )}
 
             {/*
              * Outside the enforced-policies block on purpose: member usage
-             * data only narrows and has no plan gate, so a lapsed org's
-             * owners and admins keep it. The card checks the role itself.
+             * data only narrows. The card checks the role itself.
              */}
             <MemberUsageDataCard detail={detail} />
 
@@ -219,12 +179,10 @@ export function TeamSettingsSection({
       case 'usage':
         return (
           <>
-            {healthy && (
-              <TeamStatisticsVisibilitySection
-                detail={detail}
-                onDetailChange={onDetailChange}
-              />
-            )}
+            <TeamStatisticsVisibilitySection
+              detail={detail}
+              onDetailChange={onDetailChange}
+            />
 
             <TeamSubscriptionPricingSection detail={detail} />
           </>

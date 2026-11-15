@@ -1,3 +1,7 @@
+import {
+  WorktreeLegendSwatch,
+  WorktreePriorityPreviewRow,
+} from '@canopy/ui-shared/components';
 import { Stack, Button, Heading, Surface } from '@canopy/ui-shared/components';
 import {
   Fragment,
@@ -431,9 +435,8 @@ function LeadingPriorityCard(): JSX.Element {
                 const rank = index < dividerIndex ? index + 1 : null;
                 return (
                   <SortablePriorityRow key={id} id={id}>
-                    <div
+                    <WorktreePriorityPreviewRow
                       data-testid={`priority-row-${id}`}
-                      className="flex cursor-default items-center gap-2.5 rounded-md px-3 py-2 text-s font-normal fg-primary hover:bg-secondary"
                     >
                       <span className="fg-quaternary">
                         <DragHandleIcon size={12} />
@@ -450,7 +453,7 @@ function LeadingPriorityCard(): JSX.Element {
                           {item.description}
                         </span>
                       </span>
-                    </div>
+                    </WorktreePriorityPreviewRow>
                   </SortablePriorityRow>
                 );
               })}
@@ -517,7 +520,7 @@ export function WorktreeStateGalleryPage(): JSX.Element {
                     aria-hidden="true"
                     className={`inline-flex h-5 w-4 pt-1 shrink-0 items-center justify-center ${entry.toneClassName}`}
                   >
-                    <span className="h-2 w-2 rounded-full bg-current" />
+                    <WorktreeLegendSwatch />
                   </span>
                   <span className="min-w-0 text-xs leading-relaxed">
                     <span className="font-medium fg-primary">

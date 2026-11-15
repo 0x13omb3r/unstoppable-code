@@ -174,32 +174,23 @@ export const ORGANIZATION_SETTINGS_SUBTAB_ITEMS: readonly OrganizationSettingsSu
     },
     {
       key: 'billing',
-      label: 'Billing',
-      description:
-        'The plan, seats, AI credit pool, payment method and past payments.',
+      // Keeps its `billing` key and `?tab=billing` URL, so existing deep links
+      // still land.
+      label: AI_CREDITS_LABEL,
+      description: 'The AI Credits pool, payment method and past payments.',
       icon: CreditCard,
     },
   ];
 
-/**
- * The item for a Settings page. With free access on, Billing keeps its key
- * and `?tab=billing` URL but is named for the AI credits it still sells.
- */
+/** The item for a Settings page. */
 export function organizationSettingsSubtabItem(
   key: OrganizationSettingsSubtab,
-  freeAccess = false,
 ): OrganizationSettingsSubtabItem {
   const item = ORGANIZATION_SETTINGS_SUBTAB_ITEMS.find(
     (candidate) => candidate.key === key,
   );
   if (!item) throw new Error(`Unknown organization settings page: ${key}`);
-  return key === 'billing' && freeAccess
-    ? {
-        ...item,
-        label: AI_CREDITS_LABEL,
-        description: 'The AI credit pool, payment method and past payments.',
-      }
-    : item;
+  return item;
 }
 
 /** Where a Settings page lives; General keeps the bare Settings URL. */

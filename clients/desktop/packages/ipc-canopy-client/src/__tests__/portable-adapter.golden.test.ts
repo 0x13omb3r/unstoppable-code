@@ -371,6 +371,13 @@ function fakeTransport(replies: Replies = {}): FakeTransport {
   };
 }
 
+const PENDING_ARCHIVE_RECOVERY = [
+  {
+    operationId: '12345678-1234-4234-8234-123456789abc',
+    confirmation: 'a'.repeat(64),
+  },
+];
+
 const CAPABILITIES: CanopyCapabilities = {
   localExecution: true,
   terminalPty: true,
@@ -381,6 +388,7 @@ const CAPABILITIES: CanopyCapabilities = {
   routing: 'in-memory',
   overviewNotifications: true,
   worktreeRecovery: true,
+  worktreeRecoveryResolution: true,
 };
 
 interface Harness {
@@ -1156,6 +1164,53 @@ const SHELL_COMMAND_SCENARIOS: ShellCommandScenarios = {
       ],
     },
     {
+      name: 'retains a bare inheriting Agent and reads its destination provider with Portal off',
+      args: { payload: { ...CHAT, model: 'agent_model_review' } },
+      replies: {
+        [C.modelRegistryGet]: () => ({
+          ...MODEL_REGISTRY,
+          agents: [{ id: 'agent_model_review', baseModel: 'default' }],
+        }),
+        [C.desktopSessionSnapshot]: () => ({
+          availableModels: [
+            { id: 'agent_model_review', provider: 'codex', available: true },
+          ],
+        }),
+      },
+      calls: [
+        call(C.modelRegistryGet),
+        call(C.desktopSessionSnapshot, { workspaceLocalId: 'project-1' }),
+        chatEnvelope(WORKTREE, {
+          type: 'chat.set_model',
+          tabId: 'chat-1',
+          model: 'agent_model_review',
+          providerType: 'codex',
+        }),
+      ],
+    },
+    {
+      name: 'resolves an Agent override on a gateway-only model without changing its route',
+      args: { payload: { ...CHAT, model: 'agent_model_review@gateway-only' } },
+      replies: {
+        [C.modelRegistryGet]: () => ({
+          ...MODEL_REGISTRY,
+          agents: [{ id: 'agent_model_review', baseModel: 'default' }],
+          aiGatewayModels: [
+            { id: 'gateway-only', recommendedHarness: 'claude' },
+          ],
+        }),
+      },
+      calls: [
+        call(C.modelRegistryGet),
+        chatEnvelope(WORKTREE, {
+          type: 'chat.set_model',
+          tabId: 'chat-1',
+          model: 'agent_model_review@gateway-only',
+          providerType: 'claude',
+        }),
+      ],
+    },
+    {
       name: 'switches to Auto without a registry read',
       args: { payload: { ...CHAT, selectionMode: 'auto' } },
       calls: [
@@ -1693,6 +1748,35 @@ const SHELL_COMMAND_SCENARIOS: ShellCommandScenarios = {
           type: 'chat.set_model',
           tabId: 'adv-1',
           model: 'latest',
+          providerType: 'codex',
+        }),
+      ],
+      result: (value) => expectAccepted(value),
+    },
+    {
+      name: 'reads a bare inheriting Agent provider from the App Advisor destination',
+      args: { payload: { chatId: 'adv-1', model: 'agent_model_review' } },
+      replies: {
+        ...ADVISOR_REPLIES,
+        [C.modelRegistryGet]: () => ({
+          ...MODEL_REGISTRY,
+          agents: [{ id: 'agent_model_review', baseModel: 'default' }],
+        }),
+        [C.desktopSessionSnapshot]: () => ({
+          availableModels: [
+            { id: 'agent_model_review', provider: 'codex', available: true },
+          ],
+        }),
+      },
+      calls: [
+        call(C.workEntriesList, { projectId: 'app-advisor' }),
+        call(C.chatGetState, ADVISOR_TARGET),
+        call(C.modelRegistryGet),
+        call(C.desktopSessionSnapshot, { workspaceLocalId: 'app-advisor' }),
+        chatEnvelope(ADVISOR_TARGET, {
+          type: 'chat.set_model',
+          tabId: 'adv-1',
+          model: 'agent_model_review',
           providerType: 'codex',
         }),
       ],
@@ -3245,6 +3329,63 @@ const COMMAND_SCENARIOS: CommandScenarios = {
       ],
     },
     {
+      name: 'deletes a project with exact reviewed pending archive recovery',
+      args: {
+        workspaceId: 'single',
+        discardPendingRecovery: PENDING_ARCHIVE_RECOVERY,
+      },
+      calls: [
+        call(C.projectsLoad),
+        call(C.projectDelete, {
+          projectId: 'single',
+          discardPendingRecovery: PENDING_ARCHIVE_RECOVERY,
+        }),
+        call(C.desktopSessionSnapshotInvalidate),
+      ],
+    },
+    {
+      name: 'deletes a workspace with exact reviewed pending archive recovery',
+      args: {
+        workspaceId: 'multi',
+        discardPendingRecovery: PENDING_ARCHIVE_RECOVERY,
+      },
+      calls: [
+        call(C.projectsLoad),
+        call(C.workspaceDelete, {
+          workspaceId: 'multi',
+          discardPendingRecovery: PENDING_ARCHIVE_RECOVERY,
+        }),
+        call(C.desktopSessionSnapshotInvalidate),
+      ],
+    },
+    {
+      name: 'refuses pending archive tokens before invoking a host without live resolution',
+      args: {
+        workspaceId: 'single',
+        discardPendingRecovery: PENDING_ARCHIVE_RECOVERY,
+      },
+      ports: {
+        capabilities: {
+          ...CAPABILITIES,
+          worktreeRecoveryResolution: undefined,
+        },
+      },
+      rejects: /can't discard pending archive recovery/,
+      calls: [],
+    },
+    {
+      name: 'refuses pending archive tokens before invoking a host that denies live resolution',
+      args: {
+        workspaceId: 'multi',
+        discardPendingRecovery: PENDING_ARCHIVE_RECOVERY,
+      },
+      ports: {
+        capabilities: { ...CAPABILITIES, worktreeRecoveryResolution: false },
+      },
+      rejects: /can't discard pending archive recovery/,
+      calls: [],
+    },
+    {
       name: 'rejects an unknown project',
       args: { workspaceId: 'missing' },
       rejects: /Project missing not found/,
@@ -3262,6 +3403,83 @@ const COMMAND_SCENARIOS: CommandScenarios = {
       C.lifecycleJournalQuarantine,
       'quarantine',
     ),
+  'worktree.recovery.list': [
+    {
+      name: 'lists exact live recovery independent of cold recovery',
+      args: { workspaceId: 'single' },
+      replies: {
+        [C.worktreeRecoveryList]: () => ({
+          entries: [],
+          resolutions: [],
+          check: 'ok',
+        }),
+      },
+      calls: [call(C.worktreeRecoveryList, { workspaceId: 'single' })],
+      result: (value: unknown) =>
+        expect(value).toEqual({ entries: [], resolutions: [], check: 'ok' }),
+    },
+  ],
+  'worktree.recovery.resolve': (
+    ['keep-worktree', 'release', 'delete-hold'] as const
+  ).map((action) => ({
+    name: `resolves only the reviewed operation: ${action}`,
+    args: {
+      workspaceId: 'single',
+      operationId: '12345678-1234-4234-8234-123456789abc',
+      revision: 'a'.repeat(64),
+      action,
+    },
+    replies: {
+      [C.worktreeRecoveryResolve]: () => ({
+        status: 'refused',
+        operationId: '12345678-1234-4234-8234-123456789abc',
+        check: 'resolution-not-admitted',
+      }),
+    },
+    calls: [
+      call(C.worktreeRecoveryResolve, {
+        workspaceId: 'single',
+        operationId: '12345678-1234-4234-8234-123456789abc',
+        revision: 'a'.repeat(64),
+        action,
+      }),
+    ],
+    result: (value: unknown) =>
+      expect(value).toMatchObject({
+        status: 'refused',
+        check: 'resolution-not-admitted',
+      }),
+  })),
+  'worktree.recovery.finish': [
+    {
+      name: 'keeps separately pending cleanup distinct from completion',
+      args: {
+        workspaceId: 'single',
+        operationId: '12345678-1234-4234-8234-123456789abc',
+        revision: 'a'.repeat(64),
+      },
+      replies: {
+        [C.worktreeRecoveryFinish]: () => ({
+          status: 'cleanup-pending',
+          operationId: '12345678-1234-4234-8234-123456789abc',
+          cleanupRequired: true,
+          gitCleanupPending: false,
+        }),
+      },
+      calls: [
+        call(C.worktreeRecoveryFinish, {
+          workspaceId: 'single',
+          operationId: '12345678-1234-4234-8234-123456789abc',
+          revision: 'a'.repeat(64),
+        }),
+      ],
+      result: (value: unknown) =>
+        expect(value).toMatchObject({
+          status: 'cleanup-pending',
+          cleanupRequired: true,
+        }),
+    },
+  ],
   'worktree.discard.describe': [
     {
       name: 'refreshes recovery with explicit intent and incarnation',
@@ -4044,6 +4262,10 @@ const COMMAND_SCENARIOS: CommandScenarios = {
     C.preferencesUpdateSuggestions,
     'suggestions',
   ),
+  'claudeMods.surfaceCommand': passthroughCommand<'claudeMods.surfaceCommand'>(
+    C.claudeModSurfaceCommand,
+    'mod-surface-command',
+  ),
   'claudeMods.update': passthroughCommand<'claudeMods.update'>(
     C.claudeModsUpdate,
     'mods-update',
@@ -4078,7 +4300,91 @@ const TERMINAL_OUTPUT = {
   data: new Uint8Array([104, 105]),
 };
 
+const SURFACE_BAND = {
+  kind: 'tree',
+  site: 'band',
+  instanceId: 'above-prompt',
+  tree: {
+    type: 'Box',
+    direction: 'column',
+    children: [
+      {
+        type: 'Button',
+        key: 'press',
+        label: 'Press me',
+        variant: 'secondary',
+        press: { plugin: 'mod', handle: 1 },
+      },
+    ],
+  },
+};
+const SURFACE_COMPOSER_REQUEST = {
+  kind: 'composer-request',
+  requestId: 'request-1',
+  request: { kind: 'read' },
+  expiresAt: 1,
+};
+
 const EVENT_SCENARIOS: EventScenarios = {
+  'claudeMods.surface': [
+    {
+      name: 'delivers valid Mod updates only for the subscribed chat',
+      filter: { ...WORKTREE, chatLocalId: 'chat-1' },
+      pushes: [
+        [
+          C.claudeModSurfacePush,
+          {
+            ...WORKTREE,
+            chatId: 'chat-1',
+            push: { kind: 'status', plugin: 'mod', text: 'Ready' },
+          },
+        ],
+        [
+          C.claudeModSurfacePush,
+          {
+            ...WORKTREE,
+            chatId: 'other',
+            push: { kind: 'status', plugin: 'mod', text: 'Hidden' },
+          },
+        ],
+        [
+          C.claudeModSurfacePush,
+          { ...WORKTREE, chatId: 'chat-1', push: { kind: 'unknown' } },
+        ],
+        // Main validated this tree; it arrives with its controls intact.
+        [
+          C.claudeModSurfacePush,
+          { ...WORKTREE, chatId: 'chat-1', push: SURFACE_BAND },
+        ],
+        // Never relayed to the Portal, but the desktop window answers it.
+        [
+          C.claudeModSurfacePush,
+          { ...WORKTREE, chatId: 'chat-1', push: SURFACE_COMPOSER_REQUEST },
+        ],
+      ],
+      expected: (events) =>
+        expect(events).toEqual([
+          {
+            ...WORKTREE,
+            chatId: 'chat-1',
+            push: { kind: 'status', plugin: 'mod', text: 'Ready' },
+            occurredAt: NOW,
+          },
+          {
+            ...WORKTREE,
+            chatId: 'chat-1',
+            push: SURFACE_BAND,
+            occurredAt: NOW,
+          },
+          {
+            ...WORKTREE,
+            chatId: 'chat-1',
+            push: SURFACE_COMPOSER_REQUEST,
+            occurredAt: NOW,
+          },
+        ]),
+    },
+  ],
   'worktree.activityChanged': [
     {
       name: 'announces panel pushes for the filtered worktree',

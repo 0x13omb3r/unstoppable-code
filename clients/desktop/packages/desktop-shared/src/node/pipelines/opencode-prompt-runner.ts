@@ -1,5 +1,10 @@
 import { prepareOpenCodeInferenceRoute } from '../opencode/inference-route';
 import {
+  createOpenCodeCommandHooks,
+  type OpenCodeCommandHook,
+} from '../opencode/command-hooks';
+import type { OpenCodeApprovalPort } from '../opencode/tool-approval';
+import {
   clampThinkingLevelToDeclared,
   type ThinkingLevel,
 } from '@canopy/protocol/thinking';
@@ -64,6 +69,8 @@ export interface OpenCodePipelineCapabilities extends Pick<
 > {
   expandPrompt?(prompt: string): string;
   warnings?: readonly string[];
+  commandHooks?: readonly OpenCodeCommandHook[];
+  hookApproval?: OpenCodeApprovalPort;
   authorizeMcpTool?: OpenCodeRuntimeOptions['authorize'];
   /**
    * The app server among `mcpServers` that serves the step's Ledger tools.
@@ -296,6 +303,20 @@ export async function runOpenCodePipelinePrompt(
         }
       }
       signal.throwIfAborted();
+      const hooks =
+        capabilities?.commandHooks?.length && capabilities.hookApproval
+          ? createOpenCodeCommandHooks({
+              hooks: capabilities.commandHooks,
+              approval: capabilities.hookApproval,
+              cwd,
+              env: runtime.env,
+              signal: AbortSignal.any([signal, runtime.signal]),
+              spawnProcess: runtime.spawnProcess,
+              processOwner: runtime.processOwner,
+              permissionMode: request.permissionPreset,
+              mcpSnapshot: () => capabilities?.mcpSnapshot ?? [],
+            })
+          : undefined;
       const result = await runOpenCodeTurn(
         {
           ...runtime,
@@ -334,6 +355,8 @@ export async function runOpenCodePipelinePrompt(
           secretValues: secrets,
         },
         {
+          beforeTool: hooks?.before,
+          afterTool: hooks?.after,
           authorize: async (input) => {
             if (signal.aborted) return { decision: 'deny' };
             const selectedMcpTool = resolveOpenCodeMcpSnapshotTool(

@@ -1,4 +1,6 @@
 import { randomUUID } from 'node:crypto';
+import { withChatAddressChangedInstruction } from '@canopy/desktop-shared/lib/chat-address-prompt';
+import { agentChatAddress } from './agent-chat-address';
 import {
   getProviderForModel,
   type AgentProviderType,
@@ -268,6 +270,21 @@ function cloneChatTabForMigration(
       ? { latestRevisionNumber: source.latestRevisionNumber }
       : {}),
     ...(selectedRepoId ? { selectedRepoId } : {}),
+    // The source's unsent notes describe the source checkout; only the new
+    // address travels with the migrated chat.
+    pendingSystemInstructions: withChatAddressChangedInstruction(
+      undefined,
+      agentChatAddress(
+        request.destinationWorkspaceId,
+        request.destinationWorktreeId,
+        id,
+      ),
+      agentChatAddress(
+        request.sourceWorkspaceId,
+        request.sourceWorktreeId,
+        source.id,
+      ),
+    ),
   };
   if (providerType === 'opencode') prepareOpenCodeVisibleFork(cloned);
   return cloned;

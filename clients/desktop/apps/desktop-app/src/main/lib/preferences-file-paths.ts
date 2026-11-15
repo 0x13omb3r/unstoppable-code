@@ -26,3 +26,8 @@ export function createPreferencesLastGoodPath(filePath: string): string {
 export function createPreferencesGenerationPath(filePath: string): string {
   return join(dirname(filePath), 'preferences.generation.json');
 }
+
+/** Write-ahead usage-data revocations, alongside their canonical preferences. */
+export function createUsageDataDenialsPath(filePath: string): string {
+  return `${filePath}.usage-data-denied.json`;
+}

@@ -393,6 +393,18 @@ export const REMOTE_COMMAND_CHANNELS = {
     requires: ['lifecycleJournalQuarantine'],
     invoke: [C.lifecycleJournalQuarantine],
   },
+  'worktree.recovery.list': {
+    requires: ['worktreeRecoveryResolution'],
+    invoke: [C.worktreeRecoveryList],
+  },
+  'worktree.recovery.resolve': {
+    requires: ['worktreeRecoveryResolution'],
+    invoke: [C.worktreeRecoveryResolve],
+  },
+  'worktree.recovery.finish': {
+    requires: ['worktreeRecoveryResolution'],
+    invoke: [C.worktreeRecoveryFinish],
+  },
   'worktree.discard.describe': {
     requires: ['worktreeDiscard'],
     invoke: [C.worktreeDiscardDescribe],
@@ -553,6 +565,10 @@ export const REMOTE_COMMAND_CHANNELS = {
     requires: ['suggestions'],
     invoke: [C.preferencesUpdateSuggestions],
   },
+  'claudeMods.surfaceCommand': {
+    requires: ['claudeModSurface'],
+    invoke: [C.claudeModSurfaceCommand],
+  },
   'claudeMods.update': {
     requires: ['claudeModAdmission'],
     invoke: [C.claudeModsUpdate],
@@ -602,7 +618,13 @@ export const REMOTE_COMMAND_CHANNELS = {
   },
   'chat.setModel': {
     invoke: [C.chatCommand],
-    branches: [MODEL_PROVIDER],
+    branches: [
+      MODEL_PROVIDER,
+      {
+        when: 'a bare inheriting Agent needs its destination provider',
+        invoke: [C.desktopSessionSnapshot],
+      },
+    ],
   },
   'chat.setThinkingLevel': {
     branches: [
@@ -685,6 +707,12 @@ export const REMOTE_COMMAND_CHANNELS = {
       C.modelRegistryGet,
       C.chatCommand,
     ],
+    branches: [
+      {
+        when: 'a bare inheriting Agent needs its destination provider',
+        invoke: [C.desktopSessionSnapshot],
+      },
+    ],
   },
   'appAdvisor.createTab': {
     requires: ['appAdvisorChats'],
@@ -743,6 +771,10 @@ export const REMOTE_COMMAND_CHANNELS = {
 } as const satisfies OperationTable;
 
 export const REMOTE_EVENT_CHANNELS = {
+  'claudeMods.surface': {
+    requires: ['claudeModSurface'],
+    listen: [C.claudeModSurfacePush],
+  },
   'terminal.output': { requires: ['terminalPty'], listen: [C.terminalOutput] },
   'terminal.exit': { requires: ['terminalPty'], listen: [C.terminalExit] },
   'terminal.running-changed': {

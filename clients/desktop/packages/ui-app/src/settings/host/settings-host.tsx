@@ -35,7 +35,9 @@ import type { WorkspaceContext } from '@canopy/protocol/workspace-context';
  * call the exported wrappers below, never `host.useX()` directly.
  *
  * Shared code must not branch on which host it runs in. Capability
- * differences are explicit fields (`inlineCheckout`, payment handoff).
+ * differences are explicit fields. Whether payments check out inline or hand
+ * off is not one of them: it comes from the client's capabilities through
+ * `CreditsPurchaseProvider` (`@canopy/ui-app/credits`).
  */
 
 /** The anchor props shared links accept, mirroring `next/link`'s subset in use. */
@@ -138,12 +140,6 @@ export interface AiGatewayConnectionKeyProps {
 export interface SettingsUiHost {
   /** Fixed-table hosted settings data access. */
   readonly client: AccountOrganizationSettingsClient;
-  /**
-   * The host can mount inline browser checkout (card fields, Stripe). When
-   * `false`, payment CTAs hand off to the web through
-   * `SettingsNavigationPort.openPaymentHandoff`.
-   */
-  readonly inlineCheckout: boolean;
   readonly Link: SettingsLinkComponent;
   readonly Image: SettingsImageComponent;
   /** Account-scoped persistence of the browsed organization. */
@@ -169,11 +165,6 @@ export interface SettingsUiHost {
   /** Effective top-up service fee percent. */
   useTopUpFeePercent(): number;
   useWorkspaceContext(): SettingsWorkspaceContext;
-  /**
-   * Whether an authenticated payment handoff can open right now. Hosts with
-   * inline checkout return `false`. `null` while the host is still checking.
-   */
-  usePaymentHandoffAvailable(): boolean | null;
   /**
    * The stored key for an AI gateway on this device, such as `sk-…last4`
    * with its state. Only a host that keeps gateway keys in secure storage
@@ -250,10 +241,6 @@ export function useSettingsTopUpFeePercent(): number {
 
 export function useSettingsWorkspaceContext(): SettingsWorkspaceContext {
   return useSettingsHost().useWorkspaceContext();
-}
-
-export function useSettingsPaymentHandoffAvailable(): boolean | null {
-  return useSettingsHost().usePaymentHandoffAvailable();
 }
 
 /** The host's stored-key row for AI gateways, when it keeps keys. */

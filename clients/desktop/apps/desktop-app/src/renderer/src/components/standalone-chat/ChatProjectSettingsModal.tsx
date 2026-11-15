@@ -1,3 +1,4 @@
+import { ColorSwatchPreview } from '@canopy/ui-shared/components';
 import {
   useCallback,
   useEffect,
@@ -613,15 +614,7 @@ export function ChatProjectSettingsModal({
                     {...control}
                     density="settings"
                     type="text"
-                    leading={
-                      <span
-                        aria-hidden="true"
-                        className="size-3.5 rounded-full border"
-                        style={{
-                          backgroundColor: color || 'var(--bg-tertiary)',
-                        }}
-                      />
-                    }
+                    leading={<ColorSwatchPreview color={color} />}
                     value={color}
                     onChange={(e) => setColor(e.target.value)}
                     placeholder="#hex"

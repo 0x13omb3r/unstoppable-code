@@ -60,7 +60,7 @@ function AvailableContextSwitcher({
   const personalOrganizationId = authenticated
     ? (account?.personalOrganizationId ?? null)
     : null;
-  const freeAccess = authenticated && subscription.aiCreditsVisible;
+  const creditsVisible = authenticated && subscription.aiCreditsVisible;
   const teamDialogs = useDesktopTeamDialogs({
     accountId,
     personalOrganizationId,
@@ -72,7 +72,7 @@ function AvailableContextSwitcher({
     organizations: switcher.organizations,
     authenticated,
     personalOrganizationId,
-    freeAccess,
+    creditsVisible,
   });
   const pool = useOrgCreditPoolBalance(
     creditsOrganizationId === null
@@ -98,7 +98,7 @@ function AvailableContextSwitcher({
           orgScoped={{
             authenticated,
             personalOrganizationId,
-            freeAccess,
+            creditsVisible,
             onOpenPath: openSettingsPath,
             onCreateTeam: teamDialogs.openCreateTeam,
             onInviteToTeam: teamDialogs.openInvite,

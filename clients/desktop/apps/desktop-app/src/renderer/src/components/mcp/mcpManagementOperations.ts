@@ -134,6 +134,39 @@ export function keepsStoredSecrets(
   return values.some((value) => isStoredSecretValue(value));
 }
 
+/**
+ * Copies a device HTTP server to the signed-in cloud account (CAN-6176
+ * PR 4b) through `core.integration.mcpAccount.connect`. The renderer names
+ * the secret slots the person ticked; main resolves their values from the
+ * server's own store and sends them only to the server's own origin.
+ */
+export async function copyMcpServerToCloud(input: {
+  readonly serverId: string;
+  readonly url: string;
+  readonly displayName: string;
+  readonly configId: string;
+  readonly secretSlots: readonly string[];
+  readonly expectedAccountId: string;
+}): Promise<void> {
+  const reply = await window.canopyCore.invoke({
+    kind: 'request',
+    method: 'core.integration.mcpAccount.connect',
+    params: {
+      customUrl: input.url,
+      displayName: input.displayName.trim().slice(0, 120),
+      configId: input.configId,
+      fromDeviceServer: {
+        serverId: input.serverId,
+        configId: input.configId,
+        secretSlots: [...input.secretSlots],
+      },
+      expectedAccountId: input.expectedAccountId,
+      _meta: { idempotencyKey: crypto.randomUUID() },
+    },
+  });
+  if (!reply.ok) throw new Error(reply.error.message);
+}
+
 export async function loadSignedInAccountId(): Promise<string | undefined> {
   try {
     return (await window.api?.loadCanopyCloudAccount?.())?.account?.id;

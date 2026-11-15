@@ -32,6 +32,8 @@ import { memoryFileIdentity } from '@canopy/memory-consolidation/topic-identity'
 
 export interface MemoryUsageEntry {
   usageCount: number;
+  citationCount?: number;
+  usageSignalCount?: number;
   lastUsedAt: string | null;
   createdAt: string;
 }
@@ -61,8 +63,17 @@ function isMemoryUsageEntry(value: unknown): value is MemoryUsageEntry {
     typeof value.usageCount === 'number' &&
     Number.isInteger(value.usageCount) &&
     value.usageCount >= 0 &&
+    validSignalCount(value.citationCount) &&
+    validSignalCount(value.usageSignalCount) &&
     (value.lastUsedAt === null || isValidTimestamp(value.lastUsedAt)) &&
     isValidTimestamp(value.createdAt)
+  );
+}
+
+function validSignalCount(value: unknown): boolean {
+  return (
+    value === undefined ||
+    (typeof value === 'number' && Number.isSafeInteger(value) && value >= 0)
   );
 }
 
@@ -116,6 +127,12 @@ function parseUsageFile(raw: string): UsageFile | null {
           usageCount: entry.usageCount,
           lastUsedAt: entry.lastUsedAt,
           createdAt: entry.createdAt,
+          ...(entry.citationCount !== undefined
+            ? { citationCount: entry.citationCount }
+            : {}),
+          ...(entry.usageSignalCount !== undefined
+            ? { usageSignalCount: entry.usageSignalCount }
+            : {}),
         };
   }
   return {
@@ -140,6 +157,18 @@ function mergeUsageEntries(
 ): MemoryUsageEntry {
   return {
     usageCount: left.usageCount + right.usageCount,
+    ...(left.citationCount !== undefined || right.citationCount !== undefined
+      ? {
+          citationCount: (left.citationCount ?? 0) + (right.citationCount ?? 0),
+        }
+      : {}),
+    ...(left.usageSignalCount !== undefined ||
+    right.usageSignalCount !== undefined
+      ? {
+          usageSignalCount:
+            (left.usageSignalCount ?? 0) + (right.usageSignalCount ?? 0),
+        }
+      : {}),
     lastUsedAt: latestTimestamp(left.lastUsedAt, right.lastUsedAt),
     createdAt:
       Date.parse(right.createdAt) < Date.parse(left.createdAt)
@@ -309,10 +338,16 @@ function normalizedUniqueKeys(fileKeys: Iterable<string>): string[] {
   );
 }
 
+type UsageSignals = Pick<
+  MemoryUsageEntry,
+  'citationCount' | 'usageSignalCount'
+>;
+
 function applyUsageCounts(
   scopeDir: string,
   counts: ReadonlyMap<string, number>,
   usedAt: string,
+  signals?: ReadonlyMap<string, UsageSignals>,
 ): Promise<void> {
   // A synced replica also sends its uses to the cloud (design §15).
   localMemoryReplicaHooks()?.usageRecorded(scopeDir, counts, usedAt);
@@ -322,15 +357,66 @@ function applyUsageCounts(
     (file): void => {
       for (const [fileKey, count] of Array.from(counts)) {
         const existing = file.entries[fileKey];
-        file.entries[fileKey] = existing
-          ? {
-              usageCount: existing.usageCount + count,
-              lastUsedAt: usedAt,
-              createdAt: existing.createdAt,
-            }
-          : { usageCount: count, lastUsedAt: usedAt, createdAt: usedAt };
+        const signal = signals?.get(fileKey);
+        file.entries[fileKey] = {
+          ...existing,
+          usageCount: (existing?.usageCount ?? 0) + count,
+          lastUsedAt: usedAt,
+          createdAt: existing?.createdAt ?? usedAt,
+          ...(signal?.citationCount !== undefined
+            ? {
+                citationCount:
+                  (existing?.citationCount ?? 0) + signal.citationCount,
+              }
+            : {}),
+          ...(signal?.usageSignalCount !== undefined
+            ? {
+                usageSignalCount:
+                  (existing?.usageSignalCount ?? 0) + signal.usageSignalCount,
+              }
+            : {}),
+        };
       }
     },
+  );
+}
+
+/** One citation and/or distinctive-term signal per delivered file per turn. */
+export async function recordUsageSignals(
+  scopeDir: string,
+  signals: readonly {
+    fileKey: string;
+    citationCount: number;
+    usageSignalCount: number;
+  }[],
+): Promise<void> {
+  const positive = new Map<string, UsageSignals>();
+  for (const signal of signals) {
+    if (signal.citationCount <= 0 && signal.usageSignalCount <= 0) continue;
+    const key = normalizeFileKey(signal.fileKey);
+    if (key === undefined) continue;
+    const existing = positive.get(key);
+    // One positive use per file per turn, including aliases of the same topic.
+    positive.set(key, {
+      citationCount: Math.max(
+        existing?.citationCount ?? 0,
+        signal.citationCount,
+      ),
+      usageSignalCount: Math.max(
+        existing?.usageSignalCount ?? 0,
+        signal.usageSignalCount,
+      ),
+    });
+  }
+  if (positive.size === 0) return;
+  flushPendingUsageFor(scopeDir);
+  // Use the same mutation and replica hook as reads/injections. Detailed
+  // evidence stays local; sync receives only the existing generic use delta.
+  await applyUsageCounts(
+    scopeDir,
+    new Map([...positive.keys()].map((key) => [key, 1])),
+    new Date().toISOString(),
+    positive,
   );
 }
 

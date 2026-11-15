@@ -33,6 +33,7 @@ import {
   IPC_CHANNELS,
   initCursorModels,
   type PreferencesData,
+  type PreferencesSavePatch,
   type PreferencesLoadResult,
   type PreferencesSaveResult,
   type PreferencesProjectionOptions,
@@ -529,35 +530,43 @@ function rendererCodeCacheSchemeLoadFields(): Pick<
  * anything is written (CAN-6004).
  */
 export async function savePreferencesPatch(
-  preferences: Partial<PreferencesData>,
+  input: PreferencesSavePatch,
   options?: PreferencesProjectionOptions,
   precondition?: (latest: PreferencesData) => void,
 ): Promise<PreferencesSaveResult | PreferencesData> {
-  if (Object.prototype.hasOwnProperty.call(preferences, 'approvalDefaults')) {
+  if (Object.prototype.hasOwnProperty.call(input, 'approvalDefaults')) {
     throw new Error(
       'Approval defaults must be saved with setApprovalDefaultPreference.',
     );
   }
   if (
-    Object.prototype.hasOwnProperty.call(preferences, 'claudeModAdmissions') ||
-    Object.prototype.hasOwnProperty.call(preferences, 'claudeModsDisabled')
+    Object.prototype.hasOwnProperty.call(input, 'claudeModAdmissions') ||
+    Object.prototype.hasOwnProperty.call(input, 'claudeModsDisabled')
   ) {
     throw new Error(
       'Claude Mod consent and the kill switch must be changed with the typed Claude Mod admission service.',
     );
   }
-  if (
-    Object.prototype.hasOwnProperty.call(preferences, 'accountProxyConnection')
-  ) {
+  if (Object.prototype.hasOwnProperty.call(input, 'accountProxyConnection')) {
     throw new Error(
       'The account proxy connection must be changed with accountProxy.connect.',
     );
   }
-  if (Object.prototype.hasOwnProperty.call(preferences, 'copilotAccount')) {
+  if (Object.prototype.hasOwnProperty.call(input, 'copilotAccount')) {
     throw new Error(
       'The Copilot account must be changed with copilotConnection.connect.',
     );
   }
+  const previous = await readPreferencesFile();
+  const { usageData: usageDataPatch, ...otherPreferences } = input;
+  // Generic side-effect helpers consume a complete preference shape. The
+  // serialized write below still merges only the explicitly changed keys.
+  const preferences: Partial<PreferencesData> = {
+    ...otherPreferences,
+    ...(usageDataPatch
+      ? { usageData: { ...previous.usageData, ...usageDataPatch } }
+      : {}),
+  };
   // Main owns native account tracking (CAN-4200); a renderer copy can be
   // older than main's latest record, so it never overwrites it.
   const rendererPatch = { ...preferences };
@@ -581,6 +590,7 @@ export async function savePreferencesPatch(
   if (!legacySuggestionIntent)
     delete rendererPatch.repeatTaskAutomationSuggestionsEnabled;
   delete rendererPatch.copilotEnabled;
+  delete rendererPatch.copilotVaultSelection;
   delete rendererPatch.disabledInstalledItems;
   delete rendererPatch.parkedCodexPlugins;
   delete rendererPatch.pendingInstalledItemUninstalls;
@@ -598,7 +608,6 @@ export async function savePreferencesPatch(
   // Every writer sends them as a one-key save; a wider snapshot may hold
   // a copy read before that change and never puts it back (CAN-5766).
   applyGlobalPluginDefaultsSaveRule(preferences, rendererPatch);
-  const previous = await readPreferencesFile();
   const previousCodeGraph = getCodeGraphPreferencesSnapshot();
   const proxy = getMcpHttpProxyService();
   if (
@@ -621,14 +630,14 @@ export async function savePreferencesPatch(
         // Stop marking and sending native crashes before this opt-out writes.
         // Across restart, preference-write failures follow the shared consent
         // store, just as analytics does. CAN-6589 tracks opt-out durability.
-        if (rendererPatch.usageData?.errorReports === false)
+        if (usageDataPatch?.errorReports === false)
           nativeCrashAnnotation.suspendForOptOut();
-        return rendererPatch.usageData
+        return usageDataPatch
           ? {
               ...rendererPatch,
               usageData: {
                 ...latest.usageData,
-                ...rendererPatch.usageData,
+                ...usageDataPatch,
               },
             }
           : rendererPatch;
@@ -648,7 +657,7 @@ export async function savePreferencesPatch(
         // also ends a fail-closed startup read of unreadable preferences.
         getUsageDataPolicy().setPreferences(committed.usageData);
         if (
-          rendererPatch.usageData?.errorReports === true &&
+          usageDataPatch?.errorReports === true &&
           committed.usageData.errorReports
         )
           nativeCrashAnnotation.resumeAfterOptIn();
@@ -925,7 +934,7 @@ export function registerPreferenceHandlers(): void {
     IPC_CHANNELS.preferencesSave,
     (
       _event,
-      preferences: Partial<PreferencesData>,
+      preferences: PreferencesSavePatch,
       options?: PreferencesProjectionOptions,
     ) => savePreferencesPatch(preferences, options),
   );

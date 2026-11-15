@@ -576,6 +576,15 @@ export type TranscriptStreamCatalog = z.infer<
 export const CORE_CHAT_TRANSCRIPT_PAGE_SCHEMA_REVISION = 2;
 export const CORE_CHAT_EVENTS_SCHEMA_REVISION = 2;
 
+/**
+ * Revision 3 of `core.chat.events` (CAN-6766): revision 2's output plus
+ * `sandbox.changed`. Readers before it reject that change type, so only a
+ * subscription that asks for revision 3 gets it; a sandbox change reaches
+ * any other subscription as an empty `tab.metadata_patched`, which changes
+ * nothing and keeps its revisions contiguous.
+ */
+export const CORE_CHAT_EVENTS_SANDBOX_REVISION = 3;
+
 const tokenCount = z.number().min(0);
 /** A decimal USD amount as Core writes it, never converted to a number. */
 const usdAmount = z

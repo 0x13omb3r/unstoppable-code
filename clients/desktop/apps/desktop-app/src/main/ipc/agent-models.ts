@@ -1,3 +1,4 @@
+import { invalidateAgentCatalogCompatibility } from '../portal/agent-catalog-compatibility';
 import { BrowserWindow } from 'electron';
 import {
   toShareOperationResult,
@@ -100,6 +101,7 @@ async function assertAgentsSupported(): Promise<void> {
 async function refreshAfterAgentMutation(
   getWindow: () => BrowserWindow | null,
 ): Promise<void> {
+  invalidateAgentCatalogCompatibility();
   await refreshAgentModelsFromStore();
   const win = getWindow();
   if (win && !win.isDestroyed()) {
@@ -481,6 +483,7 @@ export function registerAgentModelHandlers(
   getWindow: () => BrowserWindow | null,
 ): void {
   getWorkspaceContextService().subscribe(() => {
+    invalidateAgentCatalogCompatibility();
     if (!agentResourceContextEnabled()) return;
     // Clear the old projection immediately; asynchronous hydration is fenced.
     broadcastModelRegistryUpdated();

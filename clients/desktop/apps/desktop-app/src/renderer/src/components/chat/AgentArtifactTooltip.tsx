@@ -177,7 +177,7 @@ function PipelineTooltip({ receipt }: PipelineTooltipProps): JSX.Element {
                   key={mode}
                   role="img"
                   aria-label={TRIGGER_META[mode].label}
-                  className={`inline-flex h-5 w-5 shrink-0 items-center justify-center rounded ${TRIGGER_META[mode].badgeClass}`}
+                  className={`inline-flex h-5 w-5 shrink-0 items-center justify-center ${TRIGGER_META[mode].badgeClass}`}
                 >
                   {PIPELINE_TRIGGER_GLYPHS[mode]}
                 </span>

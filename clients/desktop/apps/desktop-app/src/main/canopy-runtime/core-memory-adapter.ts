@@ -1,3 +1,4 @@
+import { CHAT_LEARNING_SCHEDULER_CALLER } from '../memory/local/transcript-learning-caller';
 import { CanopyOperationError } from '@canopy/core-runtime';
 import { KeyedOutcomes } from '@canopy/core-runtime/node/operations';
 import type {
@@ -28,6 +29,11 @@ export interface CoreMemoryHost {
   >;
   /** Tells open windows a scope changed. */
   changed(scope: LocalMemoryScopeRequest): void;
+  /** Only the system scheduler receives core.memory.learn. */
+  learnFromChats?(
+    scope: LocalMemoryScopeRequest,
+    signal?: AbortSignal,
+  ): Promise<{ status: 'learned' | 'skipped'; notes: number }>;
 }
 
 const desktopMemoryHost: CoreMemoryHost = {
@@ -61,6 +67,11 @@ const desktopMemoryHost: CoreMemoryHost = {
         ...args,
       ),
   },
+  learnFromChats: async (scope, signal) =>
+    (await import('../memory/local/transcript-learning')).learnFromChats(
+      scope,
+      signal,
+    ),
   changed: (scope) => {
     void import('../memory/local/change-events').then(
       ({ broadcastLocalMemoryChanged }) => broadcastLocalMemoryChanged(scope),
@@ -215,6 +226,38 @@ export function createCoreMemoryAdapter(
       },
     },
     instructions: {
+      'core.memory.chats.learn': async (params, context) => {
+        const caller = context.caller;
+        const scheduler = CHAT_LEARNING_SCHEDULER_CALLER;
+        if (
+          caller.principalId !== scheduler.principalId ||
+          caller.clientInstanceId !== scheduler.clientInstanceId ||
+          caller.authorityId !== scheduler.authorityId ||
+          caller.interfaceKind !== scheduler.interfaceKind
+        )
+          throw new CanopyOperationError({
+            kind: 'permission_denied',
+            message: 'Chat learning is available only to the idle scheduler.',
+            retry: { kind: 'never' },
+          });
+        if (!(await host.enabled())) throw DISABLED();
+        if (
+          (params.memory === 'workspace') !==
+          (params.workspaceId !== undefined)
+        )
+          throw new CanopyOperationError({
+            kind: 'invalid_argument',
+            message: 'Name exactly one memory scope.',
+            retry: { kind: 'never' },
+          });
+        const scope: LocalMemoryScopeRequest =
+          params.memory === 'workspace' && params.workspaceId !== undefined
+            ? { scope: 'workspace', workspaceId: params.workspaceId }
+            : { scope: 'user' };
+        return host.learnFromChats
+          ? host.learnFromChats(scope, context.signal)
+          : { status: 'skipped', notes: 0 };
+      },
       'core.memory.entry.append': (params, context) =>
         appends.run(context, params, async () => {
           const policy = await admittedPolicy(host, params.scope);

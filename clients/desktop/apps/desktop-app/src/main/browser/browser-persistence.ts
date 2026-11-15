@@ -345,7 +345,7 @@ function serializeState(state: PersistedWorktreeBrowserStateFile): string {
 
 async function writeStateAtomicallyAsync(
   filePath: string,
-  state: PersistedWorktreeBrowserStateFile,
+  contents: string | Uint8Array,
 ): Promise<void> {
   const directory = dirname(filePath);
   await mkdir(directory, { recursive: true });
@@ -356,7 +356,7 @@ async function writeStateAtomicallyAsync(
     `.${basename(filePath)}.${process.pid}.${Date.now()}-${atomicWriteCounter}.tmp`,
   );
   try {
-    await writeFile(temporaryPath, serializeState(state), {
+    await writeFile(temporaryPath, contents, {
       encoding: 'utf8',
       flag: 'wx',
     });
@@ -519,7 +519,7 @@ export async function loadAndMigrateWorktreeBrowserState(
     }
     await writeStateAtomicallyAsync(
       result.migration.filePath,
-      result.migration.state,
+      serializeState(result.migration.state),
     );
   }
   return result.response;
@@ -555,7 +555,7 @@ export async function saveWorktreeBrowserState(
               request.projectId,
               request.worktreeId,
             );
-            await writeStateAtomicallyAsync(filePath, state);
+            await writeStateAtomicallyAsync(filePath, serializeState(state));
           };
           // Workspace deletion/restore also accesses the profile repository while
           // holding this lock. Acquire binding authority only after the workspace
@@ -565,5 +565,36 @@ export async function saveWorktreeBrowserState(
         },
         signal,
       ),
+  );
+}
+
+/** Capture raw reset bytes under the same workspace lock as browser state saves. */
+export async function captureWorktreeBrowserStateRollback(
+  projectId: string,
+  worktreeId: string,
+): Promise<() => Promise<void>> {
+  const filePath = getWorktreeBrowserStateFilePath(projectId, worktreeId);
+  return withWorkspaceTargetRuntimeStartReservation(projectId, worktreeId, () =>
+    withArchivedWorkspaceOperationLock(projectId, async () => {
+      let contents: Buffer | null;
+      try {
+        contents = await readFile(filePath);
+      } catch (error) {
+        if (!isRecord(error) || error.code !== 'ENOENT') throw error;
+        contents = null;
+      }
+      // Release ownership before shutdown: it may drain saves queued outside this context.
+      return (): Promise<void> =>
+        withWorkspaceTargetRuntimeStartReservation(projectId, worktreeId, () =>
+          withArchivedWorkspaceOperationLock(projectId, async () => {
+            await touchWorkspaceTargetWithoutOperationLock(
+              projectId,
+              worktreeId,
+            );
+            if (contents === null) await rm(filePath, { force: true });
+            else await writeStateAtomicallyAsync(filePath, contents);
+          }),
+        );
+    }),
   );
 }

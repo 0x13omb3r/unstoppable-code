@@ -5,10 +5,16 @@ import { buttonClassName } from './Button';
  * - `accent`: a link that stands on its own (a row's "View on GitHub").
  *   Accent ink, underlined on hover; the same look as `Button variant="link"`.
  * - `quiet`: a secondary link beside a primary fact (a check's "Details").
+ * - `quiet-underlined`: a small, permanently underlined companion link.
  * - `inline`: a link inside a sentence. The underline stays faintly visible,
  *   so the link is not shown by colour alone (WCAG 1.4.1).
  */
-export type TextLinkVariant = 'accent' | 'quiet' | 'inline';
+export type TextLinkVariant =
+  | 'accent'
+  | 'quiet'
+  | 'quiet-underlined'
+  | 'inline'
+  | 'pull-request-header';
 
 /** The prose link look, shared with agent transcripts. */
 export const TEXT_LINK_INLINE_CLASS =
@@ -17,7 +23,11 @@ export const TEXT_LINK_INLINE_CLASS =
 const VARIANT_CLASS_NAMES: Record<TextLinkVariant, string> = {
   accent: buttonClassName({ variant: 'link' }),
   quiet: 'focus-ring rounded fg-secondary transition-colors hover:fg-primary',
+  'quiet-underlined':
+    'focus-ring rounded text-xs fg-secondary underline underline-offset-4 transition-colors hover:fg-primary',
   inline: TEXT_LINK_INLINE_CLASS,
+  'pull-request-header':
+    'electron-no-drag inline-flex h-7 shrink-0 items-center gap-1.5 whitespace-nowrap rounded-md px-2.5 text-xs font-normal fg-primary transition-colors hover:bg-subtle',
 };
 
 export interface TextLinkProps extends AnchorHTMLAttributes<HTMLAnchorElement> {

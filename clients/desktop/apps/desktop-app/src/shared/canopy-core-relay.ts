@@ -68,6 +68,8 @@ export type CanopyCoreRelayRequest = {
     }
   | { kind: 'readStream' | 'closeStream'; subscriptionId: string }
   | { kind: 'close' }
+  // The session's account and advertised revisions (CAN-6828).
+  | { kind: 'describe' }
 );
 
 export type CanopyCoreRelayReply =

@@ -11,6 +11,7 @@ import {
 import {
   Button,
   DISPLAY_AVATAR_SIZE_PX,
+  MediaEditOverlay,
   TextInput,
   Heading,
   type DisplayAvatarSize,
@@ -84,16 +85,13 @@ export function AvatarEditor({
         style={{ width: px, height: px }}
       >
         <MemberAvatar name={name} image={image} size={size} />
-        <span
-          aria-hidden="true"
-          className="absolute inset-0 flex items-center justify-center rounded-full bg-black/40 text-white opacity-0 transition-opacity group-hover:opacity-100 group-focus-visible:opacity-100"
-        >
+        <MediaEditOverlay>
           {busy ? (
             <span className="text-xs font-medium">…</span>
           ) : (
             <Camera size={Math.max(16, Math.round(px / 4))} />
           )}
-        </span>
+        </MediaEditOverlay>
       </button>
       <input
         ref={inputRef}

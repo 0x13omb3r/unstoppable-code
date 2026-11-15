@@ -1,5 +1,6 @@
 import type { JSX } from 'react';
 import {
+  AI_CREDITS_PURCHASE_LABEL,
   BillingHistoryTable,
   Button,
   DelayedLoadingPlaceholder,
@@ -22,11 +23,6 @@ const noop = (): void => undefined;
 
 const sampleDate = (iso: string): string => iso.slice(0, 10);
 
-const SAMPLE_PLAN = {
-  description: 'Your plan and next payment.',
-  nextBilling: 'Next billing: $20.00 on 2027-01-01',
-} as const;
-
 const SAMPLE_CREDITS = {
   balance: '1,250 credits',
   used: '300 credits used this month',
@@ -35,10 +31,10 @@ const SAMPLE_CREDITS = {
 const SAMPLE_CHARGES: BillingHistoryCharge[] = [
   {
     id: 'sample-charge-1',
-    kind: 'SUBSCRIPTION',
+    kind: 'CREDITS',
     status: 'SUCCEEDED',
     amountUsd: 20,
-    description: 'Subscription',
+    description: 'Credits',
     cardBrand: 'visa',
     cardLast4: '4242',
     createdAt: '2027-01-01T00:00:00.000Z',
@@ -55,18 +51,7 @@ const SAMPLE_CHARGES: BillingHistoryCharge[] = [
   },
 ];
 
-/** What a billing card's body holds once loaded. */
-export type BillingCardBody = 'plan' | 'credits';
-
-function SampleBody({ body }: { readonly body: BillingCardBody }): JSX.Element {
-  if (body === 'plan') {
-    return (
-      <div className="flex flex-col gap-2">
-        <p className="text-xs fg-secondary">{SAMPLE_PLAN.description}</p>
-        <p className="text-s fg-secondary">{SAMPLE_PLAN.nextBilling}</p>
-      </div>
-    );
-  }
+function SampleBody(): JSX.Element {
   return (
     <div className="flex flex-col gap-3">
       <div className="flex items-start justify-between gap-3">
@@ -76,7 +61,7 @@ function SampleBody({ body }: { readonly body: BillingCardBody }): JSX.Element {
           </p>
         </div>
         <Button size="compact" variant="secondary" onClick={noop}>
-          Buy credits
+          {AI_CREDITS_PURCHASE_LABEL}
         </Button>
       </div>
       <p className="text-xs fg-secondary">{SAMPLE_CREDITS.used}</p>
@@ -85,20 +70,15 @@ function SampleBody({ body }: { readonly body: BillingCardBody }): JSX.Element {
 }
 
 /**
- * The body of a billing card while its figures load: the plan's description
- * and next-billing lines below the plan heading, or the credits balance, its
+ * The body of a billing card while its figures load: the credits balance, its
  * top-up button and the usage line. Announces "Loading" to assistive
  * technology only, and shows only after the shared delay.
  */
-export function BillingCardBodySkeleton({
-  body,
-}: {
-  readonly body: BillingCardBody;
-}): JSX.Element {
+export function BillingCardBodySkeleton(): JSX.Element {
   return (
     <DelayedLoadingPlaceholder>
       <Skeleton loading testId="settings-skeleton-card-body">
-        <SampleBody body={body} />
+        <SampleBody />
       </Skeleton>
     </DelayedLoadingPlaceholder>
   );

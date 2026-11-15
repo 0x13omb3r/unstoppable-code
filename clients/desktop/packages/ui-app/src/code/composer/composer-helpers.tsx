@@ -16,6 +16,7 @@ import type {
   PortalChatUsage,
 } from '@canopy/protocol/portal';
 import {
+  resolveModelSelectionMetadata,
   advanceThinkingLevelIn,
   clampThinkingLevelToSupported,
   type AgentExecutionHarness,
@@ -52,9 +53,12 @@ export function resolveUsageIndicatorIsCodex(
   availableModels: ModelCatalog | undefined,
   model: string | undefined,
 ): boolean {
-  if (executionHarness !== undefined) return executionHarness === 'codex';
   return (
-    availableModels?.find((option) => option.id === model)?.harness === 'codex'
+    resolveModelSelectionMetadata({
+      catalog: availableModels,
+      selection: model,
+      executionHarness,
+    }).executionHarness === 'codex'
   );
 }
 

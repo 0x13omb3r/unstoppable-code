@@ -42,6 +42,7 @@ import {
 } from 'react';
 import {
   isPanelKind,
+  isModPanePanelInstance,
   isSessionBreakdownPanelInstance,
   isSubagentChatPanelInstance,
   PANEL_KINDS,
@@ -59,6 +60,7 @@ import {
 import {
   WorkflowsIcon,
   BarChart4BarsIcon,
+  PluginsIcon,
   LineChart1Icon,
   ChatIcon,
   ChatVisualsIcon,
@@ -104,6 +106,8 @@ import {
 } from '@/stores/panelLayoutStore';
 import { isInAppBrowserAvailable } from '@/lib/remote-control/in-app-browser-availability';
 import { CHAT_VISUALS_PANEL_TITLE } from '@canopy/ui-app/panel-layout-store';
+import { ClaudeModPaneView } from '@canopy/ui-app';
+import { MOD_PANE_PANEL_NAME } from './mod-pane-panel-sync';
 import {
   Surface,
   EmptyState,
@@ -1526,6 +1530,34 @@ const PanelSessionBreakdownContent = memo(function PanelSessionBreakdownContent(
   );
 });
 
+/**
+ * 'mod-pane' — one pane a Claude Mod opened in a chat, drawn by the shared
+ * pane view. The binding names the chat; the worktree is the panel's own.
+ */
+const PanelModPaneContent = memo(function PanelModPaneContent(
+  props: PanelContentProps,
+): JSX.Element {
+  const selectedWorktree = useSelectedWorktree();
+  const instance = props.instance;
+  return (
+    <PanelContentFrame kind="mod-pane" panelId={props.panelId}>
+      {selectedWorktree && isModPanePanelInstance(instance) ? (
+        <ClaudeModPaneView
+          key={`${selectedWorktree.projectId}/${selectedWorktree.worktreeId}/${instance.chatId}/${instance.paneId}`}
+          chat={{
+            projectId: selectedWorktree.projectId,
+            worktreeId: selectedWorktree.worktreeId,
+            chatId: instance.chatId,
+          }}
+          paneId={instance.paneId}
+        />
+      ) : (
+        <PanelEmptyState />
+      )}
+    </PanelContentFrame>
+  );
+});
+
 // ---------------------------------------------------------------------------
 // Registry
 // ---------------------------------------------------------------------------
@@ -1782,6 +1814,17 @@ export const DESKTOP_PANEL_DEFINITIONS: Readonly<
     singleton: SINGLETON_PANEL_KINDS.has('session-breakdown'),
     render: (props: PanelContentProps): ReactNode => (
       <PanelSessionBreakdownContent {...props} />
+    ),
+  },
+  'mod-pane': {
+    kind: 'mod-pane',
+    title: MOD_PANE_PANEL_NAME,
+    icon: <PluginsIcon />,
+    canPopOut: true,
+    isWindowBound: false,
+    singleton: SINGLETON_PANEL_KINDS.has('mod-pane'),
+    render: (props: PanelContentProps): ReactNode => (
+      <PanelModPaneContent {...props} />
     ),
   },
   'new-tab': {

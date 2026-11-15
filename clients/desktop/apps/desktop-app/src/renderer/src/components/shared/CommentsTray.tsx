@@ -1,3 +1,4 @@
+import { Surface } from '@canopy/ui-shared/components';
 import {
   useCallback,
   useEffect,
@@ -230,7 +231,9 @@ export function CommentsTray<T>({
           ariaLabel={resizeAriaLabel}
         />
       )}
-      <div
+      <Surface
+        variant="pane"
+        boundary="top"
         ref={setTrayEl}
         data-testid={containerTestId}
         // `flex-basis` (not `height`) sizes this correctly: a percentage
@@ -242,18 +245,12 @@ export function CommentsTray<T>({
         // latest dragged value, not the stale committed prop — otherwise the
         // tray would snap back until the next mousemove repaints it. Collapsed,
         // it uses content-height (`flex-basis: auto`) so only the header shows.
-        style={
+        paneBasis={
           isCollapsed
             ? undefined
-            : {
-                flexBasis: `${
-                  isDraggingRef.current
-                    ? pendingPercentRef.current
-                    : heightPercent
-                }%`,
-              }
+            : `${isDraggingRef.current ? pendingPercentRef.current : heightPercent}%`
         }
-        className="flex min-h-0 shrink-0 grow-0 flex-col overflow-auto border-t bg-base"
+        className="flex min-h-0 shrink-0 grow-0 flex-col overflow-auto"
       >
         <div className="flex shrink-0 items-center justify-between gap-2 px-3 py-2">
           <div className="flex items-center gap-1.5">
@@ -399,7 +396,7 @@ export function CommentsTray<T>({
             )
           )}
         </div>
-      </div>
+      </Surface>
     </>
   );
 }

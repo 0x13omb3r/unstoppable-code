@@ -1,3 +1,4 @@
+import { Surface } from '@canopy/ui-shared/components';
 import type { JSX } from 'react';
 import { usesNativeWindowFrame } from '@canopy/desktop-shared/platform-capabilities';
 import { localPlatform } from '@/lib/local-platform';
@@ -40,8 +41,10 @@ export function CloudSignInGate({
 
   return (
     // The window's whole content in place of the shell, not a layer over it.
-    <div
-      className="flex h-screen w-full flex-col items-center justify-center overflow-hidden bg-base fg-primary animate-fade-in"
+    <Surface
+      variant="startup-pane"
+      extent="viewport"
+      className="flex w-full flex-col items-center justify-center overflow-hidden"
       data-testid="cloud-sign-in-gate"
     >
       {/* Keep the window draggable behind the centered content. */}
@@ -61,7 +64,7 @@ export function CloudSignInGate({
               </p>
             </div>
           </div>
-          <div className="w-full rounded-2xl border bg-card/60 p-6">
+          <Surface variant="sign-in-card" className="w-full">
             <CloudAuthPanel
               layout="splash"
               // The panel's default lead is written for a guest upgrading in
@@ -73,9 +76,9 @@ export function CloudSignInGate({
               onConnectSuccess={handleConnectSuccess}
               onReadyToContinue={onConnected}
             />
-          </div>
+          </Surface>
         </div>
       </div>
-    </div>
+    </Surface>
   );
 }

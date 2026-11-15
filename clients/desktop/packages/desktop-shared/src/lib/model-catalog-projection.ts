@@ -86,10 +86,11 @@ function normalizedModelSource(
         : modelSource;
 }
 
-function harnessChoiceFields(
+/** Runtime choices that preserve this row's model identity. */
+export function getModelCatalogHarnessChoices(
   id: string,
-): Pick<ModelCatalogOption, 'harnessChoices'> {
-  const choices = getChatHarnessOptions(id).flatMap(
+): ModelCatalogHarnessChoice[] {
+  return getChatHarnessOptions(id).flatMap(
     (harness): ModelCatalogHarnessChoice[] => {
       // Cursor admission requires its opaque managed ID. Those models have
       // their own catalog rows; this choice retains the current row's ID.
@@ -112,6 +113,12 @@ function harnessChoiceFields(
       ];
     },
   );
+}
+
+function harnessChoiceFields(
+  id: string,
+): Pick<ModelCatalogOption, 'harnessChoices'> {
+  const choices = getModelCatalogHarnessChoices(id);
   return choices.some((choice) => choice.harness === 'opencode')
     ? { harnessChoices: choices }
     : {};

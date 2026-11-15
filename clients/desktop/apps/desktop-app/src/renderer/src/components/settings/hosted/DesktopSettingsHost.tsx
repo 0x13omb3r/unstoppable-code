@@ -18,7 +18,10 @@ import type {
   SettingsNavigationPort,
   SettingsSelectionStorage,
 } from '@canopy/app-core/settings';
-import { useOrgProjectsStoreApi } from '@canopy/app-state';
+import {
+  useOptionalCanopyClient,
+  useOrgProjectsStoreApi,
+} from '@canopy/app-state';
 import {
   SettingsStoreProvider,
   useOptionalSettingsStoreApi,
@@ -32,7 +35,6 @@ import type {
 import {
   settingsRouteToPath,
   type SettingsBootstrap,
-  type SettingsPaymentHandoffResult,
 } from '@canopy/protocol/settings';
 import { AI_CREDIT_TOP_UP_FEE_PERCENT } from '@canopy/protocol/settings/top-up-fee-default';
 import {
@@ -46,6 +48,7 @@ import {
   type SettingsUiHost,
   type SettingsWorkspaceContext,
 } from '@canopy/ui-app/settings/host';
+import { CreditsPurchaseProvider } from '@canopy/ui-app/credits';
 import {
   OrganizationSettingsSlotsProvider,
   type OrganizationPromotionDialogProps,
@@ -540,9 +543,8 @@ function useDesktopSettingsSearchParams(): SettingsSearchParams {
 }
 
 function useDesktopSettingsNavigation(): SettingsNavigationPort {
-  const { account, settingsApi, webOrigin } = useDesktopSettingsHostContext();
+  const { account, webOrigin } = useDesktopSettingsHostContext();
   const location = useCurrentHostedLocation();
-  const accountId = account.status === 'signed_in' ? account.accountId : null;
   return useMemo<SettingsNavigationPort>(
     () => ({
       navigate: (route): void =>
@@ -564,20 +566,8 @@ function useDesktopSettingsNavigation(): SettingsNavigationPort {
       // Provider linking completes in the browser, where the callback lands:
       // open the web Security page signed in as this account.
       openOAuth: (): void => openAuthenticatedCloudPage('/account/security'),
-      openPaymentHandoff: async (
-        owner,
-        intent,
-      ): Promise<SettingsPaymentHandoffResult> => {
-        if (settingsApi === null || accountId === null)
-          return { ok: false, reason: 'unavailable' };
-        try {
-          return await settingsApi.paymentHandoff({ accountId, owner, intent });
-        } catch {
-          return { ok: false, reason: 'failed' };
-        }
-      },
     }),
-    [account, accountId, settingsApi, webOrigin, location],
+    [account, webOrigin, location],
   );
 }
 
@@ -615,43 +605,6 @@ function useDesktopSettingsWorkspaceContext(): SettingsWorkspaceContext {
   );
 }
 
-/**
- * Whether main can open an authenticated payment handoff right now: the
- * portal flag is on and this account's credentials are captured. Rechecked
- * when the window regains focus, as the user may have signed in elsewhere.
- */
-function useDesktopPaymentHandoffAvailable(): boolean | null {
-  const { account, settingsApi } = useDesktopSettingsHostContext();
-  const accountId = account.status === 'signed_in' ? account.accountId : null;
-  const [available, setAvailable] = useState<boolean | null>(null);
-  useEffect(() => {
-    if (settingsApi === null || accountId === null) {
-      setAvailable(false);
-      return undefined;
-    }
-    let cancelled = false;
-    let latest = 0;
-    const check = (): void => {
-      const request = ++latest;
-      void settingsApi.paymentHandoffAvailability({ accountId }).then(
-        (result) => {
-          if (!cancelled && request === latest) setAvailable(result.available);
-        },
-        () => {
-          if (!cancelled && request === latest) setAvailable(false);
-        },
-      );
-    };
-    check();
-    window.addEventListener('focus', check);
-    return (): void => {
-      cancelled = true;
-      window.removeEventListener('focus', check);
-    };
-  }, [accountId, settingsApi]);
-  return available;
-}
-
 function createDesktopSettingsHost(
   client: AccountOrganizationSettingsClient,
   storage: SettingsSelectionStorage,
@@ -659,8 +612,6 @@ function createDesktopSettingsHost(
 ): SettingsUiHost {
   return {
     client,
-    // Payment forms stay in the browser; CTAs hand off to it.
-    inlineCheckout: false,
     Link: DesktopSettingsLink,
     Image: DesktopSettingsImage,
     storage,
@@ -678,7 +629,6 @@ function createDesktopSettingsHost(
     useScrollElement: useDesktopSettingsScrollElement,
     useTopUpFeePercent: useDesktopTopUpFeePercent,
     useWorkspaceContext: useDesktopSettingsWorkspaceContext,
-    usePaymentHandoffAvailable: useDesktopPaymentHandoffAvailable,
     // Gateway keys live in this computer's secure storage.
     AiGatewayConnectionKey: DesktopAiGatewayConnectionKey,
   };
@@ -864,6 +814,7 @@ export function DesktopHostedSettingsProvider({
     ],
   );
   const organizationSlots = useDesktopOrganizationSettingsSlots();
+  const canopyClient = useOptionalCanopyClient();
   useHostedSettingsOpenRequests(settingsApi);
   useResetHostedDestinationOnAccountChange(account);
   return (
@@ -880,11 +831,18 @@ export function DesktopHostedSettingsProvider({
           navModelStorage={navModelStorage}
         />
         <SettingsHostProvider host={host}>
-          <OrganizationSettingsSlotsProvider slots={organizationSlots}>
-            <DesktopSettingsAnchorBoundary>
-              {children}
-            </DesktopSettingsAnchorBoundary>
-          </OrganizationSettingsSlotsProvider>
+          {/* Payment CTAs hand off through the client's `creditsHandoff`,
+              for the account Settings shows. */}
+          <CreditsPurchaseProvider
+            client={canopyClient}
+            accountId={settingsApi === null ? null : accountId}
+          >
+            <OrganizationSettingsSlotsProvider slots={organizationSlots}>
+              <DesktopSettingsAnchorBoundary>
+                {children}
+              </DesktopSettingsAnchorBoundary>
+            </OrganizationSettingsSlotsProvider>
+          </CreditsPurchaseProvider>
         </SettingsHostProvider>
       </SettingsStoreProvider>
     </DesktopSettingsHostContext.Provider>

@@ -1,16 +1,16 @@
 'use client';
 
 import type { JSX, ReactNode } from 'react';
-import { Button, LoadingSpinner } from '@canopy/ui-shared/components';
-import { CircleCheckIcon, Plus } from '@canopy/ui-shared/icons/AppIcons';
-import { OPERATIONAL_STATUS_COLORS } from '@canopy/ui-shared/lib';
+import {
+  Button,
+  SetupStepIndicator,
+  type SetupStepStatus,
+} from '@canopy/ui-shared/components';
+import { Plus } from '@canopy/ui-shared/icons/AppIcons';
 import type { OrganizationDetail } from '@canopy/protocol/settings/organization';
 import { GitHubConnectionLink } from './team-projects-create-dialog';
 import type { OrgProjectLocalStatus } from './organization-settings-slots';
 import { SETTINGS_GROUP_CLASS } from '@canopy/ui-shared/components/settings/SettingsCard';
-
-/** `active` means work is running, never "current". */
-type SetupStepStatus = 'completed' | 'active' | 'pending';
 
 interface SetupStep {
   key: string;
@@ -128,21 +128,8 @@ export function ProjectsSetupChecklist({
             data-step-status={step.status}
             className="flex items-center gap-3"
           >
-            {/* A check once done, a spinner while running, an empty circle until then. */}
-            <span className="flex h-5 w-5 shrink-0 items-center justify-center">
-              {step.status === 'completed' ? (
-                <CircleCheckIcon
-                  size="xl"
-                  aria-hidden
-                  className={OPERATIONAL_STATUS_COLORS.success.foreground}
-                />
-              ) : step.status === 'active' ? (
-                <LoadingSpinner tone="active" sizePx={16} decorative />
-              ) : (
-                <span className="h-4 w-4 rounded-full ring-2 ring-fg-quaternary ring-inset" />
-              )}
-              <span className="sr-only">{STATUS_TEXT[step.status]}</span>
-            </span>
+            <SetupStepIndicator status={step.status} />
+            <span className="sr-only">{STATUS_TEXT[step.status]}</span>
             <div className="min-w-0 flex-1">
               <p
                 className={

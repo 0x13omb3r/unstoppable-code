@@ -2,6 +2,7 @@ import { webCoreLocalId } from '@/lib/chat-authority';
 import { useChatStore } from '@/stores/chatStore';
 import { useNavigationStore } from '@/stores/navigationStore';
 import { useStandaloneChatStore } from '@/stores/standaloneChatStore';
+import { useCloudArchivedTasksStore } from './cloud-archived-tasks';
 import { cloudCoworkStore } from './cloud-cowork-store';
 
 /** What a confirmation says when the web core didn't archive the task. */
@@ -26,6 +27,8 @@ export async function archiveCloudTask(
     throw new Error('Not a cloud task.');
   await cloudCoworkStore.getState().archiveTask(workspaceId, taskId);
   leaveCloudTask(projectId, worktreeId);
+  // The project's More row counts it now.
+  void useCloudArchivedTasksStore.getState().load(projectId);
 }
 
 function leaveCloudTask(projectId: string, worktreeId: string): void {

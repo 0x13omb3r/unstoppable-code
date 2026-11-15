@@ -79,6 +79,10 @@ export {
   SECRET_PROTECTION_FILE,
   type SecretProtectionOptions,
 } from './secret-protection';
+export {
+  createNativeSecretProtectionOwner,
+  type NativeSecretProtectionOwner,
+} from './secret-protection/owner';
 
 export {
   createNativeArtifactAuthorizer,

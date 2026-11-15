@@ -410,8 +410,6 @@ export function HostedSettingsPageContent({
 }
 
 export interface HostedSettingsPageProps extends HostedSettingsPageContentProps {
-  /** Free access names Billing "AI Credits" in the account page header. */
-  readonly freeAccess: boolean;
   /** Host content rendered after an account page, in every page state.
    * Organization routes have no account frame and never render it. */
   readonly accountFrameAfter?: ReactNode;
@@ -423,7 +421,6 @@ export interface HostedSettingsPageProps extends HostedSettingsPageContentProps 
  */
 export function HostedSettingsPage({
   route,
-  freeAccess,
   recovery,
   renderFrame,
   accountFrameAfter,
@@ -437,7 +434,7 @@ export function HostedSettingsPage({
   );
   if (route.scope === 'account')
     return (
-      <AccountSettingsFrame freeAccess={freeAccess} after={accountFrameAfter}>
+      <AccountSettingsFrame after={accountFrameAfter}>
         {content}
       </AccountSettingsFrame>
     );

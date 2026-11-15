@@ -1,3 +1,4 @@
+import { ActivityPlanCard } from '@canopy/ui-shared/components';
 import { useCallback, useEffect, useMemo, useState, type JSX } from 'react';
 import type {
   DetectedPlanEntry,
@@ -130,7 +131,7 @@ function PlanCard({
   };
 
   return (
-    <div
+    <ActivityPlanCard
       key={plan.id}
       role="button"
       tabIndex={0}
@@ -145,7 +146,6 @@ function PlanCard({
           onOpen();
         }
       }}
-      className="group/plan focus-ring relative flex flex-col gap-2 w-full cursor-pointer rounded-lg border bg-fg-primary/[0.03] p-3 text-left transition-colors hover:bg-fg-primary/[0.06]"
     >
       {!readOnly && (
         <div className="absolute right-2 top-2 opacity-0 transition-opacity focus-within:opacity-100 group-hover/plan:opacity-100">
@@ -254,7 +254,7 @@ function PlanCard({
           />
         </div>
       )}
-    </div>
+    </ActivityPlanCard>
   );
 }
 

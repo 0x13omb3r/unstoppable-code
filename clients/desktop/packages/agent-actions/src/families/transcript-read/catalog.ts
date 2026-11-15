@@ -105,7 +105,7 @@ export function transcriptReadActionCatalog(): readonly AgentActionCatalogEntry<
       notes: [
         cloudPageNote,
         discoveryNote,
-        'Delegation targets only. Up to 500 rows, 768 KiB stored selection and 960,000 bytes for the core result. Rows within a page are oldest to newest; no cursor means completion. runTruncated means retained-source loss, not another page. Use chat.get for the latest primary response.',
+        'Delegation targets only. Up to 500 rows, 768 KiB stored selection and 960,000 bytes for the core result. Rows within a page are oldest to newest; no cursor means completion. runTruncated means retained-source loss, not another page. Use projects.get_last_agent_response for the latest primary response.',
       ],
     },
     {

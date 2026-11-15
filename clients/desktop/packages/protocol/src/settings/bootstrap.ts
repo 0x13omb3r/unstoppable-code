@@ -55,6 +55,7 @@ export const settingsOrganizationBootstrapSchema = z.looseObject({
   digestsEnabled: z.boolean(),
   projectsEnabled: z.boolean(),
   canViewUsageStats: z.boolean(),
+  /** @deprecated Retained for shipped clients, which require it; the server always sends `true`. */
   freeAccess: z.boolean(),
   /**
    * The GitHub App is connected. A lapsed organization keeps Integrations on
@@ -62,6 +63,7 @@ export const settingsOrganizationBootstrapSchema = z.looseObject({
    * hosts then treat the state as unknown.
    */
   githubConnected: z.boolean().optional(),
+  /** @deprecated Retained for shipped clients, which require it; the server always sends `null`: no organization lapses. */
   lapse: settingsOrganizationLapseSchema.nullable(),
 });
 
@@ -89,6 +91,7 @@ export const settingsBootstrapSchema = z.looseObject({
     billingEnabled: z.boolean(),
     digestsEnabled: z.boolean(),
     integrationsEnabled: z.boolean(),
+    /** @deprecated Retained for shipped clients, which require it; the server always sends `true`. */
     freeAccess: z.boolean(),
   }),
   organizations: z.array(settingsOrganizationMembershipSchema),

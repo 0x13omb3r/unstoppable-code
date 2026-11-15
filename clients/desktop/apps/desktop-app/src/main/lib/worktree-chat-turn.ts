@@ -205,6 +205,8 @@ import { getCoworkManagedSubdir } from '@canopy/desktop-shared/node/lib/cowork-m
 import { buildWorktreeInjectedToolPrompt } from '../canopy-tools/prompting';
 import { isCodeGraphAvailableForWorkspace } from './code-graph-availability';
 import { buildCodeGraphAvailabilityPrompt } from './code-graph-availability-prompt';
+import { chatAddressPrompt } from '@canopy/desktop-shared/lib/chat-address-prompt';
+import { agentChatAddress } from './agent-chat-address';
 import {
   buildCoworkDispatchSystemPromptAppend,
   buildLocalMemoryPromptNudge,
@@ -266,6 +268,11 @@ import {
 } from '../memory/memory-context';
 import { collectMemoryQueryContext } from '../memory/query-context';
 import { prepareLocalMemoryContext } from '../memory/local/prepare';
+import {
+  localMemoryTurnMeasurement,
+  forgetLocalMemoryTurnMeasurement,
+  finishLocalMemoryTurnMeasurement,
+} from '../memory/local/turn-usefulness';
 import { resolveLocalMemoryPolicy } from '../memory/local/policy';
 import {
   TurnDispatchTiming,
@@ -1261,7 +1268,8 @@ export async function prepareLocalMemory(options: {
   userText: string;
   projectId: string;
   worktreeId: string;
-}): Promise<{ renderedBlock: string } | null> {
+  turnId?: string;
+}): ReturnType<typeof prepareLocalMemoryContext> {
   return prepareLocalMemoryContext(options);
 }
 
@@ -1632,7 +1640,7 @@ export async function prepareWorktreeTurnSession<
     const coworkMemoryPolicy = isCoworkChat
       ? await resolveLocalMemoryPolicy(options)
       : null;
-    const systemPromptAppend = isCoworkChat
+    const systemPromptBody = isCoworkChat
       ? buildCoworkDispatchSystemPromptAppend(
           providerPromptKind,
           preferences?.localMemoryEnabled === true,
@@ -1660,6 +1668,9 @@ export async function prepareWorktreeTurnSession<
               'worktree',
             ),
           });
+    const systemPromptAppend = `${systemPromptBody}\n\n${chatAddressPrompt(
+      agentChatAddress(options.projectId, options.worktreeId, options.chatId),
+    )}`;
     const runtime = selectedModel
       ? await resolveAgentModelRuntime({
           projectId: options.projectId,
@@ -2173,6 +2184,7 @@ async function dispatchHeldWorktreeChatTurn<
                 userText: options.text,
                 projectId: standaloneProjectId ?? options.projectId,
                 worktreeId: options.worktreeId,
+                turnId: options.userMessageId,
               }),
           );
         },
@@ -2187,6 +2199,14 @@ async function dispatchHeldWorktreeChatTurn<
       buildSessionOptions,
       effectiveExecutionHarness,
     } = preparedSession;
+    const memoryMeasurement = localMemoryTurnMeasurement(
+      sessionKey,
+      executionUserMessageId,
+      localMemory.value
+        ? { prepared: localMemory.value, userText: options.text }
+        : undefined,
+      options.hiddenDeferredContinuation === true,
+    );
     let sessionConfiguration = preparedSession.sessionConfiguration;
 
     if (
@@ -2553,6 +2573,29 @@ async function dispatchHeldWorktreeChatTurn<
       });
 
       if (eventData && isTerminalEvent) {
+        if (
+          memoryMeasurement &&
+          memoryMeasurement.turnId === executionUserMessageId &&
+          finishLocalMemoryTurnMeasurement(sessionKey, memoryMeasurement)
+        ) {
+          // No measurement work runs on streamed events. Read the existing
+          // raw turn transcript only after terminal delivery has completed.
+          setImmediate(() => {
+            void import('../memory/local/record-turn-usefulness')
+              .then(({ recordCompletedLocalMemoryTurnUsefulness }) =>
+                recordCompletedLocalMemoryTurnUsefulness({
+                  prepared: memoryMeasurement.prepared,
+                  projectId: standaloneProjectId ?? options.projectId,
+                  auditProjectId: options.projectId,
+                  worktreeId: options.worktreeId,
+                  chatId: options.chatId,
+                  userMessageId: memoryMeasurement.turnId,
+                  userText: memoryMeasurement.userText,
+                }),
+              )
+              .catch(() => undefined);
+          });
+        }
         // Settle before scheduling terminal follow-up work so callbacks already
         // queued behind this event cannot append output to the completed turn.
         turnSettled = true;
@@ -3708,6 +3751,19 @@ async function dispatchHeldWorktreeChatTurn<
           planMode: options.planMode,
           systemPromptAppend: observedSystemPromptAppend,
           orgMemoryBlock: memory?.renderedBlock,
+          injectedPrompts:
+            localMemory.value && runtimeProviderType
+              ? [
+                  {
+                    kind: 'local_memory',
+                    provider: runtimeProviderType,
+                    applicationCondition: localMemory.value.holdout
+                      ? 'local_memory_withheld_for_turn'
+                      : 'local_memory_enabled_for_turn',
+                    text: localMemory.value.renderedBlock,
+                  },
+                ]
+              : undefined,
           userMessageId: options.userMessageId,
           ...(options.internalRow !== undefined
             ? { internalRow: options.internalRow }
@@ -3909,6 +3965,8 @@ async function dispatchHeldWorktreeChatTurn<
       releaseSessionTurnPreparation = undefined;
     } catch (error) {
       closePlanTurn();
+      if (memoryMeasurement)
+        forgetLocalMemoryTurnMeasurement(sessionKey, memoryMeasurement);
       if (delegationDeliveryClaimed && options.managedDelegationDeliveryId)
         releaseDelegationDelivery(options, options.managedDelegationDeliveryId);
       if (memory && memory.facts.length > 0 && memory.searchId) {
@@ -3946,6 +4004,8 @@ async function dispatchHeldWorktreeChatTurn<
     const sessionDisposedAtSend = session.isDisposed?.() === true;
     if (sessionDisposedAtSend) {
       closePlanTurn();
+      if (memoryMeasurement)
+        forgetLocalMemoryTurnMeasurement(sessionKey, memoryMeasurement);
       turnRun.settle('cancelled');
     }
     if (memory && memory.facts.length > 0) {

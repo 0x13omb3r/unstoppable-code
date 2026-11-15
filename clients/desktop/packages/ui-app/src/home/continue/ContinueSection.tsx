@@ -1,5 +1,6 @@
 'use client';
 
+import { ContinueInterruptedSessionRow } from '@canopy/ui-shared/components';
 import { useCallback, useId, useState, type JSX, type ReactNode } from 'react';
 import {
   HomeSection,
@@ -267,11 +268,10 @@ export function ContinueSection({
       {children}
       <ul className="flex flex-col">
         {interrupted !== null && interruptedVisible ? (
-          <li
+          <ContinueInterruptedSessionRow
             role="status"
             aria-live="polite"
             data-testid="home-interrupted-sessions-banner"
-            className="group relative flex items-center rounded-full"
           >
             <SuggestionRow
               icon={<WarningIcon size={16} aria-hidden="true" />}
@@ -340,7 +340,7 @@ export function ContinueSection({
                 <CloseMediumIcon size="sm" />
               </Button>
             </SuggestionRowTrailing>
-          </li>
+          </ContinueInterruptedSessionRow>
         ) : null}
         {model.shownAttention.map((item) => (
           <AttentionRow

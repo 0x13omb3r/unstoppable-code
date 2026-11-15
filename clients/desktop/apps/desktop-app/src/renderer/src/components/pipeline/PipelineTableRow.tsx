@@ -1,3 +1,4 @@
+import { Surface } from '@canopy/ui-shared/components';
 import { type JSX, useState } from 'react';
 import type {
   PipelineExecutionScope,
@@ -174,9 +175,7 @@ export function PipelineTableRow({
       {/* Pipeline: icon + name + description */}
       <DataTableCell tone="primary">
         <div className="flex items-center gap-3 min-w-0">
-          <div className="shrink-0 w-9 h-9 rounded-lg bg-accent-subtle flex items-center justify-center text-m">
-            {pipeline.icon || '⚡'}
-          </div>
+          <Surface variant="workflow-icon">{pipeline.icon || '⚡'}</Surface>
           <div className="min-w-0">
             <Heading level={3} variant="title" truncate>
               {pipeline.name}

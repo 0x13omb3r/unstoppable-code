@@ -1,4 +1,8 @@
 import { useEffect, useMemo } from 'react';
+import { useStore } from 'zustand';
+import { useShallow } from 'zustand/shallow';
+import type { CoreCoworkProject } from '@canopy/app-state/core-cowork';
+import { CLIENT_FEATURE_FLAGS } from '@canopy/protocol/feature-flags';
 import {
   defaultCoworkWorkspaceIdForContext,
   isDefaultCoworkWorkspaceId,
@@ -11,11 +15,44 @@ import {
   useSidebarScopingContext,
 } from '@/components/sidebar/useSidebarScopingContext';
 import { useProjectsStore } from '@/stores/projectsStore';
+import { useFeatureFlagsStore } from '@/stores/featureFlagsStore';
+import { useCanopyDesktopCloudChatsEnabled } from '@/hooks/useCanopyDesktopCloudChatsEnabled';
+import {
+  cloudCoworkStore,
+  cloudProjectsForContext,
+} from '@/cloud-chats/useCloudCoworkSidebar';
+import { isWebCoreScope, webCoreScopeId } from '@/lib/chat-authority';
 import {
   linkedPersonalWorkspaceIdsForContext,
   useLinkedPersonalWorkspacesStore,
 } from '@/stores/linkedPersonalWorkspacesStore';
 import { hasWorkspaceChoice } from './homeGating';
+
+/**
+ * A cloud cowork project Home can start a cloud chat in (CAN-6757). Its id is
+ * the project's web core scope id, which no local IPC resolves.
+ */
+export interface HomeCloudProject {
+  readonly id: string;
+  readonly name: string;
+  readonly color?: string;
+}
+
+/**
+ * The cloud projects Home reads: only while desktop cloud chats are on and the
+ * web core is online, as the sidebar lists them.
+ */
+export interface HomeCloudSource {
+  readonly online: boolean;
+  readonly projects: readonly CoreCoworkProject[];
+}
+
+const NO_CLOUD: HomeCloudSource = { online: false, projects: [] };
+
+/** Whether Home's selection is a cloud project rather than a local one. */
+export function isHomeCloudTarget(workspaceId: string | null): boolean {
+  return workspaceId !== null && isWebCoreScope(workspaceId);
+}
 
 /**
  * The Home composer's view of the Personal/organization context: the projects
@@ -24,8 +61,13 @@ import { hasWorkspaceChoice } from './homeGating';
 export interface HomeScope {
   /** The context's catch-all ("just a chat"): its Chats workspace. */
   defaultCoworkId: string;
-  /** Projects in the selected context, in store order. */
+  /** Local projects in the selected context, in store order. */
   projects: SidebarItem[];
+  /**
+   * Cloud cowork projects in the selected context, by the sidebar's rule,
+   * while cloud chats are online; empty otherwise (CAN-6757).
+   */
+  cloudProjects: readonly HomeCloudProject[];
   isInScope(workspaceId: string): boolean;
   /**
    * True only for a selection known to belong elsewhere: a loaded project from
@@ -53,6 +95,7 @@ export function resolveHomeScope(
   context: WorkspaceContext | undefined,
   projects: SidebarItem[],
   linkedPersonalIds: readonly string[],
+  cloud: HomeCloudSource = NO_CLOUD,
 ): HomeScope {
   const defaultCoworkId = defaultCoworkWorkspaceIdForContext(context);
   const linked = new Set(linkedPersonalIds);
@@ -62,24 +105,53 @@ export function resolveHomeScope(
       : projects.filter((project) =>
           isWorkspaceInContext(project, context, linked),
         );
-  const scopedIds = new Set(scoped.map((project) => project.id));
-  const knownIds = new Set(projects.map((project) => project.id));
+  // Only a task-bearing (cowork) cloud project can take a new chat.
+  const cloudProjects: HomeCloudProject[] = cloud.online
+    ? cloudProjectsForContext(
+        cloud.projects.filter((project) => project.kind === 'cowork'),
+        {},
+        context,
+      ).map((project) => ({
+        id: webCoreScopeId(project.workspaceId),
+        name: project.name,
+        ...(project.color === undefined ? {} : { color: project.color }),
+      }))
+    : [];
+  const scopedIds = new Set([
+    ...scoped.map((project) => project.id),
+    ...cloudProjects.map((project) => project.id),
+  ]);
+  // A cloud selection leaves scope only when the cloud lists it in another
+  // context. Offline, or gone from the listing, it is kept with its draft,
+  // never swapped for a local project, and its send says why it can't go.
+  const listedCloudIds = new Set(
+    cloud.online
+      ? cloud.projects.map((project) => webCoreScopeId(project.workspaceId))
+      : [],
+  );
+  const knownIds = new Set([
+    ...projects.map((project) => project.id),
+    ...listedCloudIds,
+  ]);
   const isInScope = (workspaceId: string): boolean =>
-    context === undefined ||
-    workspaceId === defaultCoworkId ||
-    scopedIds.has(workspaceId);
+    isWebCoreScope(workspaceId)
+      ? scopedIds.has(workspaceId) || !listedCloudIds.has(workspaceId)
+      : context === undefined ||
+        workspaceId === defaultCoworkId ||
+        scopedIds.has(workspaceId);
   return {
     defaultCoworkId,
     projects: scoped,
+    cloudProjects,
     isInScope,
     isOutOfScope: (workspaceId): boolean =>
       !isInScope(workspaceId) &&
       (knownIds.has(workspaceId) || isDefaultCoworkWorkspaceId(workspaceId)),
     fallbackWorkspaceId:
       scoped[0]?.id ?? (context === undefined ? null : defaultCoworkId),
-    onlyDefaultChats: scoped.every((project) =>
-      isDefaultCoworkWorkspaceId(project.id),
-    ),
+    onlyDefaultChats:
+      cloudProjects.length === 0 &&
+      scoped.every((project) => isDefaultCoworkWorkspaceId(project.id)),
   };
 }
 
@@ -166,12 +238,40 @@ export function shouldRebindHomeToContext(
  * "New project".
  */
 export function shouldShowHomeWorkspacePicker(
-  scope: Pick<HomeScope, 'projects' | 'onlyDefaultChats'>,
+  scope: Pick<HomeScope, 'projects' | 'cloudProjects' | 'onlyDefaultChats'>,
   workspaceId: string | null,
 ): boolean {
   return (
-    hasWorkspaceChoice(scope.projects, workspaceId) || scope.onlyDefaultChats
+    scope.cloudProjects.length > 0 ||
+    hasWorkspaceChoice(scope.projects, workspaceId) ||
+    scope.onlyDefaultChats
   );
+}
+
+/** The cloud projects Home may offer, from the window's cloud cowork store. */
+function useHomeCloudSource(): HomeCloudSource {
+  const enabled = useCanopyDesktopCloudChatsEnabled();
+  const { status, projects } = useStore(
+    cloudCoworkStore,
+    useShallow((state) => ({
+      status: state.status,
+      projects: state.projects,
+    })),
+  );
+  return useMemo(
+    () =>
+      enabled && status === 'online' ? { online: true, projects } : NO_CLOUD,
+    [enabled, status, projects],
+  );
+}
+
+/** The same cloud read outside React. */
+export function getHomeCloudSource(): HomeCloudSource {
+  const enabled = useFeatureFlagsStore
+    .getState()
+    .isEnabled(CLIENT_FEATURE_FLAGS.canopyDesktopCloudChats.key);
+  const { status, projects } = cloudCoworkStore.getState();
+  return enabled && status === 'online' ? { online: true, projects } : NO_CLOUD;
 }
 
 export function useHomeScope(): HomeScope {
@@ -180,9 +280,10 @@ export function useHomeScope(): HomeScope {
   const linkedIds = useLinkedPersonalWorkspacesStore((state) =>
     linkedPersonalWorkspaceIdsForContext(state, context),
   );
+  const cloud = useHomeCloudSource();
   return useMemo(
-    () => resolveHomeScope(context, projects, linkedIds),
-    [context, projects, linkedIds],
+    () => resolveHomeScope(context, projects, linkedIds, cloud),
+    [context, projects, linkedIds, cloud],
   );
 }
 
@@ -235,5 +336,6 @@ export function getHomeScope(): HomeScope {
       useLinkedPersonalWorkspacesStore.getState(),
       context,
     ),
+    getHomeCloudSource(),
   );
 }

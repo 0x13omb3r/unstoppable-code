@@ -1,4 +1,7 @@
 import { createHash } from 'node:crypto';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { CatalogHostRefusedError } from '@canopy/core-runtime/node/catalog';
 import type { ShareRemoteMetadata } from '@canopy/protocol/sharing';
 import type {
@@ -9,15 +12,29 @@ import {
   CanopyCloudClientError,
   requestCanopyCloudJson,
 } from '../../canopy-cloud/client';
-import type { SkillAnalysisSubject } from '../../pipelines/pipeline-package-service';
 import {
   PackageAnalysisBlockedError,
   ShareOperationError,
 } from '../../sharing/share-operation-result';
 import { createSharedSkill, updateSharedSkill } from '../canopy-server-client';
+import type { PipelinePackageAnalysisSummary } from '@canopy/protocol/pipelines';
 import {
+  consentFactsOf,
+  type AnalyzeSkillCapabilityPackageInput,
+  type PackageConsentFacts,
+  type SkillAnalysisSubject,
+} from '../../pipelines/pipeline-package-service';
+import {
+  CloudCopyConsentStore,
+  type CloudCopyConsent,
+} from '../cloud-copy-consents';
+import {
+  keepCloudSkillsInStep,
   publishSkillToCloud,
+  unpublishSkillFromCloud,
+  type KeepInStepDeps,
   type PublishSkillDeps,
+  type UnpublishSkillDeps,
 } from '../publish-skill-to-cloud';
 
 jest.mock('../../canopy-cloud/client', () => ({
@@ -33,9 +50,23 @@ const RAW = '---\nname: helper\n---\nHelp.\n';
 const HASH = createHash('sha256').update(RAW).digest('hex');
 const AT = '2026-11-10T00:00:00.000Z';
 const ENTRY = 'skill:custom:app/helper';
-const PKG = { analysisId: 'analysis-1', selectedOptionalResourceIds: ['r1'] };
+const PKG = {
+  analysisId: 'analysis-1',
+  selectedOptionalResourceIds: ['r1'],
+  keepInStep: true,
+};
 /** The account the person chose in the consent dialog. */
 const CHOSEN = { expectedAccountId: 'acct-1' } as const;
+const FILES = ['skill|claude|helper/SKILL.md', 'skill|claude|helper/ref.md'];
+const facts = (
+  overrides: Partial<PackageConsentFacts> = {},
+): PackageConsentFacts => ({
+  contentHash: HASH,
+  ready: true,
+  files: FILES,
+  withheld: ['helper/.env'],
+  ...overrides,
+});
 const PACKAGE_REF = { version: 1, digest: 'pp:v1:abc' } as const;
 
 const installed = (remote?: ShareRemoteMetadata): InstalledSkillInfo => ({
@@ -81,6 +112,8 @@ interface Recorded {
   created: unknown[];
   updated: unknown[];
   links: [string, ShareRemoteMetadata][];
+  consents: [string, CloudCopyConsent][];
+  analysed: AnalyzeSkillCapabilityPackageInput[];
 }
 
 function fakes(
@@ -93,10 +126,13 @@ function fakes(
     created: [],
     updated: [],
     links: [],
+    consents: [],
+    analysed: [],
   };
   const deps: PublishSkillDeps = {
     loadSkills: () => Promise.resolve(skills),
     readRawSkill: () => Promise.resolve(RAW),
+    analysisFacts: () => Promise.resolve(facts()),
     analysisSubject: () =>
       Promise.resolve({
         sourceId: 'custom:app',
@@ -130,6 +166,11 @@ function fakes(
       recorded.links.push([localId, remote]);
       return Promise.resolve();
     },
+    writeConsent: (localId, consent) => {
+      recorded.consents.push([localId, consent]);
+      return Promise.resolve();
+    },
+    now: () => AT,
     linkedCopyAudience: () => Promise.resolve('private'),
     ...overrides,
   };
@@ -169,6 +210,21 @@ describe('publishing a desktop skill to the cloud (CAN-6176)', () => {
           contentHash: 'c'.repeat(64),
           shareScope: 'private',
           sharedAt: AT,
+        },
+      ],
+    ]);
+    expect(recorded.consents).toEqual([
+      [
+        'custom:app/helper',
+        {
+          accountId: 'acct-1',
+          remoteId: 'remote-new',
+          keepInStep: true,
+          consentedAt: AT,
+          selectedOptionalResourceIds: ['r1'],
+          files: FILES,
+          withheld: ['helper/.env'],
+          audience: 'private',
         },
       ],
     ]);
@@ -395,6 +451,22 @@ describe('publishing a desktop skill to the cloud (CAN-6176)', () => {
       (): Promise<SkillAnalysisSubject | null> => Promise.resolve(null),
     ]) {
       const { deps, recorded } = fakes({ analysisSubject });
+      await expect(
+        publishSkillToCloud(ENTRY, PKG, deps, CHOSEN),
+      ).rejects.toEqual(refusal('publish-package-stale'));
+      expect(recorded.committed).toEqual([]);
+      expect(recorded.created).toEqual([]);
+    }
+    // The files it would carry are read from the same analysis, so one
+    // that expired or isn't ready since uploads nothing either.
+    for (const analysisFacts of [
+      (): Promise<PackageConsentFacts | null> =>
+        Promise.resolve(facts({ contentHash: 'e'.repeat(64) })),
+      (): Promise<PackageConsentFacts | null> => Promise.resolve(null),
+      (): Promise<PackageConsentFacts | null> =>
+        Promise.resolve(facts({ ready: false })),
+    ]) {
+      const { deps, recorded } = fakes({ analysisFacts });
       await expect(
         publishSkillToCloud(ENTRY, PKG, deps, CHOSEN),
       ).rejects.toEqual(refusal('publish-package-stale'));
@@ -666,5 +738,634 @@ describe('publishing a desktop skill to the cloud (CAN-6176)', () => {
       expect.objectContaining({ publicationId: 'someone-else' }),
     );
     expect(recorded.links).toEqual([]);
+    expect(recorded.consents).toEqual([]);
+  });
+
+  describe('removing the cloud copy (D10)', () => {
+    const LINK: ShareRemoteMetadata = {
+      accountId: 'acct-1',
+      remoteId: 'remote-old',
+      contentHash: 'd'.repeat(64),
+      shareScope: 'private',
+      sharedAt: AT,
+    };
+
+    function removal(
+      overrides: Partial<UnpublishSkillDeps> = {},
+      skills: InstalledSkillInfo[] = [installed(LINK)],
+    ): { deps: UnpublishSkillDeps; deleted: string[]; cleared: string[] } {
+      const deleted: string[] = [];
+      const cleared: string[] = [];
+      return {
+        deleted,
+        cleared,
+        deps: {
+          loadSkills: () => Promise.resolve(skills),
+          credentials: () =>
+            Promise.resolve({ accountId: 'acct-1', context: { ...CONTEXT } }),
+          getSharedSkill: (skillId) =>
+            Promise.resolve(detail(skillId, { contentHash: 'd'.repeat(64) })),
+          deleteSharedSkill: (skillId) => {
+            deleted.push(skillId);
+            return Promise.resolve();
+          },
+          clearLink: (remoteId) => {
+            cleared.push(remoteId);
+            return Promise.resolve();
+          },
+          ...overrides,
+        },
+      };
+    }
+
+    it('deletes the linked private copy at the version the caller saw, then the link', async () => {
+      for (const expected of ['d'.repeat(64), null]) {
+        const { deps, deleted, cleared } = removal();
+        await unpublishSkillFromCloud('remote-old', expected, deps);
+        expect(deleted).toEqual(['remote-old']);
+        expect(cleared).toEqual(['remote-old']);
+      }
+    });
+
+    it('reads and deletes with the credentials it resolved first, so an account switch cannot split them', async () => {
+      const contexts: unknown[] = [];
+      const signedIn = { accountId: 'acct-1', context: { ...CONTEXT } };
+      const { deps, deleted } = removal({
+        credentials: () => Promise.resolve(signedIn),
+        getSharedSkill: (skillId, context) => {
+          contexts.push(context);
+          return Promise.resolve(
+            detail(skillId, { contentHash: 'd'.repeat(64) }),
+          );
+        },
+        deleteSharedSkill: (skillId, context) => {
+          contexts.push(context);
+          deleted.push(skillId);
+          return Promise.resolve();
+        },
+      });
+      await unpublishSkillFromCloud('remote-old', 'd'.repeat(64), deps);
+      expect(deleted).toEqual(['remote-old']);
+      expect(contexts).toHaveLength(3);
+      for (const context of contexts) expect(context).toBe(signedIn.context);
+    });
+
+    it('keeps a copy shared or edited between its first read and the delete (CAN-6337)', async () => {
+      for (const [later, reason] of [
+        [
+          { contentHash: 'd'.repeat(64), shareScope: 'team' },
+          'unpublish-shared',
+        ],
+        [{ contentHash: 'e'.repeat(64) }, 'unpublish-version-moved'],
+      ] as const) {
+        let reads = 0;
+        const { deps, deleted, cleared } = removal({
+          getSharedSkill: (skillId) => {
+            reads += 1;
+            return Promise.resolve(
+              detail(
+                skillId,
+                reads === 1 ? { contentHash: 'd'.repeat(64) } : later,
+              ),
+            );
+          },
+        });
+        await expect(
+          unpublishSkillFromCloud('remote-old', 'd'.repeat(64), deps),
+        ).rejects.toEqual(refusal(reason));
+        expect(deleted).toEqual([]);
+        expect(cleared).toEqual([]);
+      }
+    });
+
+    it('only clears the link of a copy already gone from the cloud', async () => {
+      const { deps, deleted, cleared } = removal({
+        getSharedSkill: (): Promise<never> =>
+          Promise.reject(new CanopyCloudClientError('http-error', 'Gone', 404)),
+      });
+      await unpublishSkillFromCloud('remote-old', null, deps);
+      expect(deleted).toEqual([]);
+      expect(cleared).toEqual(['remote-old']);
+    });
+
+    it('refuses a copy that is not linked here, shared beyond the account, or changed, and deletes nothing', async () => {
+      for (const [setup, reason] of [
+        [removal({}, [installed()]), 'unpublish-not-found'],
+        [
+          removal({}, [installed({ ...LINK, accountId: 'acct-2' })]),
+          'unpublish-not-found',
+        ],
+        [
+          removal({
+            getSharedSkill: (skillId: string): Promise<SharedSkillDetail> =>
+              Promise.resolve(
+                detail(skillId, {
+                  contentHash: 'd'.repeat(64),
+                  shareScope: 'team',
+                }),
+              ),
+          }),
+          'unpublish-shared',
+        ],
+        [
+          // Still private, but deleting it would revoke its public link.
+          removal({
+            getSharedSkill: (skillId: string): Promise<SharedSkillDetail> =>
+              Promise.resolve(
+                detail(skillId, {
+                  contentHash: 'd'.repeat(64),
+                  publicShare: {
+                    externalId: 'pub-1',
+                    pinnedContentHash: 'd'.repeat(64),
+                    upToDate: true,
+                    sharePath: '/s/pub-1',
+                    createdAt: AT,
+                    updatedAt: AT,
+                  },
+                }),
+              ),
+          }),
+          'unpublish-shared',
+        ],
+        [
+          removal({
+            getSharedSkill: (skillId: string): Promise<SharedSkillDetail> =>
+              Promise.resolve(detail(skillId, { contentHash: 'e'.repeat(64) })),
+          }),
+          'unpublish-version-moved',
+        ],
+        [
+          removal({
+            credentials: (): Promise<never> =>
+              Promise.reject(
+                new CanopyCloudClientError('missing-api-key', 'Sign in'),
+              ),
+          }),
+          'publish-remote-unavailable',
+        ],
+      ] as const) {
+        await expect(
+          unpublishSkillFromCloud('remote-old', 'd'.repeat(64), setup.deps),
+        ).rejects.toEqual(refusal(reason));
+        expect(setup.deleted).toEqual([]);
+        expect(setup.cleared).toEqual([]);
+      }
+    });
+  });
+
+  describe('keeping a copy in step on send (D9, revised)', () => {
+    const LINK: ShareRemoteMetadata = {
+      accountId: 'acct-1',
+      remoteId: 'remote-old',
+      contentHash: 'd'.repeat(64),
+      shareScope: 'private',
+      sharedAt: AT,
+    };
+    const CONSENT: CloudCopyConsent = {
+      accountId: 'acct-1',
+      remoteId: 'remote-old',
+      keepInStep: true,
+      consentedAt: AT,
+      selectedOptionalResourceIds: ['r1'],
+      files: FILES,
+      withheld: ['helper/.env'],
+      audience: 'private',
+    };
+
+    function inStep(
+      overrides: Partial<KeepInStepDeps> = {},
+      options: {
+        consent?: CloudCopyConsent | null;
+        link?: ShareRemoteMetadata;
+      } = {},
+    ): { deps: KeepInStepDeps; recorded: Recorded } {
+      const base = fakes({}, [installed(options.link ?? LINK)]);
+      return {
+        recorded: base.recorded,
+        deps: {
+          ...base.deps,
+          readConsent: () =>
+            Promise.resolve(
+              options.consent === undefined ? CONSENT : options.consent,
+            ),
+          analyzeSkill: (input) => {
+            base.recorded.analysed.push(input);
+            return Promise.resolve('analysis-2');
+          },
+          ...overrides,
+        },
+      };
+    }
+
+    it('republishes a skill whose SKILL.md moved, within its consent, against the last published hash', async () => {
+      const { deps, recorded } = inStep();
+      await expect(
+        keepCloudSkillsInStep(['remote-old'], {}, deps),
+      ).resolves.toEqual({ republished: ['helper'], usedLastCopy: [] });
+      expect(recorded.committed).toEqual([
+        {
+          analysisId: 'analysis-2',
+          selectedOptionalResourceIds: ['r1'],
+          keepInStep: true,
+        },
+      ]);
+      // A cloud copy's analysis, as the consent dialog's was, so a withheld
+      // file stays withheld and the files compare with the consented ones.
+      expect(recorded.analysed).toEqual([
+        {
+          sourceId: 'custom:app',
+          skillName: 'helper',
+          rawSkill: RAW,
+          cloudCopy: true,
+        },
+      ]);
+      expect(recorded.updated).toEqual([
+        expect.objectContaining({
+          skillId: 'remote-old',
+          rawSkill: RAW,
+          expectedContentHash: 'd'.repeat(64),
+          // The cloud checks it as it writes.
+          expectedAudience: 'private',
+        }),
+      ]);
+      expect(recorded.links).toEqual([
+        [
+          'custom:app/helper',
+          { ...LINK, contentHash: 'c'.repeat(64), sharedAt: AT },
+        ],
+      ]);
+    });
+
+    it('leaves fresh, unconsented, opted-out and other accounts’ copies alone', async () => {
+      for (const setup of [
+        inStep({}, { link: { ...LINK, contentHash: HASH } }),
+        inStep({}, { consent: null }),
+        inStep({}, { consent: { ...CONSENT, keepInStep: false } }),
+        inStep({}, { link: { ...LINK, accountId: 'acct-2' } }),
+        inStep({
+          credentials: (): Promise<never> =>
+            Promise.reject(new CanopyCloudClientError('missing-api-key', 'x')),
+        }),
+      ]) {
+        await expect(
+          keepCloudSkillsInStep(['remote-old'], {}, setup.deps),
+        ).resolves.toEqual({ republished: [], usedLastCopy: [] });
+        expect(setup.recorded.committed).toEqual([]);
+      }
+    });
+
+    it('refuses before any upload when the skill needs consent again', async () => {
+      for (const changed of [
+        // A file the last package carried is now left out.
+        facts({ withheld: ['helper/.env', 'helper/ref.md'] }),
+        // A file outside the consented list would travel.
+        facts({ files: [...FILES, 'skill|claude|helper/new.md'] }),
+        // The analysis found something that blocks the package.
+        facts({ ready: false }),
+      ]) {
+        const { deps, recorded } = inStep({
+          analysisFacts: () => Promise.resolve(changed),
+        });
+        await expect(
+          keepCloudSkillsInStep(['remote-old'], {}, deps),
+        ).resolves.toEqual({
+          republished: [],
+          usedLastCopy: [{ name: 'helper', reason: 'needs_consent' }],
+        });
+        expect(recorded.committed).toEqual([]);
+        expect(recorded.updated).toEqual([]);
+        expect(recorded.links).toEqual([]);
+      }
+    });
+
+    it('asks again, uploading nothing, when the copy now reaches more people than the consent named or is gone', async () => {
+      for (const audience of [
+        'team',
+        'organization',
+        'public_link',
+        null,
+      ] as const) {
+        const { deps, recorded } = inStep({
+          linkedCopyAudience: () => Promise.resolve(audience),
+        });
+        await expect(
+          keepCloudSkillsInStep(['remote-old'], {}, deps),
+        ).resolves.toEqual({
+          republished: [],
+          usedLastCopy: [{ name: 'helper', reason: 'needs_consent' }],
+        });
+        expect(recorded.committed).toEqual([]);
+        expect(recorded.updated).toEqual([]);
+        expect(recorded.links).toEqual([]);
+      }
+    });
+
+    it('sends the audience the person agreed to, for the cloud to check as it writes', async () => {
+      const { deps, recorded } = inStep(
+        { linkedCopyAudience: () => Promise.resolve('team') },
+        { consent: { ...CONSENT, audience: 'team' } },
+      );
+      await expect(
+        keepCloudSkillsInStep(['remote-old'], {}, deps),
+      ).resolves.toEqual({ republished: ['helper'], usedLastCopy: [] });
+      expect(recorded.updated).toEqual([
+        expect.objectContaining({ expectedAudience: 'team' }),
+      ]);
+    });
+
+    it('asks again, uploading nothing, when a file the copy carried is now left out of the skill itself', async () => {
+      // The reviewer's case: a supporting script that went to the cloud is
+      // git-ignored since, and SKILL.md changed. A cloud copy's analysis
+      // lists such a file as a withheld member file, not a withheld asset.
+      const summary = (
+        withheldMemberFiles: PipelinePackageAnalysisSummary['withheldMemberFiles'],
+      ): PipelinePackageAnalysisSummary =>
+        ({
+          analysisId: 'analysis-2',
+          state: 'ready',
+          pipelineContentHash: HASH,
+          blockers: [],
+          expiresAt: '2099-01-01T00:00:00.000Z',
+          withheldMemberFiles,
+        }) as unknown as PipelinePackageAnalysisSummary;
+      const atConsent = consentFactsOf(summary([]), []);
+      const now = consentFactsOf(
+        summary([
+          {
+            rootName: 'helper',
+            relativePath: 'scripts/run.sh',
+            reason: 'git_ignored',
+          },
+        ]),
+        [],
+      );
+      expect(now.withheld).toEqual(['member:helper/scripts/run.sh']);
+      const { deps, recorded } = inStep(
+        { analysisFacts: () => Promise.resolve(now) },
+        { consent: { ...CONSENT, withheld: atConsent.withheld, files: [] } },
+      );
+      await expect(
+        keepCloudSkillsInStep(['remote-old'], {}, deps),
+      ).resolves.toEqual({
+        republished: [],
+        usedLastCopy: [{ name: 'helper', reason: 'needs_consent' }],
+      });
+      expect(recorded.committed).toEqual([]);
+      expect(recorded.updated).toEqual([]);
+    });
+
+    it('asks once more for a consent recorded before it named an audience', async () => {
+      const older: CloudCopyConsent = { ...CONSENT };
+      delete older.audience;
+      const { deps, recorded } = inStep({}, { consent: older });
+      await expect(
+        keepCloudSkillsInStep(['remote-old'], {}, deps),
+      ).resolves.toEqual({
+        republished: [],
+        usedLastCopy: [{ name: 'helper', reason: 'needs_consent' }],
+      });
+      expect(recorded.analysed).toEqual([]);
+      expect(recorded.committed).toEqual([]);
+      expect(recorded.updated).toEqual([]);
+    });
+
+    it('goes with the last copy when the copy changed elsewhere or the upload fails', async () => {
+      for (const [error, reason] of [
+        [
+          new CanopyCloudClientError('http-error', 'Changed', 409),
+          'changed_elsewhere',
+        ],
+        // Shared more widely between its read and the write: the cloud
+        // refuses, and the person is asked again.
+        [
+          new CanopyCloudClientError(
+            'http-error',
+            'Who can see this skill changed since it was checked',
+            409,
+            'audience_changed',
+          ),
+          'needs_consent',
+        ],
+        [new CanopyCloudClientError('network-error', 'Offline'), 'failed'],
+      ] as const) {
+        const { deps, recorded } = inStep({
+          updateSharedSkill: (): Promise<never> => Promise.reject(error),
+        });
+        await expect(
+          keepCloudSkillsInStep(['remote-old'], {}, deps),
+        ).resolves.toEqual({
+          republished: [],
+          usedLastCopy: [{ name: 'helper', reason }],
+        });
+        expect(recorded.links).toEqual([]);
+      }
+    });
+
+    it('notes a skill it cannot read on its own and still keeps the others in step', async () => {
+      const OTHER: ShareRemoteMetadata = { ...LINK, remoteId: 'remote-two' };
+      const base = fakes({}, [
+        { ...installed(LINK), name: 'unreadable' },
+        installed(OTHER),
+      ]);
+      const deps: KeepInStepDeps = {
+        ...base.deps,
+        readConsent: (localId) =>
+          Promise.resolve(
+            localId.endsWith('/unreadable')
+              ? CONSENT
+              : { ...CONSENT, remoteId: 'remote-two' },
+          ),
+        readRawSkill: (skillId) =>
+          skillId.endsWith('/unreadable')
+            ? Promise.reject(
+                Object.assign(new Error('denied'), { code: 'EACCES' }),
+              )
+            : Promise.resolve(RAW),
+        analyzeSkill: () => Promise.resolve('analysis-2'),
+      };
+      await expect(
+        keepCloudSkillsInStep(['remote-old', 'remote-two'], {}, deps),
+      ).resolves.toEqual({
+        republished: ['helper'],
+        usedLastCopy: [{ name: 'unreadable', reason: 'failed' }],
+      });
+      expect(base.recorded.updated).toEqual([
+        expect.objectContaining({ skillId: 'remote-two', rawSkill: RAW }),
+      ]);
+    });
+
+    it('counts slow reads against the deadline, and never starts an upload after it', async () => {
+      // The skill's read outlasts the wait.
+      let readDone: () => void = () => undefined;
+      const slowRead = inStep({
+        readRawSkill: (): Promise<string> =>
+          new Promise((resolve) => {
+            readDone = (): void => resolve(RAW);
+          }),
+      });
+      await expect(
+        keepCloudSkillsInStep(['remote-old'], { timeoutMs: 20 }, slowRead.deps),
+      ).resolves.toEqual({
+        republished: [],
+        usedLastCopy: [{ name: 'helper', reason: 'timed_out' }],
+      });
+      readDone();
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      expect(slowRead.recorded.committed).toEqual([]);
+      expect(slowRead.recorded.updated).toEqual([]);
+
+      // Its analysis outlasts the wait: the upload that would follow never
+      // starts.
+      let analysed: () => void = () => undefined;
+      const slowAnalysis = inStep({
+        analyzeSkill: (): Promise<string> =>
+          new Promise((resolve) => {
+            analysed = (): void => resolve('analysis-2');
+          }),
+      });
+      await expect(
+        keepCloudSkillsInStep(
+          ['remote-old'],
+          { timeoutMs: 20 },
+          slowAnalysis.deps,
+        ),
+      ).resolves.toEqual({
+        republished: [],
+        usedLastCopy: [{ name: 'helper', reason: 'timed_out' }],
+      });
+      analysed();
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      expect(slowAnalysis.recorded.committed).toEqual([]);
+      expect(slowAnalysis.recorded.updated).toEqual([]);
+      expect(slowAnalysis.recorded.links).toEqual([]);
+    });
+
+    it('never commits the package or writes the copy once slow work inside a helper outlasts the deadline', async () => {
+      const later = (ms: number): Promise<void> =>
+        new Promise((resolve) => setTimeout(resolve, ms));
+      // The package upload runs long before its commit.
+      const committedLate: string[] = [];
+      const slowPackage = inStep({
+        commitPackage: async (_pkg, _context, stillInTime) => {
+          await later(60);
+          // The next request the upload would start: a blob or the commit.
+          stillInTime?.();
+          committedLate.push('committed');
+          return {
+            capabilityPackage: PACKAGE_REF,
+            committedPackageUploadId: 'upload-1',
+          };
+        },
+      });
+      await expect(
+        keepCloudSkillsInStep(
+          ['remote-old'],
+          { timeoutMs: 20 },
+          slowPackage.deps,
+        ),
+      ).resolves.toEqual({
+        republished: [],
+        usedLastCopy: [{ name: 'helper', reason: 'timed_out' }],
+      });
+      await later(80);
+      expect(committedLate).toEqual([]);
+      expect(slowPackage.recorded.updated).toEqual([]);
+      expect(slowPackage.recorded.links).toEqual([]);
+
+      // The update's read before its PUT runs long.
+      const written: string[] = [];
+      const slowRead = inStep({
+        updateSharedSkill: async (_request, _context, beforeWrite) => {
+          await later(60);
+          beforeWrite?.();
+          written.push('PUT');
+          return detail('remote-old');
+        },
+      });
+      await expect(
+        keepCloudSkillsInStep(['remote-old'], { timeoutMs: 20 }, slowRead.deps),
+      ).resolves.toEqual({
+        republished: [],
+        usedLastCopy: [{ name: 'helper', reason: 'timed_out' }],
+      });
+      await later(80);
+      expect(written).toEqual([]);
+      expect(slowRead.recorded.links).toEqual([]);
+    });
+
+    it('stops waiting at the timeout and names the skill whose last copy the turn used', async () => {
+      let finish: () => void = () => undefined;
+      const { deps } = inStep({
+        updateSharedSkill: (): Promise<SharedSkillDetail> =>
+          new Promise((resolve) => {
+            finish = (): void => resolve(detail('remote-old'));
+          }),
+      });
+      await expect(
+        keepCloudSkillsInStep(['remote-old'], { timeoutMs: 20 }, deps),
+      ).resolves.toEqual({
+        republished: [],
+        usedLastCopy: [{ name: 'helper', reason: 'timed_out' }],
+      });
+      finish();
+    });
+  });
+
+  it('keeps consents per skill, reads an unreadable file as none, and forgets a removed copy', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'cloud-copy-consents-'));
+    try {
+      const store = CloudCopyConsentStore.inSkillsRoot(dir);
+      const consent = (remoteId: string): CloudCopyConsent => ({
+        accountId: 'acct-1',
+        remoteId,
+        keepInStep: true,
+        consentedAt: AT,
+        selectedOptionalResourceIds: [],
+        files: FILES,
+        withheld: [],
+      });
+      store.set('custom:app/a', consent('remote-a'));
+      store.set('custom:app/b', consent('remote-b'));
+      store.clearByRemoteId('remote-a');
+      expect(store.read()).toEqual({ 'custom:app/b': consent('remote-b') });
+
+      // Written in a versioned envelope.
+      const file = join(dir, '.cloud-copy-consents.json');
+      expect(JSON.parse(readFileSync(file, 'utf8'))).toEqual({
+        version: 1,
+        entries: { 'custom:app/b': consent('remote-b') },
+      });
+      // A bare map is the first format, and still reads.
+      writeFileSync(
+        file,
+        JSON.stringify({ 'custom:app/c': consent('remote-c') }),
+      );
+      expect(store.get('custom:app/c')).toEqual(consent('remote-c'));
+      // The audience the person agreed to is kept; one this app doesn't
+      // know reads as none, so the next republish asks again.
+      store.set('custom:app/e', { ...consent('remote-e'), audience: 'team' });
+      expect(store.get('custom:app/e')?.audience).toBe('team');
+      writeFileSync(
+        file,
+        JSON.stringify({
+          version: 1,
+          entries: {
+            'custom:app/f': { ...consent('remote-f'), audience: 'everyone' },
+          },
+        }),
+      );
+      expect(store.get('custom:app/f')).toEqual(consent('remote-f'));
+      // A newer app's file reads as none and is never overwritten.
+      const newer = JSON.stringify({ version: 2, entries: {} });
+      writeFileSync(file, newer);
+      expect(store.read()).toEqual({});
+      expect(() => store.set('custom:app/d', consent('remote-d'))).toThrow();
+      expect(readFileSync(file, 'utf8')).toBe(newer);
+
+      writeFileSync(file, '{not json');
+      expect(store.get('custom:app/b')).toBeNull();
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 });

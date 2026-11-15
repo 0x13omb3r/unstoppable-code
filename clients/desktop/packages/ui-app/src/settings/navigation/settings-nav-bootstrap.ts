@@ -38,7 +38,6 @@ export function settingsNavModelFromBootstrap(
       billingEnabled: bootstrap.account.billingEnabled,
       digestsEnabled: bootstrap.account.digestsEnabled,
       integrationsEnabled: bootstrap.account.integrationsEnabled,
-      freeAccess: bootstrap.account.freeAccess,
     },
     // Global Admin is a web-only surface; organization roles never imply it.
     adminVisible: false,

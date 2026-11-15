@@ -1,4 +1,7 @@
 import { serializeVisibleReadMessage } from '@canopy/desktop-shared/lib/chat-history-serialization';
+import { chatAddressPrompt } from '@canopy/desktop-shared/lib/chat-address-prompt';
+import { APP_ADVISOR_BOT_ID } from '@canopy/desktop-shared/lib/bot-discovery';
+import { resolveCoworkWorkspaceId } from '../lib/cowork-migration-map';
 import {
   type ActiveChatInputProvider,
   type ChatTerminalDisposition,
@@ -1923,6 +1926,19 @@ export class DefaultClaudeTerminalSessionService implements ClaudeTerminalSessio
                   false,
                   false,
                 ),
+            chatAddressPrompt(
+              appAdvisorMode
+                ? {
+                    botId: APP_ADVISOR_BOT_ID,
+                    taskId: request.worktreeId,
+                    chatId: request.chatId,
+                  }
+                : {
+                    projectId: resolveCoworkWorkspaceId(request.projectId),
+                    taskId: request.worktreeId,
+                    chatId: request.chatId,
+                  },
+            ),
             // Only while this process's route carries the Ledger tools.
             record.ledgerTools?.systemPrompt(),
             buildCodeGraphAvailabilityPrompt(

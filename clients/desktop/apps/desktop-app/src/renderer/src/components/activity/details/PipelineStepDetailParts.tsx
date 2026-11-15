@@ -60,14 +60,14 @@ export function KeyValueTable({
       className="@container overflow-hidden"
       data-testid="pipeline-key-value-table"
     >
-      {entries.map(([key, value], index) => {
+      {entries.map(([key, value]) => {
         const text = stringifyValue(value);
         return (
-          <div
+          <Surface
             key={key}
-            className={`grid min-w-0 grid-cols-1 gap-x-3 gap-y-0.5 px-3 py-2 text-s @xs:grid-cols-[minmax(120px,180px)_minmax(0,1fr)] ${
-              index < entries.length - 1 ? 'border-b ' : ''
-            }`}
+            variant="metadata-row"
+            padding="section-compact"
+            className="grid min-w-0 grid-cols-1 @xs:grid-cols-[minmax(120px,180px)_minmax(0,1fr)]"
             data-testid="pipeline-key-value-row"
           >
             <div
@@ -79,7 +79,7 @@ export function KeyValueTable({
             <div className="min-w-0 break-words font-mono text-2xs fg-primary/80">
               {text}
             </div>
-          </div>
+          </Surface>
         );
       })}
     </Surface>
@@ -165,7 +165,14 @@ export function ShellCommandContent({
 
   return (
     <Surface variant="inset" className="overflow-hidden">
-      <div className="flex flex-wrap items-center justify-between gap-2 border-b px-3 py-2">
+      <Surface
+        variant="section"
+        boundary="bottom"
+        gap="inline"
+        direction="row"
+        padding="section-compact"
+        className="flex-wrap items-center justify-between"
+      >
         <div className="text-2xs font-medium fg-secondary">Shell</div>
         <div className="flex items-center gap-2">
           {hasDistinctResolvedRun && (
@@ -183,7 +190,7 @@ export function ShellCommandContent({
           )}
           <div className="font-mono text-2xs fg-secondary">{step.shell}</div>
         </div>
-      </div>
+      </Surface>
       {/* Commands can carry interpolated credentials. */}
       <pre
         className={`${POSTHOG_REPLAY_BLOCK_CLASS} max-h-80 overflow-auto whitespace-pre-wrap break-words px-3 py-2 font-mono text-2xs leading-5 fg-primary/80`}

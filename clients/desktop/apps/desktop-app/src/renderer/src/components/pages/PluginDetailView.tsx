@@ -52,6 +52,10 @@ import { SharePluginModal } from '@/components/plugins/SharePluginModal';
 import { pluginNeedsInstall } from '../../lib/pluginInstallStatus';
 import type { MarketplaceShareAction } from '@canopy/ui-shared/lib';
 import { formatDate } from '../../lib/format';
+import { installDesktopCustomizeTelemetry } from '../../lib/customizeTelemetry';
+
+// Customize analytics (CAN-6806); no visible effect.
+installDesktopCustomizeTelemetry();
 
 function resultError(error: unknown): Error {
   return error instanceof Error ? error : new Error(String(error));

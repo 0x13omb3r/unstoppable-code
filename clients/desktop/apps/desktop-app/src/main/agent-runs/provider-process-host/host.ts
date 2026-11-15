@@ -96,6 +96,7 @@ export function startProviderProcessHost(
       cwd: request.cwd,
       env: request.env,
       owner: request.owner,
+      windowsVerbatimArguments: request.windowsVerbatimArguments,
       ...(request.stdin ? { stdin: request.stdin } : {}),
     });
     const hosted: HostedChild = {

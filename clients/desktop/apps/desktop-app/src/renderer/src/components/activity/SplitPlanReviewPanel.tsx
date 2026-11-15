@@ -1,3 +1,4 @@
+import { DialogActionFooter } from '@canopy/ui-shared/components';
 import { memo, useMemo, useState, type JSX } from 'react';
 import {
   Stack,
@@ -807,7 +808,7 @@ export function SplitPlanReviewPanel({
         </div>
       </div>
 
-      <div className="flex items-center justify-end gap-2 border-t px-5 py-3">
+      <DialogActionFooter center padding="medium">
         <Button
           size="compact"
           onClick={onCancel}
@@ -831,7 +832,7 @@ export function SplitPlanReviewPanel({
         >
           Approve &amp; split
         </Button>
-      </div>
+      </DialogActionFooter>
     </div>
   );
 }

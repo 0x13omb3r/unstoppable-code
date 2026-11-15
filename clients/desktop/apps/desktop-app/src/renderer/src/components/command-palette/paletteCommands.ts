@@ -317,7 +317,7 @@ export function buildContextSwitchCommands(
  * The selected context's organization pages inside Settings: Personal gets
  * its Timeline and Statistics; an organization gets its Timeline, Statistics
  * (owners and admins, as on the context switcher), Members and Settings. None
- * while hosted settings are off or the context is not known yet.
+ * while hosted settings are unavailable or the context is not known yet.
  */
 export function buildOrganizationPageCommands(
   enabled: boolean,

@@ -1,5 +1,6 @@
 'use client';
 
+import { TrayRowHeader, TrayRowSurface } from '@canopy/ui-shared/components';
 import {
   useContext,
   useEffect,
@@ -25,10 +26,7 @@ import {
   ChevronDownIcon,
   ChevronRightIcon,
 } from '@canopy/ui-shared/icons/AppIcons';
-import {
-  DRAWER_ITEM_ACTIONS_CLASS,
-  DRAWER_ITEM_GROUP_CLASS,
-} from '@canopy/ui-shared/lib';
+import { DRAWER_ITEM_ACTIONS_CLASS } from '@canopy/ui-shared/lib';
 import { revealInList } from './drawer-layout';
 
 import { DrawerRowPresentationContext } from './drawer-presentation';
@@ -381,24 +379,26 @@ export function DrawerRow({
   );
   // A row waiting on the user rests like any other (its glyph carries the
   // attention ink); hover and an open row take the fill.
-  const fill = open
-    ? 'bg-subtle'
-    : modal
-      ? ''
-      : inspector || navigation || action
-        ? 'hover:bg-subtle'
-        : '';
   return (
     <SpinnerStyleProvider value="comet">
-      <li
+      <TrayRowSurface
         ref={ref}
-        className={`group/row ${DRAWER_ITEM_GROUP_CLASS} flex flex-col ${modal ? 'rounded-lg' : 'rounded-drawer-row'} ${fill}`}
+        modal={modal}
+        open={open}
+        actionable={Boolean(inspector || navigation || action)}
         data-tray-row={rowKey}
         data-testid={testId}
       >
         {/* The action ends 4px from the row's end, as from its top and bottom. */}
-        <div
-          className={`relative flex h-9 min-w-0 items-center text-s ${modal && !open ? 'rounded-lg hover:bg-subtle' : ''} ${modal && !navigationInHeader ? 'pr-3' : presentation === 'legacy' ? 'gap-3 pr-1' : 'gap-2.5 pr-1'}`}
+        <TrayRowHeader
+          modalClosed={modal && !open}
+          layout={
+            modal && !navigationInHeader
+              ? 'modal'
+              : presentation === 'legacy'
+                ? 'legacy'
+                : 'compact'
+          }
         >
           {inspector || linkRow ? (
             <>
@@ -495,7 +495,7 @@ export function DrawerRow({
               )
             )}
           </span>
-        </div>
+        </TrayRowHeader>
         {open && inspector && (
           <div
             id={inspectorId}
@@ -518,7 +518,7 @@ export function DrawerRow({
             </InspectorReveal>
           </div>
         )}
-      </li>
+      </TrayRowSurface>
     </SpinnerStyleProvider>
   );
 }

@@ -206,7 +206,12 @@ export function DiffViewer({
         </Surface>
       ) : (
         <div className="flex min-h-0 shrink-0 flex-col overflow-hidden">
-          <div className="flex shrink-0 justify-end border-b border-r px-1 pt-1">
+          <Surface
+            variant="section"
+            boundary="bottom-right"
+            padding="diff-controls"
+            className="flex shrink-0 justify-end"
+          >
             <Button
               variant="ghost"
               iconOnly
@@ -217,7 +222,7 @@ export function DiffViewer({
             >
               <ChevronRightIcon className="rotate-180" />
             </Button>
-          </div>
+          </Surface>
           {filesTruncated ? (
             <DiffBoundNotice kind="truncated" className="m-2 shrink-0" />
           ) : null}

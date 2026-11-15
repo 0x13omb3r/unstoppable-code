@@ -1,5 +1,6 @@
 import { chatHistoryActionCatalog } from '@canopy/agent-actions/families/chat-history';
 import type { z } from 'zod/v4';
+import { backgroundRefusalToolResult } from '../services/background-execution-refusal';
 import { executeShowCapabilities } from '../canopy-tools/show-capabilities';
 import {
   appAdvisorPipelinesActionCatalog,
@@ -405,6 +406,23 @@ export function getDispatchRequestId(
 }
 
 export async function executeAppAdvisorTool(
+  canonicalKey: AppAdvisorToolKey,
+  rawArgs: unknown,
+  runtime: AppAdvisorToolRuntime,
+  context?: AppAdvisorToolContext,
+): Promise<CanopyInjectedToolTextResult> {
+  try {
+    return await runAppAdvisorTool(canonicalKey, rawArgs, runtime, context);
+  } catch (error) {
+    // An expected policy refusal reaches the model as an actionable tool
+    // error; anything else still fails the call and is logged by transport.
+    const refusal = backgroundRefusalToolResult(error);
+    if (refusal) return refusal;
+    throw error;
+  }
+}
+
+async function runAppAdvisorTool(
   canonicalKey: AppAdvisorToolKey,
   rawArgs: unknown,
   runtime: AppAdvisorToolRuntime,

@@ -5,7 +5,9 @@ import {
   type ClaudeModsState,
   type ClaudeModsUpdateResult,
 } from '@canopy/protocol/claude-mods';
+import { parseClaudeModSurfaceCommandArgs } from '@canopy/protocol/extension-ui';
 import { IPC_CHANNELS } from '@canopy/desktop-shared/types';
+import { runClaudeModSurfaceCommand } from '../agents/claude-mod-surface-bridge';
 import {
   getClaudeModsState,
   updateClaudeModsState,
@@ -31,6 +33,17 @@ export function registerClaudeModsHandlers(): void {
       const update = parseClaudeModsUpdate(request);
       if (update === null) return { ok: false, code: 'invalid-input' };
       return await updateClaudeModsState(update, broadcastCommittedPreferences);
+    },
+  );
+
+  registerIpcHandler(
+    IPC_CHANNELS.claudeModSurfaceCommand,
+    async (_event, args: unknown): Promise<void> => {
+      const parsed = parseClaudeModSurfaceCommandArgs(args);
+      if (parsed === null) {
+        throw new Error('Invalid Claude Mod surface command.');
+      }
+      await runClaudeModSurfaceCommand(parsed);
     },
   );
 }

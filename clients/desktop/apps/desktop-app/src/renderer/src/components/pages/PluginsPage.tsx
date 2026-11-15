@@ -4,7 +4,11 @@ import { Stack, Button } from '@canopy/ui-shared/components';
 import type { PluginMcpNavigationTarget } from '@canopy/ui-shared/components';
 import {
   CustomizeSearchRow,
+  CustomizeTypeTabs,
   CustomizeTabSections,
+  useCustomizeDiscoveryEnabled,
+  useCustomizeDiscoveryFilters,
+  useCustomizeSharedWithMe,
   useCollectionUpdateSummaries,
   EMPTY_INSTALLED_STATUS_SNAPSHOT,
   MarketplaceUnshareAction,
@@ -144,7 +148,6 @@ import {
   PageHeader,
   MarketplaceSearchField,
   PageSearchRow,
-  MarketplaceTypeTabs,
   PluginsAddCustomMenu,
   Notice,
   NoticeButton,
@@ -154,6 +157,10 @@ import {
   CustomizeBreadcrumbs,
 } from '@canopy/ui-shared/components';
 import {
+  CUSTOMIZE_DISCOVERY_TABS,
+  customizeDiscoveryFiltersForLanding,
+  customizeDiscoveryLanding,
+  isCustomizeDiscoveryTab,
   DEFAULT_PIPELINE_FILTERS,
   type MarketplaceCatalogTabId,
   marketplaceEntityTypeLabel,
@@ -203,6 +210,10 @@ import { extractIpcErrorMessage } from '@/lib/errors';
 import type { SaveAgentModelRequest } from '@canopy/execution-engine/types/agent-models';
 import type { SharedSkillSummary } from '@canopy/desktop-shared/types/skills';
 import { resolveSharedResourceErrorMessage } from '@/lib/sharedResourceErrors';
+import { installDesktopCustomizeTelemetry } from '@/lib/customizeTelemetry';
+
+// Customize analytics (CAN-6806); no visible effect.
+installDesktopCustomizeTelemetry();
 
 /**
  * Curated MCP browse. The event used to be handled by `McpServersTab`, but the
@@ -422,6 +433,30 @@ export function PluginsPage({
       ? null
       : (savedPresentation?.browse.tab ?? null),
   );
+  // New Customize (CAN-6809, Labs): five tabs and one filter menu. Off, the
+  // page is exactly as before.
+  const discoveryEnabled = useCustomizeDiscoveryEnabled();
+  const { filters: discoveryFilters, setFilters: setDiscoveryFilters } =
+    useCustomizeDiscoveryFilters();
+  const { active: sharedWithMeActive } = useCustomizeSharedWithMe();
+  // A saved tab, deep link or in-page jump to a tab New Customize removed
+  // (Collections, Agents, Project templates) lands on All with the matching
+  // Also show filter before paint, so none opens an empty view. Marketplaces
+  // keeps its view.
+  useLayoutEffect(() => {
+    if (
+      !discoveryEnabled ||
+      kindFilter === null ||
+      kindFilter === 'sources' ||
+      isCustomizeDiscoveryTab(kindFilter)
+    )
+      return;
+    const landing = customizeDiscoveryLanding(kindFilter);
+    setKindFilter(landing.tab === 'all' ? null : landing.tab);
+    setDiscoveryFilters((current) =>
+      customizeDiscoveryFiltersForLanding(current, landing),
+    );
+  }, [discoveryEnabled, kindFilter, setDiscoveryFilters]);
   const [pipelineFilterValues, setPipelineFilterValues] =
     useState<PipelineFilterValues>(
       savedPresentation?.browse.pipelineFilters ?? DEFAULT_PIPELINE_FILTERS,
@@ -460,11 +495,13 @@ export function PluginsPage({
   const marketplaceSourcesAvailable = marketplaceSourcesAccess.client !== null;
   const typeTabs = useMemo(
     () =>
-      marketplaceTypeTabs({
-        agents: sharedCustomAgentsEnabled,
-        sources: marketplaceSourcesAvailable,
-      }),
-    [marketplaceSourcesAvailable, sharedCustomAgentsEnabled],
+      discoveryEnabled
+        ? CUSTOMIZE_DISCOVERY_TABS
+        : marketplaceTypeTabs({
+            agents: sharedCustomAgentsEnabled,
+            sources: marketplaceSourcesAvailable,
+          }),
+    [discoveryEnabled, marketplaceSourcesAvailable, sharedCustomAgentsEnabled],
   );
   // The Marketplaces tab (CAN-4262) is navigation state, not a catalog kind:
   // it swaps the catalog for the shared source list and loads nothing else.
@@ -1527,8 +1564,15 @@ export function PluginsPage({
         agentsAvailable: sharedCustomAgentsEnabled,
         projectTemplatesAvailable: true,
         mcpSharedEntryIds,
+        ...(discoveryEnabled ? { discoveryFilters } : {}),
+        ...(discoveryEnabled && sharedWithMeActive
+          ? { sharedWithMeOnly: true }
+          : {}),
       }),
     [
+      discoveryEnabled,
+      discoveryFilters,
+      sharedWithMeActive,
       activeCatalogTab,
       entries,
       deferredQuery,
@@ -3170,6 +3214,21 @@ export function PluginsPage({
     { layer: 'page' },
   );
 
+  const selectTypeTab = (tab: CapabilityMarketplaceTabId): void => {
+    setAddMarketplaceOpen(false);
+    setPendingSourcePlugin(null);
+    setSelectedSourceId(null);
+    setInstalledStatusFilter(null);
+    setInstalledExpanded(false);
+    setFocusSection(null);
+    setKindFilter(tab === 'all' ? null : tab);
+    setFocusSection(null);
+    setCategory(null);
+    setSelectedSourceId(null);
+  };
+  // New Customize's Manage marketplaces… opens the Marketplaces view the old
+  // Marketplaces tab showed (CAN-6814 replaces it).
+  const openMarketplacesView = (): void => selectTypeTab('sources');
   // One prop wiring for both presentations: the inline sub-page (shell-owned
   // branches) and the dialog fallback (skill/MCP-owned branches) must stay
   // behaviorally identical, so they render from the same closure.
@@ -3794,21 +3853,10 @@ export function PluginsPage({
               }
             >
               <div className="flex flex-col gap-4">
-                <MarketplaceTypeTabs
+                <CustomizeTypeTabs
                   value={activeTypeTab}
                   tabs={typeTabs}
-                  onChange={(tab) => {
-                    setAddMarketplaceOpen(false);
-                    setPendingSourcePlugin(null);
-                    setSelectedSourceId(null);
-                    setInstalledStatusFilter(null);
-                    setInstalledExpanded(false);
-                    setFocusSection(null);
-                    setKindFilter(tab === 'all' ? null : tab);
-                    setFocusSection(null);
-                    setCategory(null);
-                    setSelectedSourceId(null);
-                  }}
+                  onChange={(tab) => selectTypeTab(tab)}
                 />
 
                 {/* The search sits under the tabs it searches within, as the
@@ -3845,6 +3893,14 @@ export function PluginsPage({
                     onInstalledStatusFilterChange={(value) => {
                       setInstalledStatusFilter(value);
                       setFocusSection(null);
+                    }}
+                    discovery={{
+                      onFiltersChanged: () => setFocusSection(null),
+                      onAddHarness: () =>
+                        useNavigationStore.getState().openSettings('harnesses'),
+                      ...(marketplaceSourcesAvailable
+                        ? { onManageMarketplaces: openMarketplacesView }
+                        : {}),
                     }}
                   />
                 )}

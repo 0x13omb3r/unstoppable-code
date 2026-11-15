@@ -1,6 +1,11 @@
 'use client';
 
 import {
+  MemoryGraphLegend,
+  MemoryGraphSwatch,
+} from '@canopy/ui-shared/components';
+
+import {
   lazy,
   Suspense,
   useCallback,
@@ -485,14 +490,14 @@ export function EntityGraphView({ orgId }: EntityGraphViewProps): JSX.Element {
         <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(300px,24rem)]">
           <Surface variant="card" className="overflow-hidden">
             <section className={`relative ${GRAPH_AREA_HEIGHT}`}>
-              <div className="absolute left-4 top-4 z-10 flex flex-wrap items-center gap-3 rounded-lg border bg-card/90 px-3 py-2 text-xs fg-secondary backdrop-blur">
+              <MemoryGraphLegend>
                 {ENTITY_GRAPH_LEGEND.map(({ kind, label }) => (
-                  <span key={kind}>
-                    <i
-                      className="mr-1.5 inline-block h-2.5 w-2.5 rounded-full"
-                      style={{
-                        background: `var(${ENTITY_KIND_COLOR_VARIABLES[kind]})`,
-                      }}
+                  <span
+                    key={kind}
+                    className="inline-flex items-baseline gap-1.5"
+                  >
+                    <MemoryGraphSwatch
+                      color={`var(${ENTITY_KIND_COLOR_VARIABLES[kind]})`}
                     />
                     {label}
                   </span>
@@ -514,7 +519,7 @@ export function EntityGraphView({ orgId }: EntityGraphViewProps): JSX.Element {
                   />
                   Refresh
                 </Button>
-              </div>
+              </MemoryGraphLegend>
               {/* The canvas paints entity names. */}
               <div
                 className={withPrivacyClass('h-full w-full', blockClassName)}

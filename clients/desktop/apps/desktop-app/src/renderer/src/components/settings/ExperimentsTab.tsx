@@ -63,6 +63,7 @@ export function ExperimentsTab(): JSX.Element {
       | 'managedDelegationMaxConcurrent'
       | 'managedDelegationMaxDepth'
       | 'managedDelegationLifetimeLimit'
+      | 'managedDelegationModelPolicy'
       | '__managedDelegationRevocationIncomplete'
       | 'remoteControlEnabled'
     >
@@ -82,6 +83,7 @@ export function ExperimentsTab(): JSX.Element {
           managedDelegationMaxConcurrent: prefs.managedDelegationMaxConcurrent,
           managedDelegationMaxDepth: prefs.managedDelegationMaxDepth,
           managedDelegationLifetimeLimit: prefs.managedDelegationLifetimeLimit,
+          managedDelegationModelPolicy: prefs.managedDelegationModelPolicy,
           __managedDelegationRevocationIncomplete:
             prefs.__managedDelegationRevocationIncomplete,
           remoteControlEnabled: prefs.remoteControlEnabled,
@@ -127,6 +129,7 @@ export function ExperimentsTab(): JSX.Element {
           delegationPreferences.managedDelegationMaxConcurrent
         }
         initialMode={delegationPreferences.managedDelegationMode ?? 'off'}
+        initialModelPolicy={delegationPreferences.managedDelegationModelPolicy}
         initialRevocationIncomplete={
           delegationPreferences.__managedDelegationRevocationIncomplete
         }

@@ -12,6 +12,7 @@ import {
   type QueuedMessageRowProps,
   QueuedMessageSettingsHeldWarning,
   Surface,
+  UnsavedMessageEdits,
 } from '@canopy/ui-shared/components';
 import { ArrowUpIcon } from '@canopy/ui-shared/icons/AppIcons';
 import {
@@ -59,12 +60,13 @@ function RowList({
   readonly drawer?: boolean;
 }): JSX.Element {
   return (
-    <div
+    <Surface
+      variant={drawer ? 'inset' : 'group'}
       role="list"
-      className={`w-full min-w-0 rounded-xl py-1 ${drawer ? 'bg-base' : 'bg-secondary'}`}
+      className="w-full min-w-0"
     >
-      {children}
-    </div>
+      <div className="py-1">{children}</div>
+    </Surface>
   );
 }
 
@@ -553,9 +555,9 @@ function BubbleFrame({
   return (
     <div className="w-full min-w-0 max-w-md pr-2 pt-2">
       <div className="group relative">
-        <div className="rounded-2xl bg-secondary px-3 py-2 text-s fg-primary">
-          {MESSAGE}
-        </div>
+        <Surface variant="group" padding="section-compact">
+          <span className="text-s fg-primary">{MESSAGE}</span>
+        </Surface>
         <div className={revealed ? '[&>div]:opacity-100' : undefined}>
           {children}
         </div>
@@ -703,6 +705,36 @@ export function QueuedMessageSettingsHeldWarningSpecimen(): JSX.Element {
               interrupt
             />
           </FocusOnMount>
+        </SpecimenCell>
+      </SpecimenGrid>
+    </SpecimenPanel>
+  );
+}
+
+const UNSAVED_EDITS = [
+  {
+    id: 'entry-1',
+    text: 'Book Studio B for Thursday at 3pm, and ask Sam to bring the mic.',
+  },
+];
+
+/** A queued message's edit that wasn't saved (CAN-6799), on each host. */
+export function UnsavedMessageEditsSpecimen(): JSX.Element {
+  return (
+    <SpecimenPanel title="Unsaved edit: another client's Stop cancelled the message during the edit">
+      <SpecimenGrid min={360}>
+        <SpecimenCell label="Desktop: Copy, Restore into the composer, Dismiss">
+          <UnsavedMessageEdits
+            drafts={UNSAVED_EDITS}
+            onDismiss={(): void => undefined}
+            onRestore={(): void => undefined}
+          />
+        </SpecimenCell>
+        <SpecimenCell label="Web: Copy and Dismiss">
+          <UnsavedMessageEdits
+            drafts={UNSAVED_EDITS}
+            onDismiss={(): void => undefined}
+          />
         </SpecimenCell>
       </SpecimenGrid>
     </SpecimenPanel>

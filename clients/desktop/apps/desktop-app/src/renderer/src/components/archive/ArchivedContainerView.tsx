@@ -753,7 +753,14 @@ export function ArchivedContainerView({
       className="flex min-h-0 flex-col"
     >
       {/* Header */}
-      <div className="flex shrink-0 flex-wrap items-center gap-2 border-b px-4 py-2">
+      <Surface
+        variant="section"
+        boundary="bottom"
+        gap="inline"
+        direction="row"
+        padding="section-default"
+        className="shrink-0 flex-wrap items-center"
+      >
         {kind === 'worktree' ? (
           <BranchIcon size="sm" className="shrink-0 fg-secondary" />
         ) : (
@@ -1017,7 +1024,7 @@ export function ArchivedContainerView({
             Back
           </HeaderActionButton>
         </div>
-      </div>
+      </Surface>
 
       {(summary?.version === 3 || partiallyRestored) && (
         <div className="flex shrink-0 flex-col gap-4 px-4 py-2">

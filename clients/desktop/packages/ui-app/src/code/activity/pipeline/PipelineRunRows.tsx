@@ -1,5 +1,6 @@
 'use client';
 
+import { RunStepTimeline } from '@canopy/ui-shared/components';
 import { type JSX, type ReactNode } from 'react';
 import { CHAT_UNIT_LABEL, ORCHESTRATOR_LABEL } from '@canopy/protocol';
 import {
@@ -934,7 +935,7 @@ export function PipelineRunTreeRow({
           onClick={() => onToggleExpand(summary.id)}
         />
         {isExpanded && (
-          <div className="mt-2 flex flex-col gap-1.5 border-l-2 ml-1 pl-2.5">
+          <RunStepTimeline>
             {children.map((child) => (
               <PipelineRunTreeRow
                 key={child.summary.id}
@@ -968,7 +969,7 @@ export function PipelineRunTreeRow({
                 renderWatcherButton={renderWatcherButton}
               />
             ))}
-          </div>
+          </RunStepTimeline>
         )}
       </>
     ) : undefined;

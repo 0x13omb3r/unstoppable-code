@@ -91,6 +91,7 @@ import {
 import {
   clampPanelTitle,
   isAutomationsPanelVariant,
+  isModPanePanelInstance,
   isPipelineExecutionPanelInstance,
   isSessionBreakdownPanelInstance,
   isSubagentChatPanelInstance,
@@ -909,6 +910,8 @@ export function isSingletonPanelKind(kind: PanelKind): boolean {
  *   (each URI-encoded, joined by `/`, so ids containing `/` cannot collide);
  *   `subagentKind` never enters the key.
  * - `session-breakdown` keys on `instance.chatId` (one panel per chat).
+ * - `mod-pane` keys on `instance.chatId` + `instance.paneId` (one panel per
+ *   pane of a chat; a pane id never holds `/`).
  * - `plan` and `plan-diagram` key on the trimmed `instance.planId` with
  *   their own kind prefix, so one plan's document and diagram panels coexist
  *   while each stays unique per plan (a hand-edited padded id is the same
@@ -948,6 +951,10 @@ export function getPanelInstanceKey(
       )}/${encodeURIComponent(descriptor.instance?.subagentId ?? '')}`;
     case 'session-breakdown':
       return `session-breakdown:${descriptor.instance?.chatId ?? ''}`;
+    case 'mod-pane':
+      return `mod-pane:${encodeURIComponent(
+        descriptor.instance?.chatId ?? '',
+      )}/${descriptor.instance?.paneId ?? ''}`;
     case 'plan':
       return `plan:${descriptor.instance?.planId?.trim() ?? ''}`;
     case 'plan-diagram':
@@ -970,7 +977,9 @@ export function getPanelInstanceKey(
  * `rootChatId`, `subagentId`, and `subagentKind` (the protocol's
  * `isSubagentChatPanelInstance`), session-breakdown needs exactly one
  * trimmed, bounded `chatId` (the protocol's
- * `isSessionBreakdownPanelInstance`), and `plan`/`plan-diagram` need a
+ * `isSessionBreakdownPanelInstance`), mod-pane needs exactly a bounded
+ * `chatId` and a pane id (the protocol's `isModPanePanelInstance`), and
+ * `plan`/`plan-diagram` need a
  * trimmed non-empty `planId`. Singleton kinds always pass (unexpected
  * instance data on them is dropped by the caller, not rejected).
  */
@@ -985,6 +994,8 @@ function satisfiesInstanceContract(
       return isSubagentChatPanelInstance(instance);
     case 'session-breakdown':
       return isSessionBreakdownPanelInstance(instance);
+    case 'mod-pane':
+      return isModPanePanelInstance(instance);
     case 'chat':
       return isNonEmpty(instance?.chatTabId);
     case 'file-diff':
@@ -1151,6 +1162,7 @@ const DROPPABLE_BOUND_PANEL_KINDS: ReadonlySet<PanelKind> = new Set<PanelKind>([
   'pipeline-execution',
   'subagent-chat',
   'session-breakdown',
+  'mod-pane',
 ]);
 
 /**

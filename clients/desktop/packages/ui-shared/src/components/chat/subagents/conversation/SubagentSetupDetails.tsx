@@ -170,6 +170,7 @@ export function SubagentSetupDetails({
     route?.selectedModelLabel ??
     route?.runtimeModelId ??
     route?.selectedModelId ??
+    node.snapshot?.requestedModelLabel ??
     node.snapshot?.requestedModelId;
   const modelId =
     route?.runtimeModelId ??

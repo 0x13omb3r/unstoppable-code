@@ -1,12 +1,17 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useContext, useEffect, useMemo, useState } from 'react';
 import { PREVIEWABLE_IMAGE_FILENAME, VIDEO_FILENAME } from '@/lib/file-type';
+import { webCoreLocalId } from '@/lib/chat-authority';
 import { cloudAttachmentPreview } from '@/cloud-chats/cloud-chat-attachments';
+import { loadCloudAttachmentThumbnail } from '@/cloud-chats/cloud-attachment-thumbnails';
+import { CloudChatFileTargetContext } from '@/cloud-chats/cloud-chat-file-target';
 
 /**
  * Reads each image's preview (a data URL) once per path. A path whose read
  * fails or is not an image (too large, unreadable) maps to `null`; a path
  * still loading has no entry. With `videoFrame`, a video's preview is its
- * first frame, where the OS can draw one.
+ * first frame, where the OS can draw one. A cloud chat's image this window
+ * didn't upload is read through that chat's web core, when the transcript
+ * names the chat (CAN-6824).
  */
 export function useImagePreviews(
   paths: readonly string[],
@@ -16,6 +21,9 @@ export function useImagePreviews(
   const [previews, setPreviews] = useState<ReadonlyMap<string, string | null>>(
     () => new Map(),
   );
+  const cloudTarget = useContext(CloudChatFileTargetContext);
+  const cloudChatId =
+    cloudTarget === null ? null : webCoreLocalId(cloudTarget.key);
   useEffect(() => {
     let cancelled = false;
     const wanted = key === '' ? [] : key.split('\n');
@@ -24,10 +32,16 @@ export function useImagePreviews(
         // A cloud chat's attachment is never read through main.
         const cloud = cloudAttachmentPreview(absolutePath);
         if (cloud !== undefined)
-          return Promise.resolve<[string, string | null]>([
-            absolutePath,
-            cloud.kind === 'image' ? cloud.content : null,
-          ]);
+          return cloud.kind === 'image' || videoFrame || cloudChatId === null
+            ? Promise.resolve<[string, string | null]>([
+                absolutePath,
+                cloud.kind === 'image' ? cloud.content : null,
+              ])
+            : loadCloudAttachmentThumbnail(
+                window.canopyCore,
+                cloudChatId,
+                absolutePath,
+              ).then((src): [string, string | null] => [absolutePath, src]);
         return window.api
           .readFilePreview(
             videoFrame ? { absolutePath, videoFrame } : { absolutePath },
@@ -44,7 +58,7 @@ export function useImagePreviews(
     return (): void => {
       cancelled = true;
     };
-  }, [key, videoFrame]);
+  }, [key, videoFrame, cloudChatId]);
   return previews;
 }
 

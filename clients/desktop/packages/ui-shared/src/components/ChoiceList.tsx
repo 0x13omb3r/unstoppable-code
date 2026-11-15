@@ -35,7 +35,9 @@ export interface ChoiceListProps {
   readonly 'aria-label': string;
   readonly children: ReactNode;
   readonly 'data-testid'?: string;
-  /** Placement and height only (`max-h-72`, margins). */
+  /** Keep long lists scrollable within an 18rem viewport. */
+  readonly height?: 'bounded';
+  /** Placement only. */
   readonly className?: string;
   /** `radio` when the rows are one choice: a radiogroup with arrow keys. */
   readonly kind?: 'checkbox' | 'radio';
@@ -59,6 +61,7 @@ export const ChoiceList = forwardRef<HTMLDivElement, ChoiceListProps>(
       children,
       'data-testid': dataTestId,
       className = '',
+      height,
       kind = 'checkbox',
       onKeyDown: onHostKeyDown,
     },
@@ -116,7 +119,7 @@ export const ChoiceList = forwardRef<HTMLDivElement, ChoiceListProps>(
         aria-label={ariaLabel}
         onKeyDown={onKeyDown}
         data-testid={dataTestId}
-        className={`flex flex-col divide-y overflow-y-auto rounded-lg ${HAIRLINE_INSET_RING_CLASS} ring-line-base ${className}`}
+        className={`flex flex-col divide-y overflow-y-auto rounded-lg ${HAIRLINE_INSET_RING_CLASS} ring-line-base ${height === 'bounded' ? 'max-h-72' : ''} ${className}`}
       >
         {children}
       </div>

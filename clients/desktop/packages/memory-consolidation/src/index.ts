@@ -21,3 +21,5 @@ export * from './text';
 export * from './topic-identity';
 export * from './topic-reference';
 export * from './version';
+export * from './link-health';
+export * from './metrics';

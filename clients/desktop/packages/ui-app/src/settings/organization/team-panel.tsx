@@ -1,5 +1,6 @@
 'use client';
 
+import { StatusIllustration } from '@canopy/ui-shared/components';
 import { useCallback, useEffect, useState, type JSX } from 'react';
 import { Check, Mail, Plus, Users, X } from '@canopy/ui-shared/icons/AppIcons';
 import {
@@ -253,9 +254,9 @@ export function TeamPanel({
                 >
                   <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-3">
                     <div className="flex min-w-0 items-center gap-3">
-                      <span className="flex h-8 w-8 items-center justify-center rounded-full bg-secondary fg-secondary">
+                      <StatusIllustration variant="member" tone="neutral">
                         <Mail size={14} />
-                      </span>
+                      </StatusIllustration>
                       <Stack gap="tight" className="min-w-0">
                         <p className="truncate text-s font-medium fg-primary">
                           {invite.organizationName}

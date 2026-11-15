@@ -1,3 +1,4 @@
+import { ThemeAccentSwatch } from '@canopy/ui-shared/components';
 import { Fragment, type JSX, useEffect, useRef, useState } from 'react';
 import {
   THEME_NAMES,
@@ -531,29 +532,18 @@ export function DisplayTab(): JSX.Element {
                     label: THEME_LABELS[name],
                     testId: `theme-swatch-${name}`,
                     // Each dot uses the represented theme's accent color.
-                    preview:
-                      name === 'default' ? (
-                        <span
-                          aria-hidden="true"
-                          data-testid={`theme-color-dot-${name}`}
-                          className="h-1.5 w-1.5 shrink-0 rounded-full"
-                          style={{
-                            background: brand.theme.default.swatch[mode].accent,
-                          }}
-                        />
-                      ) : (
-                        <span
-                          aria-hidden="true"
-                          data-testid={`theme-color-dot-${name}`}
-                          data-theme={name}
-                          className={`h-1.5 w-1.5 shrink-0 rounded-full ${
-                            mode === 'dark' ? 'dark' : ''
-                          }`}
-                          // A swatch of the theme's own accent: the variable
-                          // resolves under this element's `data-theme`.
-                          style={{ background: 'var(--bg-accent)' }}
-                        />
-                      ),
+                    preview: (
+                      <ThemeAccentSwatch
+                        data-testid={`theme-color-dot-${name}`}
+                        data-theme={name === 'default' ? undefined : name}
+                        dark={name !== 'default' && mode === 'dark'}
+                        color={
+                          name === 'default'
+                            ? brand.theme.default.swatch[mode].accent
+                            : 'var(--bg-accent)'
+                        }
+                      />
+                    ),
                   };
                 })}
               />

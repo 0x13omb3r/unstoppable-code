@@ -1,3 +1,4 @@
+import type { MemoryConsolidationMeasurement } from '@canopy/protocol/local-memory/metrics';
 import { mkdir, readFile, readdir, rename, rm, stat } from 'node:fs/promises';
 import { basename, join } from 'node:path';
 import {
@@ -417,6 +418,7 @@ export type MemoryFirstEnableMergeRunner = (
   scopeTopics: ScopeTopicInventory,
   scopeDir: string,
 ) => Promise<{
+  consolidation?: MemoryConsolidationMeasurement;
   output: ConsolidationOutput | null;
   consumedFileKeys: string[];
   model: { modelId: string; thinkingLevel?: string } | null;
@@ -461,6 +463,7 @@ export interface MemoryFirstEnableApplied {
 }
 
 interface PendingFirstEnable {
+  consolidation?: MemoryConsolidationMeasurement;
   id: string;
   scopeKey: string;
   kind: MemoryFirstEnableKind;
@@ -2608,6 +2611,7 @@ export class MemorySyncEngine {
                   consolidationPackageVersion:
                     MEMORY_CONSOLIDATION_PACKAGE_VERSION,
                   inputHash: request.inputHash,
+                  consolidation: request.consolidation,
                 },
               },
               maxUntil,
@@ -3119,6 +3123,7 @@ export class MemorySyncEngine {
           return noteId === undefined ? [] : [noteId];
         }),
         inputHash: merge.input.inputHash,
+        ...(run?.consolidation ? { consolidation: run.consolidation } : {}),
         model: run?.model ?? null,
         cloud: cloudDocuments,
         device: source.documents.map(({ path, content }) => ({
@@ -4042,6 +4047,7 @@ export class MemorySyncEngine {
                 ? null
                 : MEMORY_CONSOLIDATION_PACKAGE_VERSION,
             inputHash: preview.inputHash,
+            consolidation: preview.consolidation,
           },
         },
         scopeFence,

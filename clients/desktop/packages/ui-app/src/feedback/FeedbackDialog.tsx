@@ -1,5 +1,6 @@
 'use client';
 
+import { DialogActionFooter } from '@canopy/ui-shared/components';
 import { type JSX, type ReactNode, useEffect, useRef, useState } from 'react';
 import {
   FeedbackReferenceIdSchema,
@@ -314,8 +315,9 @@ export function FeedbackDialog({
             {note}
           </div>
 
-          <div
-            className="flex items-center justify-end gap-3 border-t px-6 py-3"
+          <DialogActionFooter
+            center
+            gap="item"
             data-testid="feedback-modal-footer"
           >
             <Button
@@ -342,7 +344,7 @@ export function FeedbackDialog({
                 <span>Submit</span>
               )}
             </Button>
-          </div>
+          </DialogActionFooter>
         </form>
       )}
     </FeedbackDialogShell>

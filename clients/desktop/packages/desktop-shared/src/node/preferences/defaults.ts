@@ -135,6 +135,7 @@ export const DEFAULT_PREFERENCES: PreferencesData = {
   // Local memory is enabled by default (CAN-2657); an explicit opt-out is
   // persisted normally and keeps provider-native memory on harness defaults.
   localMemoryEnabled: true,
+  localMemoryLearnFromChats: false,
   localMemoryEnabledSetByUser: false,
   localMemoryModel: DEFAULT_LOCAL_MEMORY_MODEL,
   localMemoryModelSetByUser: false,

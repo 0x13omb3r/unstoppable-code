@@ -39,3 +39,6 @@ export const LOCAL_MEMORY_FULL_SENTENCE_REASONS: ReadonlySet<string> = new Set([
   LOCAL_MEMORY_SYNCED_REFUSED_MESSAGE,
   LOCAL_MEMORY_SYNCED_SECRET_MESSAGE,
 ]);
+
+/** Content-free measurements of one finished consolidation run. Sizes are UTF-8 bytes. */
+export type { MemoryConsolidationMetrics } from './metrics';

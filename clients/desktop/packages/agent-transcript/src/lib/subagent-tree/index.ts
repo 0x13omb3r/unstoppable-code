@@ -563,6 +563,7 @@ function modelLabelFromSnapshot(
     nonEmptyText(route?.selectedModelLabel) ??
     nonEmptyText(route?.runtimeModelId) ??
     nonEmptyText(route?.selectedModelId) ??
+    nonEmptyText(snapshot.requestedModelLabel) ??
     nonEmptyText(snapshot.requestedModelId)
   );
 }

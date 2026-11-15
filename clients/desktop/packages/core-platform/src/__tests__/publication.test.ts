@@ -999,6 +999,118 @@ test('Windows publication trusts the injected file verifier and records a pipe e
   expect(await readdir(join(dataRoot, 'runtime'))).toEqual([]);
 });
 
+test.each([
+  ['rename', false],
+  ['sync', false],
+  ['release', false],
+  ['rename', true],
+  ['sync', true],
+  ['release', true],
+] as const)(
+  'cancellation during submitted %s rolls back publication (held=%s)',
+  async (stage, withHeld) => {
+    const close = jest.fn(() => Promise.resolve());
+    const options = windowsHost(close);
+    const controller = new AbortController();
+    let held: CanopyDaemonHeldClaim | undefined;
+    if (withHeld) {
+      await mkdir(join(dataRoot, 'runtime'), { mode: 0o700 });
+      const acquired = await options.claims.tryAcquire();
+      if (acquired.kind !== 'acquired') throw new Error('Claim unavailable.');
+      held = { current: acquired.handle, released: false };
+    }
+    let renamed = false;
+    const platform = {
+      ...options.platform,
+      secureFiles: {
+        ...options.platform.secureFiles,
+        rename: async (
+          request: Parameters<typeof options.platform.secureFiles.rename>[0],
+        ): Promise<PlatformRenameResult> => {
+          const result = await options.platform.secureFiles.rename(request);
+          renamed = true;
+          if (stage === 'rename') controller.abort();
+          return result;
+        },
+        syncDirectory: async (
+          path: string,
+        ): ReturnType<typeof options.platform.secureFiles.syncDirectory> => {
+          const result = await options.platform.secureFiles.syncDirectory(path);
+          if (renamed && stage === 'sync') controller.abort();
+          return result;
+        },
+      },
+    };
+    const claims = {
+      ...options.claims,
+      release: async (
+        handle: object,
+      ): ReturnType<typeof options.claims.release> => {
+        const result = await options.claims.release(handle);
+        if (stage === 'release') controller.abort();
+        return result;
+      },
+    };
+    await expect(
+      publishCanopyDaemon({
+        ...options,
+        platform,
+        claims,
+        signal: controller.signal,
+        ...(held && { heldClaim: held }),
+      }),
+    ).rejects.toThrow();
+    expect(close).toHaveBeenCalledTimes(1);
+    if (held) {
+      expect(held.released).toBe(false);
+      expect(await options.claims.identity(held.current)).not.toBeNull();
+      expect(await options.claims.release(held.current)).toBe('released');
+    }
+    expect(await readdir(join(dataRoot, 'runtime'))).toEqual([]);
+    const next = await options.claims.tryAcquire();
+    expect(next.kind).toBe('acquired');
+    if (next.kind === 'acquired') await options.claims.release(next.handle);
+  },
+);
+
+test.each([false, true])(
+  'admitted publication hands stop to ordinary shutdown unless its final deadline expires (%s)',
+  async (expired) => {
+    const options = windowsHost();
+    const startup = new AbortController();
+    const finalDeadline = new AbortController();
+    const starting = publishCanopyDaemon({
+      ...options,
+      signal: startup.signal,
+      admitPublication: () => finalDeadline.signal,
+      platform: {
+        ...options.platform,
+        secureFiles: {
+          ...options.platform.secureFiles,
+          rename: async (request): Promise<PlatformRenameResult> => {
+            const result = await options.platform.secureFiles.rename(request);
+            // Discovery is visible before the publisher's next continuation.
+            expect(await readFile(request.to, 'utf8')).toContain('test-start');
+            startup.abort();
+            if (expired) finalDeadline.abort();
+            return result;
+          },
+        },
+      },
+    });
+    if (expired) await expect(starting).rejects.toThrow();
+    else {
+      const published = await starting;
+      try {
+        expect(published.descriptor.pid).toBe(process.pid);
+      } finally {
+        await published.close();
+      }
+    }
+    expect(await readdir(join(dataRoot, 'runtime'))).toEqual([]);
+  },
+);
+
 test('Windows unverified token ACL fails before secret bytes are written', async () => {
   const options = windowsHost();
   const permissions = options.platform.secureFiles.permissions.bind(

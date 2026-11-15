@@ -1,3 +1,4 @@
+import type { MemoryConsolidationMetrics } from '@canopy/protocol/local-memory';
 export interface MemorySource {
   provider: string;
   chatId: string;
@@ -87,6 +88,7 @@ export type LocalMemoryConsolidationResult =
 export interface LocalMemoryConsolidationStatus {
   /** Top-level `inbox/*.md` notes not yet folded into the index. */
   pendingNotes: number;
+  metrics?: MemoryConsolidationMetrics | null;
   running: boolean;
   /** True while a rebuild owns the scope; `running` is true as well. */
   rebuilding: boolean;

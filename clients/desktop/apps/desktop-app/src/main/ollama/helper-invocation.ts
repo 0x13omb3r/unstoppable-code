@@ -67,6 +67,8 @@ export interface HelperInvocation {
   codexConfig?: CodexConfig;
   /** True iff AI Credits routing was actually applied to this invocation. */
   aiCreditsRouted: boolean;
+  /** True when the route is an organization's model gateway, not AI Credits. */
+  modelGatewayRouted?: boolean;
   /** True when the invocation goes to the account proxy (CAN-4020). */
   accountProxyRouted?: boolean;
   /** Stable proxy identity for continuations; set with `accountProxyRouted`. */
@@ -301,6 +303,7 @@ export async function resolveHelperInvocation(
           resolvedModel: model,
           codexConfig: override.codexConfig,
           aiCreditsRouted: override.accountProxyRouted !== true,
+          ...(override.modelGatewayRouted ? { modelGatewayRouted: true } : {}),
           ...(override.accountProxyRouted
             ? {
                 accountProxyRouted: true,
@@ -376,6 +379,7 @@ export async function resolveHelperInvocation(
         resolvedModel: model,
         envOverride: override.env,
         aiCreditsRouted: true,
+        ...(override.modelGatewayRouted ? { modelGatewayRouted: true } : {}),
         dispose,
       };
     }

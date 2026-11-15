@@ -10,7 +10,11 @@ import {
   resolveClientAppError,
 } from '@canopy/desktop-instrumentation/client';
 import { Button } from '@canopy/ui-shared/components/Button';
-import { Heading, Surface } from '@canopy/ui-shared/components';
+import {
+  ChatComposerShell,
+  Heading,
+  Surface,
+} from '@canopy/ui-shared/components';
 import { getPlanModeHintStore } from '@/lib/planModeHint';
 import { getGitHubStarPromptStore } from '@/lib/githubStarPrompt';
 import { ComposerTipArbiterProvider, Chip } from '@canopy/ui-shared/components';
@@ -85,14 +89,6 @@ import {
 } from '@canopy/ui-shared/components';
 import { defaultChatPlaceholder } from '@canopy/ui-shared/lib';
 import { useProjectsStore } from '@/stores/projectsStore';
-import { useSelectedOrgWithoutPlan } from '@/hooks/useSelectedOrgWithoutPlan';
-import {
-  askOwnerToChoosePlanCopy,
-  CHOOSE_ORG_PLAN_COPY,
-  CHOOSE_ORG_PLAN_LABEL,
-  openOrganizationBillingPage,
-  orgWithoutPlanTitle,
-} from '@/lib/organizationPlan';
 import { useWorkspaceContextStore } from '@/stores/workspaceContextStore';
 import {
   getHomeScope,
@@ -102,6 +98,7 @@ import {
   shouldShowHomeWorkspacePicker,
   useHomeScope,
   useKeepHomeSelectionInScope,
+  isHomeCloudTarget,
   type HomeContextRebind,
 } from './homeScope';
 import {
@@ -278,32 +275,8 @@ function HomeSurfaceContent({ variant }: HomeSurfaceProps): JSX.Element {
   const homeScope = useHomeScope();
   // `composerDisabled` (any-workspace): the composer only locks when there is
   // no selectable send target at all — a cowork-only fresh install must still
-  // get a fully functional composer targeting the cowork workspace. An
-  // organization with no active plan has none either: its projects and Chats
-  // need the plan, and a send there fails closed rather than using Personal.
-  const orgWithoutPlan = useSelectedOrgWithoutPlan();
-  const composerDisabled =
-    homeScope.fallbackWorkspaceId === null || orgWithoutPlan !== null;
-  // Typing never waits for a send target: projects load empty and the default
-  // Cowork workspace lands shortly after, so locking the editor until then
-  // drops what the user types right after launch. Sending still waits.
-  const editorLocked = orgWithoutPlan !== null;
-  const setWorkspaceContext = useWorkspaceContextStore(
-    (state) => state.setContext,
-  );
-  // Back to Personal failed; shown beside the notice that offered it.
-  const [personalSwitchError, setPersonalSwitchError] =
-    useState<InlineFailure | null>(null);
-  const switchToPersonal = (): void => {
-    setPersonalSwitchError(null);
-    void setWorkspaceContext({ kind: 'personal' }).catch((error: unknown) => {
-      const appError = toAppError(resolveClientAppError(error));
-      if (!appError) return;
-      setPersonalSwitchError(
-        inlineFailure(appError, 'Couldn’t switch to Personal.'),
-      );
-    });
-  };
+  // get a fully functional composer targeting the cowork workspace.
+  const composerDisabled = homeScope.fallbackWorkspaceId === null;
 
   const belowComposerGallery =
     variant === 'page' && isHomeBelowComposerGalleryEnabled();
@@ -627,6 +600,14 @@ function HomeSurfaceContent({ variant }: HomeSurfaceProps): JSX.Element {
     rebindOutOfScopeSelection,
     readHomeComposerWorkspaceId,
   );
+  // A cloud project runs no local workflow: picking one returns Home to a
+  // chat, which is all its send can start (CAN-6757).
+  const cloudTarget = isHomeCloudTarget(workspaceId);
+  useEffect(() => {
+    if (!cloudTarget) return;
+    const store = useHomeComposerStore.getState();
+    if (store.mode === 'pipeline') store.setMode('chat');
+  }, [cloudTarget, mode]);
 
   function handleEditorChange(value: Descendant[]): void {
     setEditorValue(value);
@@ -753,10 +734,7 @@ function HomeSurfaceContent({ variant }: HomeSurfaceProps): JSX.Element {
       setEditorValue(value);
     },
   });
-  useHomeComposerAutofocus(
-    editor,
-    surfaceVisible && variant === 'page' && !editorLocked,
-  );
+  useHomeComposerAutofocus(editor, surfaceVisible && variant === 'page');
   // Only the visible Home instance fetches inventory and records
   // impressions: MainPage keeps an embedded instance mounted (hidden) under
   // other pages, and a hidden surface must not consume an impression slot.
@@ -790,7 +768,10 @@ function HomeSurfaceContent({ variant }: HomeSurfaceProps): JSX.Element {
   const filesGuestGate = useDesktopFilesGuestGate(
     `${workspaceId}/${JSON.stringify(branchTarget)}`,
   );
-  const fileTypeaheadEnabled = Boolean(workspaceId) && !composerDisabled;
+  // A cloud project's notes, prompts and files are its web core's, not this
+  // computer's, so Home offers none of them as mentions (CAN-6757).
+  const fileTypeaheadEnabled =
+    Boolean(workspaceId) && !composerDisabled && !cloudTarget;
   useEffect(() => {
     if (!fileTypeaheadEnabled || !workspaceId) {
       return;
@@ -1107,6 +1088,21 @@ function HomeSurfaceContent({ variant }: HomeSurfaceProps): JSX.Element {
     const items = event.clipboardData?.items;
     if (!items || !Array.from(items).some((item) => item.kind === 'file'))
       return;
+    // A cloud project has no folder to stage files in, and no local IPC may
+    // carry its id: the pasted files are held until Send uploads them to the
+    // new task's chat (CAN-6763).
+    if (isHomeCloudTarget(useHomeComposerStore.getState().workspaceId)) {
+      event.preventDefault();
+      event.stopPropagation();
+      if (composerDisabled) return;
+      const pasted = Array.from(items).flatMap((item) => {
+        const file = item.kind === 'file' ? item.getAsFile() : null;
+        return file === null ? [] : [file];
+      });
+      const problems = useHomeComposerStore.getState().addCloudFiles(pasted);
+      setSendError(problems.length > 0 ? problems.join('\n') : null);
+      return;
+    }
     if (filesGuestGate.interceptAttachment()) {
       event.preventDefault();
       event.stopPropagation();
@@ -1302,7 +1298,7 @@ function HomeSurfaceContent({ variant }: HomeSurfaceProps): JSX.Element {
     if (!draftWorkspaceId) return;
     if (pendingAttachmentImportIds.length > 0) return;
 
-    if (mode === 'pipeline') {
+    if (mode === 'pipeline' && !isHomeCloudTarget(draftWorkspaceId)) {
       const taskText = buildPipelineTaskText(text, attachments);
       const workspace = projects.find((p) => p.id === draftWorkspaceId);
       if (
@@ -1396,9 +1392,8 @@ function HomeSurfaceContent({ variant }: HomeSurfaceProps): JSX.Element {
   }, [projects, workspaceId]);
   const linkProjectPreview = useHomeLinkProjectPreview();
   const showWorkspacePicker =
-    orgWithoutPlan === null &&
-    (shouldShowHomeWorkspacePicker(homeScope, workspaceId) ||
-      linkProjectPreview !== null);
+    shouldShowHomeWorkspacePicker(homeScope, workspaceId) ||
+    linkProjectPreview !== null;
   // While the project picker previews a pasted link's destination, the
   // branch and directory pickers would describe the other, still-selected
   // project; the link panel under the composer names the branch instead.
@@ -1418,12 +1413,16 @@ function HomeSurfaceContent({ variant }: HomeSurfaceProps): JSX.Element {
   );
 
   return (
-    <div
+    <Surface
       data-testid="home-surface"
       data-variant={variant}
       data-workspace-selected={homeWorkspaceSelectedState(workspaceId)}
       data-target-kind={homeTargetKind}
-      className="page-scroll-gutter relative flex h-full w-full flex-col items-center justify-center overflow-auto bg-base p-6"
+      variant="pane"
+      padding="roomy"
+      extent="parent"
+      data-page-scroll-gutter=""
+      className="relative flex w-full flex-col items-center justify-center overflow-auto"
     >
       <ComposerHeroFrame
         anchorTestId="home-composer-anchor"
@@ -1444,41 +1443,6 @@ function HomeSurfaceContent({ variant }: HomeSurfaceProps): JSX.Element {
         }
         aboveNotices={[
           // Notice rows stay outside the composer; their frame owns the boundary.
-          orgWithoutPlan && (
-            <Notice
-              key="organization-plan"
-              data-testid="home-composer-org-without-plan"
-              intent="attention"
-              title={orgWithoutPlanTitle(orgWithoutPlan.organizationName)}
-              className="pointer-events-auto"
-              actions={
-                orgWithoutPlan.canChoosePlan ? (
-                  <NoticeButton
-                    variant="primary"
-                    data-testid="home-composer-choose-plan"
-                    onClick={(): void => {
-                      openOrganizationBillingPage(
-                        orgWithoutPlan.organizationId,
-                      );
-                    }}
-                  >
-                    {CHOOSE_ORG_PLAN_LABEL}
-                  </NoticeButton>
-                ) : (
-                  <NoticeButton
-                    data-testid="home-composer-back-to-personal"
-                    onClick={switchToPersonal}
-                  >
-                    Back to Personal
-                  </NoticeButton>
-                )
-              }
-            >
-              {orgWithoutPlan.canChoosePlan
-                ? CHOOSE_ORG_PLAN_COPY
-                : askOwnerToChoosePlanCopy(orgWithoutPlan.organizationName)}
-            </Notice>
-          ),
           unbillableModelSwitch ? (
             <ModelUnavailableNotice
               key="model-unavailable"
@@ -1491,20 +1455,6 @@ function HomeSurfaceContent({ variant }: HomeSurfaceProps): JSX.Element {
                   .getState()
                   .setModel(unbillableModelSwitch.switchModel)
               }
-            />
-          ) : null,
-          orgWithoutPlan && personalSwitchError ? (
-            <DesktopErrorBanner
-              errorSource="home-composer-personal-switch-error"
-              key="personal-switch-error"
-              testId="home-composer-personal-switch-error"
-              className="pointer-events-auto"
-              error={personalSwitchError.error}
-              {...(personalSwitchError.details === undefined
-                ? {}
-                : { details: personalSwitchError.details })}
-              onRetry={switchToPersonal}
-              onDismiss={(): void => setPersonalSwitchError(null)}
             />
           ) : null,
           missingFolderRecovery ? (
@@ -1651,10 +1601,10 @@ function HomeSurfaceContent({ variant }: HomeSurfaceProps): JSX.Element {
         }
         composer={
           <div>
-            <div
-              ref={homeComposerRef}
-              data-testid="home-composer"
-              className="relative z-20 w-full rounded-2xl bg-tertiary shadow-lg"
+            <ChatComposerShell
+              shellRef={homeComposerRef}
+              dataTestId="home-composer"
+              className="z-20 w-full"
             >
               {/* The org gateway a member has no working key for. Home is a
  composer like any other: without this, the first thing a
@@ -1687,7 +1637,6 @@ function HomeSurfaceContent({ variant }: HomeSurfaceProps): JSX.Element {
                       : defaultChatPlaceholder(true, true)
                 }
                 dataTestId="home-composer-editor"
-                disabled={editorLocked}
               />
 
               {mode === 'chat' && scheduledSendDraft && (
@@ -1766,7 +1715,7 @@ function HomeSurfaceContent({ variant }: HomeSurfaceProps): JSX.Element {
                   </p>
                 </div>
               )}
-            </div>
+            </ChatComposerShell>
           </div>
         }
         hanging={
@@ -1787,7 +1736,9 @@ function HomeSurfaceContent({ variant }: HomeSurfaceProps): JSX.Element {
               </div>
             )}
             <div data-testid="home-mcp-sign-in">
-              {mode === 'chat' && (
+              {/* Signs in this computer's MCP servers; a cloud chat's servers
+                  are its web core catalog's, read once it opens. */}
+              {mode === 'chat' && !cloudTarget && (
                 <HomeMcpSignInStrip
                   selections={pluginSelections}
                   ownerKey={`${workspaceId ?? ''}/${draftGeneration}/${mode}`}
@@ -1883,6 +1834,6 @@ function HomeSurfaceContent({ variant }: HomeSurfaceProps): JSX.Element {
           onWatcherSelectionChange={pipelineLauncher.setWatcherSelection}
         />
       )}
-    </div>
+    </Surface>
   );
 }

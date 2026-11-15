@@ -1,9 +1,13 @@
+import * as fsp from 'node:fs/promises';
+import * as path from 'node:path';
 import {
   WORKER_PIPELINE_HOST_PATH_OUTPUTS,
+  WORKER_PIPELINE_HOST_PATH_OUTPUTS_BY_ACTION,
   WorkerPipelineChatSendRecordSchema,
   WorkerPipelineHostActionRequestSchema,
   WorkerPipelineHostResultSchema,
   type WorkerPipelineHostActionRequest,
+  type WorkerPipelineHostFile,
   type WorkerPipelineHostRequest,
   type WorkerPipelineHostResult,
 } from '@canopy/protocol/canopy-core';
@@ -57,6 +61,49 @@ export const UNPORTABLE_HOST_RESULT: PipelineHostActionResult = {
 
 export function isPathOutput(key: string): boolean {
   return WORKER_PIPELINE_HOST_PATH_OUTPUTS.some((pathKey) => pathKey === key);
+}
+
+/**
+ * The host-path outputs of a step whose owner can't name host paths (the
+ * cloud, CAN-6780), derived on this host: each file the result carries is
+ * written into the step's host folder `dir`, and the output it names is set
+ * to its path. Every other host-path output the action declares is `''`, as
+ * a host that reports no file sets it; `path` is always `''`, since the
+ * checkout such an owner creates is never on this host. A file that can't
+ * be written leaves its output `''`, as desktop does with a log it can't
+ * copy.
+ */
+export async function deriveHostPathOutputs(
+  action: string,
+  files: readonly WorkerPipelineHostFile[] | undefined,
+  dir: string | null,
+): Promise<Record<string, string>> {
+  const outputs: Record<string, string> = {};
+  const declared = Object.entries(
+    WORKER_PIPELINE_HOST_PATH_OUTPUTS_BY_ACTION,
+  ).find(([name]) => name === action)?.[1];
+  for (const output of declared ?? []) outputs[output] = '';
+  if (files === undefined || dir === null) return outputs;
+  try {
+    await fsp.mkdir(dir, { recursive: true });
+  } catch {
+    return outputs;
+  }
+  for (const file of files) {
+    // The schema already bounds the name to one segment; this keeps it so.
+    const target = path.join(dir, file.name);
+    if (path.dirname(target) !== dir) continue;
+    try {
+      const temporary = `${target}.${process.pid}.tmp`;
+      await fsp.writeFile(temporary, file.text, 'utf-8');
+      await fsp.rename(temporary, target);
+    } catch {
+      continue;
+    }
+    if (file.output !== undefined && declared?.includes(file.output))
+      outputs[file.output] = target;
+  }
+  return outputs;
 }
 
 /** Split a host result into its portable form and what stays on this host. */

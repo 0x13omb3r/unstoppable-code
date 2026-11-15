@@ -12,48 +12,6 @@ import {
 import type { OrgProjectSummary } from '@canopy/protocol/org-projects';
 import type { DataSharingOptInFeature } from '@canopy/protocol';
 
-/**
- * What one more seat costs this organization right now. The display subset
- * of the web seat quote (`SeatChargeQuote`); the quote itself is a financial
- * read that only the web slot performs.
- */
-export interface OrganizationSeatQuote {
-  readonly chargeRequired: boolean;
-  readonly amountUsd: number;
-  /** `amountUsd` is the minimum seat charge, not the day-count proration. */
-  readonly minimumApplied: boolean;
-  readonly periodEndsAt: string | null;
-  readonly daysRemaining: number;
-  /** A usable saved payment method exists; the charge path gates on this. */
-  readonly hasPaymentMethod: boolean;
-  readonly card: { readonly brand: string; readonly last4: string } | null;
-}
-
-export interface OrganizationAddCardModalProps {
-  readonly organizationId: string;
-  readonly onClose: () => void;
-  /** A card was saved as the organization's default payment method. */
-  readonly onSaved: () => void;
-}
-
-/**
- * The Members invite dialog's prorated-seat confirmation. Quoting and adding
- * a card are financial, so only a host with inline checkout supplies it.
- */
-export interface OrganizationSeatChargeSlot {
-  /**
-   * Reads the seat quote. Rejects with `TeamApiError`; a 404 or 403 means no
-   * charge can apply for this viewer.
-   */
-  readonly getSeatQuote: (
-    organizationId: string,
-  ) => Promise<OrganizationSeatQuote>;
-  /** Card entry is configured, so {@link AddCardModal} can mount. */
-  readonly canAddCard: boolean;
-  /** Saves a card without subscribing (no plan key). */
-  readonly AddCardModal: ComponentType<OrganizationAddCardModalProps>;
-}
-
 export interface OrganizationPromotionDialogProps {
   readonly accountKey: string;
   readonly personalOrganizationId: string;
@@ -127,8 +85,6 @@ export interface OrganizationDataSharingOptInProps {
  * handoff), never a host fork.
  */
 export interface OrganizationSettingsSlots {
-  /** Inline seat quoting and card capture for paid per-seat invites. */
-  readonly seatCharge?: OrganizationSeatChargeSlot;
   /**
    * The host's Personal-to-team promotion controller (the shared Create a
    * team dialog over the host's upgrade port). One controller per host owns

@@ -18,6 +18,7 @@ import {
 } from '../../scripts/lib/desktop-main-entry.mjs';
 import { existsSync, readFileSync, renameSync, writeFileSync } from 'fs';
 import { execFileSync } from 'child_process';
+import { randomUUID } from 'node:crypto';
 import { dirname, resolve } from 'path';
 import { fileURLToPath } from 'url';
 import type { Plugin, UserConfig } from 'vite';
@@ -484,13 +485,45 @@ const desktopE2eDefines = {
   __CANOPY_POSTHOG_STUB_URL__: e2eDefineUrl('CANOPY_POSTHOG_STUB_URL'),
 };
 
-// Release builds set CANOPY_RENDERER_SOURCEMAPS to emit hidden renderer maps
+// Release builds set CANOPY_RENDERER_SOURCEMAPS to emit hidden main and renderer maps
 // for the PostHog sourcemap upload; scripts/clean-renderer-sourcemaps.mjs
 // removes them before packaging.
 const rendererSourceMapsEnabled = readEnvBoolean(
   'CANOPY_RENDERER_SOURCEMAPS',
   false,
 );
+
+const mainBytecodeChunkId = rendererSourceMapsEnabled ? randomUUID() : '';
+const mainFallbackChunkId = rendererSourceMapsEnabled ? randomUUID() : '';
+function mainSourcemapIdentityPlugin(): Plugin {
+  return {
+    name: 'canopy:main-sourcemap-identity',
+    writeBundle(options): void {
+      if (!rendererSourceMapsEnabled) return;
+      const mapPath = resolve(options.dir ?? 'out/main', 'index.js.map');
+      const map: unknown = JSON.parse(readFileSync(mapPath, 'utf8'));
+      if (
+        typeof map !== 'object' ||
+        map === null ||
+        Array.isArray(map) ||
+        !('version' in map) ||
+        map.version !== 3 ||
+        !('mappings' in map) ||
+        typeof map.mappings !== 'string'
+      ) {
+        throw new Error('Invalid main source map emitted by the build');
+      }
+      writeFileSync(
+        mapPath,
+        JSON.stringify({
+          ...map,
+          chunk_id: mainFallbackChunkId,
+          x_canopy_bytecode_chunk_id: mainBytecodeChunkId,
+        }),
+      );
+    },
+  };
+}
 
 interface BytecodeFallbackEntry {
   entryFile: string;
@@ -646,6 +679,11 @@ const ledgerStorageWorkerEntry = resolve(
 const w5CommitLogWorkerEntry = resolve(
   repoRoot,
   'apps/core-daemon/src/w5-commit-log-worker.ts',
+);
+
+const chatLearningWorkerEntry = resolve(
+  repoRoot,
+  'apps/desktop-app/src/main/memory/local/transcript-learning-worker.ts',
 );
 
 const localMemoryParseWorkerEntry = resolve(
@@ -819,6 +857,10 @@ function utilityWorkerPlugin(define: Record<string, string>): Plugin {
           {
             entry: w5CommitLogWorkerEntry,
             outfile: 'w5-commit-log-worker.js',
+          },
+          {
+            entry: chatLearningWorkerEntry,
+            outfile: 'local-memory-chat-learning-worker.js',
           },
           {
             entry: localMemoryParseWorkerEntry,
@@ -1032,6 +1074,7 @@ export default defineConfig(({ mode }) => {
         ...mainPreloadPlugins,
         workspaceBundleGuardPlugin(),
         ...e2eBuildInputGuardPlugins('main'),
+        mainSourcemapIdentityPlugin(),
         bytecodeJsFallbackPlugin([
           {
             entryFile: 'index.js',
@@ -1058,6 +1101,8 @@ export default defineConfig(({ mode }) => {
       define: {
         ...commonDefines,
         ...googleOAuthMainDefines,
+        __CANOPY_MAIN_BYTECODE_CHUNK_ID__: JSON.stringify(mainBytecodeChunkId),
+        __CANOPY_MAIN_FALLBACK_CHUNK_ID__: JSON.stringify(mainFallbackChunkId),
         __CANOPY_WINDOWS_PROCESS_SOURCE_PATH__: JSON.stringify(
           resolve(repoRoot, '.cache/bin/win32-x64/canopy-process-identity.exe'),
         ),
@@ -1074,7 +1119,9 @@ export default defineConfig(({ mode }) => {
           removeBundleJS: false,
         },
         minify: true,
-        sourcemap: performanceSourceMapsEnabled,
+        sourcemap: rendererSourceMapsEnabled
+          ? 'hidden'
+          : performanceSourceMapsEnabled,
         ...outDirFor('main'),
         rollupOptions: {
           input: resolve(repoRoot, 'apps/desktop-app/src/main/index.ts'),

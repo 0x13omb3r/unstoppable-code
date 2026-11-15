@@ -7,12 +7,10 @@ import {
   settingsPaymentHandoffRequestSchema,
   settingsSubscriptionScopeSchema,
   type SettingsPaymentHandoffAvailability,
-  type SettingsPaymentHandoffRequest,
   type SettingsPaymentHandoffResult,
 } from '@canopy/protocol/settings';
 import { registerIpcHandler } from './register';
 import type { AccountOrganizationSettingsService } from '../services/account-organization-settings';
-import { isHostedSettingsEnabled } from '../services/hosted-settings-feature-flag';
 
 const getService = async (): Promise<AccountOrganizationSettingsService> =>
   (
@@ -47,13 +45,6 @@ const paymentHandoffRequestSchema = settingsPaymentHandoffRequestSchema.extend({
   accountId: accountIdSchema,
 });
 
-function isModelUnlockTopUp(request: SettingsPaymentHandoffRequest): boolean {
-  return (
-    request.intent.kind === 'top-up' &&
-    request.intent.reason === 'unlock_models'
-  );
-}
-
 const availabilityRequestSchema = z.strictObject({
   accountId: accountIdSchema,
 });
@@ -63,21 +54,10 @@ const INVALID_REQUEST: AccountOrganizationSettingsResponse = {
   error: { code: 'failed', message: 'Invalid settings request' },
 };
 
-const HOSTED_SETTINGS_UNAVAILABLE: AccountOrganizationSettingsResponse = {
-  ok: false,
-  error: {
-    code: 'failed',
-    message: 'Account and organization settings are unavailable',
-  },
-};
-
 /**
  * Hosted account and organization settings over the main bridge session.
  * Compatibility IPC for a main-owned hosted session: no `core.*` or
  * `worker.*` operation exists for these calls.
- *
- * Every call except unsubscribe is refused while the
- * `canopy-desktop-hosted-settings` rollout flag is off.
  *
  * Returns a teardown that closes every window subscription and removes the
  * bridge lifecycle hooks.
@@ -91,7 +71,6 @@ export function registerAccountOrganizationSettingsHandlers(): () => void {
     ): Promise<AccountOrganizationSettingsResponse> => {
       const request = operationRequestSchema.safeParse(value);
       if (!request.success) return INVALID_REQUEST;
-      if (!isHostedSettingsEnabled()) return HOSTED_SETTINGS_UNAVAILABLE;
       return (await getService()).read(request.data);
     },
   );
@@ -103,7 +82,6 @@ export function registerAccountOrganizationSettingsHandlers(): () => void {
     ): Promise<AccountOrganizationSettingsResponse> => {
       const request = operationRequestSchema.safeParse(value);
       if (!request.success) return INVALID_REQUEST;
-      if (!isHostedSettingsEnabled()) return HOSTED_SETTINGS_UNAVAILABLE;
       return (await getService()).write(request.data);
     },
   );
@@ -115,7 +93,6 @@ export function registerAccountOrganizationSettingsHandlers(): () => void {
     ): Promise<AccountOrganizationSettingsResponse> => {
       const request = subscribeRequestSchema.safeParse(value);
       if (!request.success) return INVALID_REQUEST;
-      if (!isHostedSettingsEnabled()) return HOSTED_SETTINGS_UNAVAILABLE;
       return (await getService()).subscribe(event.sender, request.data);
     },
   );
@@ -135,11 +112,6 @@ export function registerAccountOrganizationSettingsHandlers(): () => void {
     async (_event, value: unknown): Promise<SettingsPaymentHandoffResult> => {
       const request = paymentHandoffRequestSchema.safeParse(value);
       if (!request.success) return { ok: false, reason: 'failed' };
-      // CAN-4693: unlocking advanced models is not a Settings surface, so it
-      // keeps only the portal gate the service applies. Other payment
-      // hand-offs still require hosted settings.
-      if (!isModelUnlockTopUp(request.data) && !isHostedSettingsEnabled())
-        return { ok: false, reason: 'failed' };
       return (await getService()).paymentHandoff(request.data);
     },
   );
@@ -150,8 +122,7 @@ export function registerAccountOrganizationSettingsHandlers(): () => void {
       value: unknown,
     ): Promise<SettingsPaymentHandoffAvailability> => {
       const request = availabilityRequestSchema.safeParse(value);
-      if (!request.success || !isHostedSettingsEnabled())
-        return { available: false };
+      if (!request.success) return { available: false };
       return (await getService()).paymentHandoffAvailability(
         request.data.accountId,
       );

@@ -1751,6 +1751,7 @@ export function registerWorkspaceHandlers(
           'multi_repo_workspace_delete',
           {
             supersedeInterruptedDeletion: request.supersedeInterruptedDeletion,
+            discardPendingRecovery: request.discardPendingRecovery,
           },
         ),
       );

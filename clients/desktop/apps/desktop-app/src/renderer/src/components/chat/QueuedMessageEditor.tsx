@@ -2,14 +2,19 @@ import {
   AgentSentTitle,
   useAgentSentReceivingContext,
 } from '@canopy/ui-shared';
-import { useCallback, useState, type JSX } from 'react';
+import { useCallback, useRef, useState, type JSX } from 'react';
 import type {
   AttachmentMeta,
   ChatAttachmentPromptContext,
   FileReference,
 } from '@canopy/desktop-shared/types';
 import { isChatAttachmentPromptKind } from '@canopy/desktop-shared/types';
-import type { QueuedChatMessage } from '@/stores/chatStore';
+import {
+  useChatStore as useLiveChatStore,
+  type QueuedChatMessage,
+} from '@/stores/chatStore';
+import { findQueuedEditScope } from '@/stores/chat/slices/queue';
+import { useChatSurfaceStore } from '@/stores/chat/surface-store';
 import { getFilenameFromPath } from '@/lib/file-type';
 import { ChatInput, type ChatInputEditingState } from './ChatInput';
 import type { ActiveComposerView } from './types';
@@ -62,6 +67,13 @@ export function QueuedMessageEditor({
   autoFocus,
 }: QueuedMessageEditorProps): JSX.Element {
   const receivingContext = useAgentSentReceivingContext();
+  const useChatStore = useChatSurfaceStore(useLiveChatStore);
+  // The chat this edit opened in, so text the editor closes on without Save
+  // or Cancel is kept there if the message has left its queue (CAN-6799).
+  const [openedIn] = useState(() =>
+    findQueuedEditScope(useChatStore.getState(), message),
+  );
+  const closedByUser = useRef(false);
   const agentSent = message.agentSent ?? message.dispatchOptions?.agentSent;
   const [attachments, setAttachments] = useState<AttachmentMeta[]>(() =>
     attachmentPathsToMeta(
@@ -103,6 +115,7 @@ export function QueuedMessageEditor({
       inputMode: 'typed' | 'voice',
       scheduledSendDraft: { runAt: string } | undefined,
     ): void => {
+      closedByUser.current = true;
       onSave(
         index,
         text,
@@ -117,6 +130,19 @@ export function QueuedMessageEditor({
     [index, onSave, message],
   );
 
+  const handleCancel = useCallback((): void => {
+    closedByUser.current = true;
+    onCancel();
+  }, [onCancel]);
+
+  const handleUnmount = useCallback(
+    (text: string): void => {
+      if (closedByUser.current || openedIn === undefined) return;
+      useChatStore.getState().keepQueuedEditIfRowLeft(openedIn, message, text);
+    },
+    [message, openedIn, useChatStore],
+  );
+
   const editingState: ChatInputEditingState = {
     autoFocus,
     initialText: message.text,
@@ -124,8 +150,9 @@ export function QueuedMessageEditor({
     attachments,
     onAddAttachments: handleAddAttachments,
     onRemoveAttachment: handleRemoveAttachment,
-    onCancel,
+    onCancel: handleCancel,
     onSave: handleSave,
+    onUnmount: handleUnmount,
     scheduledSendDraft: message.scheduledSendDraft,
     scheduleEnabled,
   };

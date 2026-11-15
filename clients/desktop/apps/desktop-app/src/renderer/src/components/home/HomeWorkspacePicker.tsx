@@ -117,6 +117,9 @@ export function HomeWorkspacePicker({
     <div data-testid="home-workspace-picker">
       <WorkspaceDropdown
         workspaces={sortedWorkspaces}
+        // The context's cloud cowork projects, after the local ones as the
+        // sidebar lists them; picking one starts a cloud chat (CAN-6757).
+        cloudWorkspaces={scope.cloudProjects}
         unlistedWorkspaceIds={unlistedWorkspaceIds}
         // The draft still points at the default cowork project — it is an
         // ordinary project with a fixed id, and nothing internal changes. The

@@ -159,8 +159,6 @@ export const ArchivedChatsControl = memo(function ArchivedChatsControl({
     (s) => s.markAllArchivedChatsRead,
   );
   const selectedWorktree = useChatStore((s) => s.selectedWorktree);
-  // Labs: draw the hover card on the shared menu surface.
-
   // Archive surfacing: hover popover + full modal, plus per-chat in-flight
   // tracking so the row actions can show spinners and disable while the async
   // restore/summarize calls run.
@@ -472,7 +470,6 @@ export const ArchivedChatsControl = memo(function ArchivedChatsControl({
           summarizingIds={summarizingIds}
           restoringIds={restoringIds}
           align={popoverAlign}
-          look="card"
         />
       )}
       {archiveMenu && (
@@ -501,6 +498,7 @@ export const ArchivedChatsControl = memo(function ArchivedChatsControl({
             onRestore={handleRestoreArchived}
             onSummarize={handleSummarizeArchived}
             onClose={() => setArchiveModalOpen(false)}
+            onMarkAllRead={handleMarkAllArchivedRead}
             summarizingIds={summarizingIds}
             restoringIds={restoringIds}
           />

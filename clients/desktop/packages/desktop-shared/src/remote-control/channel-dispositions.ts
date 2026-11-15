@@ -84,6 +84,7 @@ export const IPC_REMOTE_DISPOSITIONS: RemoteDispositions<typeof IPC_CHANNELS> =
     managedDelegationTree: 'tunnel',
     managedDelegationTranscriptPage: 'tunnel',
     managedDelegationRoots: 'tunnel',
+    managedDelegationModelPolicyCatalog: 'tunnel',
     managedDelegationWorktreeSummary: 'tunnel',
     managedDelegationExtendLifetimeLimit: 'tunnel',
     managedDelegationLifetimeStatus: 'tunnel',
@@ -162,6 +163,9 @@ export const IPC_REMOTE_DISPOSITIONS: RemoteDispositions<typeof IPC_CHANNELS> =
     // The controlled computer's Mod admission preferences.
     claudeModsGet: 'tunnel',
     claudeModsUpdate: 'tunnel',
+    // A local chat's Mod pushes; the web reaches them through the Portal (phase 07).
+    claudeModSurfacePush: 'local',
+    claudeModSurfaceCommand: 'local',
     preferencesSetApprovalDefault: 'tunnel',
     // creates B install data dir and adoption marker; install-level
     preferencesCreatePrimaryDataDir: 'blocked',
@@ -319,7 +323,7 @@ export const IPC_REMOTE_DISPOSITIONS: RemoteDispositions<typeof IPC_CHANNELS> =
     // entities Portal's worktree snapshot carries (CAN-5985).
     worktreeActivityEntities: 'tunnel',
     worktreeCheckRemovalAdmission: 'tunnel',
-    // CAN-6476: local diagnosis contract; paired UI wiring follows in CAN-6479.
+    // CAN-6479: local IPC only; paired Portal uses sanitized user-only commands.
     worktreeRecoveryList: 'blocked',
     worktreeRecoveryResolve: 'blocked',
     worktreeRecoveryFinish: 'blocked',
@@ -1176,6 +1180,8 @@ export const IPC_REMOTE_DISPOSITIONS: RemoteDispositions<typeof IPC_CHANNELS> =
     cloudChatsUploadAttachment: 'blocked',
     // A save dialog and a write on the local person's computer (CAN-6587).
     cloudChatsDownloadFile: 'blocked',
+    // Wakes, and bills, a cloud chat this window has open (CAN-6724).
+    cloudChatsWakeFiles: 'blocked',
     cloudCopyAnalyze: 'blocked',
     orgProjectsMoveBackToPersonal: 'tunnel',
     orgProjectsOwnershipChanged: 'tunnel',

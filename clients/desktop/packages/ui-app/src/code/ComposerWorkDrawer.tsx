@@ -63,6 +63,19 @@ export interface ComposerWorkDrawerProps {
   readonly queuedPanelRef?: Ref<HTMLDivElement>;
   readonly queuedPanel?: ReactNode;
   readonly background?: ComposerWorkDrawerBackground;
+  /**
+   * Pills after the built-in kinds that are not a count of work, such as
+   * a Claude Mod's band: shown while given, labeled without a number.
+   */
+  readonly extraKinds?: readonly ComposerWorkExtraKind[];
+}
+
+/** A pill and its card beside the built-in kinds of work. */
+export interface ComposerWorkExtraKind {
+  /** Unique among the pills; prefixed by its owner (`mod:<plugin>`). */
+  readonly key: string;
+  readonly label: string;
+  readonly content: ReactNode;
 }
 export function drawerReducedMotion(): boolean {
   return (
@@ -183,10 +196,13 @@ function useEscapeToClose(
   }, [open, sectionRef]);
 }
 
+const NO_EXTRA_KINDS: readonly ComposerWorkExtraKind[] = [];
+
 interface WorkKind {
   readonly key: string;
   readonly label: string;
-  readonly count: number;
+  /** Absent for an extra kind, which shows while given and has no number. */
+  readonly count?: number;
   readonly content: ReactNode;
   readonly controls?: ReactNode;
   readonly glyph?: 'running';
@@ -209,6 +225,7 @@ export function ComposerWorkDrawer({
   queuedPanelRef,
   queuedPanel,
   background,
+  extraKinds = NO_EXTRA_KINDS,
 }: ComposerWorkDrawerProps): JSX.Element | null {
   const sections = background?.sections;
   const needsYou = background?.needsYou ?? 0;
@@ -261,8 +278,9 @@ export function ComposerWorkDrawer({
       count: watching,
       content: sections?.watching,
     },
+    ...extraKinds,
   ];
-  const shown = kinds.filter(({ count }) => count > 0);
+  const shown = kinds.filter(({ count }) => count === undefined || count > 0);
   // Previews keep their own card; every composer shares one open card, so
   // the drawer stays as the user left it across sends, chats, tabs and
   // worktrees (composer-work-drawer-open.ts).
@@ -423,7 +441,10 @@ export function ComposerWorkDrawer({
                       ref={labelRef}
                       className="inline-flex items-center gap-1.5"
                     >
-                      {shownKind?.label} <Count value={shownKind?.count ?? 0} />
+                      {shownKind?.label}{' '}
+                      {shownKind?.count === undefined ? null : (
+                        <Count value={shownKind.count} />
+                      )}
                     </span>
                     <div className="ml-auto flex items-center gap-0">
                       {/* The card's own actions show on hover, focus or
@@ -546,7 +567,9 @@ export function ComposerWorkDrawer({
                   <span className={attention ? 'fg-warning-strong' : undefined}>
                     {label}
                   </span>
-                  <span className="fg-quaternary">{count}</span>
+                  {count === undefined ? null : (
+                    <span className="fg-quaternary">{count}</span>
+                  )}
                 </Button>
               );
             })}

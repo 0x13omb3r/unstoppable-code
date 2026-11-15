@@ -1,3 +1,5 @@
+import { describePendingArchiveRecoveries } from './archive-recovery-project-deletion';
+import { archiveRecoveryStore } from './archive-recovery-refs';
 import type {
   ProjectDeletionDiscardDescription,
   ProjectDeletionDiscardItem,
@@ -218,6 +220,7 @@ export async function describeProjectDeletionDiscard(
   const retainedArchives = options.retainedArchives === true;
   const blockedArchives = new Set<string>();
   try {
+    const pendingRecovery = await describePendingArchiveRecoveries(workspaceId);
     if (
       !(await isDeletableBesideItsWorktrees(
         workspaceId,
@@ -241,18 +244,35 @@ export async function describeProjectDeletionDiscard(
         interruptedDeletion !== undefined,
         retainedArchives,
       ));
-    if (!items || (items.length === 0 && !interruptedDeletion)) return refused;
+    if (
+      !items ||
+      (items.length === 0 && !interruptedDeletion && !pendingRecovery.length)
+    )
+      return refused;
+    const discardedArchives = archiveDirectoriesDiscarded(workspaceId, items);
+    const store = archiveRecoveryStore();
+    for (const pending of pendingRecovery) {
+      const receipt = await store.read(workspaceId, pending.operationId);
+      if (!receipt) return refused;
+      // Row discards are separate requests: they cannot borrow this deletion's
+      // confirmed-resolution admission to bypass the same-slot removal fence.
+      if (
+        items.some((item) => item.description.worktreeId === receipt.worktreeId)
+      )
+        return refused;
+      // Ordinary child archive retry consumes this exact, untouched staging.
+      if ((await store.inspect(receipt)).effectFree)
+        discardedArchives.add(receipt.worktreeId);
+    }
     // The deletion would fail on another archive after these discards.
-    await assertRetainedArchivesReadable(
-      workspaceId,
-      archiveDirectoriesDiscarded(workspaceId, items),
-    );
+    await assertRetainedArchivesReadable(workspaceId, discardedArchives);
     return {
       version: 1,
       workspaceId,
       status: 'discardable',
       items,
       ...(interruptedDeletion ? { interruptedDeletion } : {}),
+      ...(pendingRecovery.length ? { pendingRecovery } : {}),
     };
   } catch {
     return refused;

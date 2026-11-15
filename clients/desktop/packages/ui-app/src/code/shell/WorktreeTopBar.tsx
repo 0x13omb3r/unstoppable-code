@@ -46,6 +46,7 @@
  *   when their feature surface is available AND the matching handler exists;
  *   capability `true` without a handler still hides the control (no dead UI).
  */
+import { WorktreeTopBarSurface } from '@canopy/ui-shared/components';
 import type { JSX, ReactNode } from 'react';
 import type {
   PortalScriptDescriptor,
@@ -237,7 +238,7 @@ export function WorktreeTopBar({
     // Keying them off the flexible status region instead would oscillate:
     // collapsing Launch widens that region, which would re-expand the label,
     // which re-narrows the region.
-    <div
+    <WorktreeTopBarSurface
       data-testid="worktree-top-bar"
       // `cursor-default` for the whole bar: it is app chrome, not a
       // document. Wrappers and label spans default to `cursor: auto`, which
@@ -250,7 +251,6 @@ export function WorktreeTopBar({
       // pixel to the bar's 46px outer-frame contract. With the surface on the
       // status content alone, that spacer region showed the bare window
       // material as a grey notch and the separator started late.
-      className="@container/topbar relative flex shrink-0 cursor-default items-stretch bg-secondary after:pointer-events-none after:absolute after:inset-x-0 after:bottom-0 after:h-[var(--default-border-width)] after:bg-line-base after:content-['']"
     >
       {leadingAccessory}
       <div className="min-w-0 flex-1">
@@ -304,7 +304,7 @@ export function WorktreeTopBar({
                           before it. */}
                       <span
                         data-testid="worktree-top-base-branch"
-                        className="inline-flex min-w-0 items-center rounded px-0.5"
+                        className="inline-flex min-w-0 items-center px-0.5"
                         title={baseBranchLabel}
                       >
                         <span
@@ -423,6 +423,6 @@ export function WorktreeTopBar({
         )}
         {trailingAccessory}
       </div>
-    </div>
+    </WorktreeTopBarSurface>
   );
 }

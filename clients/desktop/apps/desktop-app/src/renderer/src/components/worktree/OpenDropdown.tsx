@@ -1,3 +1,4 @@
+import { OpenAppSplitSurface } from '@canopy/ui-shared/components';
 import {
   type JSX,
   useCallback,
@@ -15,7 +16,6 @@ import {
   FloatingMenu,
   PickerMenuOptionCheck,
   SECONDARY_SURFACE_HOVER_CLASS,
-  SECONDARY_SURFACE_SHELL_CLASS,
   Tooltip,
 } from '@canopy/ui-shared';
 import {
@@ -113,9 +113,7 @@ export function OpenDropdown({
           SECONDARY_SURFACE_CLASS: [app icon] | divider | [chevron menu]. The
           shell sits on the wrapper and the hover overlay on each segment so
           only the hovered half lights up. */}
-      <div
-        className={`electron-no-drag inline-flex h-7 shrink-0 items-stretch overflow-hidden rounded-full ${SECONDARY_SURFACE_SHELL_CLASS}`}
-      >
+      <OpenAppSplitSurface>
         {splitApp && splitApp.icon && (
           <>
             {/* Icon-only below 560px, so the app name has to live in a
@@ -171,7 +169,7 @@ export function OpenDropdown({
             <ChevronDownMediumIcon size={16} className="shrink-0 fg-primary" />
           </button>
         </Tooltip>
-      </div>
+      </OpenAppSplitSurface>
 
       <FloatingMenu
         id={menuId}

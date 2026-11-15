@@ -1,3 +1,5 @@
+import { SidebarDragPreview } from '@canopy/ui-shared/components';
+import { WorkspaceIconSlot } from '@canopy/ui-shared/components';
 import { Dot } from '@canopy/ui-shared/components/Badge';
 import {
   OrgProjectPlaceholderRow,
@@ -64,7 +66,6 @@ import {
   type WorktreeDiffStatsStyle,
 } from '@canopy/desktop-shared/types';
 import { getWorkspaceDisplayName } from '@/lib/workspaceDisplayName';
-import { useWorkspaceContextStore } from '@/stores/workspaceContextStore';
 import { SidebarContextEmptyState } from './SidebarContextEmptyState';
 import { useSidebarStore } from '@/stores/sidebarStore';
 import { useNavigationStore } from '@/stores/navigationStore';
@@ -157,9 +158,10 @@ function WorkspaceDragOverlay({
   const hideCount = useLabsExperimentEnabled('sidebar');
 
   return (
-    <div
+    <SidebarDragPreview
+      variant="workspace"
       aria-hidden="true"
-      className="pointer-events-none flex h-8 w-full translate-x-1 cursor-default touch-none select-none rounded-row bg-popover shadow-lg"
+      className="translate-x-1"
       data-sidebar-workspace-drag-overlay-id={project.id}
       data-testid="workspace-drag-overlay"
     >
@@ -178,7 +180,7 @@ function WorkspaceDragOverlay({
         showCollapseChevron={false}
         onToggleCollapse={() => undefined}
         dragHandleSlot={
-          <span className="relative inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full">
+          <WorkspaceIconSlot>
             <ProjectIcon
               kind={
                 project.type === 'cowork'
@@ -193,10 +195,10 @@ function WorkspaceDragOverlay({
                 project.type === 'single-repo' ? project.repoPath : undefined
               }
             />
-          </span>
+          </WorkspaceIconSlot>
         }
       />
-    </div>
+    </SidebarDragPreview>
   );
 }
 
@@ -320,13 +322,6 @@ export function SidebarWorkspacesSection({
     (state) => state.viewer?.workspaceId ?? state.overview?.workspaceId,
   );
   const scopingContext = model.scopingContext;
-  const organizationName = useWorkspaceContextStore((store) =>
-    scopingContext?.kind === 'organization'
-      ? store.state.organizations.find(
-          (organization) => organization.id === scopingContext.organizationId,
-        )?.name
-      : undefined,
-  );
   // The auto-created default Cowork workspace is the catch-all for
   // project-less chats. It never renders as a workspace row: its Work Entries
   // list flat under a dedicated top-level "Chats" section pinned below every
@@ -821,14 +816,7 @@ export function SidebarWorkspacesSection({
               strategy={staticListSortingStrategy}
             >
               {showsContextEmptyState ? (
-                <SidebarContextEmptyState
-                  organizationName={organizationName ?? 'this organization'}
-                  organizationId={
-                    scopingContext?.kind === 'organization'
-                      ? scopingContext.organizationId
-                      : undefined
-                  }
-                />
+                <SidebarContextEmptyState />
               ) : (
                 <SidebarList>
                   {projectPage.projects.map((project, index) =>
@@ -949,7 +937,7 @@ export function SidebarWorkspacesSection({
               setHiddenExpanded(!nextCollapsed)
             }
             headerButtonProps={{ 'data-testid': 'hidden-workspaces-toggle' }}
-            headerClassName="group group/hidden-workspaces"
+            headerVariant="hidden-workspaces"
             spacing="inset"
             header={
               <div className="flex h-8 min-w-0 items-center gap-1 px-1 text-s font-normal">

@@ -176,6 +176,15 @@ import {
   buildClaudeModsSkippedEvent,
   replaceClaudeModAdmissionSessionRecords,
 } from './claude-mod-admission-session';
+import {
+  CLAUDE_MOD_HOT_RELOAD_ACCEPT,
+  claudeModHotReloadQuestions,
+  currentClaudeModConsentEpoch,
+  isClaudeModHotReloadQuestion,
+  withClaudeModHotReloadAnswers,
+} from './claude-mod-hot-reload-question';
+import { ClaudeModSurfaceBridge } from './claude-mod-surface-bridge';
+import { isClaudeModSurfaceMessage } from '@canopy/protocol/extension-ui';
 import { loadCachedInventory } from '../plugins/invocable-inventory-service';
 import { normalizeInvocationToken } from '../plugins/invocation-prefix-normalizer';
 import { getMcpHttpProxyService } from '../mcp/http-proxy-service';
@@ -255,6 +264,7 @@ import {
 } from '../observability/capture-fields';
 
 import { logMainProcessWarn } from '../lib/main-process-logging';
+import { addSessionSlashCommands } from '../ipc/worktree-discovery';
 import { buildRtkClaudeHooks } from '@canopy/execution-engine/node/rtk/claude-hooks';
 import { resolveAnthropicMockEnvOverride } from '@canopy/execution-engine/node/e2e-mock-env';
 import {
@@ -1015,6 +1025,26 @@ export async function getContextUsageForClaudeSession(
     maxTokens: usage.rawMaxTokens,
     percentage: usage.percentage,
   };
+}
+
+/** An assistant message holding only tool uses Canopy already sent early. */
+function isEarlyClaudeToolUseCopy(
+  data: Record<string, unknown>,
+  earlyToolUseIds: ReadonlySet<string>,
+): boolean {
+  if (earlyToolUseIds.size === 0 || data.type !== 'assistant') return false;
+  const content = isRecord(data.message) ? data.message.content : undefined;
+  return (
+    Array.isArray(content) &&
+    content.length > 0 &&
+    content.every(
+      (part) =>
+        isRecord(part) &&
+        part.type === 'tool_use' &&
+        typeof part.id === 'string' &&
+        earlyToolUseIds.has(part.id),
+    )
+  );
 }
 
 export class ClaudeCodeProvider implements AgentProvider {
@@ -3139,6 +3169,7 @@ export class ClaudeCodeProvider implements AgentProvider {
     let approvalSession: ApprovalSessionHandle | undefined;
     let orgGatewayOrganizationId: string | undefined;
     let orgGatewayCredentialVersion: string | undefined;
+    let closeClaudeModSurface: (() => void) | undefined;
     try {
       ownedKey.recordSessionEvent({
         type: 'phase',
@@ -3172,6 +3203,8 @@ export class ClaudeCodeProvider implements AgentProvider {
       // Inspect the config dir the child gets: its agent env plus overrides.
       const claudeModAdmissionEnvironment = {
         environment: { runtime: 'agent' as const, workspaceId: opts.projectId },
+        // A resume or fork reloads the Mods Claude wrote in that session.
+        ...(opts.sdkSessionId ? { sessionId: opts.sdkSessionId } : {}),
         ...(invocation.envOverride?.CLAUDE_CONFIG_DIR !== undefined
           ? { claudeConfigDir: invocation.envOverride.CLAUDE_CONFIG_DIR }
           : {}),
@@ -3181,6 +3214,61 @@ export class ClaudeCodeProvider implements AgentProvider {
         settingSources,
         ...claudeModAdmissionEnvironment,
       });
+      // The CLI's session, whose dev-mods folder holds the Mods Claude writes.
+      let claudeProviderSessionId = opts.sdkSessionId;
+      const claudeModSurface = new ClaudeModSurfaceBridge(
+        {
+          projectId: opts.projectId,
+          worktreeId: opts.worktreeId,
+          chatId: opts.chatId,
+        },
+        claudeModAdmissionContext !== undefined,
+        // Init arrives on the live attempt, so the query exists by then.
+        (request) => queryResult.request(request),
+        (host) => queryResult.setUiHost(host),
+      );
+      closeClaudeModSurface = (): void => claudeModSurface.close();
+      // The consent epoch when the person picked "Turn them on".
+      let claudeModHotReloadAcceptedEpoch: number | undefined;
+      // The CLI sends the question's block only once it is answered, but the
+      // Portal attaches its card to that block: send it first, drop the copy.
+      const earlyClaudeToolUseIds = new Set<string>();
+      let emitEarlyClaudeEvent:
+        | ((data: Record<string, unknown>) => void)
+        | undefined;
+      // Claude reloads those Mods as they change, so consent follows them to
+      // each turn's end; admission off (no context) records nothing.
+      const recordClaudeSessionModConsent = (): void => {
+        const claudeConfigDir = claudeModAdmissionContext?.claudeConfigDir;
+        const sessionId = claudeProviderSessionId;
+        const acceptedEpoch = claudeModHotReloadAcceptedEpoch;
+        if (acceptedEpoch === undefined || !claudeConfigDir || !sessionId) {
+          return;
+        }
+        // A Disallow or the kill switch since the answer ends the consent
+        // instead of being undone by it.
+        if (currentClaudeModConsentEpoch() !== acceptedEpoch) {
+          claudeModHotReloadAcceptedEpoch = undefined;
+          return;
+        }
+        void Promise.all([
+          import('../lib/claude-mod-admission-service'),
+          import('../ipc/preferences'),
+        ])
+          .then(([service, preferences]) =>
+            service.admitClaudeSessionMods(
+              claudeConfigDir,
+              sessionId,
+              acceptedEpoch,
+              preferences.broadcastCommittedPreferences,
+            ),
+          )
+          .catch((error: unknown) => {
+            logMainProcessWarn(
+              `Could not record consent for the Mods Claude wrote: ${String(error)}`,
+            );
+          });
+      };
       let claudeModAdmission: Awaited<
         ReturnType<typeof resolvePlugins>
       >['claudeModAdmission'];
@@ -4121,11 +4209,87 @@ export class ClaudeCodeProvider implements AgentProvider {
         return result;
       };
 
+      // Claude's question about the Mods it writes in this session goes to the
+      // person as a chat question (decision 65); "Turn them on" is consent.
+      const answerClaudeModHotReloadQuestion = async (
+        input: Record<string, unknown>,
+        questionOptions: { toolUseID?: string; signal?: AbortSignal },
+      ): Promise<PermissionResult> => {
+        const toolUseId = questionOptions.toolUseID;
+        if (toolUseId && emitEarlyClaudeEvent) {
+          earlyClaudeToolUseIds.add(toolUseId);
+          emitEarlyClaudeEvent({
+            type: 'assistant',
+            parent_tool_use_id: null,
+            session_id: claudeProviderSessionId ?? key,
+            message: {
+              id: `canopy-${toolUseId}`,
+              type: 'message',
+              role: 'assistant',
+              model: '<synthetic>',
+              content: [
+                {
+                  type: 'tool_use',
+                  id: toolUseId,
+                  name: 'AskUserQuestion',
+                  input,
+                },
+              ],
+            },
+          });
+        }
+        try {
+          const answers = await requestAnswersFromRenderer({
+            sessionKey: key,
+            projectId: opts.projectId,
+            worktreeId: opts.worktreeId,
+            chatId: opts.chatId,
+            questions: claudeModHotReloadQuestions(input),
+            personOnly: true,
+            getWindow,
+            providerType: 'claude',
+            model: opts.model,
+            onAwaitingUser: (): void => ownedKey.markTurnAwaitingUser(),
+            ...(questionOptions.toolUseID
+              ? { toolUseId: questionOptions.toolUseID }
+              : {}),
+            ...(questionOptions.signal
+              ? { signal: questionOptions.signal }
+              : {}),
+          });
+          if (
+            answers.some((answer) =>
+              answer.selectedOptions.includes(CLAUDE_MOD_HOT_RELOAD_ACCEPT),
+            )
+          ) {
+            claudeModHotReloadAcceptedEpoch = currentClaudeModConsentEpoch();
+          }
+          return {
+            behavior: 'allow',
+            updatedInput: withClaudeModHotReloadAnswers(input, answers),
+          };
+        } catch {
+          return {
+            behavior: 'deny',
+            message: 'The Mods Claude writes in this session stay off.',
+          };
+        }
+      };
+
       const canUseTool: CanUseTool = async (
         toolName,
         input,
         canUseToolOptions,
       ): Promise<PermissionResult> => {
+        if (
+          isClaudeModHotReloadQuestion(
+            toolName,
+            input,
+            canUseToolOptions.toolUseID,
+          )
+        ) {
+          return answerClaudeModHotReloadQuestion(input, canUseToolOptions);
+        }
         if (toolName !== 'ExitPlanMode') {
           return authorizeClaudeToolOnce(toolName, input, {
             title: canUseToolOptions.title,
@@ -4790,6 +4954,8 @@ export class ClaudeCodeProvider implements AgentProvider {
             })
           : createSdkQuery(prompt);
         setQueryRef(attempt);
+        // A new process attaches its Mod surface again at its first init.
+        claudeModSurface.restart();
         // Every attempt starts a fresh CLI process, which owns no background
         // tasks yet. The SDK emits no `background_tasks_changed` at startup,
         // and `system`/`init` arrives every turn, so this process boundary is
@@ -4823,6 +4989,14 @@ export class ClaudeCodeProvider implements AgentProvider {
             new Promise((resolve) => {
               waiters.add(resolve);
             });
+          emitEarlyClaudeEvent = (data): void => {
+            queue.push({
+              data,
+              receipt: receiveEvent(data),
+              receivedAt: Date.now(),
+            });
+            wake();
+          };
           let readerStopped = false;
           let readerFinished = false;
           let iteratorCompleted = false;
@@ -4878,6 +5052,15 @@ export class ClaudeCodeProvider implements AgentProvider {
                 if (readerStopped) break;
                 const data: unknown = structuredClone(next.value);
                 if (!isRecord(data)) continue;
+                if (isEarlyClaudeToolUseCopy(data, earlyClaudeToolUseIds)) {
+                  continue;
+                }
+                // A Mod's surface messages never reach the transcript,
+                // whatever the flags; the bridge draws the ones it may.
+                if (isClaudeModSurfaceMessage(data)) {
+                  claudeModSurface.receive(data);
+                  continue;
+                }
                 if (
                   (opts.claudeForkStartsFresh || forkResumePointRejected) &&
                   data.type === 'system' &&
@@ -4894,6 +5077,39 @@ export class ClaudeCodeProvider implements AgentProvider {
                 if (forkResumePointRequested && !forkResumePointRejected) {
                   forkResumePointAccepted = true;
                   bufferedPrompts.length = 0;
+                }
+                if (
+                  data.type === 'system' &&
+                  data.subtype === 'init' &&
+                  typeof data.session_id === 'string' &&
+                  data.parent_tool_use_id == null
+                ) {
+                  claudeProviderSessionId = data.session_id;
+                  claudeModSurface.init(data);
+                  // The commands Mods register as the session starts reach
+                  // the chat's menu only from here.
+                  const { slash_commands: names } = data;
+                  if (Array.isArray(names)) {
+                    void addSessionSlashCommands(
+                      {
+                        projectId: opts.projectId,
+                        worktreeId: opts.worktreeId,
+                        chatId: opts.chatId,
+                      },
+                      names.filter(
+                        (name): name is string => typeof name === 'string',
+                      ),
+                      () => queryResult.supportedCommands(),
+                    ).catch((error: unknown): void => {
+                      logMainProcessWarn(
+                        '[claude-session] Could not add session slash commands:',
+                        error,
+                      );
+                    });
+                  }
+                }
+                if (isClaudeRootTerminalEvent(data)) {
+                  recordClaudeSessionModConsent();
                 }
                 if (
                   isClaudeRootTerminalEvent(data) ||
@@ -5207,6 +5423,7 @@ export class ClaudeCodeProvider implements AgentProvider {
       clearActiveTurn();
     } finally {
       stopAccountProxySwitches?.();
+      closeClaudeModSurface?.();
       try {
         // The query loop is gone; the chat's delegations outlive it.
         detachManagedDelegation();

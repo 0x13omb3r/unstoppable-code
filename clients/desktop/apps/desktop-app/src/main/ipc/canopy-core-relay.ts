@@ -2,7 +2,12 @@ import { app, ipcMain, webContents } from 'electron';
 import { CANOPY_DEFAULT_MAX_FRAME_BYTES } from '@canopy/core-transport';
 import { IPC_CHANNELS } from '@canopy/desktop-shared/types';
 import {
+  CORE_ARCHIVE_CONTAINER_LIST_SCHEMA_REVISION,
+  CORE_CATALOG_SNAPSHOT_GET_DESKTOP_UPLOADS_REVISION,
+  CORE_CHAT_EVENTS_SANDBOX_REVISION,
+  CORE_CHAT_EVENTS_SCHEMA_REVISION,
   CORE_CHAT_LIVE_EVENTS_SCHEMA_REVISION,
+  CORE_CHAT_TRANSCRIPT_PAGE_SCHEMA_REVISION,
   type CanopyCallerDescriptor,
 } from '@canopy/protocol/canopy-core';
 import type {
@@ -15,6 +20,10 @@ import {
 } from '../canopy-cloud/web-core-connection';
 import { registerIpcHandler } from './register';
 import { desktopWebCoreBindingOptions } from './cloud-chats';
+import {
+  desktopCloudChatSendHookDeps,
+  withCloudChatSendHookProvider,
+} from '../canopy-cloud/cloud-chat-send-hook';
 import {
   sendInterfaceToolCancellation,
   sendInterfaceToolRequest,
@@ -97,9 +106,39 @@ export function createWebCoreRendererRelay({
     refuseParams: webCoreRelayRefuseParams,
     narrowParams: webCoreRelayNarrowParams,
     refuseCall: (method) => webCoreRelayRefuseCall(method, cloudChatsEnabled),
-    // Live reply tool calls come only on revision 2 (CAN-6451).
+    // Live reply tool calls come only on revision 2 (CAN-6451). Each answer's
+    // meter comes from revision 2 of the chat's events and transcript pages
+    // (CAN-6509), which the cloud composer's usage meter folds (CAN-6755).
+    // Events revision 3 keeps revision 2's output and adds a cloud chat's
+    // sandbox.changed (CAN-6766); main reads both, so a web core advertising
+    // only revision 2 still sends meters (CAN-6841).
     streamRevisions: {
-      'core.chat.live.events': CORE_CHAT_LIVE_EVENTS_SCHEMA_REVISION,
+      'core.chat.live.events': {
+        revision: CORE_CHAT_LIVE_EVENTS_SCHEMA_REVISION,
+      },
+      'core.chat.events': {
+        revision: CORE_CHAT_EVENTS_SANDBOX_REVISION,
+        minimum: CORE_CHAT_EVENTS_SCHEMA_REVISION,
+      },
+    },
+    requestRevisions: {
+      // An untitled task's empty name, which the More page labels as the
+      // sidebar does (CAN-6792). The renderer's list sends no `revision`.
+      'core.archive.container.list': {
+        revision: CORE_ARCHIVE_CONTAINER_LIST_SCHEMA_REVISION,
+        whenAbsent: 'raise',
+      },
+      // The plugins this desktop uploaded, so its picker offers only those
+      // it never copied (CAN-6725).
+      'core.catalog.snapshot.get': {
+        revision: CORE_CATALOG_SNAPSHOT_GET_DESKTOP_UPLOADS_REVISION,
+      },
+      // Each answer's meter (CAN-6755). A transcript page read sends no
+      // `revision`: its revision 1 takes none.
+      'core.chat.transcript.page': {
+        revision: CORE_CHAT_TRANSCRIPT_PAGE_SCHEMA_REVISION,
+        whenAbsent: 'raise',
+      },
     },
     host: {
       definitions: WEB_CORE_HOST_DEFINITIONS,
@@ -109,11 +148,22 @@ export function createWebCoreRendererRelay({
   });
 }
 
+const CLOUD_CHAT_EVENTS = 'core.chat.events';
+
+export interface CanopyCoreRelayHandlers {
+  readonly close: () => void;
+  /** Whether the main window that sent `event` follows this cloud chat. */
+  readonly followsCloudChat: (
+    event: RendererRelayEvent,
+    chatId: string,
+  ) => boolean;
+}
+
 export function registerCanopyCoreRelayHandlers(
   dispatcher: DesktopCanopyDispatcher,
   resolveSurface: (event: RendererRelayEvent) => RendererRelaySurfaceResolution,
   webCore: WebCoreBindingOptions = desktopWebCoreBindingOptions(),
-): () => void {
+): CanopyCoreRelayHandlers {
   // Interim connection-scoped declarations; durable ownership waits for a relay daemon binding (W3 exit, CAN-3166).
   const registrations = new Map<string, RelayCapabilities>();
   const interfaceLeases = createDesktopInterfaceLeases({
@@ -168,10 +218,14 @@ export function registerCanopyCoreRelayHandlers(
   // The connection opens whenever the account is signed in; each call checks
   // its own feature, so cloud runs work without the cloud chats flag.
   const webCoreRelay = createWebCoreRendererRelay({
-    bindingProvider: createWebCoreBindingProvider({
-      ...webCore,
-      isEnabled: () => true,
-    }),
+    // A send first keeps the chat's skills in step (CAN-6176, D9 revised).
+    bindingProvider: withCloudChatSendHookProvider(
+      createWebCoreBindingProvider({
+        ...webCore,
+        isEnabled: () => true,
+      }),
+      desktopCloudChatSendHookDeps(webCore, app.getVersion()),
+    ),
     cloudChatsEnabled: webCore.isEnabled,
     resolveSurface,
     clientVersion: app.getVersion(),
@@ -185,7 +239,7 @@ export function registerCanopyCoreRelayHandlers(
         input,
       ),
   );
-  return () => {
+  const close = (): void => {
     ipcMain.removeHandler(IPC_CHANNELS.canopyCoreRelay);
     setInterfaceToolReplyHandler(null);
     setPipelineEditorInterfaceToolReplyHandler(null);
@@ -195,5 +249,19 @@ export function registerCanopyCoreRelayHandlers(
     relay.dispose();
     webCoreRelay.dispose();
     registrations.clear();
+  };
+  return {
+    close,
+    // A cloud chat's events stream names the chat as its task (CAN-6724).
+    followsCloudChat: (event, chatId) =>
+      webCoreRelay.follows(event, CLOUD_CHAT_EVENTS, (params) => {
+        const scope = params.scope;
+        return (
+          typeof scope === 'object' &&
+          scope !== null &&
+          'worktreeId' in scope &&
+          scope.worktreeId === chatId
+        );
+      }),
   };
 }

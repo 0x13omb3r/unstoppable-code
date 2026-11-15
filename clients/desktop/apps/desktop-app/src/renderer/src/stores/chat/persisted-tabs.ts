@@ -637,6 +637,9 @@ export function fromPersistedTab(
   return {
     transcript: pt.transcript,
     transcriptLoaded: pt.transcriptLoaded,
+    ...(pt.capturedHarness === undefined
+      ? {}
+      : { capturedHarness: pt.capturedHarness }),
     transcriptWindow: pt.transcriptWindow,
     id: pt.id,
     title: pt.title,

@@ -12,6 +12,7 @@ import {
   type ChatModel,
 } from '@canopy/desktop-shared/types';
 import { parseAgentRouteModelId } from '@canopy/protocol/agents';
+import type { ThinkingLevel } from '@canopy/protocol/thinking';
 import type { AgentExecutionHarness } from '@canopy/protocol/models';
 import { supportsChatHarnessChoice } from '@canopy/desktop-shared/lib/chat-model-selection';
 import { AgentChatSendError } from './send-orchestration';
@@ -216,4 +217,54 @@ export async function resolveCreationModelSeed(
     model,
     ...(providerType === undefined ? {} : { providerType }),
   });
+}
+
+/**
+ * Check a thinking level against the model a new chat will run, as
+ * models.list lists it: the requested id, else the target's default.
+ */
+export async function assertCreationThinkingLevel(
+  thinkingLevel: ThinkingLevel,
+  requestedModel: string | undefined,
+  target: { projectId: string; taskId: string },
+): Promise<void> {
+  const [{ buildProjectedModelCatalog }, { resolveCatalogAgentDefaultModel }] =
+    await Promise.all([
+      import('../portal/model-catalog-projection'),
+      import('../agents/agent-default-model'),
+    ]);
+  const owner = await resolveAiCreditsScopeOwner({
+    kind: 'work',
+    projectId: target.projectId,
+    worktreeId: target.taskId,
+  });
+  // The same catalog models.list advertises, OpenCode included.
+  const entry = buildProjectedModelCatalog(undefined, {
+    cursor: true,
+    copilot: true,
+    opencode: true,
+    owner,
+    agentDefaultModel: await resolveCatalogAgentDefaultModel(target.projectId),
+  }).find((option) =>
+    requestedModel === undefined
+      ? option.isDefault
+      : // An alias such as opus names the catalog entry it resolves to.
+        option.id === requestedModel ||
+        option.id === resolveKnownModel(requestedModel),
+  );
+  if (!entry)
+    throw new AgentChatSendError(
+      'not_found',
+      requestedModel === undefined
+        ? 'There is no default model to apply thinkingLevel to. Choose a model from models.list.'
+        : `Model ${requestedModel} is not available. Use models.list to choose a model.`,
+    );
+  const levels = entry.supportedThinkingLevels ?? entry.thinkingLevels;
+  if (levels && !levels.includes(thinkingLevel))
+    throw new AgentChatSendError(
+      'validation_failed',
+      levels.length === 0
+        ? `Model ${entry.id} does not support thinking levels.`
+        : `Model ${entry.id} does not support thinking level ${thinkingLevel}. Supported levels: ${levels.join(', ')}.`,
+    );
 }

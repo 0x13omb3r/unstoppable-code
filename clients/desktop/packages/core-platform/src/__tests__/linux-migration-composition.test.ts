@@ -34,6 +34,15 @@ const eligible = {
   violations: [],
 };
 const suite = process.platform === 'linux' ? describe : describe.skip;
+/**
+ * The bound on one fixture launcher spawn. execFileSync is synchronous, so
+ * Jest's timeout can't interrupt it and this is the only bound. On CI's Linux
+ * runner a spawn takes about 0.9 s; only the first transpiles
+ * linux-migration.ts cold, about 110 ms more. A starved runner once took over
+ * the old 10 s (CAN-6849). 30 s is over 30 times the normal spawn, and keeps a
+ * hung launcher from stalling the suite: six modes at 30 s is three minutes.
+ */
+const FIXTURE_SPAWN_BUDGET_MS = 30_000;
 let dir = '',
   addon = '',
   helper = '',
@@ -518,11 +527,16 @@ await channel.write(Buffer.from(result.verified?'verified':result.reason));compo
           argv: { ...p.argv, launcher: [helper, ...base, 'main'] },
         }),
       );
+      const started = performance.now();
       const outcome = execFileSync(helper, [...base, mode], {
         encoding: 'utf8',
-        timeout: 10000,
+        timeout: FIXTURE_SPAWN_BUDGET_MS,
         env: { PATH: '/usr/bin:/bin' },
       });
+      // Logged for CI timing evidence only (CAN-6849); nothing asserts on it.
+      process.stdout.write(
+        `[CAN-6849] fixture spawn ${mode}: ${Math.round(performance.now() - started)} ms\n`,
+      );
       if (!supportsChannels && outcome === 'capability_unavailable')
         expect(outcome).toBe('capability_unavailable');
       else expect(outcome).toBe(mode === 'main' ? 'verified' : 'role');

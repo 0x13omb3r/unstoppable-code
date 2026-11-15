@@ -1,5 +1,6 @@
 'use client';
 
+import { PullRequestHeaderStatus } from '@canopy/ui-shared/components';
 import type { JSX, ReactElement, ReactNode } from 'react';
 import {
   CancelActionButton,
@@ -106,8 +107,6 @@ const renderWithoutProgress: PullRequestProgressRenderer = (_target, trigger) =>
 // Non-interactive status that replaces Merge while the PR sits in its base
 // branch's merge queue. Same footprint as the header actions so nothing shifts
 // when it swaps in; the pending tint matches the sidebar row's queued glyph.
-const MERGE_QUEUE_STATUS =
-  'electron-no-drag inline-flex h-7 shrink-0 items-center gap-1.5 whitespace-nowrap rounded-md px-2.5 text-xs font-normal fg-warning';
 
 /**
  * Progressive disclosure for the header's action cluster, lowest priority
@@ -614,13 +613,13 @@ export function PullRequestActions({
       {plan.mergeQueue !== null &&
         (renderMergeQueueStatus?.() ?? (
           <Tooltip label="GitHub merges this pull request when the merge queue's checks pass">
-            <span
-              className={MERGE_QUEUE_STATUS}
+            <PullRequestHeaderStatus
+              intent="queued"
               data-testid="pr-status-bar-merge-queue"
             >
               <GitMergeIcon size="sm" />
               {plan.mergeQueue.label}
-            </span>
+            </PullRequestHeaderStatus>
           </Tooltip>
         ))}
 

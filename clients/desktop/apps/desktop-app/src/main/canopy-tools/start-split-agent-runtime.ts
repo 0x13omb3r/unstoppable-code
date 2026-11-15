@@ -14,6 +14,8 @@ import {
   sanitizeSystemInstructionText,
   withWorktreeRelocationInstruction,
 } from '@canopy/desktop-shared/lib/pending-system-instructions';
+import { withChatAddressChangedInstruction } from '@canopy/desktop-shared/lib/chat-address-prompt';
+import { agentChatAddress } from '../lib/agent-chat-address';
 import { getChatStateService } from '../services/chat-state-service';
 import {
   buildExistingTabDispatchOptions,
@@ -470,6 +472,11 @@ export async function startSplitAgent(
         ),
       },
     ];
+    cloned.pendingSystemInstructions = withChatAddressChangedInstruction(
+      cloned.pendingSystemInstructions,
+      agentChatAddress(destinationProjectId, worktreeId, cloned.id),
+      agentChatAddress(projectId, sourceWorktreeId, sourceChatId),
+    );
     // A Claude fork is taken inside the source's own split call; see
     // `claudeSplitForkAnchor`. Branches keep the transcript-derived anchor.
     const splitAnchor =

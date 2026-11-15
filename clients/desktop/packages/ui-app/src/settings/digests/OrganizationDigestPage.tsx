@@ -2,7 +2,6 @@
 
 import type { JSX } from 'react';
 import { settingsRouteToPath } from '@canopy/protocol/settings';
-import { TeamLapsedState } from '../organization/team-lapsed-state';
 import { SettingsPageColumn } from '../layout/SettingsPageColumn';
 import type { SettingsPageProps } from '../pages/page-props';
 import { DigestDetailHeader } from './digest-detail-header';
@@ -25,30 +24,18 @@ function organizationDigestPath(
 
 /**
  * `/organization/[orgId]/digests/[digestId]`: the full org report, scoped to
- * the viewer's membership. A lapsed org renders only the lapsed notice. The
- * share trigger renders only for editors whose digest carries a share path.
+ * the viewer's membership. The share trigger renders only for editors whose digest carries a share path.
  */
 export function OrganizationDigestPage({
   page,
 }: SettingsPageProps<'organization.digest'>): JSX.Element {
-  const { organization, canEdit, lapsed, report } = page.data;
+  // `lapsed` and a `null` report are compat fields: organizations no longer
+  // lapse, so the server always sends the report.
+  const { organization, canEdit, report } = page.data;
   const organizationId = organization.id;
 
-  if (lapsed !== null || report === null) {
-    return (
-      <SettingsPageColumn as="main">
-        <div className="w-full max-w-3xl">
-          <TeamLapsedState
-            orgId={organizationId}
-            orgName={organization.name}
-            trialEndedAt={lapsed?.trialEndedAt ?? null}
-            lapseReason={lapsed?.lapseReason ?? null}
-            requiredPlanName={lapsed?.requiredPlanName ?? null}
-            canEdit={canEdit}
-          />
-        </div>
-      </SettingsPageColumn>
-    );
+  if (report === null) {
+    return <SettingsPageColumn as="main">{null}</SettingsPageColumn>;
   }
   const { digest, neighbors, share } = report;
 

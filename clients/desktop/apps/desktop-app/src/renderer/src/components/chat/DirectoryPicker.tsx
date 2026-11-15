@@ -1,10 +1,9 @@
-import { Stack } from '@canopy/ui-shared/components';
+import { PickerTrigger, Stack } from '@canopy/ui-shared/components';
 import { useCallback, useId, useRef, useState, type JSX } from 'react';
 import {
   COMPOSER_ROW_MENU_GAP,
   FLOATING_PICKER_GAP,
   FloatingMenu,
-  PickerTrigger,
   DirectoryPickerOptionRow,
   RichHoverTooltip,
 } from '@canopy/ui-shared';

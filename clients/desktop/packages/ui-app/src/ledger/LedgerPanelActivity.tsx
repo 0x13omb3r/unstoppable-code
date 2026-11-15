@@ -1,5 +1,7 @@
 'use client';
 
+import { LedgerActivityPrompt } from '@canopy/ui-shared/components';
+import { Surface } from '@canopy/ui-shared/components';
 import {
   useCallback,
   useEffect,
@@ -111,9 +113,14 @@ function PanelToolbar({
     })),
   );
   return (
-    <div
+    <Surface
       data-testid="ledger-toolbar"
-      className="flex shrink-0 items-center gap-2 border-b border-line-base px-3 py-2"
+      variant="section"
+      boundary="bottom"
+      padding="section-compact"
+      gap="inline"
+      direction="row"
+      className="shrink-0 items-center"
     >
       <LedgerFilterMenu filters={filters} onChange={onFiltersChange} />
       <SearchField
@@ -125,7 +132,7 @@ function PanelToolbar({
         aria-label="Search entries"
         className="min-w-0 flex-1"
       />
-    </div>
+    </Surface>
   );
 }
 
@@ -439,7 +446,9 @@ export function LedgerPanelActivity({
       closeIntentThreadRootId,
       <>
         {existing}
-        <div className="border-b border-line-base p-3">{closeIntentPrompt}</div>
+        <Surface variant="section" boundary="bottom" padding="compact">
+          {closeIntentPrompt}
+        </Surface>
       </>,
     );
     return combined;
@@ -641,7 +650,7 @@ export function LedgerPanelActivity({
         }
       >
         {showNewActivity && (
-          <div className="sticky top-0 z-10 flex justify-center bg-base pb-2">
+          <LedgerActivityPrompt>
             <Button
               type="button"
               variant="secondary"
@@ -654,7 +663,7 @@ export function LedgerPanelActivity({
                 · {newActivityCount} new
               </span>
             </Button>
-          </div>
+          </LedgerActivityPrompt>
         )}
         {list.status === 'ready' && list.audienceChangePending && (
           <Notice

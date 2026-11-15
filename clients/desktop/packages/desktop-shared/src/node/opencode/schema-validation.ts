@@ -60,6 +60,7 @@ function boundedJson(value: unknown): string {
 /** One owned worker at a time; the host supplies a bundled, trusted entry path. */
 export function createOpenCodeSchemaValidator(
   workerPath: string,
+  execution: { eval?: boolean; execArgv?: string[] } = {},
 ): OpenCodeSchemaValidator {
   let tail: Promise<unknown> = Promise.resolve();
   let pending = 0;
@@ -81,7 +82,7 @@ export function createOpenCodeSchemaValidator(
       try {
         if (deadline.aborted) return false;
         started = true;
-        return await validateInWorker(workerPath, payload, deadline);
+        return await validateInWorker(workerPath, payload, deadline, execution);
       } finally {
         pending--;
       }
@@ -110,10 +111,12 @@ async function validateInWorker(
   entry: string,
   payload: { schema: string; input: string },
   signal: AbortSignal,
+  execution: { eval?: boolean; execArgv?: string[] },
 ): Promise<boolean> {
   const worker = new Worker(entry, {
     workerData: payload,
-    execArgv: [],
+    execArgv: execution.execArgv ?? [],
+    eval: execution.eval ?? false,
     resourceLimits: { maxOldGenerationSizeMb: 64, stackSizeMb: 2 },
   });
   let cancel = (): void => {};

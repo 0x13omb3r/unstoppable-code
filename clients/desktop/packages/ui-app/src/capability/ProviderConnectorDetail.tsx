@@ -1,5 +1,6 @@
 'use client';
 
+import { ProviderRecheckRow } from '@canopy/ui-shared/components';
 import { type ComponentType, type JSX, useState } from 'react';
 import type {
   ProviderConnectorListResult,
@@ -161,13 +162,7 @@ export function ProviderConnectorDetail({
   // the sentence explaining why it exists. Inside a route the section divider
   // already ends the group, so only the standalone page draws its own.
   const recheck = (
-    <div
-      className={
-        variant === 'section'
-          ? 'flex items-center justify-end gap-3'
-          : 'mt-4 flex items-center justify-end gap-3 border-t pt-3'
-      }
-    >
+    <ProviderRecheckRow standalone={variant !== 'section'}>
       <span className="text-xs fg-secondary">
         {loading
           ? 'Checking with your providers…'
@@ -183,7 +178,7 @@ export function ProviderConnectorDetail({
         <RefreshSpinner spinning={loading} />
         {loading ? 'Checking…' : 'Re-check'}
       </Button>
-    </div>
+    </ProviderRecheckRow>
   );
 
   if (variant === 'section') {

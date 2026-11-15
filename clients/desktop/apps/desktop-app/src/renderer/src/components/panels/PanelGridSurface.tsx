@@ -53,6 +53,7 @@ import {
 } from '@/lib/panels/persistence-bridge';
 import { initPipelinePanelSync } from '@/lib/panels/pipeline-panel-sync';
 import { initPlanPanelSync } from '@/lib/panels/plan-panel-sync';
+import { initModPanePanelSync } from '@/lib/panels/mod-pane-panel-sync';
 import { getPanelDefinition, renderPanelContent } from '@/lib/panels/registry';
 import { isSharedContainerViewerLayout } from '@/lib/panels/shared-container-viewer-layout';
 import {
@@ -197,6 +198,7 @@ function initializeSurface(worktreeKey: string): (() => void) | undefined {
   initBrowserPanelSync();
   initPipelinePanelSync();
   initPlanPanelSync();
+  initModPanePanelSync();
   initTerminalPanelSync();
   initChatPanelReveal();
   const disposePanelTestApi = installPanelTestApi(worktreeKey);

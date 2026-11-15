@@ -11,6 +11,7 @@ import type { PlatformServices } from '../../platform/platform-services';
 import type {
   PlatformKeySlotBlocked,
   PlatformSecretProtectionServices,
+  PlatformSecretProtectionState,
 } from '../../platform/secret-protection';
 import {
   CanopyOperationError,
@@ -66,6 +67,7 @@ export function createDaemonVault(options: DaemonVaultOptions): DaemonVault {
   let vault: VaultReadRepository | undefined;
   let opening: Promise<VaultReadRepository> | undefined;
   let disposal: Promise<void> | undefined;
+  let refinement: Promise<PlatformSecretProtectionState | null> | undefined;
   const issuedWriters = new Set<string>();
   let last: VaultStatusGetResult = {
     protection: slots
@@ -76,6 +78,45 @@ export function createDaemonVault(options: DaemonVaultOptions): DaemonVault {
 
   function refused(): Error {
     return canopyUnavailableError();
+  }
+
+  async function refineInitialization(
+    block: PlatformKeySlotBlocked | undefined,
+  ): Promise<PlatformSecretProtectionState | null> {
+    if (
+      !slots ||
+      lifetime.signal.aborted ||
+      refinement ||
+      block?.kind !== 'blocked' ||
+      (block.reason !== 'locked' && block.reason !== 'unavailable')
+    )
+      return null;
+    const deadline = new AbortController();
+    const timer = setTimeout(() => deadline.abort(), 1_000);
+    const signal = AbortSignal.any([lifetime.signal, deadline.signal]);
+    const pending = Promise.resolve()
+      .then(() => {
+        signal.throwIfAborted();
+        return slots.status({ signal });
+      })
+      .catch(() => null);
+    refinement = pending;
+    void pending.finally(() => {
+      if (refinement === pending) refinement = undefined;
+    });
+    let abort = (): void => undefined;
+    try {
+      const cancelled = new Promise<null>((resolve) => {
+        abort = (): void => resolve(null);
+        signal.addEventListener('abort', abort, { once: true });
+        if (signal.aborted) abort();
+      });
+      const result = await Promise.race([pending, cancelled]);
+      return signal.aborted ? null : result;
+    } finally {
+      clearTimeout(timer);
+      signal.removeEventListener('abort', abort);
+    }
   }
 
   async function open(): Promise<VaultReadRepository> {
@@ -140,12 +181,13 @@ export function createDaemonVault(options: DaemonVaultOptions): DaemonVault {
     } catch {
       reader?.dispose();
       candidate?.close();
+      const status = await refineInitialization(slotBlock);
       if (!lifetime.signal.aborted) {
         last = {
           protection: mapVaultKeySlotOutcome({
             backend: slots.backend,
             observation: slotBlock ?? { kind: 'rejected' },
-            status: null,
+            status,
           }).protection,
           observedAt: new Date().toISOString(),
         };

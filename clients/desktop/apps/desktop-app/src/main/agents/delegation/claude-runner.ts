@@ -76,8 +76,26 @@ import type {
   PendingDelegationCapabilityReload,
 } from './capability-reload';
 
+/** Throws the Allowed models refusal for a later provider turn of a run. */
+async function refuseDisallowedContinuation(prepared: {
+  readonly admitContinuation?: () => Promise<string | undefined>;
+}): Promise<void> {
+  const refusal = await prepared.admitContinuation?.();
+  if (refusal)
+    throw new DelegationRunnerError({
+      code: 'policy_blocked',
+      message: refusal,
+      retryable: false,
+    });
+}
+
 export interface ClaudeDelegationPreparation {
   readonly waitForQuotaRecovery?: AccountProxyQuotaWait;
+  /**
+   * Allowed models recheck before a later provider turn of this run (after a
+   * quota wait or for an undelivered steer). Returns the refusal, if any.
+   */
+  readonly admitContinuation?: () => Promise<string | undefined>;
   readonly model: string;
   readonly environment: Record<string, string>;
   readonly tools: DelegationNativePolicy;
@@ -760,7 +778,28 @@ export function createClaudeDelegationRunner(options: {
               fallback: 'ordinary' as const,
               refusal: chatInputRefusal('not-correlated'),
             });
-          steerMessages.set(uuid, request.message);
+          // Allowed models: a live steer can start another provider turn on
+          // this route, so it is admitted under the policy now.
+          const admitted = prepared.admitContinuation
+            ? prepared.admitContinuation()
+            : Promise.resolve(undefined);
+          return admitted.then((policyRefusal) => {
+            if (policyRefusal)
+              return {
+                kind: 'rejected' as const,
+                attemptId: uuid,
+                reason: policyRefusal,
+                refusal: chatInputRefusal('session-not-steerable'),
+              };
+            if (!liveSteering)
+              return {
+                kind: 'rejected' as const,
+                attemptId: uuid,
+                reason: 'The delegated SDK turn has ended',
+                fallback: 'ordinary' as const,
+                refusal: chatInputRefusal('turn-ended'),
+              };
+            steerMessages.set(uuid, request.message);
           return inputDelivery.submit(
             request.message,
             request.attemptId,
@@ -798,6 +837,7 @@ export function createClaudeDelegationRunner(options: {
               ? { ...admission, fallback: 'ordinary' as const }
               : admission,
           );
+          });
         });
 
         let lastProgress = 0;
@@ -1032,6 +1072,7 @@ export function createClaudeDelegationRunner(options: {
         ) {
           // The stream ended with an accepted steer that no turn started.
           // Resume the session with it rather than dropping it.
+          await refuseDisallowedContinuation(prepared);
           nextPrompt = managedMessage(undeliveredSteers.join('\n\n'));
           outcome = undefined;
           continue;
@@ -1052,6 +1093,7 @@ export function createClaudeDelegationRunner(options: {
           });
           if (failure?.kind === 'provider_usage_limit') {
             await prepared.waitForQuotaRecovery(failure, context.signal);
+            await refuseDisallowedContinuation(prepared);
             outcome = undefined;
             streamFailure = undefined;
             nextPrompt = managedMessage(
@@ -1072,6 +1114,13 @@ export function createClaudeDelegationRunner(options: {
           // completion" handling below.
           prepared.capabilityReload?.controller.discardUndelivered();
           break;
+        }
+        // Outside the reload's try, so the refusal keeps its own error code.
+        try {
+          await refuseDisallowedContinuation(prepared);
+        } catch (refused) {
+          prepared.capabilityReload?.controller.discardUndelivered();
+          throw refused;
         }
         try {
           const capabilityReload = prepared.capabilityReload;

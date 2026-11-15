@@ -635,7 +635,7 @@ export class BrowserTaskFiles {
       bound: false,
     };
   }
-  /** Reads `files.json` into the state. A missing or unreadable catalog leaves it empty. */
+  /** Only an absent catalog permits starting empty; damaged evidence refuses bind/admission. */
   private loadCatalog(state: TaskState, bounded: boolean): void {
     const catalog = join(state.folder, 'files.json');
     try {
@@ -644,61 +644,36 @@ export class BrowserTaskFiles {
         const stat = fstatSync(fd);
         if (!stat.isFile() || (bounded && stat.size > 16 * 1024 * 1024))
           throw new Error('Invalid task files catalog');
-        const fs = readFileSync(fd, 'utf8');
-        const parsed: unknown = JSON.parse(fs);
-        if (
-          parsed &&
-          typeof parsed === 'object' &&
-          'version' in parsed &&
-          parsed.version === 1 &&
-          'records' in parsed &&
-          Array.isArray(parsed.records)
-        ) {
-          for (const entry of parsed.records) {
-            const candidate: unknown = entry;
-            if (
-              candidate &&
-              typeof candidate === 'object' &&
-              'kind' in candidate &&
-              candidate.kind === 'upload'
-            ) {
-              const upload = uploadSchema.safeParse(candidate);
-              if (
-                upload.success &&
-                !state.uploads.has(upload.data.id) &&
-                !state.copies.has(upload.data.id) &&
-                !state.records.has(upload.data.id)
-              )
-                state.uploads.set(upload.data.id, upload.data);
-              continue;
-            }
-            if (
-              candidate &&
-              typeof candidate === 'object' &&
-              'kind' in candidate &&
-              candidate.kind === 'copy'
-            ) {
-              const copy = copySchema.safeParse(candidate);
-              if (
-                copy.success &&
-                !state.copies.has(copy.data.id) &&
-                !state.records.has(copy.data.id)
-              ) {
-                if (copy.data.error)
-                  copy.data.error.message = COPY_MESSAGES[copy.data.error.code];
-                state.copies.set(copy.data.id, copy.data);
-              }
-              continue;
-            }
-            const result = recordSchema.safeParse(candidate);
-            if (!result.success) continue;
-            const record = result.data;
+        const parsed: unknown = JSON.parse(readFileSync(fd, 'utf8'));
+        const result = z
+          .object({
+            version: z.literal(1),
+            records: z.array(
+              z.discriminatedUnion('kind', [
+                recordSchema,
+                copySchema,
+                uploadSchema,
+              ]),
+            ),
+          })
+          .safeParse(parsed);
+        if (!result.success) throw new Error('Invalid task files catalog');
+        const ids = new Set<string>();
+        for (const record of result.data.records) {
+          if (ids.has(record.id)) throw new Error('Invalid task files catalog');
+          ids.add(record.id);
+          if (record.kind === 'upload') {
+            state.uploads.set(record.id, record);
+          } else if (record.kind === 'copy') {
+            if (record.error)
+              record.error.message = COPY_MESSAGES[record.error.code];
+            state.copies.set(record.id, record);
+          } else {
             if (sanitizeDownloadName(record.fileName) !== record.fileName)
-              continue;
+              throw new Error('Invalid task files catalog');
             record.origin = originOnly(record.origin);
             if (record.error)
               record.error.message = 'The download could not be saved.';
-            if (state.records.has(record.id)) continue;
             state.records.set(record.id, record);
             state.names.add(record.fileName.toLocaleLowerCase());
             state.names.add(`${record.fileName}.download`.toLocaleLowerCase());
@@ -708,7 +683,7 @@ export class BrowserTaskFiles {
         closeSync(fd);
       }
     } catch (error) {
-      if (!absent(error) && !(error instanceof SyntaxError)) throw error;
+      if (!absent(error)) throw error;
     }
   }
   /**
@@ -2198,7 +2173,16 @@ export class BrowserTaskFiles {
         if (absent(error)) return;
         throw error;
       }
-      state = this.task(scope, false);
+      state = this.openTask(scope);
+      try {
+        this.loadCatalog(state, false);
+      } catch {
+        // Invalid catalogs cannot authorize external cleanup or a directory rebind.
+        state.records.clear();
+        state.copies.clear();
+        state.uploads.clear();
+        state.names.clear();
+      }
     }
     if (state) {
       this.check(state);
@@ -2215,6 +2199,7 @@ export class BrowserTaskFiles {
         this.timers.delete(record.id);
       }
       await this.removeStagedUploads(state);
+      this.check(state);
       await rm(state.folder, { recursive: true, force: true });
       this.tasks.delete(key(scope));
     }

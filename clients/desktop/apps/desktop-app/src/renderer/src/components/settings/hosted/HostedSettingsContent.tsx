@@ -33,10 +33,7 @@ import { useNavigationStore } from '@/stores/navigationStore';
 import { AccountDeviceSettings } from './AccountDeviceSettings';
 import { DeviceAiGatewayPage } from './DeviceAiGatewayPage';
 import { HostedSettingsHostFailureNotice } from './HostedSettingsHostFailureNotice';
-import {
-  useHostedSettingsAccount,
-  useHostedSettingsPersistedNavModel,
-} from './desktop-settings-host-context';
+import { useHostedSettingsAccount } from './desktop-settings-host-context';
 import {
   hostedSettingsRouteKey,
   type HostedSettingsLocation,
@@ -93,20 +90,6 @@ type AccountScopeShellState =
   | 'ready';
 
 /**
- * Free access before the bootstrap says: the account's persisted rail entry,
- * else the renderer's flag snapshot, so the Billing page's title does not
- * flip to "AI Credits" once the bootstrap lands. (A bootstrap from an earlier
- * Settings open is already in the store.)
- */
-function useFreeAccessFallback(): boolean {
-  const persisted = useHostedSettingsPersistedNavModel();
-  const flag = useFeatureFlagsStore((state) =>
-    state.isEnabled(CLIENT_FEATURE_FLAGS.canopyFreeAccessEnabled.key),
-  );
-  return persisted?.account.freeAccess ?? flag;
-}
-
-/**
  * An account page in every state: the account frame with this computer's
  * sections after it, around the host state or the shared page. One frame
  * stays mounted from loading to ready (or failed), so the header never moves.
@@ -117,12 +100,10 @@ function useFreeAccessFallback(): boolean {
 function AccountScopeShell({
   route,
   state,
-  freeAccess,
   children,
 }: {
   readonly route: AccountSettingsRoute;
   readonly state: AccountScopeShellState;
-  readonly freeAccess: boolean;
   readonly children?: ReactNode;
 }): JSX.Element {
   const pageKey = hostedSettingsPageKey(route);
@@ -140,10 +121,7 @@ function AccountScopeShell({
       data-hosted-settings-state={state === 'ready' ? undefined : state}
       data-hosted-settings-page={pageKey}
     >
-      <AccountSettingsFrame
-        freeAccess={freeAccess}
-        after={<AccountDeviceSettings page={route.page} />}
-      >
+      <AccountSettingsFrame after={<AccountDeviceSettings page={route.page} />}>
         {children}
       </AccountSettingsFrame>
     </div>
@@ -200,7 +178,6 @@ function SignedInHostedSettingsContent({
   readonly location: HostedSettingsLocation;
 }): JSX.Element {
   const store = useSettingsStoreApi();
-  const freeAccessFallback = useFreeAccessFallback();
   const route = location.route;
   const organizationId = hostedSettingsOrganizationId(route);
   const bootstrap = useSettingsBootstrap(organizationId);
@@ -235,7 +212,6 @@ function SignedInHostedSettingsContent({
     openAuthenticatedCloudPage(settingsRouteToPath(route));
 
   const accountRoute = route.scope === 'account' ? route : null;
-  const freeAccess = bootstrap.data?.account.freeAccess ?? freeAccessFallback;
   const recovery = {
     onSignIn: startHostedSettingsSignIn,
     onOpenOrganizations: openOrganizations,
@@ -307,11 +283,7 @@ function SignedInHostedSettingsContent({
             : 'ready';
     return (
       <SettingsPageNoticeProvider notice={notice}>
-        <AccountScopeShell
-          route={accountRoute}
-          state={state}
-          freeAccess={freeAccess}
-        >
+        <AccountScopeShell route={accountRoute} state={state}>
           {state === 'error' ? (
             errorState
           ) : state === 'loading' ? (
@@ -340,7 +312,6 @@ function SignedInHostedSettingsContent({
     <SettingsPageNoticeProvider notice={notice}>
       <HostedSettingsPage
         route={route}
-        freeAccess={freeAccess}
         recovery={recovery}
         renderFrame={renderHostedPageFrame}
       />
@@ -363,7 +334,6 @@ export function HostedSettingsContent({
   location,
 }: HostedSettingsContentProps): JSX.Element {
   const account = useHostedSettingsAccount();
-  const freeAccessFallback = useFreeAccessFallback();
   // Signed out, the AI gateway page sets up this device's own gateway.
   const aiGatewayEnabled = useFeatureFlagsStore((state) =>
     state.isEnabled(CLIENT_FEATURE_FLAGS.canopyAiGatewaySettingsEnabled.key),
@@ -372,11 +342,7 @@ export function HostedSettingsContent({
   if (account.status === 'loading') {
     if (route.scope !== 'account') return <HostedRouteLoading route={route} />;
     return (
-      <AccountScopeShell
-        route={route}
-        state="loading"
-        freeAccess={freeAccessFallback}
-      >
+      <AccountScopeShell route={route} state="loading">
         <HostedSettingsRouteLoading route={route} />
       </AccountScopeShell>
     );
@@ -393,7 +359,7 @@ export function HostedSettingsContent({
     // sign-in prompt (the Account device card is the sign-in). Pages with
     // nothing on this computer keep the prompt rather than render empty.
     return (
-      <AccountScopeShell route={route} state="signed_out" freeAccess={false}>
+      <AccountScopeShell route={route} state="signed_out">
         {route.page === 'ai-gateway' && aiGatewayEnabled ? (
           <DeviceAiGatewayPage />
         ) : SIGNED_OUT_DEVICE_PAGES.has(route.page) ? null : (

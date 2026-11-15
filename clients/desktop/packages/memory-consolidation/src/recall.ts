@@ -61,6 +61,8 @@ export interface RenderedLocalMemoryRecall {
   workspaceIndex: string;
   /** How many leading `recentNotes` appear in the block. */
   includedNotes: number;
+  /** Exact normalized excerpts delivered for each included note, in order. */
+  includedNoteTexts: string[];
 }
 
 export function renderLocalMemoryBlock(
@@ -125,6 +127,7 @@ export function renderLocalMemoryRecall(
   let injectedUserIndex = '';
   let injectedWorkspaceIndex = '';
   let includedNotes = 0;
+  const includedNoteTexts: string[] = [];
   if (userIndex) {
     injectedUserIndex = clip(
       userIndex,
@@ -163,6 +166,9 @@ export function renderLocalMemoryRecall(
     for (const note of recentNotes) {
       if (offset >= clipped.length) break;
       includedNotes += 1;
+      includedNoteTexts.push(
+        clipped.slice(offset, Math.min(clipped.length, offset + note.length)),
+      );
       offset += note.length + SECTION_SEPARATOR.length;
     }
     if (clipped) sections.push(`${RECENT_NOTES_HEADER}${clipped}`);
@@ -174,5 +180,6 @@ export function renderLocalMemoryRecall(
     userIndex: injectedUserIndex,
     workspaceIndex: injectedWorkspaceIndex,
     includedNotes,
+    includedNoteTexts,
   };
 }

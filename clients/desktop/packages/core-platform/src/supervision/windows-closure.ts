@@ -1,7 +1,12 @@
 import { AsyncLocalStorage } from 'node:async_hooks';
 import { randomUUID } from 'node:crypto';
 
-export type WindowsClosureFamily = 'git-host' | 'git' | 'identity' | 'acl';
+export type WindowsClosureFamily =
+  | 'git-host'
+  | 'git'
+  | 'identity'
+  | 'acl'
+  | 'native-protection';
 export interface WindowsClosureEdge {
   unsafe(): void;
   close(): void;
@@ -30,14 +35,16 @@ export function observeWindowsClosure(
 }
 
 /** A preexisting/cross-context creator cannot silently contribute partial evidence. */
-export function captureWindowsClosureContext(): () => void {
+export function captureWindowsClosureContext(): () => boolean {
   const owner = scope.getStore();
-  return (): void => {
+  return (): boolean => {
     const current = scope.getStore();
     if (current !== owner) {
       owner?.invalidate();
       current?.invalidate();
+      return false;
     }
+    return true;
   };
 }
 

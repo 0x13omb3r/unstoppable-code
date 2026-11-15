@@ -1,7 +1,9 @@
 'use client';
 
+import { SidebarSectionHeaderFrame } from '@canopy/ui-shared/components';
 import {
   type ButtonHTMLAttributes,
+  type ComponentProps,
   useId,
   useState,
   type HTMLAttributes,
@@ -27,7 +29,9 @@ export interface SidebarSectionProps extends Omit<
   /** Initial state for uncontrolled use. */
   readonly defaultCollapsed?: boolean;
   readonly onCollapsedChange?: (collapsed: boolean) => void;
-  readonly headerClassName?: string;
+  readonly headerVariant?: ComponentProps<
+    typeof SidebarSectionHeaderFrame
+  >['variant'];
   /** Omits the generated header wrapper when a host intentionally has no header. */
   readonly hideHeader?: boolean;
   /**
@@ -82,7 +86,7 @@ export function SidebarSection({
   defaultCollapsed = false,
   onCollapsedChange,
   className,
-  headerClassName,
+  headerVariant,
   hideHeader = false,
   frame = 'plain',
   selected = false,
@@ -125,8 +129,10 @@ export function SidebarSection({
   );
 
   const headerNode = (
-    <div
-      className={`flex min-w-0 items-center gap-1${spacing === 'inset' ? ' px-1' : ''}${headerSurface === 'sidebar' ? ' bg-sidebar' : ''}${headerClassName ? ` ${headerClassName}` : ''}`}
+    <SidebarSectionHeaderFrame
+      painted={headerSurface === 'sidebar'}
+      inset={spacing === 'inset'}
+      variant={headerVariant}
     >
       {collapsible ? (
         <button
@@ -145,7 +151,7 @@ export function SidebarSection({
         </div>
       )}
       {actions && <div className="ml-auto shrink-0">{actions}</div>}
-    </div>
+    </SidebarSectionHeaderFrame>
   );
 
   return (

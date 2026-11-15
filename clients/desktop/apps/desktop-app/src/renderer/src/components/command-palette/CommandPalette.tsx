@@ -360,7 +360,6 @@ export function CommandPalette({
         billingEnabled,
         digestsEnabled,
         integrationsEnabled: true,
-        freeAccess: accountFacts.freeAccess,
       },
     ).flatMap((item) =>
       // External agents is a hosted web page, not a settings route.
@@ -375,13 +374,7 @@ export function CommandPalette({
     return [...accountPages, organizationsPage].filter(
       (entry) => !sectionLabels.has(entry.label.toLowerCase()),
     );
-  }, [
-    hostedLayout,
-    settingSections,
-    billingEnabled,
-    digestsEnabled,
-    accountFacts.freeAccess,
-  ]);
+  }, [hostedLayout, settingSections, billingEnabled, digestsEnabled]);
 
   const resolveWorktreeLabel = useCallback<WorktreeLabelResolver>(
     (worktree, project): string => {

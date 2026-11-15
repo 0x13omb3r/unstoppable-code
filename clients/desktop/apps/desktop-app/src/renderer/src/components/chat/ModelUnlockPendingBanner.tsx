@@ -1,11 +1,20 @@
 import { useCallback, useEffect, useRef, useState, type JSX } from 'react';
-import { ModelUnlockPendingNotice } from '@canopy/ui-shared';
+import {
+  CreditsNotice,
+  type CreditsNoticeOwner,
+  type CreditsNoticePurchase,
+} from '@canopy/ui-app/credits';
 import {
   checkModelUnlockNow,
   clearModelUnlockIntent,
   useModelUnlockIntentStore,
 } from '@/lib/modelUnlockIntent';
 import { modelUnlockIntentLabel } from '@/lib/modelUnlockLabel';
+
+// The purchase already opened in the browser; the app root's intent store
+// polls it, so this notice only waits and checks.
+const UNLOCK_OWNER: CreditsNoticeOwner = { kind: 'unknown' };
+const UNLOCK_PURCHASE: CreditsNoticePurchase = { kind: 'elsewhere' };
 
 export interface ModelUnlockPendingBannerProps {
   /**
@@ -91,11 +100,20 @@ export function ModelUnlockPendingBanner({
   }
   const modelLabel = modelUnlockIntentLabel(modelId);
   return (
-    <ModelUnlockPendingNotice
-      phase={phase}
+    <CreditsNotice
+      condition="model_locked"
+      owner={UNLOCK_OWNER}
+      placement="composer"
+      purchase={UNLOCK_PURCHASE}
+      pending={{
+        feedback: null,
+        checkNow: {
+          timedOut: phase === 'timed-out',
+          checking: checkingRequestId === requestId,
+          onCheckNow: handleCheckNow,
+        },
+      }}
       {...(modelLabel === undefined ? {} : { modelLabel })}
-      checking={checkingRequestId === requestId}
-      onCheckNow={handleCheckNow}
       onDismiss={handleDismiss}
     />
   );

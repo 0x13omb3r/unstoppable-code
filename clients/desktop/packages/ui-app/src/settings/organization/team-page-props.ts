@@ -9,8 +9,6 @@ export type TeamPageDataProps = Pick<
   | 'billingEnabled'
   | 'memoryEnabled'
   | 'projectsEnabled'
-  | 'freeAccess'
-  | 'lapsed'
   | 'mobileBrowser'
 >;
 
@@ -29,8 +27,6 @@ export function teamPagePropsFromData(
     billingEnabled: data.billingEnabled,
     memoryEnabled: data.memoryEnabled,
     projectsEnabled: data.projectsEnabled,
-    freeAccess: data.freeAccess,
-    lapsed: data.lapsed,
     mobileBrowser: data.mobileBrowser,
   };
 }

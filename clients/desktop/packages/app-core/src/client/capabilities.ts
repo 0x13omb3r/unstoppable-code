@@ -116,6 +116,15 @@ export interface CanopyCapabilities {
    * Whether admission is on is the separate `ClaudeModsState.enabled`.
    */
   readonly claudeModAdmission?: boolean;
+  /**
+   * The host streams a Claude Mod's toasts, status lines and log lines as
+   * `claudeMods.surface` events. Optional and default-deny: unset is the
+   * confirmed default for unconfigured and configured-but-unavailable hosts,
+   * and shared UI then draws no Mod surface. Desktop serves it, and main
+   * sends events only while the surface and admission flags are on; the
+   * Portal and cloud chats leave it unset.
+   */
+  readonly claudeModSurface?: boolean;
   /** Chat operations wired by this target's adapter. Missing members deny. */
   readonly chatWorkflows?: {
     readonly planMode?: boolean;
@@ -700,6 +709,11 @@ export interface CanopyCapabilities {
   readonly worktreeDiscard?: boolean;
   /** Incarnation-bound, settled recovery actions; description support alone is insufficient. */
   readonly worktreeRecovery?: boolean;
+  /**
+   * Exact live archive resolution and receipt-bound pending-recovery discard
+   * during project deletion. Independent of cold workspace recovery. Default-deny.
+   */
+  readonly worktreeRecoveryResolution?: boolean;
   /**
    * Host can list what keeps a project's deletion from finishing that a
    * person can discard, and supersede an interrupted deletion on request

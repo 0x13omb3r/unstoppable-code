@@ -5,6 +5,11 @@ import {
   type PersonalBalanceReading,
 } from '@/lib/aiCreditsConfirmationBalance';
 import { useCallback } from 'react';
+import {
+  creditsBillingOwnerKey,
+  resolveCreditsCoverage,
+  type CreditsCoverage,
+} from '@canopy/app-state/billing/credits';
 import type {
   AiCreditsScopeRequest,
   NativeAiCreditsAvailability,
@@ -28,6 +33,7 @@ import {
   MODEL_LIBRARY_UNLOCK_COPY,
 } from '@canopy/ui-shared/components';
 import { hostedSettingsOpenable } from '@/components/settings/hosted/hosted-settings-availability';
+import { registeredCreditsHandoffClient } from '@/client/hosted-settings-client-registry';
 import { announceAiCreditsChanged } from '@/lib/aiCreditsChanged';
 import { brandText } from '@/lib/brand';
 import { isCanopyCloudConnected } from '@/lib/canopy-cloud';
@@ -69,35 +75,8 @@ import {
  */
 export { CONTACT_ORG_ADMIN_COPY };
 
-/**
- * Copy for a member of an org that has LOST the `teams` capability (CAN-2311).
- *
- * Deliberately distinct from {@link CONTACT_ORG_ADMIN_COPY}: that one describes
- * a live org that is merely out of headroom, and telling a member of a lapsed
- * org to ask for "more spend quota" would send them to their admin with the
- * wrong request. The org is not over budget, it has no active plan.
- */
-export const CONTACT_ORG_ADMIN_LAPSED_COPY =
-  'Contact your org admin to restore your team.';
-
-export interface AiCreditsCoverage {
-  /**
-   * The account can pay for a gateway-routed turn right now: a spendable
-   * personal balance (native OR already-linked UD) or an org with headroom.
-   */
-  canSpendCredits: boolean;
-  /** Show the static "contact your org admin" copy and NO purchase CTA. */
-  showContactAdmin: boolean;
-  /** Fully uncovered — show the purchase CTA. */
-  showPurchase: boolean;
-  /**
-   * At least one of the user's orgs has lapsed AND that is costing them
-   * something right now (they cannot otherwise pay for a turn). Drives the
-   * lapsed-org banner; empty when nothing is lapsed or the user is covered
-   * anyway, so a healthy org silences it entirely.
-   */
-  lapsedOrgNames: string[];
-}
+/** Which credits affordance a banner offers; see `resolveCreditsCoverage`. */
+export type AiCreditsCoverage = CreditsCoverage;
 
 // Compatibility re-export; new callers import `@/lib/aiCreditsChanged`.
 export { announceAiCreditsChanged };
@@ -286,67 +265,14 @@ export function readSharedAiCreditsAvailability(
 }
 
 /**
- * Resolve which credits affordance (if any) a banner should offer.
- *
- * A `null` or inconclusive availability means the read has not resolved or
- * failed, so nothing is offered — asserting "you have no credits" on a failed
- * read would push a paying user at the purchase page.
- *
- * `lapsedOrgNames` is the names of the user's orgs that have lost the `teams`
- * capability (CAN-2311). It only ever REPLACES the generic contact-admin state:
- * a user who can still spend (personal balance, or a second healthy org) sees
- * nothing about the lapse, because per CAN-2311 the gate is per-org and a
- * healthy org must keep working untouched.
+ * Resolve which credits affordance (if any) a banner should offer. The rules
+ * are the shared purchase state's `resolveCreditsCoverage`: a `null` or
+ * inconclusive read offers nothing.
  */
 export function resolveAiCreditsCoverage(
   availability: NativeAiCreditsAvailability | null,
-  lapsedOrgNames: readonly string[] = [],
 ): AiCreditsCoverage {
-  if (!availability || availability.inconclusive === true) {
-    return {
-      canSpendCredits: false,
-      showContactAdmin: false,
-      showPurchase: false,
-      lapsedOrgNames: [],
-    };
-  }
-  const canSpendCredits =
-    availability.personalEligible === true ||
-    availability.orgSpendable === true;
-  // Only surface the lapse when it actually costs them a turn right now.
-  const lapsed = canSpendCredits ? [] : [...lapsedOrgNames];
-  // A lapsed org reports no credit-pool coverage (the main process zeroes it at
-  // `loadOrgAiCreditsSpendable`), so `orgCreditPoolCovered` is already false and
-  // the quota message cannot arise for a lapsed-only member. Suppressing
-  // explicitly anyway keeps the two admin messages from ever stacking if that
-  // upstream signal changes.
-  //
-  // The SAME zeroing flips `showPurchase` on, though, so a purchase CTA and a
-  // lapse are very much reachable together (a member of one lapsed org with no
-  // personal balance). That is deliberate and correct here — a personal top-up
-  // really would unblock their turn — but it means two banners would otherwise
-  // offer two different next actions. The composer sequences them instead:
-  // `OrgLapsedBanner` reports its visibility to `ChatInput`, which stands
-  // `NoBillingSourceBanner` down while the lapse is being explained and brings
-  // it back the moment that banner is dismissed or the org is restored.
-  // The `lapsed.length === 0` term is LOAD-BEARING, not dead weight. It is
-  // true that today's production callers pass no names, so the term is
-  // currently always true in the app — but this is an exported pure helper with
-  // its own asserted contract ("ask for more spend quota" is the wrong request
-  // for an org with no active plan, see its test), and removing the term silently changes
-  // that contract for the first caller that does pass names. Keeping it makes
-  // the helper correct independently of which arguments callers happen to use.
-  const showContactAdmin =
-    !canSpendCredits &&
-    lapsed.length === 0 &&
-    availability.inOrg === true &&
-    availability.orgCreditPoolCovered === true;
-  return {
-    canSpendCredits,
-    showContactAdmin,
-    showPurchase: !canSpendCredits && !showContactAdmin,
-    lapsedOrgNames: lapsed,
-  };
+  return resolveCreditsCoverage(availability);
 }
 
 /**
@@ -380,10 +306,11 @@ function creditsBillingPath(
 }
 
 /**
- * The plain, unauthenticated pricing page: the last resort when the signed-in
- * hand-off opened nothing. Resolves to whether a browser page opened.
+ * The plain, unauthenticated AI Credits page (`pricingUrl`, named for the
+ * retired pricing page): the last resort when the signed-in hand-off opened
+ * nothing. Resolves to whether a browser page opened.
  */
-async function openUnauthenticatedPricingPage(
+async function openUnauthenticatedBillingPage(
   availability: NativeAiCreditsAvailability | null,
 ): Promise<boolean> {
   const url = availability?.pricingUrl;
@@ -400,7 +327,7 @@ async function openUnauthenticatedPricingPage(
 /**
  * Where a Buy AI Credits billing open went. `'settings'`: Billing opened
  * inside Settings and the user has NOT left the app. `'web'`: a browser page
- * opened (signed-in billing, or the unauthenticated pricing fallback).
+ * opened (signed-in billing, or the unauthenticated billing fallback).
  * `'failed'`: nothing opened.
  */
 export type BillingPageOpenResult = SettingsOpenResult | 'failed';
@@ -445,7 +372,7 @@ export interface OpenBillingPageOptions {
   /**
    * Appends the `topUp=1&reason=credits&source=<topUpSource>` intent to the
    * signed-in billing path, so the web page opens its top-up. Never sent to
-   * the unauthenticated pricing fallback.
+   * the unauthenticated billing fallback.
    */
   topUpSource?: ModelLibraryUnlockSource;
 }
@@ -481,7 +408,7 @@ async function openBillingInBrowser(
  * signed-in web page even when Settings could open, so the caller's
  * "finish this in your browser" state survives; it never answers
  * `'settings'` and never arms the Settings-close re-read. Either way, only
- * when the signed-in hand-off opened nothing, the plain pricing page.
+ * when the signed-in hand-off opened nothing, the plain AI Credits page.
  *
  * The answer is load-bearing for callers that render a "finish this in your
  * browser" state. `'settings'` means there is no browser to return from, so
@@ -506,7 +433,7 @@ export async function openBillingPage(
       : await openSettingsPathOrWebReported(path);
   if (result === 'settings') rereadAiCreditsWhenSettingsCloses();
   if (result !== 'failed') return result;
-  return (await openUnauthenticatedPricingPage(availability))
+  return (await openUnauthenticatedBillingPage(availability))
     ? 'web'
     : 'failed';
 }
@@ -525,10 +452,10 @@ export function getAiCreditsConnectContext(
     options.destination !== 'browser' && hostedSettingsOpenable();
   return {
     title: 'Buy AI Credits',
-    subtitle: `Connect your ${brandText.appName} account to add AI Credits.`,
+    subtitle: `Connect your ${brandText.appName} account to buy AI Credits.`,
     toastMessage: opensSettings
-      ? "You're connected. Opening Billing in Settings so you can add AI Credits."
-      : "You're connected. Opening your billing page so you can add AI Credits.",
+      ? "You're connected. Opening Billing in Settings so you can buy AI Credits."
+      : "You're connected. Opening your billing page so you can buy AI Credits.",
   };
 }
 
@@ -571,10 +498,7 @@ export function useGetAiCreditsAction(
 function billingOwnerKey(
   availability: NativeAiCreditsAvailability | null,
 ): string | null {
-  if (!availability || availability.inconclusive === true) return null;
-  return availability.ownerOrganization
-    ? `org:${availability.ownerOrganization.id.toLowerCase()}`
-    : 'personal';
+  return creditsBillingOwnerKey(availability);
 }
 
 /**
@@ -766,34 +690,32 @@ async function openUnlockCheckout(
   } catch {
     return { outcome: 'failed' };
   }
-  let requestId: string | undefined;
   const startingBalanceAtOpen = startingBalance.current();
-  try {
-    const result = settingsPaymentHandoffResultSchema.safeParse(
-      await window.api.accountOrganizationSettings.paymentHandoff({
-        accountId,
-        owner: ownerOrganization
-          ? { kind: 'organization', organizationId: ownerOrganization.id }
-          : { kind: 'personal' },
-        intent: {
-          kind: 'top-up',
-          reason: 'unlock_models',
-          source: request.source,
-          ...(isBillingIntentIdentifier(request.modelId)
-            ? { modelId: request.modelId }
-            : {}),
-          ...(isBillingIntentIdentifier(request.chatId)
-            ? { chatId: request.chatId }
-            : {}),
-        },
-      }),
-    );
-    if (!result.success || !result.data.ok) return { outcome: 'failed' };
-    requestId = result.data.requestId;
-  } catch {
-    // Transport rejection may follow a launch: no retry or fallback.
-    return { outcome: 'failed' };
-  }
+  // The client's hand-off never rejects: a transport rejection, which may
+  // follow a launch, is a failed open with no retry or fallback.
+  const handoff = registeredCreditsHandoffClient();
+  if (handoff === null) return { outcome: 'failed' };
+  const result = settingsPaymentHandoffResultSchema.safeParse(
+    await handoff.open({
+      accountId,
+      owner: ownerOrganization
+        ? { kind: 'organization', organizationId: ownerOrganization.id }
+        : { kind: 'personal' },
+      intent: {
+        kind: 'top-up',
+        reason: 'unlock_models',
+        source: request.source,
+        ...(isBillingIntentIdentifier(request.modelId)
+          ? { modelId: request.modelId }
+          : {}),
+        ...(isBillingIntentIdentifier(request.chatId)
+          ? { chatId: request.chatId }
+          : {}),
+      },
+    }),
+  );
+  if (!result.success || !result.data.ok) return { outcome: 'failed' };
+  const requestId = result.data.requestId;
   // Browser success stands even when tracking cannot be established afterwards.
   if (!requestId || !read || read.access === undefined || !isCurrent(epoch))
     return { outcome: 'opened' };

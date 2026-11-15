@@ -313,13 +313,14 @@ export async function handlePortalWorkspaceDelete(
     // Defense-in-depth on the browser-supplied id (the service also validates,
     // but validate up front to match the IPC convention).
     validateId(workspaceId, 'workspaceId');
-    await deleteWorkspaceById(
-      workspaceId,
-      'portal',
-      superseded !== undefined
+    await deleteWorkspaceById(workspaceId, 'portal', {
+      ...(superseded !== undefined
         ? { supersedeInterruptedDeletion: superseded }
-        : {},
-    );
+        : {}),
+      ...(!context.origin && Array.isArray(payload.discardPendingRecovery)
+        ? { discardPendingRecovery: payload.discardPendingRecovery }
+        : {}),
+    });
     notifyRendererWorkspacesChanged(context, workspaceId);
     context.complete(command, { success: true });
   } catch (error) {

@@ -229,7 +229,6 @@ export function HomeAndResumeSpecimen(): JSX.Element {
               <GuestModelGateContent
                 subject={{ modelLabel: 'Opus', appName: 'Acme' }}
                 renderSignIn={SignInLink}
-                onDismiss={noop}
                 dataTestId="lab-guest-gate-plain"
               />
             </div>
@@ -240,7 +239,6 @@ export function HomeAndResumeSpecimen(): JSX.Element {
                 subject={{ modelLabel: 'Opus', appName: 'Acme' }}
                 fallback={{ label: 'Sonnet', onActivate: noop }}
                 renderSignIn={SignInLink}
-                onDismiss={noop}
                 dataTestId="lab-guest-gate-fallback"
               />
             </div>
@@ -254,7 +252,6 @@ export function HomeAndResumeSpecimen(): JSX.Element {
                   access: 'needs_sign_in_then_purchase',
                 }}
                 renderSignIn={SignInLink}
-                onDismiss={noop}
                 dataTestId="lab-guest-gate-purchase"
               />
             </div>
@@ -265,7 +262,6 @@ export function HomeAndResumeSpecimen(): JSX.Element {
                 subject={{ modelLabel: 'Opus', appName: 'Acme' }}
                 fallback={{ label: 'Sonnet', onActivate: noop }}
                 renderSignIn={SignInLink}
-                onDismiss={noop}
                 busy
                 status="Starting a guest chat…"
                 dataTestId="lab-guest-gate-busy"
@@ -278,7 +274,6 @@ export function HomeAndResumeSpecimen(): JSX.Element {
                 subject={{ modelLabel: 'Opus', appName: 'Acme' }}
                 fallback={{ label: 'Sonnet', onActivate: noop }}
                 renderSignIn={SignInLink}
-                onDismiss={noop}
                 error="Could not start a guest chat. Try again."
                 dataTestId="lab-guest-gate-error"
               />
@@ -293,7 +288,6 @@ export function HomeAndResumeSpecimen(): JSX.Element {
                   appName: 'Acme',
                 }}
                 renderSignIn={SignInLink}
-                onDismiss={noop}
                 dataTestId="lab-guest-gate-long"
               />
             </div>

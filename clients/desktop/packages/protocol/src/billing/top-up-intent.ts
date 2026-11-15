@@ -5,6 +5,8 @@ export const MODEL_LIBRARY_UNLOCK_SOURCES = [
   'picker',
   'banner',
   'proxy_error',
+  // compat: the retired `/pricing` page's source. No current surface sends it,
+  // but open links and stored payment metadata can still carry it.
   'pricing',
   'desktop',
   'billing',

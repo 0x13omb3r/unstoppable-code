@@ -1158,15 +1158,22 @@ export function SubagentsPanel({
       {orderedRootChats.length > 0 ? (
         <>
           {
-            <header
+            <Surface
               data-testid="subagents-toolbar"
-              className="flex min-h-12 shrink-0 flex-wrap items-center gap-2 border-b px-3 py-2"
+              as="header"
+              variant="section"
+              boundary="bottom"
+              gap="inline"
+              direction="row"
+              padding="section-compact"
+              extent="subagents-toolbar"
+              className="shrink-0 flex-wrap items-center"
             >
               {rootPicker}
               {filterControl}
               {levelsControl}
               {viewControl}
-            </header>
+            </Surface>
           }
           {tree?.complete === false ? (
             <p

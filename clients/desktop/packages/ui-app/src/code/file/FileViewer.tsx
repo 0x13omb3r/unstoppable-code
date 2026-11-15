@@ -184,7 +184,10 @@ export interface FileViewerProps {
   readonly supportedDocumentKinds?: readonly RichDocumentRenderKind[];
   /** Opt-in image renderer sharing the bounded, cancellable document loader. */
   readonly renderImageDocument?: (slot: FileRichDocumentSlot) => ReactNode;
-  /** Safe display name for document chrome and failures. */
+  /**
+   * Safe display name for document chrome and failures, named the way the
+   * header names the file. Defaults to the request's path.
+   */
   readonly documentDisplayName?: string;
   /**
    * Sentence appended to the parse-failed card after
@@ -2053,8 +2056,8 @@ function FileViewerBody({
         >
           <p className="text-s font-medium fg-primary">File does not exist</p>
           <p className="text-xs fg-secondary">
-            {request.relativePath} could not be found. It may have been moved,
-            renamed, or deleted.
+            {documentDisplayName ?? request.relativePath} could not be found. It
+            may have been moved, renamed, or deleted.
           </p>
         </div>
       );
@@ -2063,7 +2066,10 @@ function FileViewerBody({
       return (
         <div className="flex h-full min-h-0 flex-col" data-testid="file-viewer">
           <Surface variant="section" boundary="bottom">
-            <div className="flex items-center gap-1 px-3 py-1.5 text-xs">
+            <div
+              className="flex items-center gap-1 px-3 py-1.5 text-xs"
+              data-testid="file-viewer-unsupported-header"
+            >
               {renderPathBreadcrumb ? (
                 <div className="flex min-w-0 flex-1 items-center overflow-hidden">
                   {renderPathBreadcrumb(request.relativePath)}
@@ -2079,7 +2085,12 @@ function FileViewerBody({
           </Surface>
           <FilePreviewMessage
             title="Unsupported file type"
-            description={<>{request.relativePath} cannot be previewed.</>}
+            description={
+              <>
+                {documentDisplayName ?? request.relativePath} cannot be
+                previewed.
+              </>
+            }
             action={unsupportedFileAction}
             actionGap={unsupportedFileActionGap}
             testId="file-viewer-unsupported"

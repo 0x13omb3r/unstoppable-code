@@ -35,7 +35,8 @@ export type CodeBlockVariant =
   | 'well'
   | 'card'
   | 'pane'
-  | 'warning';
+  | 'warning'
+  | 'audit-transcript';
 
 /** The type size. `inherit` takes the size of the text around the block. */
 export type CodeBlockSize = 'inherit' | '2xs' | 'xs' | 's';
@@ -73,6 +74,7 @@ const VARIANT_CLASS_NAMES: Record<CodeBlockVariant, string> = {
   card: `rounded-xl p-4 ${SURFACE_VARIANT_CLASS.card}`,
   pane: 'px-4 py-3 leading-5',
   warning: 'bg-warning-subtle px-2 py-1',
+  'audit-transcript': 'min-h-60 rounded-lg border bg-base/40 p-4 leading-6',
 };
 
 const DEFAULT_SIZES: Record<CodeBlockVariant, CodeBlockSize> = {
@@ -85,6 +87,7 @@ const DEFAULT_SIZES: Record<CodeBlockVariant, CodeBlockSize> = {
   card: 's',
   pane: 'xs',
   warning: 'xs',
+  'audit-transcript': 'xs',
 };
 
 const SIZE_CLASS_NAMES: Record<CodeBlockSize, string> = {

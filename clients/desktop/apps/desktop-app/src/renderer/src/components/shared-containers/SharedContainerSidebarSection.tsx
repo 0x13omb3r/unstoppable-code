@@ -245,7 +245,7 @@ export function SharedContainerSidebarSection({
       headerButtonProps={{
         'data-testid': SECTION_TOGGLE_TEST_ID,
       }}
-      headerClassName="group group/shared-containers"
+      headerVariant="shared-containers"
       spacing="inset"
       header={
         // Label, chevron, count: the Projects header's order, with the count

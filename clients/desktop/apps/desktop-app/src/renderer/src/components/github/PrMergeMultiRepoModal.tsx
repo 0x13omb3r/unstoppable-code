@@ -1,3 +1,4 @@
+import { DialogActionFooter } from '@canopy/ui-shared/components';
 import { Badge } from '@canopy/ui-shared/components/Badge';
 import {
   memo,
@@ -224,7 +225,7 @@ export const PrMergeMultiRepoModal = memo(function PrMergeMultiRepoModal({
           </>
         )}
       </div>
-      <div className="flex items-center justify-end gap-2 border-t p-4">
+      <DialogActionFooter center padding="roomy">
         <Button
           variant="secondary"
           size="compact"
@@ -257,7 +258,7 @@ export const PrMergeMultiRepoModal = memo(function PrMergeMultiRepoModal({
                 : `Merge ${selected.size} ${selected.size === 1 ? 'PR' : 'PRs'}`}
           </Button>
         )}
-      </div>
+      </DialogActionFooter>
     </DialogModal>
   );
 });

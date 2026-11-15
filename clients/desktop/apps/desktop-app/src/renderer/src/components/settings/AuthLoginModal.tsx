@@ -1,3 +1,8 @@
+import {
+  AuthLoginSnapshotRail,
+  AuthLoginStatusBar,
+  AuthLoginTerminalFrame,
+} from '@canopy/ui-shared/components';
 import { CodexLoginModal } from './CodexLoginModal';
 import '@xterm/xterm/css/xterm.css';
 import {
@@ -164,10 +169,7 @@ function StatusFooter({
       </Surface>
     );
   return (
-    <div
-      data-testid="auth-login-status"
-      className="flex items-center gap-2 px-6 py-3 border-t bg-base/40"
-    >
+    <AuthLoginStatusBar data-testid="auth-login-status">
       {status === null ? (
         <StatusGlyph state="running" size={12} />
       ) : (
@@ -206,7 +208,7 @@ function StatusFooter({
         )}
       </div>
       {trailing}
-    </div>
+    </AuthLoginStatusBar>
   );
 }
 
@@ -778,10 +780,9 @@ function TerminalAuthLoginModal({
   const showTerminal = view.kind === 'running' || view.kind === 'exit-checking';
 
   const terminalFrame = (
-    <div
+    <AuthLoginTerminalFrame
       ref={terminalFrameRef}
       // An outer hairline: the terminal canvas covers an inset one.
-      className="relative overflow-hidden rounded-lg ring-[length:var(--border-hairline)] ring-line-base"
       style={{
         height: TERMINAL_AREA_HEIGHT,
         backgroundColor: TERMINAL_BG_COLOR,
@@ -799,7 +800,7 @@ function TerminalAuthLoginModal({
           onCopy={copyTerminalSelection}
         />
       ) : null}
-    </div>
+    </AuthLoginTerminalFrame>
   );
 
   const snapshotsToggle = hasSnapshots ? (
@@ -912,10 +913,7 @@ function TerminalAuthLoginModal({
           // `relative` host + `absolute inset-0` scroller keeps the panel's
           // height pinned to the terminal column so tall snapshot content
           // scrolls internally instead of growing the modal.
-          <div
-            data-testid="auth-login-snapshots-panel"
-            className="relative w-80 shrink-0 border-l bg-base/20"
-          >
+          <AuthLoginSnapshotRail data-testid="auth-login-snapshots-panel">
             <div className="absolute inset-0 overflow-y-auto overscroll-contain p-4">
               <OtherAccountSnapshotsPanel
                 provider={snapshotProvider}
@@ -923,7 +921,7 @@ function TerminalAuthLoginModal({
                 nowMs={nowMs}
               />
             </div>
-          </div>
+          </AuthLoginSnapshotRail>
         ) : null}
       </div>
     </DialogModal>

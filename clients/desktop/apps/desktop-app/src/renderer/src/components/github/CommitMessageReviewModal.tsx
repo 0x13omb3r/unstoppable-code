@@ -1,3 +1,4 @@
+import { DialogActionFooter } from '@canopy/ui-shared/components';
 import { memo, useState, useCallback, useEffect, type JSX } from 'react';
 import { useShallow } from 'zustand/shallow';
 import { useGitHubStore } from '@/stores/githubStore';
@@ -118,7 +119,7 @@ export const CommitMessageReviewModal = memo(function CommitMessageReviewModal({
           </div>
         ))}
       </div>
-      <div className="flex items-center justify-end gap-2 border-t p-4">
+      <DialogActionFooter center padding="roomy">
         <Button variant="secondary" size="compact" onClick={handleCancel}>
           Cancel
         </Button>
@@ -130,7 +131,7 @@ export const CommitMessageReviewModal = memo(function CommitMessageReviewModal({
         >
           {actionLabel}
         </Button>
-      </div>
+      </DialogActionFooter>
     </DialogModal>
   );
 });

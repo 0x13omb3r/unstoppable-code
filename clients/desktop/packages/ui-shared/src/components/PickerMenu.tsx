@@ -146,6 +146,26 @@ export interface PickerTriggerProps extends ButtonHTMLAttributes<HTMLButtonEleme
   wrapperHover?: boolean;
 }
 
+const COMPOSER_PICKER_FIELD = 'h-10 bg-base px-3';
+
+/** A settled destination, or reserved space while the workspace loads. */
+export function ComposerPickerPlaceholder({
+  children,
+  testId,
+}: {
+  readonly children: ReactNode;
+  readonly testId: string;
+}): JSX.Element {
+  return (
+    <span
+      data-testid={testId}
+      className={`flex min-w-0 max-w-64 items-center text-left opacity-40 fg-primary ${COMPOSER_PICKER_FIELD} ${PICKER_TRIGGER_SHELLS.field}`}
+    >
+      {children}
+    </span>
+  );
+}
+
 const PICKER_TRIGGER_WRAPPER_HOVERS: Record<PickerTriggerVariant, string> = {
   capsule:
     ' enabled:group-hover/picker-trigger:bg-subtle enabled:group-hover/picker-trigger:fg-primary',
@@ -211,7 +231,7 @@ export const PickerTrigger = forwardRef<HTMLButtonElement, PickerTriggerProps>(
         {...props}
         ref={ref}
         type={type}
-        className={`${PICKER_TRIGGER_FOCUS[variant]} flex min-w-0 items-center text-left disabled:cursor-not-allowed disabled:opacity-40 ${variant === 'capsule' ? PICKER_TRIGGER_HEIGHTS[size] : size === 'composer' ? 'h-10 bg-base px-3' : 'h-8 bg-transparent px-2'} ${PICKER_TRIGGER_SHELLS[variant]}${
+        className={`${PICKER_TRIGGER_FOCUS[variant]} flex min-w-0 items-center text-left disabled:cursor-not-allowed disabled:opacity-40 ${variant === 'capsule' ? PICKER_TRIGGER_HEIGHTS[size] : size === 'composer' ? COMPOSER_PICKER_FIELD : 'h-8 bg-transparent px-2'} ${PICKER_TRIGGER_SHELLS[variant]}${
           variant !== 'capsule' || size === 'page'
             ? ''
             : labelOnly

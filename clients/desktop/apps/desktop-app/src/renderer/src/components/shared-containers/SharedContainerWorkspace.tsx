@@ -373,9 +373,12 @@ export function SharedContainerWorkspace({
   const ownerName = entry?.ownerName;
 
   return (
-    <div
+    <Surface
       data-testid="shared-container-surface"
-      className="electron-no-drag flex h-full min-h-0 flex-col bg-base"
+      variant="pane"
+      extent="parent"
+      dragRegion={false}
+      className="flex min-h-0 flex-col"
     >
       <SharedContainerTopBar
         containerType={surfaceContainerType}
@@ -511,7 +514,7 @@ export function SharedContainerWorkspace({
           onClose={(): void => setRunSheetOpen(false)}
         />
       )}
-    </div>
+    </Surface>
   );
 }
 
@@ -547,7 +550,7 @@ function SharedContainerTopBar({
     >
       <span
         data-testid="shared-container-title"
-        className="flex h-7 min-w-0 items-center truncate rounded-md pl-1 pr-2 text-s font-normal fg-primary"
+        className="flex h-7 min-w-0 items-center truncate pl-1 pr-2 text-s font-normal fg-primary"
         title={title}
       >
         {title}

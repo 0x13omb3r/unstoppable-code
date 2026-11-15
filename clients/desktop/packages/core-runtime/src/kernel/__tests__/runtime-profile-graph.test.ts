@@ -1,3 +1,4 @@
+import { createServiceContainer } from '../service-container';
 import {
   WORKER_QUERY_DEFINITIONS,
   type CanopyCallerDescriptor,
@@ -640,4 +641,38 @@ it('shares a host-supplied daemon epoch with every journal the host composes', a
       phaseDeadlineMs: 1000,
     }),
   ).toThrow(RangeError);
+});
+
+it('startup stop irreversibly fences later service admission while an earlier hook is pending', async () => {
+  let enter = (): void => undefined;
+  const entered = new Promise<void>((resolve) => {
+    enter = resolve;
+  });
+  let release = (): void => undefined;
+  const barrier = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const later = jest.fn();
+  const cancellation = new AbortController();
+  const container = createServiceContainer({
+    profile: 'core',
+    services: [
+      {
+        name: 'pending',
+        plane: 'core',
+        start: (): Promise<void> => {
+          enter();
+          return barrier;
+        },
+      },
+      { name: 'later', plane: 'core', start: later },
+    ],
+  });
+  const starting = container.start(cancellation.signal);
+  await entered;
+  cancellation.abort();
+  await expect(starting).rejects.toThrow();
+  release();
+  await expect(container.start()).rejects.toThrow();
+  expect(later).not.toHaveBeenCalled();
 });

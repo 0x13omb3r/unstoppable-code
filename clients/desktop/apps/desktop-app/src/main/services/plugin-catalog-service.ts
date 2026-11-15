@@ -853,6 +853,7 @@ export async function getPortalPluginDetail(
     plugin: toPluginRow(plugin, marketplace, shareResolver),
     details: sanitizePluginDetails(details),
     readme,
+    opencodeCommandHooks: true,
     // The Portal lists the same harness rows as this desktop (CAN-4842).
     harnesses: offeredPluginHarnesses({
       cursor: isCursorHarnessEnabled(),

@@ -156,8 +156,10 @@ export const ACCOUNT_NAV_ITEMS: readonly AccountNavItem[] = [
   },
   {
     key: 'billing',
-    label: 'Billing',
-    description: 'Your plan, AI credits, payment method and past payments.',
+    // Keeps its `billing` key and `/account/billing` route, so desktop, email
+    // and credit deep links keep working.
+    label: AI_CREDITS_LABEL,
+    description: 'Your AI Credits balance, payment methods and top-ups.',
     href: '/account/billing',
     icon: CreditCard,
   },
@@ -178,28 +180,15 @@ export const ACCOUNT_NAV_ITEMS: readonly AccountNavItem[] = [
 ];
 
 /** The item for a key; the page header reads its label and description. */
-export function accountNavItem(
-  key: AccountNavKey,
-  freeAccess = false,
-): AccountNavItem {
+export function accountNavItem(key: AccountNavKey): AccountNavItem {
   const item = ACCOUNT_NAV_ITEMS.find((candidate) => candidate.key === key);
   if (!item) throw new Error(`Unknown account nav item: ${key}`);
-  return key === 'billing' && freeAccess
-    ? {
-        ...item,
-        label: AI_CREDITS_LABEL,
-        description: 'Your AI Credit balance, payment methods and top-ups.',
-      }
-    : item;
+  return item;
 }
 
 /**
  * The flag-gated items each follow the flag their own page guards on, resolved
  * server-side, so an item never leads to a feature-off 404 or a redirect.
- *
- * With free access on, Billing keeps its key and `/account/billing` route (so
- * desktop, email, and credit deep links keep working) but is named "AI
- * Credits", the only thing the page still sells.
  */
 export function visibleAccountNavItems(
   flags: AccountSettingsNavFlags,
@@ -216,7 +205,7 @@ export function visibleAccountNavItems(
     if (item.key === 'labs') return flags.labsEnabled === true;
     if (item.key === 'appearance') return flags.appearanceEnabled === true;
     return true;
-  }).map((item) => accountNavItem(item.key, flags.freeAccess === true));
+  });
 }
 
 /**

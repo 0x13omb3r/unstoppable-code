@@ -583,6 +583,18 @@ export async function readMemoryFile(
   }
 }
 
+/**
+ * Text a destructive memory write can faithfully snapshot and compare.
+ * Refuse a lossy decode before repair or rollback can replace original bytes.
+ */
+export async function readMemoryText(path: string): Promise<string | null> {
+  const content = await readMemoryFile(path);
+  if (content !== null && content.text === null) {
+    throw new Error('Memory file is not UTF-8 text');
+  }
+  return content?.text ?? null;
+}
+
 /** Whether two reads of a memory file found the same file, by its bytes. */
 export function sameMemoryFileContent(
   left: MemoryFileContent | null,

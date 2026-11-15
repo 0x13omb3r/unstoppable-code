@@ -24,6 +24,7 @@ import {
   CLOUD_MODEL_ACTION_HARNESSES,
   CLOUD_NATIVE_MODEL_ALIASES,
   CLOUD_NATIVE_MODEL_GATEWAY_IDS,
+  CLOUD_NATIVE_MODEL_HARNESSES,
   applyCloudModelChoices,
   findCloudModelItems,
 } from '@canopy/pipeline-interop/cloud-model-preflight';
@@ -36,8 +37,35 @@ import {
   CODEX_MODELS,
   DEFAULT_CLAUDE_MODEL,
   OLLAMA_MODEL_PREFIX,
+  getCurrentModelHarnessCatalog,
+  getExecutionHarnessForModel,
+  getGatewayModelEntry,
+  getModelAliases,
+  getModelSource,
+  initAiGatewayModels,
+  initClaudeModels,
+  initCodexModels,
+  initModelAliases,
   isOllamaModel,
 } from '@canopy/execution-engine/model-catalog';
+import {
+  buildModelHarnessAssignmentSnapshot,
+  getHydratedModelHarnessAssignment,
+  initModelHarnessAssignments,
+} from '@canopy/execution-engine/model-harnesses';
+import { applyModelRegistrySnapshot } from '@canopy/execution-engine/builtin-actions/_lib/model-registry';
+import { buildModelRegistrySnapshot } from '@canopy/execution-engine/node/pipelines/executor/model-registry-snapshot';
+import {
+  CLOUD_RUN_MODEL_REGISTRY_VALUE_MAX_BYTES,
+  cloudRunModelRegistry,
+} from '@canopy/pipeline-interop/cloud-model-registry';
+import { WORKER_PIPELINE_MODEL_CATALOG_MAX_BYTES } from '@canopy/protocol/canopy-core';
+import {
+  AI_GATEWAY_MODEL_CATALOG_VERSION,
+  type AiGatewayModel,
+} from '@canopy/protocol/ai-gateway-models';
+import { mergeAiGatewayModelCatalog } from '../../../ai-gateway-model-catalog';
+import { parseModelPackageConfig } from '../../../model-config';
 import {
   isCopilotModel,
   toCopilotModelId,
@@ -625,13 +653,21 @@ describe('cloud model preflight', () => {
         ),
       );
     const ids: Record<string, string> = {};
+    const harnesses: Record<string, string> = {};
     const aliases: Record<string, string> = {};
-    for (const config of [manifest['claude-code'], manifest.codex]) {
+    for (const [config, harness] of [
+      [manifest['claude-code'], 'claude'],
+      [manifest.codex, 'codex'],
+    ] as const) {
       for (const model of config.models)
-        if (model.gatewayId !== undefined) ids[model.id] = model.gatewayId;
+        if (model.gatewayId !== undefined) {
+          ids[model.id] = model.gatewayId;
+          harnesses[model.id] = harness;
+        }
       Object.assign(aliases, config.modelAliases);
     }
     expect(CLOUD_NATIVE_MODEL_GATEWAY_IDS).toEqual(ids);
+    expect(CLOUD_NATIVE_MODEL_HARNESSES).toEqual(harnesses);
     expect(CLOUD_NATIVE_MODEL_ALIASES).toEqual(aliases);
   });
 
@@ -795,5 +831,269 @@ describe('cloud model preflight', () => {
     expect(isCopilotModel(model)).toBe(harness === 'copilot');
     expect(isOpenCodeModel(model)).toBe(harness === 'opencode');
     expect(isOllamaModel(model)).toBe(harness === 'ollama');
+  });
+});
+
+// CAN-6747: a cloud run's start carries the model registry snapshot the web
+// core builds from the run owner's cloud catalog. It must resolve the run's
+// models as desktop's own snapshot (`buildModelRegistrySnapshot`) does for
+// the same models: the same harness, source, gateway route and harness
+// assignment for each, and desktop's aliases of them.
+describe('a cloud run’s model registry (CAN-6747)', () => {
+  const KIMI = 'moonshotai/kimi-k3.1-pro';
+  const LEVELS = ['low', 'medium', 'high'] as const;
+  const manifest = z
+    .object({ 'claude-code': z.unknown(), codex: z.unknown() })
+    .parse(
+      JSON.parse(
+        readFileSync(
+          resolve(__dirname, '../../../../../../package.json'),
+          'utf8',
+        ),
+      ),
+    );
+  /** The models the cloud offers: every desktop model it can route, and a gateway-only one. */
+  const catalog = [
+    ...Object.entries(CLOUD_NATIVE_MODEL_GATEWAY_IDS).map(
+      ([modelId, gatewayId]) => ({
+        gatewayId,
+        harness: CLOUD_NATIVE_MODEL_HARNESSES[modelId] ?? 'claude',
+      }),
+    ),
+    { gatewayId: KIMI, harness: 'claude' as const },
+  ];
+  const familyOf = (gatewayId: string): string =>
+    gatewayId.split('/')[0] ?? 'custom';
+  /** The same models in the AI Gateway catalog desktop reads. */
+  const hosted: AiGatewayModel[] = catalog.map(({ gatewayId, harness }) => ({
+    id: gatewayId,
+    gatewayId,
+    label: gatewayId,
+    family: familyOf(gatewayId),
+    familyLabel: familyOf(gatewayId),
+    recommendedHarness: harness,
+    contextWindow: 200_000,
+    supportsPromptCaching: false,
+    requiresLocalHarnessSupport: false,
+    showMoreOnly: false,
+    supportedThinkingLevels: [...LEVELS],
+    thinkingLevelsExact: true,
+    toolSchemaProfile: 'standard',
+  }));
+
+  /** Desktop's snapshot with that catalog, as Electron main builds it. */
+  function desktopSnapshot(): ReturnType<typeof buildModelRegistrySnapshot> {
+    const merged = mergeAiGatewayModelCatalog({
+      packageConfig: parseModelPackageConfig(manifest),
+      catalog: { version: AI_GATEWAY_MODEL_CATALOG_VERSION, models: hosted },
+    });
+    initClaudeModels(merged.claudeModels);
+    initCodexModels(merged.codexModels);
+    initAiGatewayModels(merged.aiGatewayModels, merged.gatewayRoutes);
+    initModelAliases(merged.modelAliases);
+    initModelHarnessAssignments(
+      buildModelHarnessAssignmentSnapshot({
+        catalog: getCurrentModelHarnessCatalog(),
+      }),
+    );
+    return buildModelRegistrySnapshot();
+  }
+
+  /** How the host resolves each model once `snapshot` is applied. */
+  function resolved(
+    snapshot: Parameters<typeof applyModelRegistrySnapshot>[0],
+    models: readonly string[],
+  ): Record<string, unknown> {
+    expect(applyModelRegistrySnapshot(snapshot)).toBe(true);
+    return Object.fromEntries(
+      models.map((model) => {
+        const route = getGatewayModelEntry(model);
+        // Through the registry's aliases, as the host resolves a step's model.
+        const assignment = getHydratedModelHarnessAssignment(
+          model,
+          getModelAliases(),
+        );
+        return [
+          model,
+          {
+            harness: getExecutionHarnessForModel(model),
+            source: getModelSource(model),
+            route: route && {
+              gatewayId: route.gatewayId,
+              family: route.family,
+              recommendedHarness: route.recommendedHarness,
+              gatewayOnly: route.gatewayOnly,
+              contextWindow: route.contextWindow,
+              supportedThinkingLevels: route.supportedThinkingLevels,
+            },
+            assignment: assignment && {
+              harness: assignment.harness,
+              source: assignment.source,
+              defaultHarness: assignment.defaultHarness,
+              configurable: assignment.configurable,
+              overridden: assignment.overridden,
+              availableHarnesses: assignment.availableHarnesses,
+            },
+          },
+        ];
+      }),
+    );
+  }
+
+  let before: ReturnType<typeof buildModelRegistrySnapshot>;
+  beforeAll(() => {
+    before = buildModelRegistrySnapshot();
+  });
+  afterAll(() => {
+    applyModelRegistrySnapshot(before);
+  });
+
+  it('resolves each model as desktop’s snapshot does for the same models', () => {
+    const cloud = cloudRunModelRegistry(
+      {
+        catalog: catalog.map(({ gatewayId, harness }) => ({
+          modelId: gatewayId,
+          label: gatewayId,
+          harness,
+        })),
+        isBlocked: () => false,
+      },
+      new Map(
+        catalog.map(({ gatewayId }) => [
+          gatewayId,
+          {
+            contextWindow: 200_000,
+            thinkingLevels: [...LEVELS],
+            family: familyOf(gatewayId),
+          },
+        ]),
+      ),
+    );
+    const desktop = desktopSnapshot();
+    // Every model the cloud lists, and desktop's aliases of them.
+    const listed = [
+      ...Object.keys(CLOUD_NATIVE_MODEL_GATEWAY_IDS),
+      KIMI,
+      ...Object.keys(CLOUD_NATIVE_MODEL_ALIASES).filter((alias) => {
+        const target = CLOUD_NATIVE_MODEL_ALIASES[alias] ?? '';
+        return target in CLOUD_NATIVE_MODEL_GATEWAY_IDS;
+      }),
+    ];
+    const expected = resolved(desktop, listed);
+    expect(resolved(cloud, listed)).toEqual(expected);
+    // A replacement the user confirmed names the catalog id: it runs as the
+    // desktop model it is.
+    const confirmed = resolved(
+      cloud,
+      Object.values(CLOUD_NATIVE_MODEL_GATEWAY_IDS),
+    );
+    for (const [model, gatewayId] of Object.entries(
+      CLOUD_NATIVE_MODEL_GATEWAY_IDS,
+    ))
+      expect(confirmed[gatewayId]).toEqual(expected[model]);
+  });
+
+  it('stays within the launch limit, keeping first the models the run names', () => {
+    const padded = (index: number): string =>
+      `vendor/model-${String(index).padStart(4, '0')}-${'x'.repeat(480)}`;
+    const named = padded(2_999);
+    const cloud = cloudRunModelRegistry(
+      {
+        catalog: [
+          ...Array.from({ length: 3_000 }, (_, index) => ({
+            modelId: padded(index),
+            label: 'Model',
+            harness: 'claude' as const,
+          })),
+          {
+            modelId: 'anthropic/claude-sonnet-5.5',
+            label: 'S',
+            harness: 'claude',
+          },
+        ],
+        isBlocked: () => false,
+      },
+      new Map(),
+      {
+        jobs: {
+          j: {
+            steps: [{ uses: 'builtin/agent-prompt', with: { model: named } }],
+          },
+        },
+      },
+    );
+    const sizes = Object.values(cloud).map((value) =>
+      Buffer.byteLength(value ?? '', 'utf8'),
+    );
+    expect(sizes.reduce((total, size) => total + size, 0)).toBeLessThanOrEqual(
+      WORKER_PIPELINE_MODEL_CATALOG_MAX_BYTES,
+    );
+    // Each value fits one environment entry of an action subprocess.
+    for (const size of sizes)
+      expect(size).toBeLessThanOrEqual(
+        CLOUD_RUN_MODEL_REGISTRY_VALUE_MAX_BYTES,
+      );
+    expect(Math.max(...sizes)).toBeGreaterThan(
+      CLOUD_RUN_MODEL_REGISTRY_VALUE_MAX_BYTES / 2,
+    );
+    const models = resolved(cloud, [named, padded(2_998), 'opus[1m]']);
+    // The host exports the registry it applied to every action subprocess:
+    // each of those values fits one environment entry too.
+    for (const value of Object.values(buildModelRegistrySnapshot()))
+      expect(Buffer.byteLength(value ?? '', 'utf8')).toBeLessThanOrEqual(
+        CLOUD_RUN_MODEL_REGISTRY_VALUE_MAX_BYTES,
+      );
+    // What the run names, then the catalog in order while it fits.
+    expect(models[named]).toMatchObject({ harness: 'claude' });
+    expect(models[padded(2_998)]).toMatchObject({ harness: undefined });
+  });
+
+  it('runs a desktop model Core binds to another harness as its catalog model', () => {
+    // Core binds Sonnet's catalog id to Codex: preflight and routes map
+    // `sonnet` and its aliases there, and so must the host.
+    const cloud = cloudRunModelRegistry({
+      catalog: [
+        {
+          modelId: 'anthropic/claude-sonnet-5.5',
+          label: 'S',
+          harness: 'codex',
+        },
+      ],
+      isBlocked: () => false,
+    });
+    const models = resolved(cloud, [
+      'sonnet',
+      'sonnet[1m]',
+      'claude-sonnet-5-5',
+      'anthropic/claude-sonnet-5.5',
+    ]);
+    for (const model of Object.values(models))
+      expect(model).toMatchObject({
+        harness: 'codex',
+        source: 'ai-gateway',
+        route: {
+          gatewayId: 'anthropic/claude-sonnet-5.5',
+          recommendedHarness: 'codex',
+          gatewayOnly: true,
+        },
+      });
+  });
+
+  it('leaves out what the owner’s policy blocks', () => {
+    const cloud = cloudRunModelRegistry({
+      catalog: [
+        {
+          modelId: 'anthropic/claude-sonnet-5.5',
+          label: 'S',
+          harness: 'claude',
+        },
+        { modelId: 'anthropic/claude-opus-5.5', label: 'O', harness: 'claude' },
+      ],
+      isBlocked: (modelId) => modelId === 'anthropic/claude-opus-5.5',
+    });
+    const models = resolved(cloud, ['sonnet', 'opus[1m]', 'opus']);
+    expect(models.sonnet).toMatchObject({ harness: 'claude' });
+    expect(models['opus[1m]']).toMatchObject({ harness: undefined });
+    expect(models.opus).toMatchObject({ harness: undefined });
   });
 });

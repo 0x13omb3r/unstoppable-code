@@ -14,7 +14,16 @@ import {
   type CoreCoworkStream,
   type ProjectCloudChatMessages,
 } from '@canopy/app-state/core-cowork';
-import { CoreChatMessageSendParamsSchema } from '@canopy/protocol/canopy-core';
+import {
+  CoreChatMessageSendParamsSchema,
+  CoreChatSnapshotGetResultSchema,
+  type CoreChatMessageMeter,
+} from '@canopy/protocol/canopy-core';
+import {
+  foldChatUsage,
+  type ChatUsageAnswer,
+} from '@canopy/protocol/cloud-session';
+import { toUsageIndicatorUsage } from '@canopy/ui-app';
 import type { ModelCatalogOption } from '@canopy/protocol/models';
 import type {
   ChatCommandRequest,
@@ -48,11 +57,21 @@ import {
 import { runtimeRunsTurn } from '../../runtime-runs-turn';
 import { createLiveFollower } from '../live-follower';
 import {
+  clearCloudTaskDeletions,
+  forgetCloudTaskMark,
+  markCloudTaskDeleted,
+} from '../task-deletions';
+import {
   liveReplyKey,
   presentLiveReplies,
   type LiveChatState,
 } from '../live-replies';
-import { isPersistedChatMessage, translateCommandResult } from '../translate';
+import {
+  isPersistedChatMessage,
+  parseEventItem,
+  translateChange,
+  translateCommandResult,
+} from '../translate';
 
 /**
  * The web path's projection: the shared thread binding with subagent rows
@@ -86,6 +105,10 @@ import {
   cloudAttachmentPreview,
 } from '@/cloud-chats/cloud-chat-attachments';
 import { trackSelectionSave } from '../selection-saves';
+import {
+  clearWebCoreModelCatalog,
+  useWebCoreModelCatalogStore,
+} from '../model-catalog';
 import type { AgentTaskRow } from '@canopy/protocol/cloud-session';
 
 const WORKSPACE = 'ws-1';
@@ -163,6 +186,8 @@ const core = {
   sendGate: null as Promise<void> | null,
   /** Holds snapshot replies until released, to let events land meanwhile. */
   snapshotGate: null as Promise<void> | null,
+  /** Holds one chat's own snapshot read until released (CAN-6777). */
+  chatSnapshotGate: null as { chatId: string; gate: Promise<void> } | null,
   /** Holds transcript page replies until released, to let choices land meanwhile. */
   pageGate: null as Promise<void> | null,
   /** Holds `core.chat.update` replies until released; each answers at the revision then. */
@@ -171,6 +196,16 @@ const core = {
   setModelRefusal: null as string | null,
   /** The model the snapshot names for the task's chat. */
   model: undefined as string | undefined,
+  /**
+   * The harness the snapshot's settings name for the task's chat (CAN-6761);
+   * undefined serves no settings, as a web core from before it does.
+   */
+  harness: undefined as 'claude' | 'codex' | null | undefined,
+  /**
+   * The harness another chat's own snapshot names for it (CAN-6761): the web
+   * core opens only the chat a snapshot is read for.
+   */
+  chatHarness: {} as Record<string, 'claude' | 'codex'>,
   /** The task's chats, as core.chat.list names them. */
   chats: [{ chatId: CHAT, title: 'Plan', state: 'idle' }] as {
     chatId: string;
@@ -183,8 +218,12 @@ const core = {
   queues: {} as Record<string, Record<string, unknown>[]>,
   /** Set to make one chat's own snapshot read fail, as a lost read does. */
   snapshotFailsFor: null as string | null,
+  /** Set to make one chat's transcript page read fail, as a lost read does. */
+  pageFailsFor: null as string | null,
   /** How the web core answers a queued prompt's cancel. */
   cancelOutcome: 'applied' as 'applied' | 'conflict',
+  /** Turn cancels the web core refuses as not found, as one from before CAN-6393 did. */
+  turnCancelNotFound: 0,
   /** How the web core answers a queued prompt's edit, hold or run now (CAN-6651). */
   queueOutcome: 'applied' as 'applied' | 'conflict',
   /** Set to refuse a queue mutation whose entryRevision is not the entry's own. */
@@ -199,6 +238,8 @@ const core = {
   holds: 0,
   /** Each chat's agent task rows, as its snapshot carries them. */
   tasks: {} as Record<string, unknown[]>,
+  /** The opened chat's sandbox, as its snapshot carries it (CAN-6766). */
+  sandbox: undefined as { state: string } | undefined,
   /** Rows per transcript page. */
   pageSize: 100,
   /** Set to make the web core refuse an archive with this reason. */
@@ -338,6 +379,7 @@ function snapshot(chatId?: unknown): Record<string, unknown> {
   return {
     ...openedSnapshot(chatId),
     tasks,
+    ...(core.sandbox === undefined ? {} : { sandbox: core.sandbox }),
   };
 }
 
@@ -345,6 +387,33 @@ function openedSnapshot(chatId?: unknown): Record<string, unknown> {
   if (typeof chatId === 'string' && chatId !== CHAT)
     return {
       ...openedSnapshot(),
+      ...(core.chatHarness[chatId] === undefined
+        ? {}
+        : {
+            tabs: {
+              activeTabId: chatId,
+              items: [
+                {
+                  chatId,
+                  title: 'Notes',
+                  kind: 'chat',
+                  createdAt: '2026-11-10T00:00:00.000Z',
+                  settings: {
+                    model: null,
+                    providerId: null,
+                    executionHarness: core.chatHarness[chatId],
+                    modelSelectionMode: 'manual',
+                    thinkingLevel: null,
+                    speed: null,
+                    planMode: false,
+                    approvalMode: null,
+                    interfaceMode: null,
+                    customTitle: null,
+                  },
+                },
+              ],
+            },
+          }),
       runtimeByChatId: {
         [chatId]: {
           status: 'streaming',
@@ -370,6 +439,22 @@ function openedSnapshot(chatId?: unknown): Record<string, unknown> {
           kind: 'chat',
           createdAt: '2026-11-10T00:00:00.000Z',
           ...(core.model === undefined ? {} : { modelId: core.model }),
+          ...(core.harness === undefined
+            ? {}
+            : {
+                settings: {
+                  model: core.model ?? null,
+                  providerId: null,
+                  executionHarness: core.harness,
+                  modelSelectionMode: 'manual',
+                  thinkingLevel: null,
+                  speed: null,
+                  planMode: false,
+                  approvalMode: null,
+                  interfaceMode: null,
+                  customTitle: null,
+                },
+              }),
         },
       ],
     },
@@ -508,7 +593,12 @@ function side(): Side {
                 },
               });
             const reply = ok(snapshot(params.chatId));
-            return (core.snapshotGate ?? Promise.resolve()).then(() => reply);
+            const gate =
+              core.chatSnapshotGate !== null &&
+              params.chatId === core.chatSnapshotGate.chatId
+                ? core.chatSnapshotGate.gate
+                : core.snapshotGate;
+            return (gate ?? Promise.resolve()).then(() => reply);
           }
           case 'core.chat.transcript.page':
             if (UNSERVED_PAGE_PARAMS.some((name) => params[name] !== undefined))
@@ -518,6 +608,19 @@ function side(): Side {
                   kind: 'capability_unavailable',
                   message: 'Not served here.',
                   retry: { kind: 'never' },
+                },
+              });
+            if (
+              core.pageFailsFor !== null &&
+              isRecord(params.scope) &&
+              params.scope.chatId === core.pageFailsFor
+            )
+              return Promise.resolve({
+                ok: false,
+                error: {
+                  kind: 'unavailable',
+                  message: 'The read was lost.',
+                  retry: { kind: 'same_request' },
                 },
               });
             {
@@ -558,6 +661,18 @@ function side(): Side {
             return (core.sendGate ?? Promise.resolve()).then(() => reply);
           }
           case 'core.chat.turn.cancel': {
+            if (core.turnCancelNotFound > 0) {
+              core.turnCancelNotFound -= 1;
+              return Promise.resolve({
+                ok: false,
+                error: {
+                  kind: 'not_found',
+                  message:
+                    'agentic-core request failed with 404: Agent session turn not found',
+                  retry: { kind: 'never' },
+                },
+              });
+            }
             const reply = ok({});
             return (core.cancelGate ?? Promise.resolve()).then(() => reply);
           }
@@ -679,6 +794,8 @@ afterEach(() => {
   core.updateGate = null;
   core.setModelRefusal = null;
   core.model = undefined;
+  core.harness = undefined;
+  core.chatHarness = {};
 });
 
 async function settle(): Promise<void> {
@@ -693,6 +810,8 @@ interface Row {
   readonly provisional: boolean;
   /** Labelled Cancelled, as the shared transcript shows the row (CAN-6689). */
   readonly cancelled?: true;
+  /** The chips a prompt shows, as each names its attachment (CAN-6771). */
+  readonly attachments?: string[];
 }
 
 interface Shown {
@@ -749,6 +868,14 @@ function webPath(io: Side): {
           provisional:
             message.messageId.startsWith(live) || isOptimisticMessage(message),
           ...(message.status === 'cancelled' ? { cancelled: true } : {}),
+          ...(message.attachments !== undefined &&
+          message.attachments.length > 0
+            ? {
+                attachments: message.attachments.map((file) =>
+                  cloudAttachmentPath(file.attachmentId, file.filename),
+                ),
+              }
+            : {}),
         })),
         running: thread?.turnActive === true,
       };
@@ -792,6 +919,8 @@ function desktopPath(
       readonly projectId: string;
       readonly worktreeId: string;
     }) => void;
+    /** Whether the task's events carry sandbox.changed (CAN-6841). */
+    readonly sandboxStatesServed?: () => boolean;
   } = {},
 ): {
   readonly backend: ReturnType<typeof createWebCoreChatBackendCore>;
@@ -800,6 +929,8 @@ function desktopPath(
   readonly activeTabId: () => string | undefined;
   /** A tab's model as the store holds it. */
   readonly model: (id: string) => string | undefined;
+  /** The harness a tab's chat runs on, as the store holds it (CAN-6761). */
+  readonly harness: (id: string) => string | undefined;
   /** A tab's read state as the store holds it. */
   readonly read: (id: string) => { unread: boolean; manual: boolean };
   /** A tab's label as the tab strip shows it. */
@@ -812,8 +943,12 @@ function desktopPath(
   readonly storeIds: () => string[];
   /** The turn ends the store records for the chat, by its prompt's id. */
   readonly turnEnds: () => PersistedChatTab['turnEnds'];
+  /** The chat's usage meter as the store holds it (CAN-6755). */
+  readonly usage: () => PersistedChatTab['usage'];
   /** Whether the backend publishes the chat's sent turn as maybe starting. */
   readonly starting: () => boolean;
+  /** The chat's sandbox state as the backend publishes it (CAN-6766). */
+  readonly sandbox: () => string | undefined;
   /** The questions the store holds for the composer's question card. */
   readonly questions: () => {
     requestId: string;
@@ -826,6 +961,7 @@ function desktopPath(
 } {
   let live: LiveChatState = { replies: [], turnRuns: false };
   const startingChats = new Set<string>();
+  const sandboxes = new Map<string, string>();
   let projection: CanonicalScopeProjection | null = null;
   const backend = createWebCoreChatBackendCore({
     invoker: () => io.invoker,
@@ -842,12 +978,18 @@ function desktopPath(
     ...(options.onWorkspaceFilesChanged === undefined
       ? {}
       : { onWorkspaceFilesChanged: options.onWorkspaceFilesChanged }),
+    ...(options.sandboxStatesServed === undefined
+      ? {}
+      : { sandboxStatesServed: options.sandboxStatesServed }),
     publishLive: (_key, chat) => {
       live = chat;
     },
     publishTurnStarting: (key, starting) => {
       if (starting) startingChats.add(key);
       else startingChats.delete(key);
+    },
+    publishSandbox: (key, sandbox) => {
+      sandboxes.set(key, sandbox.state);
     },
     // As the store answers: whether its own runtime runs the chat's turn.
     storeRunsTurn: (target) =>
@@ -856,25 +998,38 @@ function desktopPath(
 
   async function loadPages(): Promise<void> {
     if (projection === null) return;
-    const tabs = await Promise.all(
-      projection.chatState.tabs.map(async (tab) =>
-        tab.transcriptLoaded === false
-          ? installTranscriptPage(
-              tab,
-              // The store's loader asks for the turn view.
-              await backend.getTranscriptPage({
-                ...SCOPE,
-                chatId: tab.id,
-                view: 'turns',
-              }),
-              false,
-            )
-          : tab,
+    const pages = new Map(
+      await Promise.all(
+        projection.chatState.tabs
+          .filter((tab) => tab.transcriptLoaded === false)
+          .map(
+            async (tab) =>
+              [
+                tab.id,
+                // The store's loader asks for the turn view.
+                await backend.getTranscriptPage({
+                  ...SCOPE,
+                  chatId: tab.id,
+                  view: 'turns',
+                }),
+              ] as const,
+          ),
       ),
     );
+    if (projection === null) return;
+    // As the store installs a page: into the tab as it holds it then, so a
+    // change applied while the page loaded stays.
     projection = {
       ...projection,
-      chatState: { ...projection.chatState, tabs },
+      chatState: {
+        ...projection.chatState,
+        tabs: projection.chatState.tabs.map((tab) => {
+          const page = pages.get(tab.id);
+          return page === undefined || tab.transcriptLoaded !== false
+            ? tab
+            : installTranscriptPage(tab, page, false);
+        }),
+      },
     };
   }
 
@@ -955,6 +1110,9 @@ function desktopPath(
     activeTabId: () => projection?.chatState.activeTabId,
     model: (id) =>
       projection?.chatState.tabs.find((each) => each.id === id)?.model,
+    harness: (id) =>
+      projection?.chatState.tabs.find((each) => each.id === id)
+        ?.capturedHarness,
     read: (id) => {
       const tab = projection?.chatState.tabs.find((each) => each.id === id);
       return {
@@ -977,8 +1135,12 @@ function desktopPath(
       ).map((message) => message.id),
     turnEnds: () =>
       projection?.chatState.tabs.find((each) => each.id === CHAT_KEY)?.turnEnds,
+    usage: () =>
+      projection?.chatState.tabs.find((each) => each.id === CHAT_KEY)?.usage,
     starting: () =>
       startingChats.has(`${SCOPE.projectId}/${SCOPE.worktreeId}/${CHAT_KEY}`),
+    sandbox: () =>
+      sandboxes.get(`${SCOPE.projectId}/${SCOPE.worktreeId}/${CHAT_KEY}`),
     questions: () =>
       Object.values(projection?.pendingQuestions ?? {}).map((pending) => ({
         requestId: pending.requestId,
@@ -1011,6 +1173,9 @@ function desktopPath(
             message,
           }).status === 'cancelled'
             ? { cancelled: true }
+            : {}),
+          ...((message.attachmentPaths?.length ?? 0) > 0
+            ? { attachments: message.attachmentPaths }
             : {}),
         })),
         running: tab?.status === 'streaming',
@@ -2539,13 +2704,25 @@ it("the desktop store attaches a cloud chat's files through the web core and sen
   const backend = createWebCoreChatBackendCore({
     invoker: () => ({
       request: (method, params): Promise<CanopyCoreRelayLikeReply> => {
-        // The web core's copy of the sent message, with no attachments: its
-        // transcript does not carry them yet (CAN-6116).
+        // The web core's copy of the sent message names its attachment, as
+        // its transcript carries it (CAN-6771).
         if (method === 'core.chat.transcript.page')
           return Promise.resolve({
             ok: true,
             value: {
-              messages: [text('u-attach', 'user', 'See the brief', 7)],
+              messages: [
+                {
+                  ...text('u-attach', 'user', 'See the brief', 7),
+                  attachments: [
+                    {
+                      attachmentId: 'att-1',
+                      filename: 'brief.md',
+                      mediaType: 'text/markdown',
+                      size: 7,
+                    },
+                  ],
+                },
+              ],
               totalMessages: 1,
               transcriptRevision: 2,
             },
@@ -2631,7 +2808,8 @@ it("the desktop store attaches a cloud chat's files through the web core and sen
   expect(CoreChatMessageSendParamsSchema.safeParse(sends[0]).success).toBe(
     true,
   );
-  // The web core's copy of that message keeps the attachments it was sent with.
+  // The web core's copy of that message names the attachment it was sent
+  // with, once: the chip the send showed is the one its transcript names.
   const page = await backend.getTranscriptPage({
     ...target,
     chatId: CHAT_KEY,
@@ -2883,6 +3061,143 @@ it("a cloud chat's task rows follow the web core's events, and a snapshot read b
   await settle();
   expect(published.at(-1)).toEqual(['completed']);
   core.tasks = {};
+});
+
+it("publishes the chat's sandbox state under its live key, from its snapshot and each sandbox.changed; a snapshot without one leaves it (CAN-6766)", async () => {
+  core.revision = 160;
+  core.status = 'idle';
+  core.activeTurnId = undefined;
+  core.messages = [U1];
+  core.sandbox = { state: 'asleep' };
+  const io = side();
+  const desktop = desktopPath(io);
+  await settle();
+  expect(desktop.sandbox()).toBe('asleep');
+
+  io.latest
+    .get('core.chat.events')
+    ?.push(
+      batch(160, 161, [
+        { type: 'sandbox.changed', chatId: CHAT, sandbox: { state: 'waking' } },
+      ]),
+    );
+  await settle();
+  expect(desktop.sandbox()).toBe('waking');
+
+  io.latest
+    .get('core.chat.events')
+    ?.push(
+      batch(161, 162, [
+        { type: 'sandbox.changed', chatId: CHAT, sandbox: { state: 'ready' } },
+      ]),
+    );
+  await settle();
+  expect(desktop.sandbox()).toBe('ready');
+
+  // A snapshot that does not report one (the desktop core) leaves it.
+  core.sandbox = undefined;
+  await desktop.backend.getState(SCOPE);
+  await settle();
+  expect(desktop.sandbox()).toBe('ready');
+});
+
+it("holds a snapshot's sandbox state, unknown, while the task's events carry no sandbox.changed, and publishes it once they do; sandbox.changed then keeps it current (CAN-6841)", async () => {
+  core.revision = 180;
+  core.status = 'idle';
+  core.activeTurnId = undefined;
+  core.messages = [U1];
+  core.sandbox = { state: 'asleep' };
+  // The web core is described as advertising events below revision 3, or
+  // not described yet: nothing would keep the state current.
+  let served = false;
+  const io = side();
+  const desktop = desktopPath(io, { sandboxStatesServed: () => served });
+  await settle();
+  expect(desktop.sandbox()).toBeUndefined();
+  // A newer snapshot is held in its place, still unpublished.
+  core.sandbox = { state: 'waking' };
+  core.revision = 181;
+  await desktop.backend.getState(SCOPE);
+  await settle();
+  expect(desktop.sandbox()).toBeUndefined();
+
+  // Described as serving them: the newest held state publishes.
+  served = true;
+  desktop.backend.releaseSandboxStates();
+  await settle();
+  expect(desktop.sandbox()).toBe('waking');
+
+  // sandbox.changed keeps it current.
+  io.latest
+    .get('core.chat.events')
+    ?.push(
+      batch(181, 182, [
+        { type: 'sandbox.changed', chatId: CHAT, sandbox: { state: 'ready' } },
+      ]),
+    );
+  await settle();
+  expect(desktop.sandbox()).toBe('ready');
+});
+
+it('keeps a newer sandbox.changed over a snapshot read before it that lands after it (CAN-6766)', async () => {
+  core.revision = 170;
+  core.status = 'idle';
+  core.activeTurnId = undefined;
+  core.messages = [U1];
+  core.sandbox = { state: 'ready' };
+  const io = side();
+  const desktop = desktopPath(io);
+  await settle();
+  expect(desktop.sandbox()).toBe('ready');
+
+  // A refresh reads the snapshot at revision 170, which still says asleep,
+  // and the web core then reports waking at revision 171 before it lands.
+  core.sandbox = { state: 'asleep' };
+  let served = (): void => undefined;
+  core.snapshotGate = new Promise<void>((resolve) => {
+    served = resolve;
+  });
+  const refresh = desktop.backend.getState(SCOPE);
+  await settle();
+  io.latest
+    .get('core.chat.events')
+    ?.push(
+      batch(170, 171, [
+        { type: 'sandbox.changed', chatId: CHAT, sandbox: { state: 'waking' } },
+      ]),
+    );
+  await settle();
+  expect(desktop.sandbox()).toBe('waking');
+  core.snapshotGate = null;
+  served();
+  await refresh;
+  await settle();
+  expect(desktop.sandbox()).toBe('waking');
+  core.sandbox = undefined;
+});
+
+it('drops the meter an events revision 3 message carries, so the store keeps messages as its revision 1 transcript pages give them (CAN-6766)', () => {
+  const item = parseEventItem(
+    batch(1, 2, [
+      {
+        type: 'message.upserted',
+        chatId: CHAT,
+        message: { ...A1, meter: { usage: { outputTokens: 12 } } },
+      },
+    ]).item,
+  );
+  const same = (id: string): string => id;
+  const change = translateChange(item.changes[0], new Map(), {
+    chatToStore: same,
+    chatToCore: same,
+    newChatToCore: same,
+    messageToStore: same,
+    messageToCore: same,
+  });
+  expect(change).toMatchObject({ type: 'message.upserted' });
+  expect(
+    change !== null && 'message' in change ? change.message : null,
+  ).toEqual(A1);
 });
 
 it("after a resync, every chat this window read shows its tasks' current state, not only the opened chat's (CAN-6475)", async () => {
@@ -4312,6 +4627,72 @@ it("a stopped cloud turn's end reaches the desktop store from its timer, so it r
   }
 });
 
+it("a cloud prompt's attachments show the same on web and desktop, read back, after a reload and live, once each (CAN-6771)", async () => {
+  const saved = { ...core };
+  try {
+    core.revision = 97;
+    core.status = 'idle';
+    core.activeTurnId = undefined;
+    core.chats = [{ chatId: CHAT, title: 'Plan', state: 'idle' }];
+    const files = [
+      {
+        attachmentId: 'att-1',
+        filename: 'brief.md',
+        mediaType: 'text/markdown',
+        size: 7,
+      },
+      {
+        attachmentId: 'att-2',
+        filename: 'chart.png',
+        mediaType: 'image/png',
+        size: 9,
+      },
+    ];
+    const chips = files.map((file) =>
+      cloudAttachmentPath(file.attachmentId, file.filename),
+    );
+    // Sent from the web: this window never sent it, so only the transcript
+    // can name its files.
+    core.messages = [
+      { ...text('u-files', 'user', 'See these', 1), attachments: files },
+      text('a-files', 'assistant', 'Read them', 2),
+    ];
+    const webIo = side();
+    const desktopIo = side();
+    const web = webPath(webIo);
+    const desktop = desktopPath(desktopIo);
+    await settle();
+    expect(desktop.shown()).toEqual(web.shown());
+    expect(desktop.shown().rows[0]?.attachments).toEqual(chips);
+
+    // A window opened later, as after a reload, reads them back the same.
+    const reloaded = desktopPath(side());
+    await settle();
+    expect(reloaded.shown().rows[0]?.attachments).toEqual(chips);
+
+    // A prompt that arrives live shows its chip once.
+    const prompt = {
+      ...text('u-live', 'user', 'One more', 3),
+      attachments: [files[0]],
+    };
+    core.revision = 98;
+    core.messages = [...core.messages, prompt];
+    for (const io of [webIo, desktopIo])
+      io.latest
+        .get('core.chat.events')
+        ?.push(
+          batch(97, 98, [
+            { type: 'message.upserted', chatId: CHAT, message: prompt },
+          ]),
+        );
+    await settle();
+    expect(desktop.shown()).toEqual(web.shown());
+    expect(desktop.shown().rows.at(-1)?.attachments).toEqual([chips[0]]);
+  } finally {
+    Object.assign(core, saved);
+  }
+});
+
 it('a cloud turn stopped before it wrote anything shows no empty reply row on web or desktop (CAN-6564)', async () => {
   const saved = { ...core };
   try {
@@ -5002,6 +5383,111 @@ describe('Stop on a cloud turn that is still starting (CAN-6592)', () => {
     expect(desktop.starting()).toBe(false);
   });
 
+  it('leaves a turn whose cancel the web core refused as not found to the snapshot, so the next Stop cancels it while it still runs (CAN-6393)', async () => {
+    const io = side();
+    const desktop = desktopPath(io);
+    await settle();
+    await desktop.send('stop-quiet');
+    report(io, {
+      status: 'streaming',
+      queuedMessageIds: [],
+      activeTurnId: 't14',
+    });
+    await settle();
+    // The web core can't find the turn by its id, though Core still runs
+    // it: the snapshot read after the refusal names it running.
+    core.turnCancelNotFound = 1;
+    core.status = 'streaming';
+    core.activeTurnId = 't14';
+    await expect(
+      desktop.backend.cancel({ ...SCOPE, chatId: CHAT_KEY }),
+    ).resolves.toEqual({ outcome: 'turn_not_active' });
+    await settle();
+    // A refusal is no report of the turn's end: the next Stop cancels it.
+    await expect(
+      desktop.backend.cancel({ ...SCOPE, chatId: CHAT_KEY, attempt: 1 }),
+    ).resolves.toEqual({ outcome: 'stop_requested' });
+    expect(cancels(io)).toEqual([
+      { chatId: CHAT, turnId: 't14', reason: 'user' },
+      { chatId: CHAT, turnId: 't14', reason: 'user' },
+    ]);
+  });
+
+  it("marks a turn ended when its end arrives after its cancel was refused as not found, so a stale snapshot never makes it Stop's again (CAN-6770)", async () => {
+    const io = side();
+    const desktop = desktopPath(io);
+    await settle();
+    await desktop.send('stop-quiet');
+    report(io, {
+      status: 'streaming',
+      queuedMessageIds: [],
+      activeTurnId: 't14',
+    });
+    await settle();
+    core.turnCancelNotFound = 1;
+    // The refusal's own snapshot read is held, so the turn's end lands first.
+    let releaseSnapshot = (): void => undefined;
+    core.snapshotGate = new Promise<void>((resolve) => {
+      releaseSnapshot = resolve;
+    });
+    await expect(
+      desktop.backend.cancel({ ...SCOPE, chatId: CHAT_KEY }),
+    ).resolves.toEqual({ outcome: 'turn_not_active' });
+    report(io, { status: 'idle', queuedMessageIds: [] });
+    await settle();
+    core.snapshotGate = null;
+    releaseSnapshot();
+    await settle();
+    // A later snapshot still names the ended turn, running.
+    core.status = 'streaming';
+    core.activeTurnId = 't14';
+    await desktop.backend.getState(SCOPE);
+    await settle();
+    const before = cancels(io).length;
+    await expect(
+      desktop.backend.cancel({ ...SCOPE, chatId: CHAT_KEY, attempt: 1 }),
+    ).resolves.toEqual({ outcome: 'turn_not_active' });
+    expect(cancels(io)).toHaveLength(before);
+  });
+
+  it('keeps a refused turn through a starting report that names no turn, so its end still marks it ended (CAN-6770)', async () => {
+    const io = side();
+    const desktop = desktopPath(io);
+    await settle();
+    await desktop.send('stop-quiet');
+    report(io, {
+      status: 'streaming',
+      queuedMessageIds: [],
+      activeTurnId: 't14',
+    });
+    await settle();
+    core.turnCancelNotFound = 1;
+    let releaseSnapshot = (): void => undefined;
+    core.snapshotGate = new Promise<void>((resolve) => {
+      releaseSnapshot = resolve;
+    });
+    await expect(
+      desktop.backend.cancel({ ...SCOPE, chatId: CHAT_KEY }),
+    ).resolves.toEqual({ outcome: 'turn_not_active' });
+    // Core reports a session starting with no turn named, then the end.
+    report(io, { status: 'starting', queuedMessageIds: [] });
+    await settle();
+    report(io, { status: 'idle', queuedMessageIds: [] });
+    await settle();
+    core.snapshotGate = null;
+    releaseSnapshot();
+    await settle();
+    core.status = 'streaming';
+    core.activeTurnId = 't14';
+    await desktop.backend.getState(SCOPE);
+    await settle();
+    const before = cancels(io).length;
+    await expect(
+      desktop.backend.cancel({ ...SCOPE, chatId: CHAT_KEY, attempt: 1 }),
+    ).resolves.toEqual({ outcome: 'turn_not_active' });
+    expect(cancels(io)).toHaveLength(before);
+  });
+
   it("never cancels an ended turn a stale snapshot still names: Stop during the next send cancels that send's turn by its receipt (CAN-6733)", async () => {
     const io = side();
     const desktop = desktopPath(io);
@@ -5469,5 +5955,945 @@ describe("a plugin-selection save's receipt on the desktop's web core path (CAN-
         ids,
       ),
     ).toMatchObject({ commandId: 'save-1', outcome: 'applied' });
+  });
+});
+
+describe("a cloud chat's usage meter, equal to the web fold (CAN-6755)", () => {
+  const MODEL = {
+    id: 'core-model-1',
+    name: 'Core model',
+    contextWindow: 200_000,
+  };
+  const answered = (
+    id: string,
+    body: string,
+    timestamp: number,
+    meter?: CoreChatMessageMeter,
+  ): Record<string, unknown> => ({
+    ...text(id, 'assistant', body, timestamp),
+    ...(meter === undefined ? {} : { meter }),
+  });
+  /** Each answer's meter, as revision 2 serves it (CAN-6509). */
+  const FIRST: CoreChatMessageMeter = {
+    model: MODEL,
+    usage: {
+      inputTokens: 1_200,
+      outputTokens: 300,
+      cacheReadTokens: 100,
+      contextTokens: 1_600,
+    },
+    costUsd: '0.25',
+    sourceKey: 'turn-1',
+  };
+  const SECOND: CoreChatMessageMeter = {
+    model: MODEL,
+    usage: {
+      inputTokens: 800,
+      outputTokens: 200,
+      cacheWriteTokens: 50,
+      contextTokens: 2_400,
+      contextWindow: 200_000,
+    },
+    // A split row bills its incurred cost (REST's classifyCost).
+    costUsd: '0.6',
+    incurredCostUsd: '0.5',
+    sourceKey: 'turn-2',
+  };
+  const THIRD: CoreChatMessageMeter = {
+    model: MODEL,
+    usage: { inputTokens: 400, outputTokens: 100, contextTokens: 3_100 },
+    costUsd: '0.1',
+    sourceKey: 'turn-3',
+  };
+
+  /**
+   * The web's fold of the same answers as REST's conversation rows carry
+   * them (`hydrateChatUsage`): usage and model as the meter names them, and
+   * the incurred cost, else the cost, as each answer's price.
+   */
+  const webAnswer = (
+    meter: CoreChatMessageMeter | undefined,
+    createdAtMs: number,
+  ): ChatUsageAnswer => {
+    const price = meter?.incurredCostUsd ?? meter?.costUsd;
+    return {
+      ...(meter?.usage === undefined ? {} : { usage: meter.usage }),
+      ...(meter?.model === undefined
+        ? {}
+        : {
+            model: {
+              id: meter.model.id,
+              ...(meter.model.contextWindow === undefined
+                ? {}
+                : { contextWindow: meter.model.contextWindow }),
+            },
+          }),
+      ...(price === undefined ? {} : { costUsd: Number(price) }),
+      createdAtMs,
+    };
+  };
+
+  /** What the web's composer meter shows for those answers. */
+  const webMeter = (
+    answers: readonly ChatUsageAnswer[],
+    /** The model catalog's context window, as the web's picker lists it. */
+    catalogContextWindow?: (modelId: string) => number | undefined,
+  ): Record<string, unknown> | undefined => {
+    const shown = toUsageIndicatorUsage(
+      foldChatUsage(
+        answers,
+        catalogContextWindow === undefined ? {} : { catalogContextWindow },
+      ),
+      undefined,
+      undefined,
+    );
+    return shown === undefined
+      ? undefined
+      : {
+          contextTokens: shown.contextTokens,
+          contextWindow: shown.contextWindow,
+          totalCostUsd: shown.totalCostUsd,
+          inputTokens: shown.inputTokens,
+          outputTokens: shown.outputTokens,
+          cacheReadInputTokens: shown.cacheReadInputTokens,
+          numTurns: shown.numTurns,
+          model: shown.model,
+        };
+  };
+
+  /** The same figures from the desktop store's tab. */
+  const desktopMeter = (
+    usage: PersistedChatTab['usage'],
+  ): Record<string, unknown> | undefined =>
+    usage === undefined
+      ? undefined
+      : {
+          contextTokens: usage.contextTokens,
+          contextWindow: usage.contextWindow,
+          totalCostUsd: usage.totalCostUsd,
+          inputTokens: usage.inputTokens,
+          outputTokens: usage.outputTokens,
+          cacheReadInputTokens: usage.cacheReadInputTokens,
+          numTurns: usage.numTurns,
+          model: usage.model,
+        };
+
+  const saved = { messages: core.messages, revision: core.revision };
+  afterEach(() => {
+    core.messages = saved.messages;
+    core.revision = saved.revision;
+    core.status = 'idle';
+    core.activeTurnId = undefined;
+  });
+
+  it("shows a metered cloud chat's context, window and spend as the web's composer does, also after a live answer", async () => {
+    core.revision = 4;
+    core.status = 'idle';
+    core.activeTurnId = undefined;
+    core.messages = [
+      text('mu1', 'user', 'hi', 1),
+      answered('ma1', 'hello', 2, FIRST),
+      text('mu2', 'user', 'more', 3),
+      answered('ma2', 'sure', 4, SECOND),
+    ];
+    const io = side();
+    const desktop = desktopPath(io);
+    await settle();
+
+    const web = webMeter([webAnswer(FIRST, 2), webAnswer(SECOND, 4)]);
+    expect(web).toEqual({
+      contextTokens: 2_400,
+      contextWindow: 200_000,
+      totalCostUsd: 0.75,
+      inputTokens: 2_000,
+      outputTokens: 500,
+      cacheReadInputTokens: 100,
+      numTurns: 2,
+      model: 'core-model-1',
+    });
+    expect(desktopMeter(desktop.usage())).toEqual(web);
+
+    // A live answer's meter arrives on its event (revision 2) and moves the
+    // meter as the web's fold of all three answers does.
+    const third = answered('ma3', 'done', 6, THIRD);
+    core.revision = 5;
+    core.messages = [...core.messages, text('mu3', 'user', 'last', 5), third];
+    io.latest.get('core.chat.events')?.push(
+      batch(4, 5, [
+        {
+          type: 'message.upserted',
+          chatId: CHAT,
+          message: text('mu3', 'user', 'last', 5),
+        },
+        { type: 'message.upserted', chatId: CHAT, message: third },
+      ]),
+    );
+    await settle();
+    const after = webMeter([
+      webAnswer(FIRST, 2),
+      webAnswer(SECOND, 4),
+      webAnswer(THIRD, 6),
+    ]);
+    expect(after).toMatchObject({
+      contextTokens: 3_100,
+      totalCostUsd: 0.85,
+      numTurns: 3,
+    });
+    expect(desktopMeter(desktop.usage())).toEqual(after);
+  });
+
+  it('keeps no usage for a cloud chat whose answers carry no meter, as revision 1 serves them', async () => {
+    core.revision = 4;
+    core.status = 'idle';
+    core.activeTurnId = undefined;
+    core.messages = [
+      text('mu1', 'user', 'hi', 1),
+      answered('ma1', 'hello', 2),
+      text('mu2', 'user', 'more', 3),
+      answered('ma2', 'sure', 4),
+    ];
+    const desktop = desktopPath(side());
+    await settle();
+
+    // The web's fold of answers with no usage, model or price is none, so
+    // its meter shows nothing; the store holds none, never a zero.
+    expect(webMeter([webAnswer(undefined, 2), webAnswer(undefined, 4)])).toBe(
+      undefined,
+    );
+    expect(desktop.storeIds()).toEqual(['mu1', 'ma1', 'mu2', 'ma2']);
+    expect(desktop.usage()).toBeUndefined();
+  });
+
+  it("keeps a metered chat's usage when the web core sends its tab again", async () => {
+    core.revision = 4;
+    core.status = 'idle';
+    core.activeTurnId = undefined;
+    const rows = [
+      text('mu1', 'user', 'hi', 1),
+      answered('ma1', 'hello', 2, FIRST),
+      text('mu2', 'user', 'more', 3),
+      answered('ma2', 'sure', 4, SECOND),
+    ];
+    core.messages = rows;
+    const io = side();
+    const desktop = desktopPath(io);
+    await settle();
+    const shown = webMeter([webAnswer(FIRST, 2), webAnswer(SECOND, 4)]);
+    expect(desktopMeter(desktop.usage())).toEqual(shown);
+
+    // The web core sends the chat's tab again, with its rows, as it does
+    // for a rename or a restore: the meter it already showed stays.
+    core.revision = 5;
+    io.latest.get('core.chat.events')?.push(
+      batch(4, 5, [
+        {
+          type: 'tab.upserted',
+          tab: {
+            id: CHAT,
+            title: 'Plan',
+            messages: rows,
+            createdAt: '2026-11-10T00:00:00.000Z',
+          },
+        },
+      ]),
+    );
+    await settle();
+    expect(desktop.label(CHAT_KEY)).toBe('Plan');
+    expect(desktopMeter(desktop.usage())).toEqual(shown);
+  });
+
+  it("shows an answer's meter that a refresh after the live turn's end finds, though the refresh publishes only the chat's runtime", async () => {
+    core.revision = 4;
+    core.status = 'idle';
+    core.activeTurnId = undefined;
+    core.messages = [
+      text('mu1', 'user', 'hi', 1),
+      answered('ma1', 'hello', 2, FIRST),
+    ];
+    const io = side();
+    const desktop = desktopPath(io);
+    await settle();
+    expect(desktopMeter(desktop.usage())).toEqual(
+      webMeter([webAnswer(FIRST, 2)]),
+    );
+
+    // A turn runs; its committed answer's event is lost.
+    const prompt = text('mu2', 'user', 'more', 3);
+    core.revision = 5;
+    core.status = 'streaming';
+    core.activeTurnId = 't2';
+    core.messages = [...core.messages, prompt];
+    io.latest.get('core.chat.events')?.push(
+      batch(4, 5, [
+        { type: 'message.upserted', chatId: CHAT, message: prompt },
+        {
+          type: 'runtime.patched',
+          chatId: CHAT,
+          runtime: {
+            status: 'streaming',
+            queuedMessageIds: [],
+            activeTurnId: 't2',
+          },
+        },
+      ]),
+    );
+    await settle();
+    core.status = 'idle';
+    core.activeTurnId = undefined;
+    core.messages = [...core.messages, answered('ma2', 'sure', 4, SECOND)];
+    // The live stream says the turn ended: the backend reads the snapshot
+    // and the chat's page, which holds the answer and its meter.
+    io.latest.get('core.chat.live.events')?.push(liveFrame({ kind: 'idle' }));
+    await settle();
+    expect(desktop.shown().running).toBe(false);
+    expect(desktopMeter(desktop.usage())).toEqual(
+      webMeter([webAnswer(FIRST, 2), webAnswer(SECOND, 4)]),
+    );
+  });
+
+  it("shows an answer's meter that a refresh after the live turn's end read before another chat's page read failed", async () => {
+    core.revision = 4;
+    core.status = 'idle';
+    core.activeTurnId = undefined;
+    core.chats = [
+      { chatId: CHAT, title: 'Plan', state: 'idle' },
+      { chatId: 'chat-2', title: 'Notes', state: 'idle' },
+    ];
+    core.messages = [
+      text('mu1', 'user', 'hi', 1),
+      answered('ma1', 'hello', 2, FIRST),
+    ];
+    try {
+      const io = side();
+      const desktop = desktopPath(io);
+      await settle();
+      expect(desktopMeter(desktop.usage())).toEqual(
+        webMeter([webAnswer(FIRST, 2)]),
+      );
+
+      const prompt = text('mu2', 'user', 'more', 3);
+      core.revision = 5;
+      core.status = 'streaming';
+      core.activeTurnId = 't2';
+      core.messages = [...core.messages, prompt];
+      io.latest.get('core.chat.events')?.push(
+        batch(4, 5, [
+          { type: 'message.upserted', chatId: CHAT, message: prompt },
+          {
+            type: 'runtime.patched',
+            chatId: CHAT,
+            runtime: {
+              status: 'streaming',
+              queuedMessageIds: [],
+              activeTurnId: 't2',
+            },
+          },
+        ]),
+      );
+      await settle();
+      core.status = 'idle';
+      core.activeTurnId = undefined;
+      core.messages = [...core.messages, answered('ma2', 'sure', 4, SECOND)];
+      // The refresh reads this chat's page, then the other chat's fails.
+      core.pageFailsFor = 'chat-2';
+      io.latest.get('core.chat.live.events')?.push(liveFrame({ kind: 'idle' }));
+      await settle();
+      expect(desktopMeter(desktop.usage())).toEqual(
+        webMeter([webAnswer(FIRST, 2), webAnswer(SECOND, 4)]),
+      );
+    } finally {
+      core.pageFailsFor = null;
+      core.chats = [{ chatId: CHAT, title: 'Plan', state: 'idle' }];
+    }
+  });
+
+  it("keeps an answer's newer meter from an event when a transcript page read before it lands after it", async () => {
+    // Core prices an answer once its turn ends: the page read first saw it
+    // pending.
+    const PENDING: CoreChatMessageMeter = {
+      model: MODEL,
+      usage: FIRST.usage,
+      sourceKey: 'turn-1',
+    };
+    core.revision = 4;
+    core.status = 'idle';
+    core.activeTurnId = undefined;
+    core.messages = [
+      text('mu1', 'user', 'hi', 1),
+      answered('ma1', 'hello', 2, PENDING),
+    ];
+    const io = side();
+    const desktop = desktopPath(io);
+    await settle();
+    expect(desktop.usage()?.totalCostUsd).toBe(0);
+
+    let release = (): void => undefined;
+    core.pageGate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    try {
+      // A page read answered now, with the pending price, held in flight.
+      const held = desktop.backend.getTranscriptPage({
+        ...SCOPE,
+        chatId: CHAT_KEY,
+      });
+      const priced = answered('ma1', 'hello', 2, FIRST);
+      const prompt = text('mu2', 'user', 'more', 3);
+      const next = answered('ma2', 'sure', 4, SECOND);
+      core.revision = 5;
+      core.messages = [core.messages[0], priced, prompt, next];
+      io.latest.get('core.chat.events')?.push(
+        batch(4, 5, [
+          { type: 'message.upserted', chatId: CHAT, message: priced },
+          { type: 'message.upserted', chatId: CHAT, message: prompt },
+          { type: 'message.upserted', chatId: CHAT, message: next },
+        ]),
+      );
+      await settle();
+      const newer = webMeter([webAnswer(FIRST, 2), webAnswer(SECOND, 4)]);
+      expect(desktopMeter(desktop.usage())).toEqual(newer);
+
+      release();
+      await held;
+      await settle();
+      expect(desktopMeter(desktop.usage())).toEqual(newer);
+    } finally {
+      core.pageGate = null;
+    }
+  });
+
+  /**
+   * Two overlapping reads of the chat's newest page with no event between
+   * them: the older is held, the server's answers change, and the newer one
+   * lands first (CAN-6830).
+   */
+  async function overlappingReads(
+    before: readonly Record<string, unknown>[],
+    after: readonly Record<string, unknown>[],
+  ): Promise<ReturnType<typeof desktopPath>> {
+    core.revision = 4;
+    core.status = 'idle';
+    core.activeTurnId = undefined;
+    core.messages = [...before];
+    const desktop = desktopPath(side());
+    await settle();
+    let release = (): void => undefined;
+    core.pageGate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const older = desktop.backend.getTranscriptPage({
+      ...SCOPE,
+      chatId: CHAT_KEY,
+    });
+    await settle();
+    core.pageGate = null;
+    core.messages = [...after];
+    await desktop.backend.getTranscriptPage({ ...SCOPE, chatId: CHAT_KEY });
+    await settle();
+    release();
+    await older;
+    await settle();
+    return desktop;
+  }
+
+  it('keeps the newer of two overlapping transcript reads when the older one lands last, so the meter never rolls back (CAN-6830)', async () => {
+    const desktop = await overlappingReads(
+      [text('mu1', 'user', 'hi', 1), answered('ma1', 'hello', 2, FIRST)],
+      [
+        text('mu1', 'user', 'hi', 1),
+        answered('ma1', 'hello', 2, FIRST),
+        text('mu2', 'user', 'more', 3),
+        answered('ma2', 'sure', 4, SECOND),
+      ],
+    );
+    expect(desktopMeter(desktop.usage())).toEqual(
+      webMeter([webAnswer(FIRST, 2), webAnswer(SECOND, 4)]),
+    );
+  });
+
+  it('keeps an answer the newer of two overlapping reads no longer holds out of the meter when the older one lands last (CAN-6830)', async () => {
+    const desktop = await overlappingReads(
+      [
+        text('mu1', 'user', 'hi', 1),
+        answered('ma1', 'hello', 2, FIRST),
+        text('mu2', 'user', 'more', 3),
+        answered('ma2', 'sure', 4, SECOND),
+      ],
+      [text('mu1', 'user', 'hi', 1), answered('ma1', 'hello', 2, FIRST)],
+    );
+    expect(desktopMeter(desktop.usage())).toEqual(
+      webMeter([webAnswer(FIRST, 2)]),
+    );
+  });
+
+  it("keeps an answer an event brings while the chat's first transcript page is read", async () => {
+    core.revision = 4;
+    core.status = 'idle';
+    core.activeTurnId = undefined;
+    core.messages = [
+      text('mu1', 'user', 'hi', 1),
+      answered('ma1', 'hello', 2, FIRST),
+    ];
+    let release = (): void => undefined;
+    core.pageGate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    try {
+      const io = side();
+      const desktop = desktopPath(io);
+      await settle();
+      // The first page was answered before this answer and is held.
+      const prompt = text('mu2', 'user', 'more', 3);
+      const next = answered('ma2', 'sure', 4, SECOND);
+      core.revision = 5;
+      core.messages = [...core.messages, prompt, next];
+      io.latest.get('core.chat.events')?.push(
+        batch(4, 5, [
+          { type: 'message.upserted', chatId: CHAT, message: prompt },
+          { type: 'message.upserted', chatId: CHAT, message: next },
+        ]),
+      );
+      await settle();
+      release();
+      await settle();
+      expect(desktopMeter(desktop.usage())).toEqual(
+        webMeter([webAnswer(FIRST, 2), webAnswer(SECOND, 4)]),
+      );
+    } finally {
+      core.pageGate = null;
+    }
+  });
+
+  it("sizes the meter to the model catalog's context window once the catalog loads after the transcript", async () => {
+    clearWebCoreModelCatalog();
+    core.revision = 4;
+    core.status = 'idle';
+    core.activeTurnId = undefined;
+    // The meter names its model but no context window: the web core
+    // catalog knows it.
+    const UNSIZED: CoreChatMessageMeter = {
+      model: { id: 'core-model-2' },
+      usage: { inputTokens: 900, outputTokens: 100, contextTokens: 1_000 },
+      costUsd: '0.05',
+      sourceKey: 'turn-1',
+    };
+    core.messages = [
+      text('mu1', 'user', 'hi', 1),
+      answered('ma1', 'hello', 2, UNSIZED),
+    ];
+    try {
+      const desktop = desktopPath(side());
+      await settle();
+      // No catalog yet: the meter's window is unknown, as on the web.
+      expect(desktopMeter(desktop.usage())).toEqual(
+        webMeter([webAnswer(UNSIZED, 2)]),
+      );
+      expect(desktop.usage()?.contextWindow).toBe(0);
+
+      useWebCoreModelCatalogStore.setState((before) => ({
+        byProject: {
+          ...before.byProject,
+          [SCOPE.projectId]: new Map([
+            [
+              'core-model-2',
+              {
+                id: 'core-model-2',
+                label: 'Core model 2',
+                provider: 'claude',
+                kind: 'model',
+                available: true,
+                contextWindow: 128_000,
+              },
+            ],
+          ]),
+        },
+      }));
+      await settle();
+      const sized = webMeter([webAnswer(UNSIZED, 2)], (modelId) =>
+        modelId === 'core-model-2' ? 128_000 : undefined,
+      );
+      expect(sized).toMatchObject({
+        contextTokens: 1_000,
+        contextWindow: 128_000,
+      });
+      expect(desktopMeter(desktop.usage())).toEqual(sized);
+    } finally {
+      clearWebCoreModelCatalog();
+    }
+  });
+});
+
+it("a cloud tab holds the harness the web core's snapshot names for its chat, the one the web's picker keeps it to, and none from a web core that names none (CAN-6761)", async () => {
+  core.revision = 300;
+  core.status = 'idle';
+  core.activeTurnId = undefined;
+  core.messages = [U1, A1];
+  core.chats = [{ chatId: CHAT, title: 'Plan', state: 'idle' }];
+  core.model = 'model-b';
+  core.harness = 'codex';
+  const io = side();
+  const desktop = desktopPath(io);
+  await settle();
+  // The web reads the same snapshot: its chat's settings name the harness.
+  const served = (): string | undefined =>
+    CoreChatSnapshotGetResultSchema.parse(snapshot(CHAT)).tabs.items.find(
+      (item) => item.chatId === CHAT,
+    )?.settings?.executionHarness ?? undefined;
+  expect(served()).toBe('codex');
+  expect(desktop.harness(CHAT_KEY)).toBe(served());
+  expect(desktop.model(CHAT_KEY)).toBe('model-b');
+
+  // The next snapshot names none, as for a chat with no answer yet, or a
+  // web core from before CAN-6761: the tab holds none, so no model is
+  // kept from it.
+  const reread = (revision: number): void => {
+    core.revision = revision;
+    io.latest.get('core.chat.events')?.push({
+      kind: 'end',
+      cursor: null,
+      outcome: 'error',
+      error: {
+        kind: 'failed_precondition',
+        code: 'core.chat.snapshotRequired',
+        message: 'Read the snapshot again.',
+        retry: { kind: 'never' },
+      },
+    });
+  };
+  core.harness = null;
+  reread(302);
+  await settle();
+  expect(served()).toBeUndefined();
+  expect(desktop.harness(CHAT_KEY)).toBeUndefined();
+  core.harness = 'claude';
+  reread(304);
+  await settle();
+  expect(desktop.harness(CHAT_KEY)).toBe('claude');
+  core.harness = undefined;
+  reread(306);
+  await settle();
+  expect(desktop.harness(CHAT_KEY)).toBeUndefined();
+});
+
+it("a cloud tab takes the harness a turn's answer names on its tab patch with no snapshot read; an event only adds or confirms one, never clears it, and a tab sent again keeps it (CAN-6777)", async () => {
+  core.revision = 320;
+  core.status = 'idle';
+  core.activeTurnId = undefined;
+  core.messages = [U1, A1];
+  core.chats = [{ chatId: CHAT, title: 'Plan', state: 'idle' }];
+  const io = side();
+  const desktop = desktopPath(io);
+  await settle();
+  // No answer named a harness yet: nothing is restricted.
+  expect(desktop.harness(CHAT_KEY)).toBeUndefined();
+  const reads = (): number =>
+    io.calls.filter((call) => call.method === 'core.chat.snapshot.get').length;
+  const readsBefore = reads();
+  const events = io.latest.get('core.chat.events');
+  const patch = (
+    base: number,
+    value: Record<string, unknown>,
+  ): Record<string, unknown> =>
+    batch(base, base + 1, [
+      { type: 'tab.metadata_patched', tabId: CHAT, patch: value },
+    ]);
+
+  // The first answer's batch names its model's harness, as the web's
+  // picker learns it after the turn: the tab takes it with no snapshot read.
+  events?.push(patch(320, { executionHarness: 'claude' }));
+  await settle();
+  expect(desktop.harness(CHAT_KEY)).toBe('claude');
+  expect(reads()).toBe(readsBefore);
+
+  // An event never clears it: a null, an unknown value or a patch that names
+  // none leaves the tab's harness as it is.
+  events?.push(patch(321, { executionHarness: null }));
+  events?.push(patch(322, { executionHarness: 'not-a-harness' }));
+  events?.push(patch(323, { title: 'Renamed' }));
+  await settle();
+  expect(desktop.harness(CHAT_KEY)).toBe('claude');
+
+  // A tab the web core sends again names no harness: it keeps the one held.
+  events?.push(
+    batch(324, 325, [
+      {
+        type: 'tab.upserted',
+        tab: {
+          id: CHAT,
+          title: 'Plan',
+          messages: [U1, A1],
+          createdAt: '2026-11-10T00:00:00.000Z',
+        },
+      },
+    ]),
+  );
+  await settle();
+  expect(desktop.harness(CHAT_KEY)).toBe('claude');
+
+  // A later answer on another harness's model names that one.
+  events?.push(patch(325, { executionHarness: 'codex' }));
+  await settle();
+  expect(desktop.harness(CHAT_KEY)).toBe('codex');
+  expect(reads()).toBe(readsBefore);
+});
+
+it("keeps a harness an event named while an older snapshot of that chat was read, so the chat's own snapshot never lifts it either (CAN-6777)", async () => {
+  core.revision = 350;
+  core.status = 'idle';
+  core.activeTurnId = undefined;
+  core.messages = [U1, A1];
+  core.chats = [
+    { chatId: CHAT, title: 'Plan', state: 'idle' },
+    { chatId: 'chat-2', title: 'Notes', state: 'idle' },
+  ];
+  // chat-2's own snapshot, read when the window reads its page, names no
+  // harness and is slow to answer.
+  let release = (): void => undefined;
+  core.chatSnapshotGate = {
+    chatId: 'chat-2',
+    gate: new Promise<void>((resolve) => {
+      release = resolve;
+    }),
+  };
+  try {
+    const io = side();
+    const desktop = desktopPath(io);
+    await settle();
+    const events = io.latest.get('core.chat.events');
+    // Meanwhile chat-2's answer names its harness.
+    events?.push(
+      batch(350, 351, [
+        {
+          type: 'tab.metadata_patched',
+          tabId: 'chat-2',
+          patch: { executionHarness: 'claude' },
+        },
+      ]),
+    );
+    await settle();
+    expect(desktop.harness('web-core:chat-2')).toBe('claude');
+    release();
+    await settle();
+    // The older read's silence lifts nothing.
+    expect(desktop.harness('web-core:chat-2')).toBe('claude');
+    events?.push(
+      batch(351, 352, [
+        {
+          type: 'tab.upserted',
+          tab: {
+            id: 'chat-2',
+            title: 'Notes',
+            messages: [],
+            createdAt: '2026-11-10T00:00:00.000Z',
+          },
+        },
+      ]),
+    );
+    await settle();
+    expect(desktop.harness('web-core:chat-2')).toBe('claude');
+  } finally {
+    core.chatSnapshotGate = null;
+  }
+});
+
+it("keeps a harness an event named while an older task snapshot was read, so that snapshot's silence never lifts it (CAN-6777)", async () => {
+  core.revision = 340;
+  core.status = 'idle';
+  core.activeTurnId = undefined;
+  core.messages = [U1, A1];
+  core.chats = [{ chatId: CHAT, title: 'Plan', state: 'idle' }];
+  const io = side();
+  const desktop = desktopPath(io);
+  await settle();
+  const events = io.latest.get('core.chat.events');
+
+  // A snapshot read starts before the answer: it names no harness, and is
+  // slow to answer.
+  let release = (): void => undefined;
+  core.snapshotGate = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  try {
+    const older = desktop.backend.getState(SCOPE);
+    await settle();
+    // Meanwhile the answer's batch names the harness.
+    events?.push(
+      batch(340, 341, [
+        {
+          type: 'tab.metadata_patched',
+          tabId: CHAT,
+          patch: { executionHarness: 'claude' },
+        },
+      ]),
+    );
+    await settle();
+    expect(desktop.harness(CHAT_KEY)).toBe('claude');
+    release();
+    // The older snapshot itself carries the newer harness for its chat, so
+    // a store that installs it shows the harness the event named.
+    expect(
+      (await older).tabsFile.tabs.find((tab) => tab.id === CHAT_KEY)
+        ?.capturedHarness,
+    ).toBe('claude');
+    await settle();
+  } finally {
+    core.snapshotGate = null;
+  }
+
+  // The tab sent again names none: it keeps the harness the newer event named.
+  events?.push(
+    batch(341, 342, [
+      {
+        type: 'tab.upserted',
+        tab: {
+          id: CHAT,
+          title: 'Plan',
+          messages: [U1, A1],
+          createdAt: '2026-11-10T00:00:00.000Z',
+        },
+      },
+    ]),
+  );
+  await settle();
+  expect(desktop.harness(CHAT_KEY)).toBe('claude');
+});
+
+it("a cloud tab the task's snapshot doesn't open holds the harness its own snapshot names once the window reads it, and keeps it through the task's next snapshot (CAN-6761)", async () => {
+  core.revision = 310;
+  core.status = 'idle';
+  core.activeTurnId = undefined;
+  core.messages = [U1, A1];
+  core.chats = [
+    { chatId: CHAT, title: 'Plan', state: 'idle' },
+    { chatId: 'chat-2', title: 'Notes', state: 'idle' },
+  ];
+  core.chatHarness = { 'chat-2': 'claude' };
+  const io = side();
+  const desktop = desktopPath(io);
+  await settle();
+  // The task's snapshot opens only the task's chat and names chat-2's
+  // harness nowhere; reading chat-2's page reads its own snapshot, which
+  // names it, and the tab takes it as the store's change.
+  const served = CoreChatSnapshotGetResultSchema.parse(
+    snapshot('chat-2'),
+  ).tabs.items.find((item) => item.chatId === 'chat-2')?.settings
+    ?.executionHarness;
+  expect(served).toBe('claude');
+  expect(
+    CoreChatSnapshotGetResultSchema.parse(snapshot()).tabs.items.some(
+      (item) => item.chatId === 'chat-2',
+    ),
+  ).toBe(false);
+  expect(desktop.harness('web-core:chat-2')).toBe(served);
+
+  // The task's next snapshot names chat-2's harness nowhere: the tab keeps
+  // the one its own snapshot named.
+  core.revision = 311;
+  io.latest.get('core.chat.events')?.push({
+    kind: 'end',
+    cursor: null,
+    outcome: 'error',
+    error: {
+      kind: 'failed_precondition',
+      code: 'core.chat.snapshotRequired',
+      message: 'Read the snapshot again.',
+      retry: { kind: 'never' },
+    },
+  });
+  await settle();
+  expect(desktop.harness('web-core:chat-2')).toBe('claude');
+  expect(desktop.harness(CHAT_KEY)).toBeUndefined();
+});
+
+describe('a task restored from the archive follows its event stream again (CAN-6511)', () => {
+  const RESTORED = { projectId: 'web-core:ws-1', worktreeId: 'web-core:wt-1' };
+  afterEach(() => clearCloudTaskDeletions());
+
+  /** A backend whose task streams stay open, or end not found when told. */
+  function streams(): {
+    backend: ReturnType<typeof createWebCoreChatBackendCore>;
+    opens: () => number;
+    endNotFound: () => void;
+  } {
+    let opened = 0;
+    let end: (() => void) | null = null;
+    const backend = createWebCoreChatBackendCore({
+      invoker: () => ({
+        request: (): Promise<never> => Promise.reject(new Error('unused')),
+        openStream: (method): Promise<CoreCoworkStream> => {
+          if (method === 'core.chat.events') opened += 1;
+          return Promise.resolve({
+            next: () =>
+              new Promise((resolve) => {
+                end = (): void =>
+                  resolve({
+                    done: false,
+                    value: {
+                      kind: 'end',
+                      outcome: 'error',
+                      error: {
+                        kind: 'not_found',
+                        message: 'The task was not found.',
+                        retry: { kind: 'never' },
+                      },
+                    },
+                  });
+              }),
+            close: () => Promise.resolve(),
+          });
+        },
+      }),
+      newId: () => crypto.randomUUID(),
+      reopenDelayMs: 0,
+      publishLive: () => undefined,
+    });
+    return {
+      backend,
+      opens: () => opened,
+      endNotFound: () => end?.(),
+    };
+  }
+  const settle = async (): Promise<void> => {
+    for (let i = 0; i < 20; i += 1) await Promise.resolve();
+  };
+
+  it('opens the stream of a task declared while it was deleted, once', async () => {
+    const { backend, opens } = streams();
+    markCloudTaskDeleted(RESTORED);
+    await backend.setStateScopes({ kind: 'scopes', scopes: [RESTORED] });
+    await settle();
+    // Deleted: nothing is asked about it, so its stream never opened.
+    expect(opens()).toBe(0);
+
+    forgetCloudTaskMark(RESTORED);
+    backend.taskRestored(RESTORED);
+    await settle();
+    expect(opens()).toBe(1);
+    // Restored again, or declared again: never a second stream.
+    backend.taskRestored(RESTORED);
+    await backend.setStateScopes({ kind: 'scopes', scopes: [RESTORED] });
+    await settle();
+    expect(opens()).toBe(1);
+    backend.closeAll();
+  });
+
+  it('reopens the closed stream of a task deleted while it was followed, once', async () => {
+    const { backend, opens, endNotFound } = streams();
+    await backend.setStateScopes({ kind: 'scopes', scopes: [RESTORED] });
+    await settle();
+    expect(opens()).toBe(1);
+    // Deleted elsewhere: the stream ends not found and stays closed.
+    endNotFound();
+    await settle();
+    expect(opens()).toBe(1);
+
+    forgetCloudTaskMark(RESTORED);
+    backend.taskRestored(RESTORED);
+    await settle();
+    expect(opens()).toBe(2);
+    backend.taskRestored(RESTORED);
+    await settle();
+    expect(opens()).toBe(2);
+    backend.closeAll();
   });
 });

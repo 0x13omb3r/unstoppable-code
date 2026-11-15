@@ -1244,8 +1244,8 @@ describe('CAN-5851 unselected Copilot grant authority migration golden', () => {
         'createCopilotVaultGrantAuthority',
       );
     }
-    expect(readFileSync('apps/core-daemon/src/main.ts', 'utf8')).toContain(
-      'secretProtectionFor: () => null',
+    expect(readFileSync('apps/core-daemon/src/main.ts', 'utf8')).toMatch(
+      /const daemon = await startCanopyDaemon\(\{[^{}]*nativeProtectionFor:\s*\(platform,\s*identity\)\s*=>\s*createNativeSecretProtectionOwner\(\{\s*\.\.\.identity,\s*\.\.\.buildIdentity,/,
     );
     expect(readFileSync('apps/core-daemon/src/migration.ts', 'utf8')).toContain(
       'MIGRATION_PRODUCTION_ENABLED = false',

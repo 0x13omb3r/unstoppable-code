@@ -1,4 +1,3 @@
-import { randomUUID } from 'node:crypto';
 import {
   AgentPortError,
   type AgentActionCall,
@@ -6,14 +5,11 @@ import {
   type AgentChatDetail,
   type AgentEnvironmentPort,
   type AgentModelList,
-  type AgentPostMessageReceipt,
   type AgentStartChatInput,
-  type AgentStartChatReceipt,
 } from '@canopy/agent-actions';
 import type {
   CanopyCallerDescriptor,
   CanopyGrantName,
-  CanopyInstructionResult,
   CanopyQueryResult,
 } from '@canopy/protocol/canopy-core';
 import { CanopyOperationError } from '@canopy/core-runtime';
@@ -37,37 +33,19 @@ import {
 } from '../approvals/live-approval-modes';
 import {
   FAIL_CLOSED_APPROVAL_MODE,
-  getProviderForChatModel,
   type ApprovalMode,
   type ApprovalRule,
-  type ChatSendMessageRequest,
   type ClaudeTerminalTurnState,
 } from '@canopy/desktop-shared/types';
-import { supportsChatHarnessChoice } from '@canopy/desktop-shared/lib/chat-model-selection';
-import { isCursorRuntimeAvailable } from '../cursor/runtime-availability';
-import { isCopilotRuntimeAvailable } from '../copilot/runtime-availability';
-import { isOpenCodeRuntimeAvailable } from '../opencode/runtime-availability';
-import {
-  buildAgentSenderRequest,
-  isAgentSenderContextError,
-  type AgentSenderRequestFields,
-} from '../agent-messaging/sender-context';
 import type { CanopyInjectedToolRuntime } from '../canopy-tools/core';
-import { withLegacyChatMessageCommand } from '../canopy-runtime/core-chat-message-command-adapter';
 import type { DesktopCanopyDispatcher } from '../canopy-runtime/desktop-runtime';
 import { getDesktopCanopyRuntime } from '../canopy-runtime/desktop-runtime-access';
 import { LOCAL_DESKTOP_AUTHORITY_ID } from '../canopy-runtime/desktop-runtime-identity';
-import {
-  desktopAgentLineage,
-  type DesktopAgentLineage,
-} from './desktop-limits-port';
-import { agentWriteMessageId, idFromWriteKey } from './desktop-write-turns';
 import {
   getApprovalSettingsRevision,
   getChatApprovalStateRevision,
 } from '../approvals/rule-revisions';
 import {
-  withChatSendAdmission,
   type ChatSendAdmissionCheck,
   type ChatSendAdmissionTab,
 } from '../services/chat-send-admission';
@@ -84,16 +62,6 @@ export type DesktopEnvironmentRuntime = Pick<
   'query' | 'instruction'
 >;
 
-/** A new worktree for a started chat, or why none was created (CAN-5830). */
-export type DesktopChatWorktreeResult =
-  | { ok: true; worktreeId: string }
-  | {
-      ok: false;
-      code: 'surface_unavailable' | 'execution_failed';
-      message: string;
-      retryable: boolean;
-    };
-
 /**
  * The host services the desktop port composes. Registered reads and chat
  * writes go through `runtime`; the rest are retained paths that have no
@@ -101,36 +69,6 @@ export type DesktopChatWorktreeResult =
  */
 export interface DesktopEnvironmentPortDeps {
   runtime(): DesktopEnvironmentRuntime;
-  /**
-   * Persist a new chat's tab in its worktree or Work Entry, in the background,
-   * through the chat state owner the send path uses. A no-op for a chat that
-   * already exists, so the later send adopts the tab.
-   */
-  reserveChat(
-    request: ChatSendMessageRequest,
-    call: DesktopAgentActionCall,
-  ): Promise<void>;
-  /**
-   * Whether a chat's canonical transcript holds this message id, which only
-   * a committed send of it puts there.
-   */
-  messageCommitted(
-    chat: { workspaceId: string; worktreeId: string; chatId: string },
-    messageId: string,
-    call: DesktopAgentActionCall,
-  ): Promise<boolean>;
-  /**
-   * A new worktree branched from the calling chat's, created in main through
-   * the keyed W5 writer; refused while no interface shows the chat (CAN-5830).
-   */
-  createChatWorktree(
-    request: {
-      workspaceId: string;
-      baseWorktreeId: string;
-      idempotencyKey: string;
-    },
-    call: DesktopAgentActionCall,
-  ): Promise<DesktopChatWorktreeResult>;
   /** The model catalog for the owner of the calling chat's work. */
   listModels(call: DesktopAgentActionCall): Promise<AgentModelList>;
   /**
@@ -227,21 +165,27 @@ export interface DesktopEnvironmentPortDeps {
       chatId: string;
     }) => ClaudeTerminalTurnState | undefined
   >;
-  /**
-   * The calling chat's trusted sender attribution for a message accepted
-   * under `acceptedInputId`: its agent-sent title, provenance, and hidden
-   * sender context, as `projects.send_message` carries them. Undefined when
-   * the call has no calling chat.
-   */
-  agentSenderFields(
-    call: DesktopAgentActionCall,
-    acceptedInputId: string,
-    targetWorkspaceId: string,
-  ): Promise<AgentSenderRequestFields | undefined>;
-  lineage: DesktopAgentLineage;
 }
 
-/** The refusal of a chat.send_message to a terminal-driven chat. */
+/** A rule target with a path a chat's root anchors. */
+function hasPathTarget(target: ApprovalRule['target']): boolean {
+  return (
+    target.kind === 'file-write' ||
+    (target.kind === 'browser-upload' && target.path !== undefined)
+  );
+}
+
+/** A new worktree for a started chat, or why none was created (CAN-5830). */
+export type DesktopChatWorktreeResult =
+  | { ok: true; worktreeId: string }
+  | {
+      ok: false;
+      code: 'surface_unavailable' | 'execution_failed';
+      message: string;
+      retryable: boolean;
+    };
+
+/** The refusal of an agent message to a terminal-driven chat. */
 export function terminalChatRefusal(chatId: string): string {
   return `Chat ${chatId} runs in a Claude Code terminal, which agents cannot message yet.`;
 }
@@ -311,7 +255,17 @@ export interface DesktopEnvironmentPort extends AgentEnvironmentPort<CanopyInjec
     task: { workspaceId: string; worktreeId: string },
     firstMessage: boolean,
     call: DesktopAgentActionCall,
-  ): Promise<{ approvalMode: ApprovalMode }>;
+    newWorktree?: boolean,
+  ): Promise<{ approvalMode: ApprovalMode; selectedRepoId?: string }>;
+  /**
+   * Refuses, before anything is created, a first message the calling chat
+   * could not start a chat with: one carrying session deny rules, which a
+   * new chat does not start with.
+   */
+  agentChatStartPrecheck(
+    targetWorkspaceId: string,
+    call: DesktopAgentActionCall,
+  ): Promise<void>;
   /**
    * Admits again the first message of a chat the calling chat started in a
    * new worktree, as its start admitted it. Throws its refusal.
@@ -384,10 +338,7 @@ const READ_GRANTS: CanopyGrantName[] = [
   'core.worktree.read',
   'core.chat.read',
 ];
-const WRITE_GRANTS: CanopyGrantName[] = ['core.chat.write'];
 const PAGE_SIZE = 100;
-const MAX_RECEIPTS = 500;
-const SEND_ADMISSION_ATTEMPTS = 3;
 
 /** The caller every agent action presents to the desktop dispatcher. */
 export function agentActionCaller(
@@ -436,15 +387,6 @@ async function viaDispatcher<T>(operation: () => Promise<T>): Promise<T> {
   } catch (error) {
     throw toAgentPortError(error);
   }
-}
-
-function remember<T>(receipts: Map<string, T>, key: string, value: T): T {
-  receipts.set(key, value);
-  if (receipts.size > MAX_RECEIPTS) {
-    const oldest = receipts.keys().next();
-    if (!oldest.done) receipts.delete(oldest.value);
-  }
-  return value;
 }
 
 function textOfBlocks(blocks: readonly unknown[]): string {
@@ -621,18 +563,13 @@ export function createDesktopChatMetadataLookup(
 export function createDesktopEnvironmentPort(
   deps: DesktopEnvironmentPortDeps,
 ): DesktopEnvironmentPort {
-  const startReceipts = new Map<string, AgentStartChatReceipt>();
-  const postReceipts = new Map<string, AgentPostMessageReceipt>();
-  const sentPostReceipts = new Map<string, AgentPostMessageReceipt>();
-
   const readOptions = (
     call: DesktopAgentActionCall,
   ): { caller: CanopyCallerDescriptor } => ({
     caller: agentActionCaller(call, READ_GRANTS),
   });
 
-  const { findChat, findChatInWorktree, isCoworkWorkspace } =
-    createDesktopChatMetadataLookup(deps);
+  const { findChat } = createDesktopChatMetadataLookup(deps);
 
   async function lastResponse(
     chat: ChatListItem,
@@ -859,96 +796,6 @@ export function createDesktopEnvironmentPort(
     }
   }
 
-  /** The send that starts a chat, carrying its starting policy. */
-  function firstMessageRequest(
-    input: AgentStartChatInput,
-    target: { workspaceId: string; worktreeId: string; chatId: string },
-    policy: DesktopChatApprovalPolicy,
-  ): ChatSendMessageRequest {
-    return {
-      projectId: target.workspaceId,
-      worktreeId: target.worktreeId,
-      chatId: target.chatId,
-      userMessageId: agentWriteMessageId(input.idempotencyKey),
-      text: input.message.text,
-      preserveActiveTab: true,
-      interfaceMode: 'canopy',
-      ...(input.title ? { title: input.title } : {}),
-      ...(policy.selectedRepoId
-        ? { selectedRepoId: policy.selectedRepoId }
-        : {}),
-      approvalMode: policy.mode,
-      ...(policy.sessionRules.length > 0
-        ? { sessionApprovalRules: [...policy.sessionRules] }
-        : {}),
-      ...(input.model ? { model: input.model.id } : {}),
-      ...(input.model?.thinkingLevel
-        ? {
-            thinkingLevel: input.model.thinkingLevel,
-            modelConfig: { thinkingLevel: input.model.thinkingLevel },
-          }
-        : {}),
-      // A named harness travels on the reservation, which pins the fresh tab
-      // to it, and on the send, which captures it; the provider follows the
-      // harness as a picker's choice does.
-      ...harnessRequestFields(input.model),
-    };
-  }
-
-  function harnessRequestFields(
-    model: AgentStartChatInput['model'],
-  ): Pick<
-    ChatSendMessageRequest,
-    'executionHarness' | 'executionHarnessChoice' | 'providerType'
-  > {
-    if (!model?.executionHarness) return {};
-    const providerType = getProviderForChatModel(
-      model.id,
-      model.executionHarness,
-    );
-    return {
-      executionHarness: model.executionHarness,
-      executionHarnessChoice: true,
-      ...(providerType === undefined ? {} : { providerType }),
-    };
-  }
-
-  /**
-   * A named harness must be one the model offers a chat (the shared family
-   * matched it against models.list; this is main's own check), and its
-   * runtime must be connected, or nothing is reserved.
-   */
-  async function assertHarnessChoice(
-    model: NonNullable<AgentStartChatInput['model']>,
-  ): Promise<void> {
-    const harness = model.executionHarness;
-    if (harness === undefined) return;
-    if (!supportsChatHarnessChoice(model.id, harness))
-      throw new AgentPortError(
-        'validation_failed',
-        `Model ${model.id} does not run on the ${harness} harness. Use its harnessChoices from models.list, or omit executionHarness.`,
-      );
-    // The pin pairs the harness with the provider it implies; a pairing no
-    // provider serves is refused here, as the project creation refuses it,
-    // never reserved with the model's default provider.
-    if (getProviderForChatModel(model.id, harness) === undefined)
-      throw new AgentPortError(
-        'validation_failed',
-        `No provider is available for model ${model.id} on the ${harness} harness.`,
-      );
-    for (const [runtimeId, label, isAvailable] of [
-      ['cursor', 'Cursor', isCursorRuntimeAvailable],
-      ['copilot', 'Copilot', isCopilotRuntimeAvailable],
-      ['opencode', 'OpenCode', isOpenCodeRuntimeAvailable],
-    ] as const) {
-      if (harness === runtimeId && !(await isAvailable()))
-        throw new AgentPortError(
-          'missing_capability',
-          `${label} is not connected in the desktop app.`,
-        );
-    }
-  }
-
   async function callerApprovalPolicy(
     call: DesktopAgentActionCall,
   ): Promise<DesktopChatApprovalPolicy> {
@@ -959,112 +806,6 @@ export function createDesktopEnvironmentPort(
       ...policy,
       sessionRules: deps.callerSessionApprovalRules(scope, policy.sessionRules),
     };
-  }
-
-  async function startTarget(
-    input: AgentStartChatInput,
-    chatId: string,
-    call: DesktopAgentActionCall,
-  ): Promise<AgentStartChatReceipt> {
-    if (input.placement !== 'new_worktree') {
-      return {
-        chatId,
-        worktreeId: input.scope.worktreeId,
-        delivery: 'submitted',
-      };
-    }
-    if (!(await callerApprovalPolicy(call)).root) {
-      throw new AgentPortError(
-        'authorization_conflict',
-        "The new chat would run outside this chat's folder.",
-      );
-    }
-    const created = await deps.createChatWorktree(
-      {
-        workspaceId: input.scope.workspaceId,
-        baseWorktreeId: input.scope.worktreeId,
-        idempotencyKey: `${input.idempotencyKey}:worktree`,
-      },
-      call,
-    );
-    if (!created.ok)
-      throw new AgentPortError(
-        created.code,
-        created.message,
-        created.retryable,
-      );
-    const { worktreeId } = created;
-    return { chatId, worktreeId, delivery: 'queued_for_setup' };
-  }
-
-  async function startChatIn(
-    input: AgentStartChatInput,
-    chatId: string,
-    call: DesktopAgentActionCall,
-  ): Promise<AgentStartChatReceipt> {
-    if (input.model) await assertHarnessChoice(input.model);
-    const receipt = await startTarget(input, chatId, call);
-    const target = {
-      workspaceId: input.scope.workspaceId,
-      worktreeId: receipt.worktreeId,
-      chatId,
-    };
-    const reserving = await startContext(target, input.placement, call);
-    const request = firstMessageRequest(
-      input,
-      target,
-      startedChatPolicy(reserving, call),
-    );
-    await deps.reserveChat(request, call);
-    await input.beforeFirstMessage?.(target);
-    await sendAdmitted(
-      target,
-      request.userMessageId,
-      input.message.text,
-      async (): Promise<SendAdmissionGuard> => {
-        const settingsRevision = deps.approvalSettingsRevision();
-        const callerRevision = callerApprovalRevision(call);
-        const [sending, [reserved, reservedPolicy]] = await startedChatReads(
-          target,
-          input.placement,
-          call,
-        );
-        assertReservedChatWithin(
-          reserved,
-          reservedPolicy,
-          target,
-          sending,
-          call,
-        );
-        return {
-          targetPolicy: reserved,
-          settingsRevision,
-          callerRevision,
-          contained: (): boolean => {
-            try {
-              assertReservedChatWithin(
-                reserved,
-                reservedPolicy,
-                target,
-                sending,
-                call,
-              );
-              return true;
-            } catch (error) {
-              if (error instanceof AgentPortError) return false;
-              throw error;
-            }
-          },
-          refusal: (): string =>
-            'The new chat would run with broader tool approvals than this chat.',
-        };
-      },
-      call,
-      input.placement === 'new_worktree'
-        ? { version: 1, startedChat: true }
-        : undefined,
-    );
-    return receipt;
   }
 
   /** A started chat's start context and its reserved tab's policy. */
@@ -1253,7 +994,8 @@ export function createDesktopEnvironmentPort(
     task: { workspaceId: string; worktreeId: string },
     firstMessage: boolean,
     call: DesktopAgentActionCall,
-  ): Promise<{ approvalMode: ApprovalMode }> {
+    newWorktree = false,
+  ): Promise<{ approvalMode: ApprovalMode; selectedRepoId?: string }> {
     const defaultMode = await deps.newChatApprovalMode(task, call);
     const caller = await callerApprovalPolicy(call);
     const approvalMode = startedChatApprovalMode(
@@ -1264,21 +1006,43 @@ export function createDesktopEnvironmentPort(
     // The new chat starts with no session rules, so a calling chat with
     // session denies is refused here rather than at the first message.
     const scope = call.scope;
-    const root = await deps.chatExecutionRoot(task);
-    const [callerEffective, startedEffective] = await Promise.all([
-      scope ? effectivePolicyOf(scope, caller, call) : undefined,
-      root
-        ? effectivePolicyOf(
-            task,
-            { mode: approvalMode, sessionRules: [], root },
-            call,
-          )
+    // A new worktree in the caller's own project carries the caller's root
+    // and selected repository over, as chat.create did. Another project's
+    // worktree gets no projection, so it is held to the caller's own root.
+    const carried = newWorktree && scope?.workspaceId === task.workspaceId;
+    const selectedRepoId = carried ? caller.selectedRepoId : undefined;
+    const [root, bound] = await Promise.all([
+      deps.chatExecutionRoot({
+        ...task,
+        ...(selectedRepoId ? { selectedRepoId } : {}),
+      }),
+      carried
+        ? startedChatRootBound(caller, task, 'new_worktree', call)
         : undefined,
     ]);
+    const [callerEffective, carriedEffective, startedEffective] =
+      await Promise.all([
+        scope ? effectivePolicyOf(scope, caller, call) : undefined,
+        bound
+          ? effectivePolicyOf(task, { ...caller, root: bound }, call)
+          : undefined,
+        root
+          ? effectivePolicyOf(
+              task,
+              { mode: approvalMode, sessionRules: [], root },
+              call,
+            )
+          : undefined,
+      ]);
+    const callerBound = carried
+      ? callerEffective &&
+        carriedEffective &&
+        withDeniesOf(carriedEffective, callerEffective)
+      : callerEffective;
     if (
       !isApprovalPolicyWithin(
         startedEffective,
-        withMode(callerEffective, liveCallerMode(caller.mode, call)),
+        withMode(callerBound, liveCallerMode(caller.mode, call)),
       )
     ) {
       throw new AgentPortError(
@@ -1286,181 +1050,67 @@ export function createDesktopEnvironmentPort(
         'The new chat would run with broader tool approvals than this chat.',
       );
     }
-    return { approvalMode };
+    return { approvalMode, ...(selectedRepoId ? { selectedRepoId } : {}) };
   }
 
-  function sendMessageInstruction(
-    target: { workspaceId: string; worktreeId: string; chatId: string },
-    commandId: string,
-    messageId: string,
-    text: string,
+  async function agentChatStartPrecheck(
+    targetWorkspaceId: string,
     call: DesktopAgentActionCall,
-  ): Promise<CanopyInstructionResult<'core.chat.message.send'>> {
-    return deps.runtime().instruction(
-      'core.chat.message.send',
-      {
-        scope: {
-          workspaceId: target.workspaceId,
-          worktreeId: target.worktreeId,
-        },
-        commandId,
-        chatId: target.chatId,
-        messageId,
-        text,
-        _meta: { idempotencyKey: commandId },
-      },
-      {
-        caller: agentActionCaller(call, WRITE_GRANTS),
-        metadata: { idempotencyKey: commandId },
-      },
+  ): Promise<void> {
+    const scope = call.scope;
+    if (!scope) return;
+    const caller = await callerApprovalPolicy(call);
+    // A new worktree in another project gets none of the caller's root, so
+    // only a Full Access caller's first message fits within its approvals.
+    if (targetWorkspaceId !== scope.workspaceId) {
+      // Another project's new worktree carries none of this chat's rules, so
+      // its denies would refuse the first message only after creation.
+      const own = await effectivePolicyOf(scope, caller, call);
+      if (
+        liveCallerMode(caller.mode, call) !== 'full-access' ||
+        caller.sessionRules.some((rule) => rule.behavior === 'deny') ||
+        (own !== undefined && inheritedDenyRules(own).length > 0)
+      )
+        throw new AgentPortError(
+          'authorization_conflict',
+          "A first message in a new task in another project needs this chat's approvals to be Full Access with no deny rules. Create the task without initialMessage instead.",
+        );
+      return;
+    }
+    // A new chat starts without session rules, and a relative deny cannot
+    // be carried into a new worktree's root; either would be refused once
+    // the worktree exists.
+    // Effective rules hold anchored paths only, so a relative deny is one
+    // whose anchored target moves when the same policy has another root.
+    const [policy, probed] = await Promise.all([
+      effectivePolicyOf(scope, caller, call),
+      caller.root
+        ? effectivePolicyOf(
+            scope,
+            { ...caller, root: path.join(caller.root, '.relative-deny-probe') },
+            call,
+          )
+        : undefined,
+    ]);
+    const anchoredElsewhere = new Set(
+      (probed ? inheritedDenyRules(probed) : []).map((rule) =>
+        JSON.stringify(rule.target),
+      ),
     );
-  }
-
-  /**
-   * The calling chat's sender attribution for a message to `target`, so the
-   * receiving chat shows who sent it and its agent knows. A sender that
-   * cannot be verified refuses the message, as `projects.send_message`
-   * does; an owner boundary reads as a missing chat.
-   */
-  async function agentSenderFields(
-    target: { workspaceId: string },
-    messageId: string,
-    call: DesktopAgentActionCall,
-  ): Promise<AgentSenderRequestFields | undefined> {
-    try {
-      return await deps.agentSenderFields(call, messageId, target.workspaceId);
-    } catch (error) {
-      if (!isAgentSenderContextError(error)) throw error;
-      if (
-        error.code === 'owner_boundary' ||
-        error.code === 'authorization_conflict'
-      ) {
-        throw new AgentPortError(
-          'not_found',
-          'The target chat is not available.',
-        );
-      }
+    const relativeDeny = (policy ? inheritedDenyRules(policy) : []).some(
+      (rule) =>
+        hasPathTarget(rule.target) &&
+        probed !== undefined &&
+        !anchoredElsewhere.has(JSON.stringify(rule.target)),
+    );
+    if (
+      caller.sessionRules.some((rule) => rule.behavior === 'deny') ||
+      relativeDeny
+    )
       throw new AgentPortError(
-        error.code === 'target_not_ready' ? 'invalid_target' : error.code,
-        error.message,
+        'authorization_conflict',
+        'This chat has session or relative-path deny rules that a new chat cannot start with, so it cannot start a chat with a first message. Create the task without initialMessage instead.',
       );
-    }
-  }
-
-  /**
-   * Sends a write's message through core.chat.message.send unless an earlier
-   * attempt of the write already committed it, which resolves `committed`
-   * without checking anything again: the message was admitted when it was
-   * committed. Otherwise `prepare` reads the policies and checks
-   * containment up front, and the check is carried to the step that admits
-   * the message: the chat state owner refuses the message, committing and
-   * dispatching nothing, unless the target's canonical tab still holds the
-   * policy the check read, neither the shared approval settings nor the
-   * calling chat's approval state changed since, and the check still holds
-   * with both chats' live modes. A changed revision or tab only says the
-   * read may be stale, so the policies are read and checked again and the
-   * message admitted against the new reads; only a check that fails on
-   * current reads refuses it. Reads that keep going stale fail as
-   * retryable, naming what kept changing. `setup` lets an attributed message
-   * wait for its code task's setup, which it otherwise refuses.
-   */
-  async function sendAdmitted(
-    target: { workspaceId: string; worktreeId: string; chatId: string },
-    messageId: string,
-    text: string,
-    prepare: () => Promise<SendAdmissionGuard>,
-    call: DesktopAgentActionCall,
-    setup?: ChatSendMessageRequest['agentSendSetup'],
-  ): Promise<'committed' | 'sent'> {
-    if (await deps.messageCommitted(target, messageId, call)) {
-      return 'committed';
-    }
-    const sender = await agentSenderFields(target, messageId, call);
-    const changed = new Set<string>();
-    for (let attempt = 1; ; attempt += 1) {
-      let guard: SendAdmissionGuard;
-      try {
-        guard = await prepare();
-      } catch (error) {
-        if (
-          error instanceof AgentPortError &&
-          error.code === 'authorization_conflict' &&
-          (await deps.messageCommitted(target, messageId, call))
-        ) {
-          return 'committed';
-        }
-        throw error;
-      }
-      const commandId = randomUUID();
-      let refusal: { stale: string[] } | undefined;
-      const result = await viaDispatcher(() =>
-        withChatSendAdmission(
-          {
-            projectId: target.workspaceId,
-            worktreeId: target.worktreeId,
-            chatId: target.chatId,
-            userMessageId: messageId,
-          },
-          (tab) => {
-            const stale = staleReads(tab, guard, target.chatId, call);
-            if (stale.length === 0 && guard.contained()) return undefined;
-            refusal = { stale };
-            return stale.length === 0
-              ? guard.refusal()
-              : `The message to chat ${target.chatId} was not sent because ${stale.join(' and ')} changed while it was checked.`;
-          },
-          () => {
-            const send = (): Promise<
-              CanopyInstructionResult<'core.chat.message.send'>
-            > =>
-              sendMessageInstruction(target, commandId, messageId, text, call);
-            // The trusted sender fields are main-only, so they ride beside
-            // the portable instruction as its full command.
-            return sender
-              ? withLegacyChatMessageCommand(
-                  {
-                    schemaVersion: 1,
-                    commandId,
-                    projectId: target.workspaceId,
-                    worktreeId: target.worktreeId,
-                    command: {
-                      type: 'chat.send_message',
-                      chatId: target.chatId,
-                      userMessageId: messageId,
-                      text,
-                      ...sender,
-                      ...(setup ? { agentSendSetup: setup } : {}),
-                    },
-                  },
-                  send,
-                )
-              : send();
-          },
-        ),
-      );
-      if (refusal && result.outcome === 'rejected') {
-        if (refusal.stale.length === 0) {
-          throw new AgentPortError('authorization_conflict', guard.refusal());
-        }
-        for (const what of refusal.stale) changed.add(what);
-        if (attempt < SEND_ADMISSION_ATTEMPTS) continue;
-        throw new AgentPortError(
-          'stale_ui_state',
-          `The message to chat ${target.chatId} was not sent because ${Array.from(changed).join(' and ')} kept changing while it was checked. Try again.`,
-          true,
-        );
-      }
-      if (
-        result.outcome !== 'applied' &&
-        result.outcome !== 'already_applied'
-      ) {
-        throw new AgentPortError(
-          result.outcome === 'not_found' ? 'not_found' : 'execution_failed',
-          result.reason ?? `Chat ${target.chatId} did not accept the message.`,
-        );
-      }
-      return result.outcome === 'applied' ? 'sent' : 'committed';
-    }
   }
 
   return {
@@ -1507,66 +1157,25 @@ export function createDesktopEnvironmentPort(
     },
     unmessageableChatIds: (input) =>
       deps.terminalDrivenChatIds(input.scope, input.chatIds),
-    startChat: async (input, call): Promise<AgentStartChatReceipt> => {
-      const replay = startReceipts.get(input.idempotencyKey);
-      if (replay) return replay;
-      // The chat id derives from the idempotency key, so a retry whose first
-      // attempt sent the message but lost its receipt resumes the same start.
-      // Its depth is known before its first turn can call an action.
-      const chatId = `chat-${idFromWriteKey(input.idempotencyKey, 'chat')}`;
-      deps.lineage.record(chatId, input.lineage.depth);
-      const receipt = await startChatIn(input, chatId, call);
-      return remember(startReceipts, input.idempotencyKey, receipt);
-    },
-    postMessage: async (input, call): Promise<AgentPostMessageReceipt> => {
-      const replay = postReceipts.get(input.idempotencyKey);
-      if (replay) return replay;
-      const target = await viaDispatcher(() =>
-        findChatInWorktree(input.scope, input.chatId, call),
-      );
-      const busy =
-        target?.state === 'running' ||
-        target?.state === 'queued' ||
-        target?.state === 'awaiting_user';
-      const receipt: AgentPostMessageReceipt = {
-        chatId: input.chatId,
-        delivery: busy ? 'queued' : 'submitted',
-      };
-      // A message runs under its target's approvals (mode and session
-      // grants), so a chat may only drive chats that can approve nothing it
-      // would have to ask about or would refuse. The check runs again in the
-      // step that admits the message (`sendAdmitted`).
-      const targetChat = { ...input.scope, chatId: input.chatId };
-      // A code task still being set up holds the message until setup ends;
-      // a Cowork task has no setup to wait for.
-      const setup = (await isCoworkWorkspace(input.scope.workspaceId, call))
-        ? undefined
-        : { version: 1 as const };
-      const outcome = await sendAdmitted(
-        targetChat,
-        agentWriteMessageId(input.idempotencyKey),
-        input.text,
-        async (): Promise<SendAdmissionGuard> => {
-          const guard = await messageGuard(targetChat, call);
-          remember(sentPostReceipts, input.idempotencyKey, receipt);
-          return guard;
-        },
-        call,
-        setup,
-      );
-      return remember(
-        postReceipts,
-        input.idempotencyKey,
-        outcome === 'committed'
-          ? (sentPostReceipts.get(input.idempotencyKey) ?? receipt)
-          : receipt,
-      );
-    },
+    // chat.create and chat.send_message are retired on desktop; the project
+    // actions start and message chats through the agent messaging path.
+    startChat: (): Promise<never> =>
+      Promise.reject(
+        new AgentPortError('unsupported_action', 'chat.create was removed.'),
+      ),
+    postMessage: (): Promise<never> =>
+      Promise.reject(
+        new AgentPortError(
+          'unsupported_action',
+          'chat.send_message was removed.',
+        ),
+      ),
     listModels: (_input, call) => deps.listModels(call),
-    callerDepth: (call) =>
-      Promise.resolve(call.scope ? deps.lineage.depthOf(call.scope.chatId) : 0),
+    // The desktop has no depth cap, so every caller counts as depth 0.
+    callerDepth: () => Promise.resolve(0),
     agentMessageAdmission,
     agentChatStartAdmission,
+    agentChatStartPrecheck,
     agentStartedChatMessageAdmission,
   };
 }
@@ -1605,23 +1214,6 @@ export async function resolveDesktopTurnKey(
 
 const defaultDeps: DesktopEnvironmentPortDeps = {
   runtime: getDesktopCanopyRuntime,
-  reserveChat: async (request): Promise<void> => {
-    // Deferred like the send it precedes, and owned by the same service.
-    const { reserveWorktreeChatForSend } =
-      await import('../services/chat-service');
-    await reserveWorktreeChatForSend(request);
-  },
-  messageCommitted: async (chat, messageId): Promise<boolean> => {
-    const { isWorktreeChatMessageCommitted } =
-      await import('../services/chat-service');
-    return isWorktreeChatMessageCommitted({
-      projectId: chat.workspaceId,
-      worktreeId: chat.worktreeId,
-      chatId: chat.chatId,
-      userMessageId: messageId,
-    });
-  },
-  createChatWorktree: createDesktopChatWorktree,
   listModels: async (call): Promise<AgentModelList> => {
     // Deferred: the projection reads provider, policy, and flag state that
     // most injected tool calls never need.
@@ -1739,24 +1331,6 @@ const defaultDeps: DesktopEnvironmentPortDeps = {
         chatId: chat.chatId,
       });
   },
-  agentSenderFields: async (
-    call,
-    acceptedInputId,
-    targetWorkspaceId,
-  ): Promise<AgentSenderRequestFields | undefined> => {
-    const scope = call.scope;
-    if (!scope) return undefined;
-    return buildAgentSenderRequest(
-      {
-        projectId: scope.workspaceId,
-        worktreeId: scope.worktreeId,
-        chatId: scope.chatId,
-      },
-      acceptedInputId,
-      targetWorkspaceId,
-    );
-  },
-  lineage: desktopAgentLineage,
 };
 
 /**
@@ -1765,7 +1339,11 @@ const defaultDeps: DesktopEnvironmentPortDeps = {
  * interface shows the calling chat (D9).
  */
 export async function createDesktopChatWorktree(
-  request: Parameters<DesktopEnvironmentPortDeps['createChatWorktree']>[0],
+  request: {
+    workspaceId: string;
+    baseWorktreeId: string;
+    idempotencyKey: string;
+  },
   call: DesktopAgentActionCall,
 ): Promise<DesktopChatWorktreeResult> {
   const runtime = call.host.worktreeActionRuntime;

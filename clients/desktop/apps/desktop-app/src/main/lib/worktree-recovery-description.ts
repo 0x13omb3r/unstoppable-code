@@ -699,6 +699,8 @@ async function describeWorktreeRecoveryFromInspection(
     if (description.code === 'external.worktree_recovery_retryable')
       description.code = 'external.worktree_recovery_required';
   }
+  if (description.diagnosis?.verdict === 'keep-worktree')
+    description.actions.keepWorktree = { eligible: true };
   return description;
 }
 

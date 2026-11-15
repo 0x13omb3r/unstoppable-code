@@ -1,5 +1,6 @@
 'use client';
 
+import { DialogActionFooter } from '@canopy/ui-shared/components';
 import {
   Stack,
   Button,
@@ -501,7 +502,7 @@ export function InviteTeammateDialog({
         />
       </div>
 
-      <div className="flex justify-end gap-2 border-t px-6 py-3">
+      <DialogActionFooter>
         <Button
           type="button"
           variant="secondary"
@@ -521,7 +522,7 @@ export function InviteTeammateDialog({
         >
           {submitting ? 'Inviting…' : 'Invite'}
         </Button>
-      </div>
+      </DialogActionFooter>
     </DialogModal>
   );
 }

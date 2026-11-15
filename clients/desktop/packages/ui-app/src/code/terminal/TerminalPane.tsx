@@ -1,6 +1,10 @@
 'use client';
 
 import {
+  TerminalReadOnlyNotice,
+  TerminalViewport,
+} from '@canopy/ui-shared/components';
+import {
   memo,
   useCallback,
   useEffect,
@@ -1259,17 +1263,11 @@ function TerminalPaneImpl({
   };
 
   return (
-    <div
+    <TerminalViewport
       ref={paneRef}
       {...terminalFind.surfaceProps}
       data-testid="terminal-pane"
-      className={`relative min-h-0 min-w-0 flex-1 overflow-hidden ${
-        isFileDropActive
-          ? 'ring-1 ring-line-accent/70'
-          : focused
-            ? 'ring-1 ring-line-accent/40'
-            : ''
-      }`}
+      emphasis={isFileDropActive ? 'drop' : focused ? 'focus' : 'none'}
       style={{ backgroundColor: TERMINAL_BG_COLOR }}
       onMouseDownCapture={handleMouseDownCapture}
       onMouseDown={handleMouseDown}
@@ -1307,7 +1305,7 @@ function TerminalPaneImpl({
       )}
       {readOnlyMessage !== null && (
         <div className="pointer-events-none absolute inset-x-3 bottom-3 z-10 flex justify-center">
-          <div className="pointer-events-auto flex max-w-xl items-center gap-2 rounded bg-card/95 px-3 py-1.5 text-2xs fg-secondary shadow-sm backdrop-blur">
+          <TerminalReadOnlyNotice>
             <span>{readOnlyMessage}</span>
             {onRestart && (
               <Button
@@ -1319,10 +1317,10 @@ function TerminalPaneImpl({
                 Restart terminal
               </Button>
             )}
-          </div>
+          </TerminalReadOnlyNotice>
         </div>
       )}
-    </div>
+    </TerminalViewport>
   );
 }
 

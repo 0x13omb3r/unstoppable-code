@@ -197,39 +197,44 @@ export function DesktopSidebarShadowPanel({
   ]);
 
   return (
-    <section
-      className="mt-2 border-t border-dashed pt-2"
+    <Surface
+      as="section"
+      variant="section"
+      boundary="top"
+      className="mt-2"
       data-testid="desktop-sidebar-shadow-panel"
     >
-      <Disclosure
-        label="Shared sidebar shadow"
-        open={expanded}
-        onOpenChange={setExpanded}
-        dataTestId="desktop-sidebar-shadow-disclosure"
-      >
-        <Surface variant="outline" size="small" className="overflow-hidden">
-          <Profiler
-            id="desktop-sidebar-shadow"
-            onRender={commitCounter.increment}
-          >
-            <DesktopSharedSidebarHost
-              client={client}
-              testIds={{ root: 'desktop-sidebar-shadow-surface' }}
-              onSnapshot={handleSnapshot}
-              onRefreshMeasured={handleRefreshMeasured}
+      <div className="pt-2">
+        <Disclosure
+          label="Shared sidebar shadow"
+          open={expanded}
+          onOpenChange={setExpanded}
+          dataTestId="desktop-sidebar-shadow-disclosure"
+        >
+          <Surface variant="outline" size="small" className="overflow-hidden">
+            <Profiler
+              id="desktop-sidebar-shadow"
+              onRender={commitCounter.increment}
+            >
+              <DesktopSharedSidebarHost
+                client={client}
+                testIds={{ root: 'desktop-sidebar-shadow-surface' }}
+                onSnapshot={handleSnapshot}
+                onRefreshMeasured={handleRefreshMeasured}
+              />
+            </Profiler>
+            <ParityReadout
+              commitCounter={commitCounter}
+              expanded={readoutExpanded}
+              lastBuildDuration={lastBuildDuration}
+              mismatches={mismatches}
+              onToggle={() => setReadoutExpanded((value) => !value)}
+              refreshCount={refreshCount}
             />
-          </Profiler>
-          <ParityReadout
-            commitCounter={commitCounter}
-            expanded={readoutExpanded}
-            lastBuildDuration={lastBuildDuration}
-            mismatches={mismatches}
-            onToggle={() => setReadoutExpanded((value) => !value)}
-            refreshCount={refreshCount}
-          />
-        </Surface>
-      </Disclosure>
-    </section>
+          </Surface>
+        </Disclosure>
+      </div>
+    </Surface>
   );
 }
 
@@ -254,26 +259,30 @@ function ParityReadout({
     commitCounter.getSnapshot,
   );
   return (
-    <div
-      className="border-t bg-subtle p-2 text-2xs"
+    <Surface
+      variant="quiet-panel"
+      boundary="top"
+      padding="tight"
       data-testid="desktop-sidebar-shadow-parity-readout"
     >
-      <Disclosure
-        label={`Parity: ${mismatches.length} mismatch(es)`}
-        open={expanded}
-        onOpenChange={onToggle}
-        dataTestId="desktop-sidebar-shadow-parity-disclosure"
-      >
-        <Stack gap="tight">
-          <div>
-            refreshes {refreshCount} · build{' '}
-            {Number(lastBuildDuration.toFixed(2))} ms · commits {commitCount}
-          </div>
-          <pre className="max-h-32 overflow-auto whitespace-pre-wrap">
-            {JSON.stringify(mismatches, null, 2)}
-          </pre>
-        </Stack>
-      </Disclosure>
-    </div>
+      <div className="text-2xs">
+        <Disclosure
+          label={`Parity: ${mismatches.length} mismatch(es)`}
+          open={expanded}
+          onOpenChange={onToggle}
+          dataTestId="desktop-sidebar-shadow-parity-disclosure"
+        >
+          <Stack gap="tight">
+            <div>
+              refreshes {refreshCount} · build{' '}
+              {Number(lastBuildDuration.toFixed(2))} ms · commits {commitCount}
+            </div>
+            <pre className="max-h-32 overflow-auto whitespace-pre-wrap">
+              {JSON.stringify(mismatches, null, 2)}
+            </pre>
+          </Stack>
+        </Disclosure>
+      </div>
+    </Surface>
   );
 }

@@ -1,3 +1,4 @@
+import { DialogActionFooter } from '@canopy/ui-shared/components';
 import { Badge } from '@canopy/ui-shared/components/Badge';
 import { resolveClientAppError } from '@canopy/desktop-instrumentation/client';
 import { toAppError } from '@canopy/protocol/app-errors';
@@ -891,7 +892,7 @@ export function CreateTaskModal({
         )}
       </div>
 
-      <div className="flex items-center justify-end gap-2 border-t px-6 py-3">
+      <DialogActionFooter center>
         <Button size="compact" onClick={onClose}>
           Cancel
         </Button>
@@ -923,7 +924,7 @@ export function CreateTaskModal({
           <ChatIcon size="sm" />
           Chat
         </Button>
-      </div>
+      </DialogActionFooter>
     </DialogModal>
   );
 }

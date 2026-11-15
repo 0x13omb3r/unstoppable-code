@@ -566,6 +566,13 @@ const panelAddTabActionSchema = z.discriminatedUnion('kind', [
   z.object({
     type: z.literal('panel.add_tab'),
     groupId: z.string().optional(),
+    kind: z.literal('mod-pane'),
+    chatId: z.string().min(1),
+    paneId: z.string().min(1),
+  }),
+  z.object({
+    type: z.literal('panel.add_tab'),
+    groupId: z.string().optional(),
     kind: z.literal('chat'),
     chatTabId: z.string(),
   }),

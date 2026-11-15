@@ -6,7 +6,11 @@ import { ChatIcon } from '@canopy/ui-shared/icons';
 import { useBrowserStore } from '@/stores/browserStore';
 import { stageBrowserNetworkEntry } from '@/lib/browserChatStaging';
 import { Button, SegmentedControl, Tooltip } from '@canopy/ui-shared';
-import { Surface, StatusLabel } from '@canopy/ui-shared/components';
+import {
+  BrowserNetworkRequestRow,
+  Surface,
+  StatusLabel,
+} from '@canopy/ui-shared/components';
 
 interface BrowserNetworkPanelProps {
   browserId: string;
@@ -130,11 +134,9 @@ export function BrowserNetworkPanel({
               const formattedUrl = displayUrl(entry.url);
               const details = detailsLabel(entry, formattedUrl.secondary);
               return (
-                <li
+                <BrowserNetworkRequestRow
                   key={entry.id}
-                  className={`border-b px-2 py-1.5 ${
-                    entry.failed ? 'bg-destructive/5' : ''
-                  }`}
+                  failed={entry.failed === true}
                 >
                   <div className="flex items-start gap-2">
                     <div className="grid min-w-0 flex-1 grid-cols-[3.25rem_4.5rem_minmax(0,1fr)_3.75rem] gap-x-2 gap-y-0.5">
@@ -184,7 +186,7 @@ export function BrowserNetworkPanel({
                       <span>{CHAT_UNIT_LABEL}</span>
                     </Button>
                   </div>
-                </li>
+                </BrowserNetworkRequestRow>
               );
             })}
           </ul>

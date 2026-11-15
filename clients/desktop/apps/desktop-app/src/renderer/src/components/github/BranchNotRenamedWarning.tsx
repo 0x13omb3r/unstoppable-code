@@ -1,3 +1,4 @@
+import { StatusIllustration } from '@canopy/ui-shared/components';
 import { Stack, InlineCode } from '@canopy/ui-shared/components';
 import type { JSX } from 'react';
 import { Button } from '@canopy/ui-shared';
@@ -36,13 +37,13 @@ export function BranchNotRenamedWarning({
     >
       <Stack gap="block">
         <div className="flex items-start gap-3">
-          <div className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-warning-subtle">
+          <StatusIllustration tone="warning" variant="member">
             <AppCatalogWarningIcon
               size="xl"
               className="fg-warning"
               aria-hidden="true"
             />
-          </div>
+          </StatusIllustration>
           <Stack gap="inline" className="min-w-0 flex-1">
             <p className="text-s fg-primary">
               {isMultiRepo

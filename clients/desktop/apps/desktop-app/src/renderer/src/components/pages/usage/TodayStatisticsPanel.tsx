@@ -1,3 +1,4 @@
+import { ActivityDonut, ActivitySwatch } from '@canopy/ui-shared/components';
 import { type JSX, useEffect, useMemo, useRef, useState } from 'react';
 import { CHAT_UNIT_LABEL } from '@canopy/protocol';
 import type {
@@ -129,11 +130,7 @@ function StatTile({
     <Surface variant="card" gap="item" padding="default">
       <div className="flex items-center justify-between gap-3">
         <div className="text-xs font-medium fg-secondary">{label}</div>
-        <span
-          aria-hidden="true"
-          className="h-2.5 w-2.5 rounded-full"
-          style={{ backgroundColor: accent }}
-        />
+        <ActivitySwatch size="summary" color={accent} />
       </div>
       <Stack gap="tight">
         <div className="text-2xl font-semibold fg-primary">{value}</div>
@@ -354,13 +351,13 @@ export function TodayStatisticsPanel(): JSX.Element {
             observability.
           </p>
         </div>
-        <div className="rounded-full border bg-card px-3 py-1 text-xs fg-secondary">
+        <Surface variant="date-chip">
           {new Date(todayWindow.start).toLocaleDateString(undefined, {
             month: 'short',
             day: 'numeric',
             year: 'numeric',
           })}
-        </div>
+        </Surface>
       </div>
 
       {error ? (
@@ -406,19 +403,14 @@ export function TodayStatisticsPanel(): JSX.Element {
 
           <div className="grid gap-4 lg:grid-cols-[280px_minmax(0,1fr)]">
             <Surface variant="card" gap="group" padding="default">
-              <div
-                className="mx-auto grid h-48 w-48 place-items-center rounded-full"
-                style={{ background: gradient }}
-              >
-                <div className="grid h-28 w-28 place-items-center rounded-full bg-card text-center">
-                  <div>
-                    <div className="text-2xl font-semibold fg-primary">
-                      {formatNumber(totalActivity)}
-                    </div>
-                    <div className="text-xs fg-secondary">events</div>
+              <ActivityDonut gradient={gradient}>
+                <div>
+                  <div className="text-2xl font-semibold fg-primary">
+                    {formatNumber(totalActivity)}
                   </div>
+                  <div className="text-xs fg-secondary">events</div>
                 </div>
-              </div>
+              </ActivityDonut>
               <div className="grid gap-2 text-xs fg-secondary">
                 {donutSegments.map((segment) => (
                   <div
@@ -426,10 +418,7 @@ export function TodayStatisticsPanel(): JSX.Element {
                     className="flex items-center justify-between gap-3"
                   >
                     <span className="inline-flex items-center gap-2">
-                      <span
-                        className="h-2 w-2 rounded-full"
-                        style={{ backgroundColor: segment.color }}
-                      />
+                      <ActivitySwatch color={segment.color} />
                       {segment.label}
                     </span>
                     <span className="tabular-nums">

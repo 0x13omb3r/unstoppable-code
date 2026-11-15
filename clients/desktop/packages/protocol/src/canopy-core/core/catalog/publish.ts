@@ -26,6 +26,11 @@ export const CATALOG_PUBLICATION_VISIBILITIES = [
 export const CatalogEntryPublishPackageSchema = z.strictObject({
   analysisId: IdSchema,
   selectedOptionalResourceIds: z.array(IdSchema).max(256),
+  /**
+   * "Keep the cloud copy up to date": republish on a cloud chat's send while
+   * the skill stays within this consent (D9, revised).
+   */
+  keepInStep: z.boolean(),
 });
 
 /**
@@ -86,6 +91,39 @@ export const CORE_CATALOG_PUBLISH_CODES = [
   'core.catalog.visibilityInvalid',
 ] as const;
 
+/**
+ * Remove a cloud copy published from this desktop (CAN-6176, D10). Served for
+ * `kind: 'skill'` only: the account's private copy is deleted and the local
+ * skill keeps its file but loses its link. A copy shared with a team or an
+ * organization stays with the share dialog.
+ */
+export const CatalogEntryUnpublishParamsSchema = z.strictObject({
+  /** The cloud record, as `core.catalog.entry.publish` returned it. */
+  publicationId: IdSchema,
+  kind: CatalogEntryKindSchema,
+  /** The copy's revision the caller saw; null removes whatever is there. */
+  expectedRemoteVersion: z.string().max(256).nullable(),
+  _meta: CanopyRequestMetadataSchema.extend({ idempotencyKey: IdSchema }),
+});
+export type CatalogEntryUnpublishParams = z.output<
+  typeof CatalogEntryUnpublishParamsSchema
+>;
+
+export const CatalogEntryUnpublishResultSchema = z.strictObject({
+  publicationId: IdSchema,
+});
+export type CatalogEntryUnpublishResult = z.output<
+  typeof CatalogEntryUnpublishResultSchema
+>;
+
+export const CORE_CATALOG_UNPUBLISH_CODES = [
+  'core.catalog.publicationNotFound',
+  /** The copy is shared beyond the account; the share dialog removes it. */
+  'core.catalog.entryReadOnly',
+  'core.catalog.remoteVersionConflict',
+  'core.catalog.remoteUnavailable',
+] as const;
+
 /** Served by the desktop dispatcher only; kept out of the composed registries. */
 export const CORE_CATALOG_PUBLISH_INSTRUCTION_DEFINITIONS =
   defineCanopyInstructionRegistry('core', {
@@ -99,5 +137,16 @@ export const CORE_CATALOG_PUBLISH_INSTRUCTION_DEFINITIONS =
       params: CatalogEntryPublishParamsSchema,
       result: CatalogEntryPublishResultSchema,
       error: keyedOperationErrorSchema(CORE_CATALOG_PUBLISH_CODES),
+    }),
+    'core.catalog.entry.unpublish': defineCanopyInstruction({
+      plane: 'core',
+      domain: 'catalog',
+      version: 1,
+      placement: 'core-only',
+      idempotency: 'keyed',
+      requiredGrants: [CATALOG_GRANTS.write],
+      params: CatalogEntryUnpublishParamsSchema,
+      result: CatalogEntryUnpublishResultSchema,
+      error: keyedOperationErrorSchema(CORE_CATALOG_UNPUBLISH_CODES),
     }),
   });

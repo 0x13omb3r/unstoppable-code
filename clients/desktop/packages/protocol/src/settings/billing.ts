@@ -407,6 +407,7 @@ export interface BillingChrome {
   } | null;
   billingPresentation?: BillingPresentation | null;
   pendingCancellation?: PendingCancellation | null;
+  /** @deprecated Retained for shipped clients, which require it; the server always sends `true`. */
   freeAccess?: boolean;
 }
 

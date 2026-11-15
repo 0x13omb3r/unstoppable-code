@@ -51,9 +51,14 @@ import {
 } from '@/stores/promptSuggestionStore';
 import { isClaudeTurnLimitMessage } from '@canopy/agent-transcript';
 import {
+  ClaudeModStatusDrawer,
   ComposerWorkDrawer,
   LifetimeLimitNotice,
   PortalModelPicker,
+  useClaudeModBandKinds,
+  useClaudeModComposerAnswerer,
+  useClaudeModSurfaceToasts,
+  type ClaudeModComposerAnswerer,
 } from '@canopy/ui-app';
 import { deriveChatWorkflowCapabilities } from '@canopy/app-core';
 import {
@@ -183,6 +188,7 @@ import { useCloudChatDeleted } from '@/stores/chat/web-core/task-deletions';
 import { WebCoreModelCatalogNotice } from '@/cloud-chats/WebCoreModelCatalogNotice';
 import { presentedCloudStop } from '@/stores/chat/cloud-stop';
 import { liveReplyKey } from '@/stores/chat/web-core/live-replies';
+import { useCloudSandboxState } from '@/stores/chat/web-core/sandbox-states';
 import { useWebCoreStartingTurnStore } from '@/stores/chat/web-core/starting-turns';
 import { loadWebCoreModels, webCoreChatId } from '@/stores/chat/web-core';
 import { useWebCoreFastModeStore } from '@/stores/chat/web-core/fast-mode';
@@ -192,6 +198,7 @@ import {
   webCoreModelLabel,
   webCoreModelList,
   webCoreModelOption,
+  webCorePickerModels,
   webCoreThinkingLevels,
 } from '@/stores/chat/web-core/model-catalog';
 import { resolveComposerWorkflowGates } from './composer-workflow-gates';
@@ -322,7 +329,6 @@ import { AiCreditsUsageLimitBanner } from './AiCreditsUsageLimitBanner';
 import { formatUsageLimitTimeLabel } from '@/lib/usage-limit-time-label';
 import { NoBillingSourceBanner } from './NoBillingSourceBanner';
 import { useUnbillableModelSwitch } from '@/lib/unbillableModel';
-import { OrgLapsedBanner } from './OrgLapsedBanner';
 import { FirstSendFailedSlot } from './FirstSendFailedSlot';
 import { usePanelHostState } from '@/lib/panels/panel-host-context';
 import { TransientRetryBanner } from './TransientRetryBanner';
@@ -350,6 +356,7 @@ import {
   restoreRejectedComposerInputs,
   settleAcceptedComposerRecovery,
 } from '@/stores/composerRecoveryStore';
+import { readChatSelection } from '@/lib/claude-mod-chat-selection';
 import { draftHasContent } from '@/lib/chat-draft-content';
 import { useHeldQueueComposerRecovery } from '@/hooks/useHeldQueueComposerRecovery';
 import { useCatchingUpLag } from '@/stores/ingestionLagStore';
@@ -401,7 +408,9 @@ import {
   type ComposerDensity,
   buildEditorValueFromMessage,
   createChatEditor,
+  fillEditorDraft,
   focusEditor,
+  readEditorDraft,
   resetEditor,
   restoreEditorContent,
   serializeEditorValue,
@@ -639,6 +648,11 @@ export interface ChatInputEditingState {
   ) => void;
   scheduledSendDraft?: { runAt: string };
   scheduleEnabled?: boolean;
+  /**
+   * The editor's text when it unmounts, whatever closed it; the host keeps
+   * text an edit closed without Save or Cancel would lose (CAN-6799).
+   */
+  onUnmount?: (text: string) => void;
 }
 
 export interface ComposerFileIndexOptions {
@@ -941,6 +955,13 @@ function ChatInputContent({
   );
   const [value, setValue] = useState<Descendant[]>(() =>
     structuredClone(initialEditorValue),
+  );
+  const editUnmountRef = useRef(editingState?.onUnmount);
+  editUnmountRef.current = editingState?.onUnmount;
+  useEffect(
+    () => (): void =>
+      editUnmountRef.current?.(serializeEditorValue(editor.children).text),
+    [editor],
   );
   const [, setSelectionRevision] = useState(0);
   const tabId = tab?.id;
@@ -2416,6 +2437,14 @@ function ChatInputContent({
         : webCoreModelList(state, webCoreProjectId),
     ),
   );
+  // A cloud chat the web core names no model for reads Model (CAN-6365).
+  const webCorePickerRows = useMemo(
+    () =>
+      webCoreModels === undefined
+        ? undefined
+        : webCorePickerModels(webCoreModels, model),
+    [model, webCoreModels],
+  );
   const webCoreLabel = useWebCoreModelCatalogStore((state) =>
     webCoreProjectId === undefined
       ? undefined
@@ -2675,13 +2704,24 @@ function ChatInputContent({
   );
   const isStreaming =
     (composerTurn.activity !== 'idle' || cloudTurnStarting) && !pendingExit;
-  // A sent cloud Stop on a turn still starting waits for its project to
-  // wake: Stop's tooltip says so, and the status row shows it (CAN-6721).
+  // The chat's sandbox as the web core reports it (CAN-6766): null for a
+  // local chat, or before the web core has said.
+  const cloudSandboxState = useCloudSandboxState(
+    sendRefusalTarget === null ? null : liveReplyKey(sendRefusalTarget),
+  );
+  // A turn still starting on a project that is asleep or waking ends only
+  // once the project wakes. On an awake project, or one whose state is
+  // unknown, Stop reads plain Stopping… (CAN-6759, CAN-6766).
+  const cloudTurnWaitsForWake =
+    cloudTurnStarting &&
+    (cloudSandboxState === 'asleep' || cloudSandboxState === 'waking');
+  // A sent cloud Stop on such a turn: Stop's tooltip says what it waits for,
+  // and the status row shows it (CAN-6721).
   const cloudStopWaitsForWake =
     isStreaming &&
     pendingModelChange === undefined &&
     (cloudStop === 'stopping' || cloudStop === 'retryable') &&
-    cloudTurnStarting;
+    cloudTurnWaitsForWake;
   // A model or thinking-level change made mid-turn on a session that applies
   // setters only from its next turn (OpenCode) shows as pending beside the
   // controls until that turn ends.
@@ -3247,6 +3287,53 @@ function ChatInputContent({
       ? null
       : sessionChatTarget;
   }, [sessionChatTarget]);
+  // A cloud chat runs in the web core, which draws no Mod surface: it never
+  // asks this computer's main process about one.
+  const modSurfaceChat =
+    sessionChatTarget !== null && !isWebCoreScope(sessionChatTarget.projectId)
+      ? sessionChatTarget
+      : null;
+  // A Claude Mod's toasts show as the app's own, under the Mod's name, in
+  // every native Claude chat (worktree, Cowork and App Advisor).
+  useClaudeModSurfaceToasts(modSurfaceChat, (toast) =>
+    addToast(toast.text, 'info', undefined, {
+      title: toast.plugin,
+      // A Mod's text can hold conversation content, as its status lines can.
+      blockMessageFromReplay: true,
+      ...(sessionChatTarget ?? {}),
+    }),
+  );
+  // A Claude Mod reads and fills this chat's draft, and reads the person's
+  // selection in its transcript, only through this composer (site group M3).
+  const claudeModComposer = useMemo<ClaudeModComposerAnswerer>(
+    () => ({
+      read: (): { text: string; cursor: number } => readEditorDraft(editor),
+      fill: (fill): boolean => {
+        const root = composerRootRef.current;
+        // A fill is a change the person sees: never into a hidden composer,
+        // nor while a dialog holds the keys.
+        if (
+          root === null ||
+          !isComposerVisible() ||
+          root.ownerDocument.querySelector(
+            '[role="dialog"][aria-modal="true"]',
+          ) !== null
+        ) {
+          return false;
+        }
+        // The filled text is the draft now, not a recalled message's.
+        messageHistoryNavigationRef.current = null;
+        fillEditorDraft(editor, fill.text, fill.mode, fill.cursor);
+        setValue(structuredClone(editor.children));
+        return true;
+      },
+      selection: (): string | null =>
+        readChatSelection(composerRootRef.current),
+    }),
+    [editor, isComposerVisible],
+  );
+  useClaudeModComposerAnswerer(modSurfaceChat, claudeModComposer);
+  const modBandKinds = useClaudeModBandKinds(modSurfaceChat);
 
   // General chat target valid on EVERY surface (worktree, standalone, App
   // Advisor, pipeline editor, plan-explore). Unlike `worktreeChatTarget` this is
@@ -3473,11 +3560,6 @@ function ChatInputContent({
     bannerTarget,
     creditsModelRoutability,
   );
-  // Which of the two "this turn cannot be paid for" banners owns the composer.
-  // `OrgLapsedBanner` reports when it is speaking so `NoBillingSourceBanner`
-  // stands down instead of stacking a purchase CTA on top of an explanation
-  // that says to contact the org admin (CAN-2311 review round 3).
-  const [orgLapseVisible, setOrgLapseVisible] = useState(false);
   // Single pure resolver drives BOTH the picker toggle and the AI Credits
   // banner, so they can never disagree. It locks the toggle (with a reason)
   // when only one billing framework is possible for this model + account, and
@@ -7301,9 +7383,9 @@ function ChatInputContent({
               pending={pendingModelChange !== undefined}
               stopping={cloudStop === 'stopping' || cloudStop === 'retryable'}
               stopRetryable={cloudStop === 'retryable'}
-              // A turn still starting ends only once its project wakes: the
-              // stop says what it waits for (CAN-6721).
-              stopWaitsForWake={cloudTurnStarting}
+              // A turn still starting on a sleeping project ends only once
+              // it wakes: the stop says what it waits for (CAN-6721).
+              stopWaitsForWake={cloudTurnWaitsForWake}
               armed={cancelShortcutArmed}
               shortcutReady={composerShortcutsEnabled}
               dataTestId="chat-stop-generation"
@@ -7762,25 +7844,6 @@ function ChatInputContent({
             {scopeCapabilities.chatApprovalMode === true && (
               <ApprovalsUpgradeNotice />
             )}
-            {/* An org whose trial ended stops funding its members the moment it
-                lapses (CAN-2311). Names the specific org, and stays silent when
-                a healthy org or a personal balance still covers the turn.
-
-                Rendered BEFORE the generic no-billing-source banner because the
-                two describe the same dead end for a member of a lapsed org (the
-                lapse zeroes the org credit pool), with different next actions.
-                The one that names the cause wins the composer while it is up;
-                the generic self-serve remedies below take over as soon as it is
-                dismissed or the org is restored. */}
-            <OrgLapsedBanner
-              provider={billingProvider}
-              target={bannerTarget}
-              nativeAuth={providerAvailability[billingProvider].nativeAuth}
-              availabilityLoading={
-                providerAvailability[billingProvider].loading
-              }
-              onVisibleChange={setOrgLapseVisible}
-            />
             {/* Neither a native login nor spendable credits: nothing can pay for
                 the next turn, and the raw provider `Please run /login` names only
                 one of the two remedies. Surfaces both up front (ECW-9091). */}
@@ -7801,7 +7864,6 @@ function ChatInputContent({
               <NoBillingSourceBanner
                 provider={billingProvider}
                 availability={providerAvailability[billingProvider]}
-                orgLapseVisible={orgLapseVisible}
                 target={bannerTarget}
                 queuedCreditHeld={creditNotice.queuedCreditNoticeVisible}
                 persistedRefusal={creditRefusal}
@@ -7941,6 +8003,7 @@ function ChatInputContent({
                 <ComposerWorkDrawer
                   queuedCount={composerWorkDrawerLink?.queuedCount ?? 0}
                   queuedPanelRef={composerWorkDrawerLink?.queuedPanelRef}
+                  extraKinds={modBandKinds}
                   background={{
                     count: counts.items,
                     needsYou: counts.needsYou,
@@ -7956,6 +8019,7 @@ function ChatInputContent({
           ) : (
             <ComposerWorkDrawer
               queuedCount={composerWorkDrawerLink?.queuedCount ?? 0}
+              {...(isEditingQueued ? {} : { extraKinds: modBandKinds })}
               queuedPanelRef={
                 isEditingQueued
                   ? composerWorkDrawerLink?.queuedEditorPanelRef
@@ -8098,6 +8162,8 @@ function ChatInputContent({
           </>
         )}
       </ChatComposerShell>
+      {/* A Claude Mod's status lines hang from the composer's bottom edge. */}
+      <ClaudeModStatusDrawer chat={modSurfaceChat} />
 
       {/* The queued-message editor edits text only and omits the row. */}
       {!isEditingQueued && (
@@ -8118,17 +8184,29 @@ function ChatInputContent({
                 className="flex min-w-0 items-center"
                 aria-busy={pendingModelChange !== undefined}
               >
-                {webCoreModels !== undefined ? (
+                {webCorePickerRows !== undefined ? (
                   // A cloud chat lists its web core catalog in the shared
-                  // picker the web's cloud chats use (CAN-6175 R5).
+                  // picker the web's cloud chats use (CAN-6175 R5), with the
+                  // brand name the web passes for rows no vendor claims
+                  // (CAN-6753).
                   <PortalModelPicker
                     allowLegacyAgentRows={false}
                     statusRow
-                    catalog={webCoreModels}
+                    brandDisplayName={brandText.appName}
+                    catalog={webCorePickerRows}
                     {...(model === undefined ? {} : { currentModel: model })}
                     {...(webCoreLabel === undefined
                       ? {}
                       : { currentModelLabel: webCoreLabel })}
+                    // The harness the chat runs on, passed as the web
+                    // passes it: a model on another one can't be picked
+                    // (CAN-6761). None known restricts nothing.
+                    {...(tab?.capturedHarness === undefined
+                      ? {}
+                      : {
+                          selectedHarness: tab.capturedHarness,
+                          capturedHarness: tab.capturedHarness,
+                        })}
                     menuAlignRef={dropContainerRef}
                     triggerTooltip={null}
                     disabled={
@@ -8285,7 +8363,10 @@ function ChatInputContent({
                 ) : null
               }
               usage={
-                scopeCapabilities.chatContextUsage === true ? (
+                scopeCapabilities.chatContextUsage === true &&
+                // A cloud chat's meter is folded from its answers' meters
+                // only: with none, no meter, never a zero (CAN-6755).
+                (webCoreProjectId === undefined || tabUsage !== undefined) ? (
                   <UsageIndicator
                     usage={tabUsage}
                     isCodex={isCodex}
@@ -8301,10 +8382,16 @@ function ChatInputContent({
                     {...(effectiveProviderType
                       ? { providerType: effectiveProviderType }
                       : {})}
-                    aiCreditsRouted={aiCreditsRouted}
+                    // Every cloud turn bills to AI Credits, so a cloud chat's
+                    // meter shows no USD and no plan limits (CAN-5028).
+                    aiCreditsRouted={
+                      webCoreProjectId !== undefined || aiCreditsRouted
+                    }
                     aiCreditsBilled={
+                      webCoreProjectId !== undefined ||
                       billingResolution.framework === 'ai-credits'
                     }
+                    hideCost={webCoreProjectId !== undefined}
                     subscriptionBillingOverride={
                       tab?.subscriptionBillingOverride === true
                     }
@@ -8327,7 +8414,12 @@ function ChatInputContent({
                     {...(tab?.modelConfig?.contextWindow !== undefined
                       ? { contextWindowSetting: tab.modelConfig.contextWindow }
                       : {})}
-                    {...(composerProjectId && composerWorktreeId && tab
+                    // Only this computer's own sessions answer what fills
+                    // their window or what they cost; never a cloud chat.
+                    {...(composerProjectId &&
+                    composerWorktreeId &&
+                    tab &&
+                    webCoreProjectId === undefined
                       ? {
                           contextTarget: {
                             projectId: composerProjectId,

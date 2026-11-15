@@ -18,7 +18,11 @@ import {
 } from './calendarEvents';
 import type { CalendarView } from './calendarPreferences';
 import { RichHoverTooltip } from '@/components/shared/RichHoverTooltip';
-import { Button, Surface } from '@canopy/ui-shared/components';
+import {
+  CalendarDayNumber,
+  Button,
+  Surface,
+} from '@canopy/ui-shared/components';
 
 /** Max event chips shown per cell before collapsing into a "+N more" button. */
 export const MAX_CHIPS_PER_CELL = 3;
@@ -132,7 +136,11 @@ export function MonthGrid({
 
   return (
     <Surface variant="outline" className="overflow-hidden">
-      <div className="grid grid-cols-7 border-b bg-fg-primary/[0.02]">
+      <Surface
+        variant="quiet-panel"
+        boundary="bottom"
+        className="grid grid-cols-7"
+      >
         {weekdayLabels.map((label) => (
           <div
             key={label}
@@ -141,9 +149,9 @@ export function MonthGrid({
             {label}
           </div>
         ))}
-      </div>
+      </Surface>
       <div className="grid grid-cols-7">
-        {days.map((day) => {
+        {days.map((day, index) => {
           const inMonth = day.getMonth() === currentMonth;
           const today = isToday(day, now);
           const dayGroups = groupsByDay.get(startOfDay(day).getTime()) ?? [];
@@ -153,45 +161,50 @@ export function MonthGrid({
             : dayGroups;
           const moreCount = dayGroups.length - shown.length;
           return (
-            <div
+            <Surface
+              variant="section"
+              boundary="top"
               key={day.getTime()}
-              className="flex min-h-24 flex-col gap-0.5 border-t border-l p-1 first:border-l-0 [&:nth-child(7n+1)]:border-l-0"
+              className="flex flex-col"
             >
-              <div
-                className={`mb-0.5 flex h-5 w-5 items-center justify-center self-start rounded-full text-2xs ${
-                  today
-                    ? 'bg-destructive font-semibold text-white'
-                    : inMonth
-                      ? 'fg-primary'
-                      : 'fg-secondary/50'
-                }`}
+              <Surface
+                variant="section"
+                boundary={index % 7 === 0 ? 'none' : 'left'}
+                className="flex flex-1 flex-col"
               >
-                {day.getDate()}
-              </div>
-              {shown.map((group) => (
-                <MonthEventChip
-                  key={group.key}
-                  group={group}
-                  selectedActivityId={selectedActivityId}
-                  onEventClick={onEventClick}
-                />
-              ))}
-              {moreCount > 0 && (
-                // The link takes the cell's 3xs copy size; the inset lines it
-                // up with the chips' labels.
-                <div className="px-1 py-0.5 text-3xs">
-                  <Button
-                    variant="link"
-                    onClick={(): void => {
-                      onAnchorDateChange(day);
-                      onCalendarViewChange('day');
-                    }}
-                  >
-                    +{moreCount} more
-                  </Button>
+                <div className="flex min-h-24 flex-col gap-0.5 p-1">
+                  <CalendarDayNumber
+                    day={day.getDate()}
+                    today={today}
+                    outsideMonth={!inMonth}
+                    density="month-cell"
+                  />
+                  {shown.map((group) => (
+                    <MonthEventChip
+                      key={group.key}
+                      group={group}
+                      selectedActivityId={selectedActivityId}
+                      onEventClick={onEventClick}
+                    />
+                  ))}
+                  {moreCount > 0 && (
+                    // The link takes the cell's 3xs copy size; the inset lines it
+                    // up with the chips' labels.
+                    <div className="px-1 py-0.5 text-3xs">
+                      <Button
+                        variant="link"
+                        onClick={(): void => {
+                          onAnchorDateChange(day);
+                          onCalendarViewChange('day');
+                        }}
+                      >
+                        +{moreCount} more
+                      </Button>
+                    </div>
+                  )}
                 </div>
-              )}
-            </div>
+              </Surface>
+            </Surface>
           );
         })}
       </div>

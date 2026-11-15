@@ -1,7 +1,7 @@
 import type { JSX } from 'react';
-import { POSTHOG_REPLAY_BLOCK_CLASS } from '@canopy/desktop-instrumentation/posthog-replay-privacy';
 import {
   Markdown,
+  DocumentProse,
   markdownOptions,
   type MarkdownOverrides,
 } from '@canopy/ui-shared/components';
@@ -23,10 +23,8 @@ export function PipelineReportMarkdown({
   content: string;
 }): JSX.Element {
   return (
-    <div
-      className={`${POSTHOG_REPLAY_BLOCK_CLASS} prose prose-sm [--tw-prose-body:var(--fg-primary)] dark:prose-invert max-w-none break-words prose-p:my-0.5 prose-pre:my-1.5 prose-pre:overflow-x-auto prose-pre:bg-fg-primary/[0.06] prose-pre:fg-primary/80 prose-code:fg-success prose-code:before:content-none prose-code:after:content-none prose-headings:fg-primary/80 prose-a:fg-accent prose-strong:fg-primary/80 prose-li:my-0.5`}
-    >
+    <DocumentProse variant="report" replay="block">
       <Markdown options={REPORT_MARKDOWN_OPTIONS}>{content}</Markdown>
-    </div>
+    </DocumentProse>
   );
 }

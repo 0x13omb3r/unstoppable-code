@@ -386,6 +386,33 @@ export const CLOUD_NATIVE_MODEL_GATEWAY_IDS: Readonly<Record<string, string>> =
     'gpt-5.6-luna': 'openai/gpt-5.6-luna',
   };
 
+/**
+ * The harness each desktop model in `CLOUD_NATIVE_MODEL_GATEWAY_IDS` runs on:
+ * the root `package.json` section that lists it (CAN-6747). The cloud
+ * preflight host parity golden keeps it equal to that section.
+ */
+export const CLOUD_NATIVE_MODEL_HARNESSES: Readonly<
+  Record<string, CloudModelHarness>
+> = {
+  'claude-fable-5-2': 'claude',
+  'claude-fable-5-1': 'claude',
+  'opus[1m]': 'claude',
+  sonnet: 'claude',
+  haiku: 'claude',
+  'claude-fable-5': 'claude',
+  'claude-opus-5': 'claude',
+  'claude-sonnet-5': 'claude',
+  'claude-opus-4-8': 'claude',
+  'claude-opus-4-7': 'claude',
+  'claude-opus-4-6': 'claude',
+  'claude-haiku-4-5-20251001': 'claude',
+  'gpt-6.1-terra': 'codex',
+  'gpt-6-luna': 'codex',
+  'gpt-5.6-sol': 'codex',
+  'gpt-5.6-terra': 'codex',
+  'gpt-5.6-luna': 'codex',
+};
+
 export const CLOUD_NATIVE_MODEL_ALIASES: Readonly<Record<string, string>> = {
   fable: 'claude-fable-5-2',
   'fable[1m]': 'claude-fable-5-2',

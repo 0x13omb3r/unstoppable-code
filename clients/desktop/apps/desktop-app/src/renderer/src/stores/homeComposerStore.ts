@@ -1,3 +1,4 @@
+import { isWebCoreScope } from '@/lib/chat-authority';
 import { hasExactWorktreeBaseCatalogue } from '@/lib/remote-control/worktree-base-availability';
 import { type InlineFailure } from '@/lib/inline-app-error';
 import { formatWorktreePrepareFailure } from '@canopy/ui-shared';
@@ -67,6 +68,8 @@ import {
   IDLE_HOME_LINK_TARGET,
   type HomeLinkTargetState,
 } from '@/components/home/homeLinkTarget';
+import { screenCloudAttachmentFiles } from '@/cloud-chats/cloud-chat-attachments';
+import { CLOUD_ATTACHMENTS_MAX_PER_MESSAGE } from '@canopy/protocol/cloud-attachments';
 
 export type HomeBranchTarget =
   | { kind: 'new-worktree' }
@@ -763,6 +766,18 @@ export function isHomeSendEnabled(
   return true;
 }
 
+/**
+ * A file picked in New task for a cloud project (CAN-6763). A cloud project
+ * has no folder to stage it in, so the picked file itself is held until Send
+ * uploads it to the new task's chat. It is held in memory only: a reload
+ * before Send loses it. `id` names the entry rather than the file, so a
+ * persisted Home draft can key the file's bytes by it.
+ */
+export interface HomeCloudFile {
+  readonly id: string;
+  readonly file: File;
+}
+
 interface HomeComposerData {
   workspaceId: string | null;
   branchTarget: HomeBranchTarget;
@@ -851,6 +866,8 @@ interface HomeComposerData {
    */
   pluginSelectionsEdited: boolean;
   attachments: AttachmentMeta[];
+  /** Files for a cloud project's first message, in the order picked. */
+  cloudFiles: HomeCloudFile[];
   /**
    * The New Task draft of record (CAN-3794). It outlives every `HomeSurface`
    * editor: a newly mounted editor is seeded from it, and a hidden,
@@ -1073,6 +1090,7 @@ function createInitialData(): HomeComposerData {
     manualPluginSelections: createEmptySelections(),
     pluginSelectionsEdited: false,
     attachments: [],
+    cloudFiles: [],
     text: '',
     fileReferences: [],
     pendingAttachmentImportIds: [],
@@ -1280,6 +1298,12 @@ export interface HomeComposerState extends HomeComposerData {
   syncWorkspaceDefaultPluginSelections: () => void;
   addAttachments: (attachments: AttachmentMeta[]) => void;
   removeAttachment: (absolutePath: string) => void;
+  /**
+   * Adds the files a cloud project's message would take, up to its limit,
+   * and returns one line per file left out, in the web's words.
+   */
+  addCloudFiles: (files: readonly File[]) => string[];
+  removeCloudFile: (id: string) => void;
   setText: (text: string) => void;
   /** Publish an editor mutation as one text/reference snapshot. */
   setDraft: (draft: {
@@ -1415,6 +1439,12 @@ export const useHomeComposerStore = create<HomeComposerState>((set, get) => ({
       // `home-draft` (or worktree) attachment dir — they don't carry over to
       // a newly selected workspace.
       attachments: [],
+      // Picked files for a cloud project go to whichever cloud project is
+      // chosen, by the same rules; a local project stages its own.
+      cloudFiles:
+        workspaceId !== null && isWebCoreScope(workspaceId)
+          ? get().cloudFiles
+          : [],
       branchTargets: null,
       branchTargetsStatus: 'idle',
       discovery: null,
@@ -1745,6 +1775,27 @@ export const useHomeComposerStore = create<HomeComposerState>((set, get) => ({
     }));
   },
 
+  addCloudFiles: (files): string[] => {
+    const { accepted, problems } = screenCloudAttachmentFiles(
+      files,
+      CLOUD_ATTACHMENTS_MAX_PER_MESSAGE - get().cloudFiles.length,
+    );
+    if (accepted.length > 0)
+      set((state) => ({
+        cloudFiles: [
+          ...state.cloudFiles,
+          ...accepted.map(({ file }) => ({ id: crypto.randomUUID(), file })),
+        ],
+      }));
+    return problems;
+  },
+
+  removeCloudFile: (id): void => {
+    set((state) => ({
+      cloudFiles: state.cloudFiles.filter((entry) => entry.id !== id),
+    }));
+  },
+
   setText: (text): void => {
     if (get().text !== text)
       set((state) => ({
@@ -1865,7 +1916,8 @@ export const useHomeComposerStore = create<HomeComposerState>((set, get) => ({
   loadBranchTargets: async (): Promise<void> => {
     const request = ++branchTargetsRequest;
     const requestedWorkspaceId = get().workspaceId;
-    if (!requestedWorkspaceId) {
+    // A cloud project has no branches here, and no local IPC takes its id.
+    if (!requestedWorkspaceId || isWebCoreScope(requestedWorkspaceId)) {
       set({ branchTargets: null, branchTargetsStatus: 'idle' });
       return;
     }
@@ -1925,7 +1977,7 @@ export const useHomeComposerStore = create<HomeComposerState>((set, get) => ({
   loadDiscovery: async (force?: boolean): Promise<void> => {
     const requestedState = get();
     const requestedWorkspaceId = requestedState.workspaceId;
-    if (!requestedWorkspaceId) {
+    if (!requestedWorkspaceId || isWebCoreScope(requestedWorkspaceId)) {
       set({ discovery: null, discoveryLoading: false });
       return;
     }
@@ -2002,7 +2054,7 @@ export const useHomeComposerStore = create<HomeComposerState>((set, get) => ({
   loadFileIndex: async (force?: boolean): Promise<void> => {
     const requestedState = get();
     const requestedWorkspaceId = requestedState.workspaceId;
-    if (!requestedWorkspaceId) {
+    if (!requestedWorkspaceId || isWebCoreScope(requestedWorkspaceId)) {
       set({ fileIndex: null, fileIndexLoading: false });
       return;
     }

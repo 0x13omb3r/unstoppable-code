@@ -1,4 +1,7 @@
+import { canopyPermissionDeniedError } from '@canopy/core-runtime';
+import { LOCAL_DESKTOP_AUTHORITY_ID } from '../canopy-runtime/desktop-runtime-identity';
 import {
+  type CanopyCallerDescriptor,
   WorktreeRecoveryListParamsSchema,
   WorktreeRecoveryFinishParamsSchema,
   WorktreeRecoveryResolveParamsSchema,
@@ -22,6 +25,21 @@ import { describeWorktreeDiscard } from '../lib/worktree-discard';
 import { discardWorktreeFromInterface } from '../lib/worktree-discard-interface';
 import { registerIpcHandler } from './register';
 
+/** Grant only this reviewed mutation, never the renderer or a remote bridge. */
+function recoveryWriteCaller(
+  caller: CanopyCallerDescriptor,
+): CanopyCallerDescriptor {
+  if (
+    caller.authorityId !== LOCAL_DESKTOP_AUTHORITY_ID ||
+    caller.principalId !== 'local-desktop-user' ||
+    caller.interfaceKind !== 'desktop'
+  )
+    throw canopyPermissionDeniedError(
+      'Archive recovery requires a local user review.',
+    );
+  return { ...caller, grants: ['core.worktree.write'] };
+}
+
 /**
  * CAN-5334: the user-only worktree discard. Both channels are kind-agnostic
  * (the project kind comes from its configuration) and resolve typed refusals
@@ -37,7 +55,7 @@ export function registerWorktreeDiscardHandlers(runtime: {
       runtime.dispatcher.instruction(
         'core.worktree.recovery.resolve',
         WorktreeRecoveryResolveParamsSchema.parse(request),
-        { caller: runtime.resolveCaller(event) },
+        { caller: recoveryWriteCaller(runtime.resolveCaller(event)) },
       ),
   );
   registerIpcHandler(
@@ -46,7 +64,7 @@ export function registerWorktreeDiscardHandlers(runtime: {
       runtime.dispatcher.instruction(
         'core.worktree.recovery.finish',
         WorktreeRecoveryFinishParamsSchema.parse(request),
-        { caller: runtime.resolveCaller(event) },
+        { caller: recoveryWriteCaller(runtime.resolveCaller(event)) },
       ),
   );
   registerIpcHandler(

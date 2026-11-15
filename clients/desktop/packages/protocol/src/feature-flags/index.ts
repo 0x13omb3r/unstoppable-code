@@ -195,6 +195,13 @@ export const CLIENT_FEATURE_FLAGS = {
     launchDarklyEnabledUnavailableValue: 'offered',
     description: 'Availability of the Audit Trail page Labs experiment.',
   },
+  canopyDesktopLabsCustomizeDiscovery: {
+    key: 'canopy-desktop-labs-customize-discovery',
+    // Off until opted in: Customize keeps its current tabs (CAN-6809).
+    launchDarklyDisabledDefaultValue: 'offered',
+    launchDarklyEnabledUnavailableValue: 'offered',
+    description: 'Availability of the New Customize Labs experiment.',
+  },
   canopyPostHogCaptureEnabled: {
     key: 'canopy-desktop-posthog-capture-enabled',
     launchDarklyDisabledDefaultValue: true,
@@ -466,6 +473,15 @@ export const CLIENT_FEATURE_FLAGS = {
     description:
       'Controls personal Claude Mod admission before desktop Claude launches.',
   },
+  canopyDesktopClaudeModSurface: {
+    key: 'canopy-desktop-claude-mod-surface',
+    // As admission: on when LaunchDarkly is not configured (local development),
+    // off when it is configured but unavailable. Needs admission on too.
+    launchDarklyDisabledDefaultValue: true,
+    launchDarklyEnabledUnavailableValue: false,
+    description:
+      'Controls whether an admitted Claude Mod draws its toasts, status lines and log lines in desktop Claude chats.',
+  },
   canopyDesktopWorkspaceCodeGraph: {
     key: 'canopy-desktop-workspace-code-graph',
     launchDarklyDisabledDefaultValue: true,
@@ -611,35 +627,41 @@ export const CLIENT_FEATURE_FLAGS = {
     description:
       'Temporary: cloud cowork chats in the desktop sidebar and chat view through the web core (CAN-4185); remove at CAN-4186 rollout.',
   },
+  /**
+   * @deprecated Retained for shipped builds; no current code reads it. Free
+   * access is the only mode: the subscription tier system and its money
+   * movement were removed. Keep the declaration and the LaunchDarkly flag
+   * (serving `true`, client-side availability unchanged) until telemetry shows
+   * no live build older than that removal, then delete both.
+   */
   canopyFreeAccessEnabled: {
     key: 'canopy-free-access-enabled',
-    // CAN-3926. With LaunchDarkly not configured (local development), the
-    // app presents free mode, which is the product direction. With
-    // LaunchDarkly configured but unavailable it presents tier mode, so an
-    // outage never flips the app into free mode. Desktop keeps its last live
-    // value; the web server keeps its last live value per process (see
-    // `free-access.ts`).
-    //
-    // Money paths do NOT read these defaults. Subscription charges, retries,
-    // seat charges, monthly grants and plan-credit expiry run only on a live
-    // OFF evaluation (or an explicit `CANOPY_FREE_ACCESS_MODE=off`). Any other
-    // state, including LaunchDarkly not configured, the flag missing, or an
-    // outage, suppresses them. Create the flag in LaunchDarkly serving false
-    // before deploying, or renewals stop.
+    // CAN-3926. Older desktop and web builds read this flag directly. With
+    // LaunchDarkly not configured they present free mode; with LaunchDarkly
+    // configured but unavailable they present tier mode. The current server
+    // no longer moves subscription money in any flag state, so an OFF
+    // evaluation only changes what those older clients render.
     launchDarklyDisabledDefaultValue: true,
     launchDarklyEnabledUnavailableValue: false,
     description:
-      'Makes every app feature free for signed-in users, keeps AI Credit top-ups purchasable, and stops subscription charges and monthly credit grants.',
+      'Deprecated: retained for shipped builds. Makes every app feature free for signed-in users in older clients; no current code reads it.',
   },
   canopyDesktopAccountProxy: {
     key: 'canopy-desktop-account-proxy',
-    // Launched dark: off unless LaunchDarkly serves `true`, including in
-    // unconfigured local builds. The per-user opt-in preference
-    // (`accountProxyEnabled`) still gates every surface.
-    launchDarklyDisabledDefaultValue: false,
+    // On in unconfigured local builds; configured but unavailable fails
+    // closed, so release builds stay off until LaunchDarkly serves `true`.
+    // The per-user opt-in preference (`accountProxyEnabled`) still gates
+    // every surface.
+    launchDarklyDisabledDefaultValue: true,
     launchDarklyEnabledUnavailableValue: false,
     description:
       'Controls the desktop account proxy (CLIProxyAPI): the Labs opt-in, its settings, and routing agents through it.',
+  },
+  canopyDesktopMemoryLearnFromChats: {
+    key: 'canopy-desktop-memory-learn-from-chats',
+    launchDarklyDisabledDefaultValue: false,
+    launchDarklyEnabledUnavailableValue: false,
+    description: 'Learn local memory from eligible completed chat turns.',
   },
   canopyDesktopSkillSuggestions: {
     key: 'canopy-desktop-skill-suggestions',
@@ -650,16 +672,6 @@ export const CLIENT_FEATURE_FLAGS = {
     launchDarklyEnabledUnavailableValue: false,
     description:
       'Controls desktop repeat-task skill suggestions: recording repeated requests, the idle scan, the composer banner, and the Settings section. The Settings toggle opts out on top of this flag.',
-  },
-  canopyDesktopHostedSettings: {
-    key: 'canopy-desktop-hosted-settings',
-    // CAN-4386 rollout: on for unconfigured local builds, off while a
-    // configured LaunchDarkly has not answered, so unreleased builds keep
-    // the web hand-off.
-    launchDarklyDisabledDefaultValue: true,
-    launchDarklyEnabledUnavailableValue: false,
-    description:
-      'Controls the hosted Account and Organizations settings panels inside desktop Settings.',
   },
   canopyDesktopDaemonFilesReads: {
     key: 'canopy-desktop-daemon-files-reads',
@@ -759,6 +771,8 @@ export type ClientFeatureFlagValues = {
     .key]: LabsExperimentAvailability;
   [CLIENT_FEATURE_FLAGS.canopyDesktopLabsAuditTrailPage
     .key]: LabsExperimentAvailability;
+  [CLIENT_FEATURE_FLAGS.canopyDesktopLabsCustomizeDiscovery
+    .key]: LabsExperimentAvailability;
   [CLIENT_FEATURE_FLAGS.canopyPostHogCaptureEnabled.key]: boolean;
   [CLIENT_FEATURE_FLAGS.canopyPostHogSessionReplaySampleRate.key]: number;
   [CLIENT_FEATURE_FLAGS.canopyPostHogAutocaptureEnabled.key]: boolean;
@@ -789,6 +803,7 @@ export type ClientFeatureFlagValues = {
   [CLIENT_FEATURE_FLAGS.canopyDesktopClaudeTuiWorkers.key]: boolean;
   [CLIENT_FEATURE_FLAGS.canopyDesktopClaudeTuiChats.key]: boolean;
   [CLIENT_FEATURE_FLAGS.canopyDesktopClaudeModAdmission.key]: boolean;
+  [CLIENT_FEATURE_FLAGS.canopyDesktopClaudeModSurface.key]: boolean;
   [CLIENT_FEATURE_FLAGS.canopyDesktopWorkspaceCodeGraph.key]: boolean;
   [CLIENT_FEATURE_FLAGS.canopyDesktopChatVisuals.key]: boolean;
   [CLIENT_FEATURE_FLAGS.canopyBillingEnabled.key]: boolean;
@@ -807,8 +822,8 @@ export type ClientFeatureFlagValues = {
   [CLIENT_FEATURE_FLAGS.canopyFreeAccessEnabled.key]: boolean;
   [CLIENT_FEATURE_FLAGS.canopyDesktopAccountProxy.key]: boolean;
   [CLIENT_FEATURE_FLAGS.canopyDesktopExternalAgentsMenu.key]: boolean;
+  [CLIENT_FEATURE_FLAGS.canopyDesktopMemoryLearnFromChats.key]: boolean;
   [CLIENT_FEATURE_FLAGS.canopyDesktopSkillSuggestions.key]: boolean;
-  [CLIENT_FEATURE_FLAGS.canopyDesktopHostedSettings.key]: boolean;
   [CLIENT_FEATURE_FLAGS.canopyDesktopDaemonFilesReads.key]: boolean;
   [CLIENT_FEATURE_FLAGS.canopyWebCoreClient.key]: boolean;
 };
@@ -910,6 +925,9 @@ export const CLIENT_FEATURE_FLAG_LAUNCHDARKLY_DISABLED_DEFAULTS: ClientFeatureFl
     [CLIENT_FEATURE_FLAGS.canopyDesktopLabsAuditTrailPage.key]:
       CLIENT_FEATURE_FLAGS.canopyDesktopLabsAuditTrailPage
         .launchDarklyDisabledDefaultValue,
+    [CLIENT_FEATURE_FLAGS.canopyDesktopLabsCustomizeDiscovery.key]:
+      CLIENT_FEATURE_FLAGS.canopyDesktopLabsCustomizeDiscovery
+        .launchDarklyDisabledDefaultValue,
     [CLIENT_FEATURE_FLAGS.canopyPostHogCaptureEnabled.key]:
       CLIENT_FEATURE_FLAGS.canopyPostHogCaptureEnabled
         .launchDarklyDisabledDefaultValue,
@@ -1001,6 +1019,9 @@ export const CLIENT_FEATURE_FLAG_LAUNCHDARKLY_DISABLED_DEFAULTS: ClientFeatureFl
     [CLIENT_FEATURE_FLAGS.canopyDesktopClaudeModAdmission.key]:
       CLIENT_FEATURE_FLAGS.canopyDesktopClaudeModAdmission
         .launchDarklyDisabledDefaultValue,
+    [CLIENT_FEATURE_FLAGS.canopyDesktopClaudeModSurface.key]:
+      CLIENT_FEATURE_FLAGS.canopyDesktopClaudeModSurface
+        .launchDarklyDisabledDefaultValue,
     [CLIENT_FEATURE_FLAGS.canopyDesktopWorkspaceCodeGraph.key]:
       CLIENT_FEATURE_FLAGS.canopyDesktopWorkspaceCodeGraph
         .launchDarklyDisabledDefaultValue,
@@ -1054,11 +1075,11 @@ export const CLIENT_FEATURE_FLAG_LAUNCHDARKLY_DISABLED_DEFAULTS: ClientFeatureFl
     [CLIENT_FEATURE_FLAGS.canopyDesktopExternalAgentsMenu.key]:
       CLIENT_FEATURE_FLAGS.canopyDesktopExternalAgentsMenu
         .launchDarklyDisabledDefaultValue,
+    [CLIENT_FEATURE_FLAGS.canopyDesktopMemoryLearnFromChats.key]:
+      CLIENT_FEATURE_FLAGS.canopyDesktopMemoryLearnFromChats
+        .launchDarklyDisabledDefaultValue,
     [CLIENT_FEATURE_FLAGS.canopyDesktopSkillSuggestions.key]:
       CLIENT_FEATURE_FLAGS.canopyDesktopSkillSuggestions
-        .launchDarklyDisabledDefaultValue,
-    [CLIENT_FEATURE_FLAGS.canopyDesktopHostedSettings.key]:
-      CLIENT_FEATURE_FLAGS.canopyDesktopHostedSettings
         .launchDarklyDisabledDefaultValue,
     [CLIENT_FEATURE_FLAGS.canopyDesktopDaemonFilesReads.key]:
       CLIENT_FEATURE_FLAGS.canopyDesktopDaemonFilesReads
@@ -1147,6 +1168,9 @@ export const CLIENT_FEATURE_FLAG_LAUNCHDARKLY_ENABLED_UNAVAILABLE_DEFAULTS: Clie
         .launchDarklyEnabledUnavailableValue,
     [CLIENT_FEATURE_FLAGS.canopyDesktopLabsAuditTrailPage.key]:
       CLIENT_FEATURE_FLAGS.canopyDesktopLabsAuditTrailPage
+        .launchDarklyEnabledUnavailableValue,
+    [CLIENT_FEATURE_FLAGS.canopyDesktopLabsCustomizeDiscovery.key]:
+      CLIENT_FEATURE_FLAGS.canopyDesktopLabsCustomizeDiscovery
         .launchDarklyEnabledUnavailableValue,
     [CLIENT_FEATURE_FLAGS.canopyPostHogCaptureEnabled.key]:
       CLIENT_FEATURE_FLAGS.canopyPostHogCaptureEnabled
@@ -1241,6 +1265,9 @@ export const CLIENT_FEATURE_FLAG_LAUNCHDARKLY_ENABLED_UNAVAILABLE_DEFAULTS: Clie
     [CLIENT_FEATURE_FLAGS.canopyDesktopClaudeModAdmission.key]:
       CLIENT_FEATURE_FLAGS.canopyDesktopClaudeModAdmission
         .launchDarklyEnabledUnavailableValue,
+    [CLIENT_FEATURE_FLAGS.canopyDesktopClaudeModSurface.key]:
+      CLIENT_FEATURE_FLAGS.canopyDesktopClaudeModSurface
+        .launchDarklyEnabledUnavailableValue,
     [CLIENT_FEATURE_FLAGS.canopyDesktopWorkspaceCodeGraph.key]:
       CLIENT_FEATURE_FLAGS.canopyDesktopWorkspaceCodeGraph
         .launchDarklyEnabledUnavailableValue,
@@ -1295,11 +1322,11 @@ export const CLIENT_FEATURE_FLAG_LAUNCHDARKLY_ENABLED_UNAVAILABLE_DEFAULTS: Clie
     [CLIENT_FEATURE_FLAGS.canopyDesktopExternalAgentsMenu.key]:
       CLIENT_FEATURE_FLAGS.canopyDesktopExternalAgentsMenu
         .launchDarklyEnabledUnavailableValue,
+    [CLIENT_FEATURE_FLAGS.canopyDesktopMemoryLearnFromChats.key]:
+      CLIENT_FEATURE_FLAGS.canopyDesktopMemoryLearnFromChats
+        .launchDarklyEnabledUnavailableValue,
     [CLIENT_FEATURE_FLAGS.canopyDesktopSkillSuggestions.key]:
       CLIENT_FEATURE_FLAGS.canopyDesktopSkillSuggestions
-        .launchDarklyEnabledUnavailableValue,
-    [CLIENT_FEATURE_FLAGS.canopyDesktopHostedSettings.key]:
-      CLIENT_FEATURE_FLAGS.canopyDesktopHostedSettings
         .launchDarklyEnabledUnavailableValue,
     [CLIENT_FEATURE_FLAGS.canopyDesktopDaemonFilesReads.key]:
       CLIENT_FEATURE_FLAGS.canopyDesktopDaemonFilesReads
@@ -1342,6 +1369,7 @@ export const LABS_EXPERIMENT_FLAG_KEYS: ReadonlySet<string> = new Set([
   CLIENT_FEATURE_FLAGS.canopyDesktopLabsKanbanPage.key,
   CLIENT_FEATURE_FLAGS.canopyDesktopLabsStatisticsPage.key,
   CLIENT_FEATURE_FLAGS.canopyDesktopLabsAuditTrailPage.key,
+  CLIENT_FEATURE_FLAGS.canopyDesktopLabsCustomizeDiscovery.key,
 ]);
 
 export function isLabsExperimentFlagKey(key: string): boolean {

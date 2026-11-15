@@ -1,3 +1,7 @@
+import {
+  WorkflowEditorJob,
+  WorkflowEditorJobHeader,
+} from '@canopy/ui-shared/components';
 import { type JSX, useState } from 'react';
 import { useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
@@ -74,20 +78,9 @@ export function JobCard({
   );
 
   return (
-    <div
-      ref={setSortableRef}
-      style={style}
-      className={`border rounded-lg overflow-hidden transition-[border-color,box-shadow,opacity] ${
-        isSelected
-          ? 'border-line-accent ring-1 ring-line-accent'
-          : 'hover:border-line-accent/30'
-      }`}
-    >
+    <WorkflowEditorJob ref={setSortableRef} style={style} selected={isSelected}>
       {/* Job header */}
-      <div
-        onClick={() => onSelectJob(jobId)}
-        className="flex items-center gap-2 px-3 py-2 bg-secondary/50 cursor-pointer"
-      >
+      <WorkflowEditorJobHeader onClick={() => onSelectJob(jobId)}>
         {/* Drag handle */}
         {!readonly && (
           <button
@@ -150,7 +143,7 @@ export function JobCard({
             <AppCatalogPlusIcon size="sm" />
           </Button>
         )}
-      </div>
+      </WorkflowEditorJobHeader>
 
       {/* Job body (steps) */}
       {!collapsed && (
@@ -183,6 +176,6 @@ export function JobCard({
           )}
         </div>
       )}
-    </div>
+    </WorkflowEditorJob>
   );
 }

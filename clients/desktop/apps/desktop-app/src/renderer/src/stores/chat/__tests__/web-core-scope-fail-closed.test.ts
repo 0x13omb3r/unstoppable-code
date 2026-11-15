@@ -194,6 +194,15 @@ function actionParameters(): Map<string, string[]> {
 const ARGUMENTS: Readonly<Record<string, unknown>> = {
   target: TARGET,
   scope: { projectId: PROJECT, worktreeId: WORKTREE },
+  // A queued message's unsaved edit (CAN-6799).
+  openedIn: { worktreeKey: `${PROJECT}/${WORKTREE}`, chatId: CHAT },
+  edit: {
+    worktreeKey: `${PROJECT}/${WORKTREE}`,
+    chatId: CHAT,
+    id: 'entry-1',
+    text: 'Edited',
+  },
+  message: { text: 'Queued', hostQueueEntryId: 'entry-1' },
   event: { ...TARGET, requestId: 'request-1' },
   projectId: PROJECT,
   worktreeId: WORKTREE,

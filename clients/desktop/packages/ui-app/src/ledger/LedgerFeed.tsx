@@ -1,5 +1,6 @@
 'use client';
 
+import { LedgerActivityPrompt } from '@canopy/ui-shared/components';
 import { ORCHESTRATOR_LABEL } from '@canopy/protocol';
 import {
   useCallback,
@@ -1276,7 +1277,7 @@ export function LedgerFeed({
       }}
     >
       {newActivity && (
-        <div className="sticky top-0 z-10 flex justify-center bg-base pb-2">
+        <LedgerActivityPrompt>
           <Button
             type="button"
             variant="secondary"
@@ -1286,7 +1287,7 @@ export function LedgerFeed({
           >
             Show new activity
           </Button>
-        </div>
+        </LedgerActivityPrompt>
       )}
       {listBody}
     </div>

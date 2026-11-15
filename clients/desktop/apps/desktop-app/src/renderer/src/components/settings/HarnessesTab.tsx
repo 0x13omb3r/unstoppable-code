@@ -1,3 +1,8 @@
+import {
+  HarnessBoardColumn,
+  HarnessBoardRow,
+  HarnessDragPreview,
+} from '@canopy/ui-shared/components';
 import { useFeatureFlagsStore } from '@/stores/featureFlagsStore';
 import { useNavigationStore } from '@/stores/navigationStore';
 import {
@@ -475,23 +480,20 @@ export function HarnessesTab(): JSX.Element {
             </div>
             <DragOverlay dropAnimation={null}>
               {activeId ? (
-                <div
-                  data-testid="harness-drag-overlay"
-                  className="flex h-8 cursor-grabbing items-center rounded-md bg-card px-2 text-s fg-primary shadow-lg"
-                >
+                <HarnessDragPreview data-testid="harness-drag-overlay">
                   {getModelDisplayName(activeId)}
-                </div>
+                </HarnessDragPreview>
               ) : null}
             </DragOverlay>
             {keyboardActiveId && (
               // Decorative: the live region below announces the move.
-              <div
+              <HarnessDragPreview
+                keyboard
                 aria-hidden="true"
                 data-testid="harness-drag-overlay"
-                className="pointer-events-none fixed left-1/2 top-6 z-toast flex h-8 -translate-x-1/2 items-center rounded-md bg-card px-2 text-s fg-primary shadow-lg"
               >
                 {getModelDisplayName(keyboardActiveId)}
-              </div>
+              </HarnessDragPreview>
             )}
             <div className="sr-only" aria-live="assertive" aria-atomic="true">
               {keyboardAnnouncement}
@@ -534,16 +536,12 @@ function HarnessColumn({
   // border colors: `border-<color>` is inert in this app, so the resting
   // outline and the drop highlight are rings.
   return (
-    <section
+    <HarnessBoardColumn
+      highlighted={highlighted}
       ref={setNodeRef}
       aria-labelledby={headingId}
       data-testid={`harness-column-${harness}`}
       data-drop-highlight={highlighted ? 'true' : undefined}
-      className={`flex flex-col gap-2 rounded-lg bg-secondary p-3 transition-colors ${
-        highlighted
-          ? 'ring-1 ring-line-accent'
-          : 'ring-[length:var(--border-hairline)] ring-line-base'
-      }`}
     >
       <div className="flex items-center gap-2 px-2">
         <ModelProviderIcon provider={harness} central size="sm" />
@@ -606,7 +604,7 @@ function HarnessColumn({
           </div>
         ))
       )}
-    </section>
+    </HarnessBoardColumn>
   );
 }
 
@@ -700,7 +698,8 @@ function ConfigurableHarnessRow({
   ];
 
   return (
-    <div
+    <HarnessBoardRow
+      dragging={isDragging}
       ref={setNodeRef}
       {...attributes}
       {...listeners}
@@ -720,9 +719,6 @@ function ConfigurableHarnessRow({
       aria-keyshortcuts="Enter Space ArrowLeft ArrowRight ArrowUp ArrowDown Escape"
       data-testid={`harness-row-${assignment.modelId}`}
       data-harness-row-kind="configurable"
-      className={`group relative flex h-8 cursor-grab items-center gap-2 rounded-md px-2 text-s fg-primary/80 transition-colors focus-within:bg-subtle hover:bg-subtle ${
-        isDragging ? 'opacity-40' : ''
-      }`}
     >
       <span className="min-w-0 flex-1 truncate">{label}</span>
       {/* Revealed with the row, like the other row actions on this board. */}
@@ -769,6 +765,6 @@ function ConfigurableHarnessRow({
           />
         </ActionMenuRowStyle>
       </FloatingMenu>
-    </div>
+    </HarnessBoardRow>
   );
 }

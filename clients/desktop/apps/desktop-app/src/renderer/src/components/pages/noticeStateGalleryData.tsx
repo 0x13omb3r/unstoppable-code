@@ -53,16 +53,7 @@ import {
 import { automationRevealNoticeCopy } from '@/components/automations/automationRevealNotice';
 import { installRevealNotice } from '@/components/share/installRevealNotice';
 import { automationRunsInMessage } from '@canopy/execution-engine/lib/automation-context-copy';
-import {
-  askOwnerToChoosePlanCopy,
-  CHOOSE_ORG_PLAN_COPY,
-  CHOOSE_ORG_PLAN_LABEL,
-  orgWithoutPlanTitle,
-} from '@/lib/organizationPlan';
-import {
-  CONTACT_ORG_ADMIN_COPY,
-  CONTACT_ORG_ADMIN_LAPSED_COPY,
-} from '@/lib/openBillingPage';
+import { CONTACT_ORG_ADMIN_COPY } from '@/lib/openBillingPage';
 import {
   CHAT_STATE_COMMAND_FAILED_NOTICE,
   CHAT_STATE_COMMAND_FAILED_TITLE,
@@ -124,9 +115,6 @@ export interface NoticeGallerySection {
   note: string;
   entries: readonly NoticeGalleryEntry[];
 }
-
-const lower = (copy: string): string =>
-  copy.charAt(0).toLowerCase() + copy.slice(1);
 
 export const NOTICE_GALLERY_SECTIONS: readonly NoticeGallerySection[] = [
   {
@@ -548,32 +536,6 @@ export const NOTICE_GALLERY_SECTIONS: readonly NoticeGallerySection[] = [
         heading: '16 AI Credits added.',
         message: 'You can send it now.',
         dismissible: true,
-      },
-      {
-        id: 'org-lapsed',
-        title: 'Organization plan lapsed',
-        intent: 'attention',
-        heading: 'Acme has no active plan',
-        message: `Its paused credit pool is not paying for this chat; ${lower(CONTACT_ORG_ADMIN_LAPSED_COPY)}`,
-        dismissible: true,
-      },
-      {
-        id: 'home-org-without-plan-owner',
-        title: 'Home: selected organization has no plan (owner)',
-        note: 'Home composer is disabled while an organization without an active plan is selected.',
-        intent: 'attention',
-        heading: orgWithoutPlanTitle('Acme'),
-        message: CHOOSE_ORG_PLAN_COPY,
-        actions: [{ label: CHOOSE_ORG_PLAN_LABEL, variant: 'primary' }],
-      },
-      {
-        id: 'home-org-without-plan-member',
-        title: 'Home: selected organization has no plan (admin or member)',
-        note: 'Only an owner can choose a plan, so everyone else is sent to one.',
-        intent: 'attention',
-        heading: orgWithoutPlanTitle('Acme'),
-        message: askOwnerToChoosePlanCopy('Acme'),
-        actions: [{ label: 'Back to Personal' }],
       },
       {
         id: 'home-first-send-model-refused',

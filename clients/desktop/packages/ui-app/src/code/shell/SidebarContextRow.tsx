@@ -1,5 +1,6 @@
 'use client';
 
+import { ImageThumbnail } from '@canopy/ui-shared/components';
 import { Badge, Dot } from '@canopy/ui-shared/components/Badge';
 import { useEffect, useId, useMemo, useRef, useState, type JSX } from 'react';
 import type { IncomingTeamInvitation } from '@canopy/protocol/settings/organization';
@@ -17,10 +18,10 @@ import {
   DropdownMenuItemIcon,
   DropdownMenuLabel,
   FloatingMenu,
-  SidebarAiCreditsMenuItem,
   Notice,
   NoticeButton,
 } from '@canopy/ui-shared/components';
+import { BalanceSurface } from '../../credits/BalanceSurface';
 import {
   BuildingIcon,
   CheckIcon,
@@ -63,8 +64,8 @@ export interface SidebarContextOrgScopedActions {
    * an organization).
    */
   readonly personalOrganizationId: string | null;
-  /** Free app access: an OWNER or ADMIN gets the organization's AI Credits row. */
-  readonly freeAccess: boolean;
+  /** AI Credits are on for this viewer: an OWNER or ADMIN gets the organization's AI Credits row. */
+  readonly creditsVisible: boolean;
   /** Opens a hosted page path; the menu has already closed. */
   readonly onOpenPath: (path: string) => void;
   /** Opens the Create a team flow from Personal; omitted ⇒ no row. */
@@ -334,11 +335,11 @@ export function SidebarContextGlyph({
   }
   if (logoUrl && brokenSrc !== logoUrl) {
     return (
-      <img
+      <ImageThumbnail
+        variant="sidebar-icon"
         src={logoUrl}
         width={16}
         height={16}
-        className="rounded-sm object-cover shrink-0"
         alt=""
         aria-hidden="true"
         data-testid="sidebar-context-glyph-logo"
@@ -874,7 +875,8 @@ function ContextCreditsMenuItem({
     refresh?.();
   }, [refresh]);
   return (
-    <SidebarAiCreditsMenuItem
+    <BalanceSurface
+      density="row"
       balanceCredits={current?.balanceCredits ?? null}
       onSelect={onSelect}
       data-testid={testId}
@@ -1027,7 +1029,7 @@ export function SidebarContextMenuItems({
     organizations,
     authenticated: orgScoped.authenticated,
     personalOrganizationId: orgScoped.personalOrganizationId,
-    freeAccess: orgScoped.freeAccess,
+    creditsVisible: orgScoped.creditsVisible,
   });
   const createOrganizationPath = actions.createOrganizationPath;
   return (

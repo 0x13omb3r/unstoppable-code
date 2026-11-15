@@ -19,12 +19,6 @@ import {
   getRemoteControlApi,
   useRemoteControlStore,
 } from '@/stores/remoteControlStore';
-import { useWorkspaceContextStore } from '@/stores/workspaceContextStore';
-import { RemoteControlUpgradeCta } from '@/components/portal/RemoteControlUpgradeCta';
-import {
-  resolveBillingManageableOrgs,
-  resolveManageableLapsedOrg,
-} from '@/components/portal/manageable-lapsed-org';
 import { RemoteControlGuestCta } from '@/components/portal/RemoteControlGuestCta';
 import { RemoteControlMobileAppsCta } from '@/components/portal/RemoteControlMobileAppsCta';
 import { RemoteControlPairingQr } from '@/components/portal/RemoteControlPairingQr';
@@ -55,8 +49,6 @@ import type {
 import type { DeviceKind } from '@canopy/protocol/device-relay';
 import { CANOPY_CLOUD_ACCOUNT_CHANGED_EVENT } from '@canopy/desktop-shared/constants/canopy-cloud';
 import { isGuestAccount } from '@canopy/desktop-shared/lib/guest-account';
-import { lapsedOrgNames as lapsedOrgNamesFrom } from '@canopy/desktop-shared/lib/org-billing-state-parsing';
-import { organizationBillingPath } from '@canopy/protocol/billing';
 import { REMOTE_CONTROL_LABEL } from '@canopy/protocol';
 import { GUEST_WORK_PRESERVED } from '@/lib/guest-cta-copy';
 import { brandText } from '@/lib/brand';
@@ -210,7 +202,6 @@ type RemoteControlView =
   | { readonly kind: 'loading' }
   | { readonly kind: 'signed-out' }
   | { readonly kind: 'guest' }
-  | { readonly kind: 'upgrade' }
   | { readonly kind: 'paired'; readonly device: PairedDevice }
   | { readonly kind: 'request'; readonly request: RemoteIncomingPairing }
   | { readonly kind: 'off' }
@@ -261,215 +252,13 @@ export function CanopyPortalModal({
 
   const cloudReady = isCanopyCloudConnected(cloudAccount);
 
-  // Remote Control is a paid perk (Pro + Business). The authoritative "can I use
-  // Remote Control" signal is the account `portal-v1` capability, minted
-  // server-side and fail-open under billing-off — NOT the `remote_control`
-  // entitlement bit (the billing-off entitlements mirror never emits it, so a
-  // raw entitlement check would wrongly block everyone). When billing is on and
-  // a signed-in user's plan does not include Remote Control, surface an upgrade
-  // CTA instead of Enable. `subscription.visible` is only ever true under
-  // billing-on for a real signed-in account, so billing-off ⇒ no CTA (fail open).
-  const subscription = useSubscriptionStatus();
-  const hasPortalCapability =
-    cloudAccount?.capabilities.includes('portal-v1') ?? false;
   // A device-scoped guest resolves as a real cloud account (has an API key), so
   // `cloudReady` is true and the modal would otherwise offer a dead-end Enable
   // button the server rejects — the guest has no way to sign in and finish
-  // pairing. Detect the guest credential and surface a create-account CTA that
-  // routes through the shared free-trial gate instead (the same CloudSyncModal
-  // the bottom-left "Start free trial" CTA opens). `subscription.visible` is
-  // never true for a guest (not signed in), so this is mutually exclusive with
-  // the upgrade CTA below.
+  // pairing. Detect the guest credential and surface a sign-in CTA that routes
+  // through the shared cloud-connect gate instead.
+  const subscription = useSubscriptionStatus();
   const isGuest = isGuestAccount(cloudAccount);
-  // Which of the user's orgs have no active plan (CAN-2311). Read straight off
-  // the already-loaded account snapshot — no extra IPC — and passed to the CTA
-  // as CONTEXT only, never as a cause. The snapshot carries current capabilities
-  // and per-org `teamsEntitled`; it does not say which org (if any) was the
-  // source of this user's Remote Control coverage, or whether they ever had it.
-  // A personal-free-plan user, or a member of a healthy org on a plan without
-  // `remote_control`, can belong to a lapsed org and have lost nothing — so the
-  // CTA names the lapsed org without asserting that the lapse paused Remote
-  // Control. Per-org by construction: a healthy org that still grants the
-  // capability keeps it, and that user never reaches this CTA at all.
-  const lapsedOrgNames = useMemo(() => {
-    const states = cloudAccount?.orgBillingStates ?? [];
-    return lapsedOrgNamesFrom(
-      states,
-      states.map((state) => state.organizationId),
-    );
-  }, [cloudAccount]);
-  // Whether the reader can actually fix the lapse the copy above names, which
-  // is what decides the paywall's action (CAN-2590): someone who can buy for the
-  // named org is sent to that org's billing page, everyone else is told to ask
-  // and keeps their own upgrade route. Matched here rather than inside the CTA
-  // because `lapsedOrgNames` carries names only — widening that prop to carry
-  // ids just to re-derive this downstream would be the worse trade.
-  const billingPresentation = subscription.status?.billingPresentation ?? null;
-  // Every org the reader manages is checked for the lapse, and the selected
-  // navigation context settles it when more than one has lapsed, so the org
-  // the button opens is never a guess (CAN-3465). Both are stable store
-  // references.
-  const workspaceContext = useWorkspaceContextStore(
-    (store) => store.state.context,
-  );
-  const contextOrganizations = useWorkspaceContextStore(
-    (store) => store.state.organizations,
-  );
-  const administeredLapsedOrg = useMemo(
-    () =>
-      resolveManageableLapsedOrg(
-        cloudAccount?.orgBillingStates,
-        resolveBillingManageableOrgs(
-          contextOrganizations,
-          subscription.billingManageableOrg,
-        ),
-        workspaceContext.kind === 'organization'
-          ? workspaceContext.organizationId
-          : null,
-      ),
-    [
-      cloudAccount,
-      contextOrganizations,
-      subscription.billingManageableOrg,
-      workspaceContext,
-    ],
-  );
-  // ...but "administers" is not "can buy for". `billingManageableOrg` is
-  // `canEditOrg`, which admits ADMIN as well as OWNER, while every billing CTA
-  // on the destination page is OWNER-gated — `subscribe/page.tsx` filters to
-  // OWNER for exactly this reason and says so: "routing an ADMIN there is a
-  // guaranteed dead end: no upgrade affordance, no explanation, nothing they can
-  // do about it."
-  //
-  // `billingPresentation.action` is the one signal on the wire that separates
-  // them, and `view` is emitted precisely for a non-owner ADMIN. So when the
-  // presentation describes THIS org and says `view`, the reader is provably
-  // someone who cannot buy here: drop them to the everyone-else branch, where
-  // they keep the personal upgrade route they had before this feature existed
-  // and the copy names the person who can act. Sending them to a read-only page
-  // with a purchase label would be the same false promise as naming a tier the
-  // page cannot sell, one layer further out.
-  //
-  // Deliberately narrow: `view` PROVES they cannot buy, so this never guesses.
-  // An ADMIN whose presentation describes some other entity is not provable
-  // either way and keeps the org destination, which is at worst a page that
-  // shows them their org's real billing state.
-  const lapsedOrgIsReadOnlyForReader =
-    administeredLapsedOrg !== null &&
-    billingPresentation !== null &&
-    billingPresentation.owner.type === 'organization' &&
-    billingPresentation.owner.id === administeredLapsedOrg.id &&
-    billingPresentation.action === 'view';
-  const manageableLapsedOrg = lapsedOrgIsReadOnlyForReader
-    ? null
-    : administeredLapsedOrg;
-  // The plan an owner/admin is being sent to buy — named ONLY when
-  // `billingPresentation` actually describes the lapsed org this copy names.
-  //
-  // `billingPresentation` is a wallet-wide winner: the server ranks the caller's
-  // own subscription/trial against every org they administer and returns the
-  // priciest, paired with its exact `owner`. It carries no promise of being the
-  // org the paywall is talking about, and the protocol doc is explicit that it
-  // is "Display and navigation only; never use this field for capability or
-  // authorization" (`packages/protocol/src/billing/index.ts`). Pairing its
-  // `plan` with a DIFFERENT entity's id splits those two halves apart and
-  // produces a claim that is simply false: a personal-trial user who administers
-  // a lapsed org gets `owner: { type: 'user' }` with the personal entry tier, and
-  // the panel would then read "This feature requires Pro" over a `Get Pro` button
-  // deep-linking to that ORG's billing page — which only sells the entry ORG tier
-  // and silently ignores a personal `?plan=` key it cannot fulfil. The reader is
-  // promised a plan the destination cannot sell, which is a worse mis-statement
-  // than the jargon CAN-2590 set out to remove.
-  //
-  // So the plan is named only when the presentation's owner IS this org AND its
-  // `action` says this reader can actually buy it. Both halves are required, and
-  // each rules out a different false statement:
-  //
-  //   - `owner` mismatch → the plan belongs to some other entity (see above).
-  //   - `action !== 'subscribe'` → the plan is not on offer to THIS reader.
-  //     The server sets `manage` for an owner whose org already holds a live
-  //     paid subscription, and `view` for a non-owner ADMIN, who reaches this
-  //     branch (`billingManageableOrg` is OWNER+ADMIN via `canEditOrg`) but
-  //     lands on a read-only billing page. Naming a plan for `manage` would tell
-  //     an owner to buy the tier they are already paying for; naming one for
-  //     `view` would put a purchase label on a page that sells them nothing.
-  //
-  // This mirrors `useSubscriptionStatus`'s own `billingAction`, which already
-  // requires `action === 'subscribe'` before it will name a plan or attach a
-  // `?plan=` intent — the two derivations now agree instead of one quietly
-  // dropping the guard.
-  //
-  // Anything short of both conditions falls back to the plan-agnostic copy and
-  // the generic button, which is the fallback this ticket's own plan prescribed
-  // for a winner that names a tier the reader cannot buy here.
-  // `billingPresentation` is also optional on the wire, so null is a real state
-  // the CTA renders around, never `Get undefined`.
-  //
-  // REACHABILITY, stated plainly so the next maintainer does not mistake the
-  // E2E mock override for evidence: against today's server the named-plan
-  // branch is effectively unreachable, and the plan-agnostic fallback IS the
-  // production path. An org must be `billingActive` to become a presentation
-  // candidate at all (`entitlements.ts`), `action: 'subscribe'` narrows that to
-  // an OWNER on a trialing org, and the org trial plan is the entry org tier,
-  // which grants `teams` — so such an org is not lapsed. The capture spec
-  // reaches the branch only by overriding `billingPresentation` in the mock.
-  //
-  // The guard is kept rather than deleted because it is the correct rule, not
-  // an optimization: it states the two facts that must hold before this panel
-  // may name a tier, and it lights up honestly if the server ever starts
-  // offering a lapsed org a plan (e.g. a paid org on a tier that does not grant
-  // `teams` — the legacy tiers carry no capabilities at all). Deleting it would
-  // leave the next person to re-derive the rule from scratch, which is how the
-  // crossed pairing got here in the first place.
-  const upgradePlan =
-    billingPresentation !== null &&
-    billingPresentation.owner.type === 'organization' &&
-    manageableLapsedOrg !== null &&
-    billingPresentation.owner.id === manageableLapsedOrg.id &&
-    billingPresentation.action === 'subscribe'
-      ? billingPresentation.plan
-      : null;
-  // On the owner/admin branch the button deep-links into the lapsed org's own
-  // billing page, since that org's plan is exactly what they are being asked to
-  // renew. It carries a `?plan=` intent only when `upgradePlan` survived the
-  // owner check above, because the org billing page honours the intent only for
-  // a plan it can actually sell this org; an unmatched key is inert and would
-  // make the button's promise and its destination disagree. Everyone else keeps
-  // the hook's resolved billing action, which is that reader's own upgrade path.
-  const { openBillingPath, openBillingAction, openUpgradePage } = subscription;
-  const openUpgrade = useCallback((): void => {
-    // The provably-read-only ADMIN gets an EXPLICIT personal destination, not
-    // `openBillingAction()`. That looks like the obvious fallback and is a trap:
-    // for this exact presentation shape (`owner.type === 'organization'` with
-    // `action: 'view'`) the hook resolves `billingAction.path` back to
-    // `organizationBillingPath(owner.id)` — byte-identical to the org page the
-    // diversion exists to keep them off. Deferring to it would leave the copy
-    // promising "or upgrade your own plan" over a button that lands on a page
-    // selling them nothing, which is the CAN-2590 defect one layer out.
-    //
-    // `/pricing` (via `openUpgradePage`) is the catalog every reader can act on
-    // regardless of role, so the promise and the destination agree.
-    if (lapsedOrgIsReadOnlyForReader) {
-      openUpgradePage();
-      return;
-    }
-    if (manageableLapsedOrg) {
-      openBillingPath(
-        organizationBillingPath(manageableLapsedOrg.id, {
-          ...(upgradePlan ? { plan: upgradePlan.key } : {}),
-        }),
-      );
-      return;
-    }
-    openBillingAction();
-  }, [
-    lapsedOrgIsReadOnlyForReader,
-    manageableLapsedOrg,
-    upgradePlan,
-    openBillingPath,
-    openBillingAction,
-    openUpgradePage,
-  ]);
 
   const {
     rcHydrated,
@@ -513,18 +302,7 @@ export function CanopyPortalModal({
 
   // A guest can't pair: the relay needs a signed-in account.
   const showGuestCta = cloudReady && isGuest;
-  // Free app access grants `remote_control` to every signed-in account, so
-  // there is no plan to sell. `subscription.visible` is already false then;
-  // the explicit check keeps the paywall closed even if a stale account
-  // snapshot still lacks `portal-v1` or names a lapsed org.
-  const showUpgradeCta =
-    cloudReady &&
-    !allowIncoming &&
-    !hasPortalCapability &&
-    !isGuest &&
-    !subscription.freeAccess &&
-    subscription.visible;
-  const accountGated = !cloudReady || showGuestCta || showUpgradeCta;
+  const accountGated = !cloudReady || showGuestCta;
 
   // Opening the dialog opens pairing; reopening it replaces the window (and
   // its link) with a new one.
@@ -625,7 +403,6 @@ export function CanopyPortalModal({
     if (cloudLoading || !rcHydrated) return { kind: 'loading' };
     if (!cloudReady) return { kind: 'signed-out' };
     if (showGuestCta) return { kind: 'guest' };
-    if (showUpgradeCta) return { kind: 'upgrade' };
     if (pairedDevice) return { kind: 'paired', device: pairedDevice };
     if (pendingRequest) return { kind: 'request', request: pendingRequest };
     if (!allowIncoming) return { kind: 'off' };
@@ -641,7 +418,6 @@ export function CanopyPortalModal({
     rcHydrated,
     cloudReady,
     showGuestCta,
-    showUpgradeCta,
     pairedDevice,
     pendingRequest,
     allowIncoming,
@@ -741,7 +517,8 @@ export function CanopyPortalModal({
     errorVisible: Boolean(actionError),
     signInAffordanceVisible,
     viewPortalVisible,
-    upgradeCtaVisible: view.kind === 'upgrade',
+    // compat: the App Advisor state key stays; there is no upgrade state.
+    upgradeCtaVisible: false,
     guestCtaVisible: view.kind === 'guest',
     pairingQrVisible: view.kind === 'pairing' && pairingQrSrc !== null,
   });
@@ -756,7 +533,6 @@ export function CanopyPortalModal({
     view.kind === 'loading' ||
     view.kind === 'signed-out' ||
     view.kind === 'guest' ||
-    view.kind === 'upgrade' ||
     view.kind === 'off' ? (
       OFF_BODY
     ) : view.kind === 'opening' || view.kind === 'pairing' ? (
@@ -872,7 +648,6 @@ export function CanopyPortalModal({
 
       {view.kind === 'guest' ? (
         <RemoteControlGuestCta
-          freeAccess={subscription.freeAccess}
           // Keep the gate on the subject of the button that opened it.
           // `startFreeTrial`'s default title names a specific offer, and a
           // guest who clicked to unlock pairing would otherwise get a dialog
@@ -885,15 +660,6 @@ export function CanopyPortalModal({
               toastMessage: GUEST_GATE_TOAST,
             })
           }
-        />
-      ) : null}
-
-      {view.kind === 'upgrade' ? (
-        <RemoteControlUpgradeCta
-          onUpgrade={openUpgrade}
-          lapsedOrgNames={lapsedOrgNames}
-          manageableLapsedOrg={manageableLapsedOrg}
-          planDisplayName={upgradePlan?.displayName ?? null}
         />
       ) : null}
 
@@ -1004,7 +770,6 @@ export function CanopyPortalModal({
           on; once it is, the pairing QR code is the one to scan. */}
       {view.kind === 'signed-out' ||
       view.kind === 'guest' ||
-      view.kind === 'upgrade' ||
       view.kind === 'off' ? (
         <RemoteControlMobileAppsCta />
       ) : null}

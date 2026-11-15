@@ -1,3 +1,4 @@
+import { DialogActionFooter } from '@canopy/ui-shared/components';
 import { useEffect, useId, useRef, useState, type JSX } from 'react';
 import type { OrgProjectMoveErrorCode } from '@canopy/protocol/org-projects';
 import {
@@ -193,7 +194,7 @@ export function MoveProjectToOrganizationDialog({
           />
         ) : null}
       </div>
-      <div className="flex justify-end gap-2 border-t px-6 py-3">
+      <DialogActionFooter>
         <Button
           variant="secondary"
           onClick={onCancel}
@@ -213,7 +214,7 @@ export function MoveProjectToOrganizationDialog({
         >
           {busy ? MOVE_BUSY_LABEL : MOVE_LABEL}
         </Button>
-      </div>
+      </DialogActionFooter>
     </DialogModal>
   );
 }

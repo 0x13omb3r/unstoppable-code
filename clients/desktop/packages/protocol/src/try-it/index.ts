@@ -437,6 +437,7 @@ export interface TryItModelOption {
 export function resolveTryItModelId(input: {
   models: readonly TryItModelOption[];
   currentModelId: string | undefined;
+  currentExecutionHarness?: string;
   support: Partial<Record<TryItHarness, boolean>>;
 }): string | undefined {
   const harnessOf = (option: TryItModelOption): TryItHarness | null =>
@@ -449,7 +450,10 @@ export function resolveTryItModelId(input: {
   const current = input.models.find(
     (option) => option.id === input.currentModelId,
   );
-  const preferred = current ? harnessOf(current) : null;
+  const preferred =
+    TRY_IT_HARNESSES.find(
+      (harness) => harness === input.currentExecutionHarness,
+    ) ?? (current ? harnessOf(current) : null);
   const chosen = resolveTryItHarness({
     preferred,
     options: TRY_IT_HARNESSES.map((harness) => ({

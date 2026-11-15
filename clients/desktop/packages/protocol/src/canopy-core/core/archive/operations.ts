@@ -68,9 +68,18 @@ export type ArchiveContainerSummary = z.output<
   typeof ArchiveContainerSummarySchema
 >;
 
+/**
+ * Revision 2 of core.archive.container.list (CAN-6792): an untitled task's
+ * container has an empty `name`, which each client labels as its sidebar
+ * labels an untitled task. Without it the web core still names one
+ * "Untitled chat".
+ */
+export const CORE_ARCHIVE_CONTAINER_LIST_SCHEMA_REVISION = 2;
+
 export const ArchiveContainerListParamsSchema = z.strictObject({
   /** Omitted: every project of the caller's (the web core only). */
   workspaceId: ID.optional(),
+  revision: z.literal(CORE_ARCHIVE_CONTAINER_LIST_SCHEMA_REVISION).optional(),
   _meta: CanopyQueryRequestMetadataSchema.optional(),
 });
 

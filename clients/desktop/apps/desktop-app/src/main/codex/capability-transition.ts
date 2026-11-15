@@ -31,6 +31,9 @@ import { resolveCodexMockAppServerOverride } from '@canopy/execution-engine/node
 import { isCoworkWorkspace } from '../lib/workspace-registry';
 import { buildWorktreeInjectedToolPrompt } from '../canopy-tools/prompting';
 import { buildCoworkDispatchSystemPromptAppend } from '../lib/cowork-chat-system-prompt';
+import { chatAddressPrompt } from '@canopy/desktop-shared/lib/chat-address-prompt';
+import { resolveCoworkWorkspaceId } from '../lib/cowork-migration-map';
+import { APP_ADVISOR_BOT_ID } from '@canopy/desktop-shared/lib/bot-discovery';
 import { resolveLocalMemoryPolicy } from '../memory/local/policy';
 import {
   ledgerToolPromptFor,
@@ -264,7 +267,7 @@ export async function materializeCodexCapabilityTransition(input: {
       input.selectedRepoId,
     );
     const memoryPolicy = await resolveLocalMemoryPolicy(input);
-    const injectedToolInstructions = cowork
+    const injectedToolBody = cowork
       ? buildCoworkDispatchSystemPromptAppend(
           'codex',
           input.localMemoryEnabled,
@@ -277,6 +280,19 @@ export async function materializeCodexCapabilityTransition(input: {
           true,
           includeChatVisuals,
         );
+    const injectedToolInstructions = `${injectedToolBody}\n\n${chatAddressPrompt(
+      input.assistantMode === 'app-advisor'
+        ? {
+            botId: APP_ADVISOR_BOT_ID,
+            taskId: input.worktreeId,
+            chatId: input.chatId,
+          }
+        : {
+            projectId: resolveCoworkWorkspaceId(input.projectId),
+            taskId: input.worktreeId,
+            chatId: input.chatId,
+          },
+    )}`;
     const baseInstructions =
       ledgerScope === null
         ? injectedToolInstructions

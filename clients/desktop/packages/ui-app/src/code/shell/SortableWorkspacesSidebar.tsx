@@ -1,5 +1,6 @@
 'use client';
 
+import { WorkspaceIconSlot } from '@canopy/ui-shared/components';
 import {
   createContext,
   useContext,
@@ -750,7 +751,7 @@ function EnabledSortableWorkspacesSidebar({
                     showCollapseChevron={false}
                     onToggleCollapse={(): void => undefined}
                     dragHandleSlot={
-                      <span className="relative inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full">
+                      <WorkspaceIconSlot>
                         {renderWorkspaceDragHandleContent?.({
                           workspace: activeWorkspace,
                           selected: false,
@@ -759,7 +760,7 @@ function EnabledSortableWorkspacesSidebar({
                           collapsed: activeWorkspace.collapsed === true,
                           testIdSuffix: '-drag-overlay',
                         })}
-                      </span>
+                      </WorkspaceIconSlot>
                     }
                   />
                 </SidebarDragPreview>

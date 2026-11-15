@@ -1,5 +1,9 @@
 'use client';
 
+import {
+  PipelineDetailTag,
+  PipelineDetailJobHeader,
+} from '@canopy/ui-shared/components';
 import { Count } from '@canopy/ui-shared/components/Badge';
 import { type JSX, useState } from 'react';
 import type { PortalPipelineDefinitionViewModel } from '@canopy/protocol/portal';
@@ -76,17 +80,14 @@ export function PipelineReadDetail({
             <div className="flex flex-wrap gap-1.5">
               {/* A run's recorded snapshot keeps no triggers. */}
               {definition.triggerSummary !== '' && (
-                <span className="rounded bg-info-subtle px-2 py-1 text-xs fg-info">
+                <PipelineDetailTag kind="trigger">
                   {definition.triggerSummary}
-                </span>
+                </PipelineDetailTag>
               )}
               {definition.scopes.map((scope) => (
-                <span
-                  key={scope}
-                  className="rounded bg-secondary px-2 py-1 text-xs fg-secondary"
-                >
+                <PipelineDetailTag key={scope} kind="scope">
                   {scopeLabel(scope)}
-                </span>
+                </PipelineDetailTag>
               ))}
             </div>
           </div>
@@ -156,7 +157,7 @@ export function PipelineReadDetail({
                 className="overflow-hidden"
                 data-testid="pipeline-read-detail-job"
               >
-                <div className="flex items-center gap-2 bg-secondary/50 px-3 py-2">
+                <PipelineDetailJobHeader>
                   <span className="min-w-0 flex-1 truncate text-s font-medium fg-primary">
                     {job.name}
                   </span>
@@ -169,7 +170,7 @@ export function PipelineReadDetail({
                     </span>
                   ))}
                   <Count value={job.steps.length} />
-                </div>
+                </PipelineDetailJobHeader>
                 {/* 2px inside the job's 12px corners keeps the 10px rows concentric. */}
                 <ol className="flex flex-col p-0.5">
                   {job.steps.length === 0 && (

@@ -38,13 +38,11 @@ import type {
 } from '@canopy/protocol/settings/organization';
 import {
   canForceEnableUncoveredScopes,
-  ENFORCE_SHARING_CAPABILITY_BY_SCOPE,
   enforcementCoverageFromCapabilities,
   FULL_ENFORCEMENT_COVERAGE,
   isScopeRequired,
   ORGANIZATION_ROLES,
 } from '@canopy/protocol/settings/organization';
-import { lowestPlanNameWithCapability } from '@canopy/protocol/settings/billing-plan-catalog';
 import {
   canEditOrgEnforcedSettings,
   canEditUsageStatsConfig,
@@ -52,7 +50,6 @@ import {
 } from '@canopy/protocol/settings/organization-permissions';
 import { useSettingsBrand, useSettingsClient } from '../host';
 import { useSettingsErrorCopy } from '../errors';
-import { ORGANIZATION_LAPSED_ERROR } from './organization-known-errors';
 import {
   getOrgBillingSummary,
   updateAllowExternalContainerSharing,
@@ -360,7 +357,6 @@ function EnforcedSettingsCard({
     setError(
       errorCopy.actionFailure(err, {
         action,
-        known: [ORGANIZATION_LAPSED_ERROR],
       }),
     );
   };
@@ -710,7 +706,7 @@ interface LockedScopeCopy {
   tooltip: string;
   /** Parenthetical folded into the switch's accessible name. */
   switchState: string;
-  /** The tooltip's CTA, naming the tier that unlocks the row. */
+  /** The tooltip's CTA, linking to the organization's billing page. */
   upgradeText: string;
 }
 
@@ -739,15 +735,13 @@ interface LockedScopeCopy {
 function lockedScopeCopy(
   value: boolean | null,
   label: string,
-  requiredPlanName: string | null,
   forceEnabled: boolean,
 ): LockedScopeCopy {
   const lower = label.toLowerCase();
-  // The CTA carries the tier so the sentence above it does not have to. Saying
-  // "upgrade" in both is the shape this tooltip keeps drifting back into.
-  const upgradeText = requiredPlanName
-    ? `Upgrade to ${requiredPlanName}`
-    : 'Upgrade';
+  // Subscription tiers are retired and every organization now holds every
+  // enforcement capability, so no current server response leaves a scope
+  // uncovered and this copy does not render. There is no tier left to name.
+  const upgradeText = 'Upgrade';
 
   if (value === false) {
     // Prohibitions survive a downgrade, so this one is still enforced.
@@ -807,7 +801,6 @@ function DataSharingScopeRow({
   const lockedCopy = lockedScopeCopy(
     value,
     label,
-    lowestPlanNameWithCapability(ENFORCE_SHARING_CAPABILITY_BY_SCOPE[scope]),
     canForceEnableUncoveredScopes(coverage),
   );
   // Strictly `=== false`: an unset prerequisite is the member's own choice, so

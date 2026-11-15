@@ -19,7 +19,6 @@ import type {
 import { canManageSubTeams } from '@canopy/protocol/settings/organization-permissions';
 import { useSettingsClient, useSettingsPrivacy } from '../host';
 import { useSettingsErrorCopy, type KnownSettingsError } from '../errors';
-import { ORGANIZATION_LAPSED_ERROR } from './organization-known-errors';
 import { joinClassNames } from './join-class-names';
 import {
   createSubTeam,
@@ -37,7 +36,6 @@ const TEAM_NAME_KNOWN_ERRORS: readonly KnownSettingsError[] = [
     status: 409,
     copy: 'A team with that name already exists. Choose another name.',
   },
-  ORGANIZATION_LAPSED_ERROR,
 ];
 
 const TEAMS_ERROR_SCOPE = 'settings.organization.teams';
@@ -45,16 +43,6 @@ const TEAMS_ERROR_SCOPE = 'settings.organization.teams';
 interface TeamSubTeamsSectionProps {
   detail: OrganizationDetail;
   onDetailChange: (detail: OrganizationDetail) => void;
-  /**
-   * The org has lost `teams` (CAN-2311).
-   *
-   * This tab stays LIVE while lapsed — unlike most gated surfaces — because
-   * sub-team member REMOVAL is a deliberate server-side exemption, so an admin
-   * can still revoke a departing or compromised member's access. Only the
-   * genuinely gated controls (create / rename / delete) are suppressed here, so
-   * the tab does not present buttons whose every save would 403.
-   */
-  orgLapsed?: boolean;
   /**
    * Whether the new-team form is open. The page shell owns this because its
    * "New team" action sits in the page header.
@@ -71,7 +59,6 @@ interface TeamSubTeamsSectionProps {
 export function TeamSubTeamsSection({
   detail,
   onDetailChange,
-  orgLapsed = false,
   creating,
   onCreatingChange,
 }: TeamSubTeamsSectionProps): JSX.Element {
@@ -86,10 +73,7 @@ export function TeamSubTeamsSection({
   const [busyTeamId, setBusyTeamId] = useState<string | null>(null);
 
   const manage = canManageSubTeams(detail.viewerRole);
-  // Membership editing stays available while lapsed (removal is exempt);
-  // creating, renaming, and deleting a sub-team are gated server-side, so their
-  // controls are hidden rather than left to 403 on save.
-  const manageStructure = manage && !orgLapsed;
+  const manageStructure = manage;
 
   // The form opens from the page header; closing it clears what it held so
   // the next open starts empty.
@@ -135,7 +119,6 @@ export function TeamSubTeamsSection({
       setError(
         errorCopy.actionFailure(err, {
           action: 'delete the team',
-          known: [ORGANIZATION_LAPSED_ERROR],
         }),
       );
     } finally {
@@ -269,7 +252,6 @@ export function TeamSubTeamsSection({
 
       {editingMembership && (
         <SubTeamMembershipDialog
-          orgLapsed={orgLapsed}
           detail={detail}
           subTeam={editingMembership}
           onClose={() => setEditingMembership(null)}
@@ -375,18 +357,6 @@ interface SubTeamMembershipDialogProps {
   subTeam: OrganizationSubTeam;
   onClose: () => void;
   onSaved: (detail: OrganizationDetail) => void;
-  /**
-   * The org has lost `teams` (CAN-2311), so only REMOVALS are expressible.
-   *
-   * The server gate is direction-aware — it applies only when the update adds a
-   * member — precisely so a lapsed org can still revoke a departing or
-   * compromised member's sub-team access. But the save replaces the whole set
-   * inside one transaction, so ticking a new member alongside a legitimate
-   * removal makes the gate throw and rolls the ENTIRE replacement back, taking
-   * the exempt removal with it. Disabling the unticked boxes keeps the
-   * still-permitted operation from being defeated by an adjacent one.
-   */
-  orgLapsed?: boolean;
 }
 
 function SubTeamMembershipDialog({
@@ -394,7 +364,6 @@ function SubTeamMembershipDialog({
   subTeam,
   onClose,
   onSaved,
-  orgLapsed = false,
 }: SubTeamMembershipDialogProps): JSX.Element {
   const client = useSettingsClient();
   const errorCopy = useSettingsErrorCopy(TEAMS_ERROR_SCOPE);
@@ -459,32 +428,25 @@ function SubTeamMembershipDialog({
           details={error?.details}
         />
         {/* The whole list scrolls in its capped box. */}
-        <div className="max-h-72 overflow-y-auto rounded-lg">
-          <ChoiceList aria-label="Members">
-            {detail.members.map((member) => (
-              <ChoiceListRow
-                key={member.id}
-                selected={selected.has(member.id)}
-                onClick={() => toggle(member.id)}
-                // While lapsed only removals are permitted, so a member who
-                // is not currently on the sub-team cannot be added.
-                disabled={orgLapsed && !initialSelected.has(member.id)}
-                data-testid="subteam-member-checkbox"
-              >
-                <span
-                  className={joinClassNames('block min-w-0', blockClassName)}
-                >
-                  <span className="block truncate font-medium fg-primary">
-                    {member.name}
-                  </span>
-                  <span className="block truncate text-xs fg-secondary">
-                    {member.email}
-                  </span>
+        <ChoiceList aria-label="Members" height="bounded">
+          {detail.members.map((member) => (
+            <ChoiceListRow
+              key={member.id}
+              selected={selected.has(member.id)}
+              onClick={() => toggle(member.id)}
+              data-testid="subteam-member-checkbox"
+            >
+              <span className={joinClassNames('block min-w-0', blockClassName)}>
+                <span className="block truncate font-medium fg-primary">
+                  {member.name}
                 </span>
-              </ChoiceListRow>
-            ))}
-          </ChoiceList>
-        </div>
+                <span className="block truncate text-xs fg-secondary">
+                  {member.email}
+                </span>
+              </span>
+            </ChoiceListRow>
+          ))}
+        </ChoiceList>
         <div className="flex items-center justify-end gap-2">
           <Button variant="secondary" size="compact" onClick={onClose}>
             Cancel

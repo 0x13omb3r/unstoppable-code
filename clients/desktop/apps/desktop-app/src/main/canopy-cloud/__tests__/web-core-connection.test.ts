@@ -2,6 +2,9 @@ import type {
   CanopyCallerDescriptor,
   CanopyJsonRpcMessage,
 } from '@canopy/protocol/canopy-core';
+import { readdirSync, readFileSync } from 'node:fs';
+import { join, relative, sep } from 'node:path';
+import { CLOUD_SESSION_WAKE_HEADER } from '@canopy/protocol/cloud-session';
 import type { CanopyFramedConnection } from '@canopy/core-transport/types';
 import type { RelayBindingConnection } from '../../canopy-runtime/renderer-relay/definitions';
 import {
@@ -520,5 +523,63 @@ describe('web core connection with the desktop key (CAN-4185, CAN-5989)', () => 
     expect(server.eventHeaders).toHaveLength(2);
     expect(server.eventHeaders[0]?.['last-event-id']).toBeUndefined();
     expect(server.eventHeaders[1]?.['last-event-id']).toBe('2');
+  });
+});
+
+describe("the wake proof is set in one place on desktop: main's Files wake (CAN-6724)", () => {
+  const DESKTOP_SRC = join(__dirname, '..', '..', '..');
+
+  function sourcesNaming(pattern: RegExp): string[] {
+    const found: string[] = [];
+    const walk = (dir: string): void => {
+      for (const entry of readdirSync(dir, { withFileTypes: true })) {
+        const full = join(dir, entry.name);
+        if (entry.isDirectory()) {
+          if (entry.name !== '__tests__' && entry.name !== 'node_modules')
+            walk(full);
+        } else if (
+          /\.(ts|tsx|mts|cts|js|mjs)$/.test(entry.name) &&
+          pattern.test(readFileSync(full, 'utf8'))
+        )
+          found.push(relative(DESKTOP_SRC, full).split(sep).join('/'));
+      }
+    };
+    walk(DESKTOP_SRC);
+    return found.sort();
+  }
+
+  it('only the web core connection names the wake header, and only the Files wake opens the connection that sends it', () => {
+    expect(sourcesNaming(/CLOUD_SESSION_WAKE_HEADER|x-canopy-wake/i)).toEqual([
+      'main/canopy-cloud/web-core-connection.ts',
+    ]);
+    expect(sourcesNaming(/connectWebCoreForFilesWake/)).toEqual([
+      'main/canopy-cloud/cloud-files-wake.ts',
+      'main/canopy-cloud/web-core-connection.ts',
+    ]);
+  });
+
+  it("the relay's binding never sends the wake header, even for a waking listing", async () => {
+    const server = new StubWebCore();
+    const connection = await open(
+      createWebCoreBindingProvider(binding(server)),
+    );
+    opened.push(connection);
+    await connection.send({
+      jsonrpc: '2.0',
+      id: 7,
+      method: 'worker.filesystem.directory.list',
+      params: {
+        scope: { chatId: 'chat-1' },
+        fileRootId: 'workspace',
+        relativePath: '',
+        wake: true,
+      },
+    });
+    await expect(connection.receive()).resolves.toMatchObject({ id: 7 });
+    expect(
+      server.calls.every(
+        (call) => call.headers[CLOUD_SESSION_WAKE_HEADER] === undefined,
+      ),
+    ).toBe(true);
   });
 });

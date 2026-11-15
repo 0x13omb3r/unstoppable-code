@@ -263,6 +263,31 @@ async function waitFor(done: () => boolean, what: string): Promise<void> {
   if (!done()) throw new Error(`Timed out waiting for ${what}`);
   await settle();
 }
+// Waits until the stored review holds `fingerprint`'s finished annotations
+// and logic diagram: the run that made them has written its last artifact.
+// Under load a run reaches its generators after any fixed wait, so a case
+// that counts a run's calls waits for the run itself (CAN-6826).
+async function waitForReviewOf(fingerprint: string): Promise<void> {
+  const finished = (artifact?: {
+    status: string;
+    derivedFromFingerprint: string;
+  }): boolean =>
+    artifact?.derivedFromFingerprint === fingerprint &&
+    artifact.status !== 'generating';
+  // Counted, not timed: fake timers also fake Date. 1,500 x 10 ms is 15 s.
+  for (let i = 0; i < 1_500; i += 1) {
+    const file = await persistence.readCodeReviewState(
+      WORKSPACE_ID,
+      WORKTREE_ID,
+    );
+    if (finished(file.annotations) && finished(file.diagrams.logicDiff)) {
+      await settle();
+      return;
+    }
+    await sleep(10);
+  }
+  throw new Error(`Timed out waiting for the review of ${fingerprint}`);
+}
 const ran = (): boolean =>
   helperTasks.some((t) =>
     t.startsWith('success helper:code-review-annotations'),
@@ -402,6 +427,7 @@ describe('code review scheduling (CAN-4167 golden)', () => {
         scheduler.CODE_REVIEW_IDLE_DEBOUNCE_MS,
       );
       await waitFor(ran, 'the polled run');
+      await waitForReviewOf('fp-4');
       const whileOpen = calls.filter((c) => c === 'annotations').length;
       scheduler.setCodeReviewModalOpen(scope, false, getWindow, 'golden');
       // Closing stops the poll, but a debounce an earlier tick scheduled
@@ -411,7 +437,7 @@ describe('code review scheduling (CAN-4167 golden)', () => {
       await jest.advanceTimersByTimeAsync(
         scheduler.CODE_REVIEW_IDLE_DEBOUNCE_MS * 2,
       );
-      await settle();
+      await waitForReviewOf('fp-5');
       const afterClose = [...calls].sort();
       diff.fingerprint = 'fp-5b';
       calls.length = 0;

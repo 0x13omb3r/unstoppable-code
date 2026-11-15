@@ -276,6 +276,8 @@ test.describe('native background service recovery', () => {
   test.describe.configure({ retries: 0 });
 
   test('Try again recovers the service and delivers the sidebar invalidation through preload', async () => {
+    // Allow startup, the lease's 30 s failure-delivery bound, and recovery waits.
+    test.setTimeout(150_000);
     test.skip(
       process.env.CANOPY_E2E_DAEMON_FILES_DRY_RUN === '1',
       'Intentional daemon outage cannot run in the zero-fallback Files dry-run lane',
@@ -288,6 +290,7 @@ test.describe('native background service recovery', () => {
     const owner = realpathSync(mkdtempSync(path.join(os.tmpdir(), 'cn8-')));
     const runtimeRoot = path.join(owner, 'app');
     const userDataDir = path.join(owner, 'data');
+    const descriptorPath = path.join(userDataDir, 'runtime/core.json');
     const projectId = 'recovery-proof';
     const worktreeId = 'recovery-task';
     const target = { projectId, worktreeId };
@@ -331,7 +334,6 @@ test.describe('native background service recovery', () => {
         brand: loadBrand(process.env.CANOPY_BRAND ?? 'canopy'),
       });
       assert(bridge.entries.every((entry) => entry.owned));
-      expect(bridge.remove('packaged daemon')).toBe('removed');
 
       const repoPath = initRepo(path.join(owner, 'repo'));
       initRepo(
@@ -371,6 +373,33 @@ test.describe('native background service recovery', () => {
       await expect(
         window.getByTestId(`sidebar-project-header-${projectId}`),
       ).toBeVisible();
+      const readRoots = () =>
+        window.evaluate(
+          (request) => window.api.getFileTreeRoots(request),
+          target,
+        );
+      expect((await readRoots()).roots.length).toBeGreaterThan(0);
+      await expect
+        .poll(
+          () => window.evaluate(() => window.api.backgroundService.getStatus()),
+          { timeout: 15_000 },
+        )
+        .toMatchObject({ state: 'ok', retry: 'idle' });
+      await expect
+        .poll(() => existsSync(descriptorPath), { timeout: 15_000 })
+        .toBe(true);
+      const initialDescriptor = JSON.parse(
+        readFileSync(descriptorPath, 'utf8'),
+      );
+      await expect
+        .poll(
+          () => supervision.inspectProcess({ pid: initialDescriptor.pid }),
+          { timeout: 15_000 },
+        )
+        .toEqual({
+          state: 'running',
+          startIdentity: initialDescriptor.startIdentity,
+        });
       await window.evaluate(() => {
         window.recoveryInvalidations = [];
         window.api.onWorktreesFileChanged((event) => {
@@ -378,22 +407,32 @@ test.describe('native background service recovery', () => {
             window.recoveryInvalidations.push(event);
         });
       });
-      const readRoots = () =>
-        window.evaluate(
-          (request) => window.api.getFileTreeRoots(request),
-          target,
-        );
-      expect((await readRoots()).roots.length).toBeGreaterThan(0);
+      // A pre-launch outage degrades W5 and intentionally refuses respawn.
+      expect(bridge.remove('packaged daemon')).toBe('removed');
+      assert.deepEqual(
+        await supervision.inspectProcess({ pid: initialDescriptor.pid }),
+        { state: 'running', startIdentity: initialDescriptor.startIdentity },
+      );
+      await supervision.killProcessTree({
+        pid: initialDescriptor.pid,
+        mode: 'force',
+      });
+      await expect
+        .poll(
+          () => supervision.inspectProcess({ pid: initialDescriptor.pid }),
+          { timeout: 15_000 },
+        )
+        .toEqual({ state: 'absent' });
+      await expect(window.getByTestId('background-service-notice')).toBeVisible(
+        { timeout: 45_000 },
+      );
       const unavailable = await window.evaluate(() =>
         window.api.backgroundService.getStatus(),
       );
       expect(unavailable).toMatchObject({
         state: 'unavailable',
-        reason: 'start_failed',
+        reason: 'reconnect_failed',
       });
-      await expect(
-        window.getByTestId('background-service-notice'),
-      ).toBeVisible();
 
       expect(bridge.restage('packaged daemon')).toBe('restaged');
       // Restoring availability alone cannot bypass the latch or start a daemon.
@@ -401,9 +440,16 @@ test.describe('native background service recovery', () => {
       expect(
         await window.evaluate(() => window.api.backgroundService.getStatus()),
       ).toEqual(unavailable);
-      expect(existsSync(path.join(userDataDir, 'runtime/core.json'))).toBe(
-        false,
-      );
+      // SIGKILL can leave the old descriptor behind; it must not name a new daemon.
+      if (existsSync(descriptorPath)) {
+        const staleDescriptor = JSON.parse(
+          readFileSync(descriptorPath, 'utf8'),
+        );
+        expect(staleDescriptor.pid).toBe(initialDescriptor.pid);
+        expect(
+          await supervision.inspectProcess({ pid: staleDescriptor.pid }),
+        ).toEqual({ state: 'absent' });
+      }
       expect(await window.evaluate(() => window.recoveryInvalidations)).toEqual(
         [],
       );
@@ -422,9 +468,8 @@ test.describe('native background service recovery', () => {
       await expect
         .poll(() => window.evaluate(() => window.recoveryInvalidations))
         .toEqual([{ scope: 'all' }]);
-      const descriptor = JSON.parse(
-        readFileSync(path.join(userDataDir, 'runtime/core.json'), 'utf8'),
-      );
+      const descriptor = JSON.parse(readFileSync(descriptorPath, 'utf8'));
+      expect(descriptor.pid).not.toBe(initialDescriptor.pid);
       expect(await supervision.inspectProcess({ pid: descriptor.pid })).toEqual(
         { state: 'running', startIdentity: descriptor.startIdentity },
       );
@@ -436,7 +481,6 @@ test.describe('native background service recovery', () => {
             keepUserData: true,
           });
       } finally {
-        const descriptorPath = path.join(userDataDir, 'runtime/core.json');
         if (existsSync(descriptorPath)) {
           const descriptor = JSON.parse(readFileSync(descriptorPath, 'utf8'));
           const state = await supervision.inspectProcess({

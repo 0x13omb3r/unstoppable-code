@@ -19,6 +19,12 @@ export * from './execution-tree';
 export * from './file-line-range';
 export * from './file-link-line-suffix';
 export * from './focusable';
+export {
+  DEFAULT_ARCHIVED_CHAT_SORT,
+  formatArchivedChatTime,
+  isArchivedChatSort,
+  type ArchivedChatSort,
+} from './archived-chat-list';
 export * from './format-completion-timestamp';
 export * from './format-date';
 export * from './format-byte-size';
@@ -33,6 +39,7 @@ export * from './mcp-card-display';
 export * from './mcp-connect-errors';
 export * from './marketplace-browse-curation';
 export * from './marketplace-type-tabs';
+export * from './customize-discovery';
 export * from './description-markdown-hint';
 export * from './markdown-plain-text';
 export * from './marketplace-card-subtitle';

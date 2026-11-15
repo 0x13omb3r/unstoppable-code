@@ -38,7 +38,7 @@ export interface ServiceContainerOptions {
 
 export interface ServiceContainer {
   readonly order: readonly string[];
-  start(): Promise<void>;
+  start(signal?: AbortSignal): Promise<void>;
   /** Also publishes the snapshot to `onChange` when it changed. */
   health(): RuntimeHealth;
   markStopping(): void;
@@ -302,17 +302,24 @@ export function createServiceContainer(
 
   return {
     order: Object.freeze(ordered.map(({ name }) => name)),
-    start(): Promise<void> {
+    start(signal?: AbortSignal): Promise<void> {
       if (startPromise === null) {
         // Shared before any hook or observer runs, so reentry gets this promise.
         let adopt: (run: Promise<void>) => void = () => undefined;
         startPromise = new Promise<void>((resolve) => {
           adopt = resolve;
         });
+        const abort = (): void => markStopping();
+        signal?.addEventListener('abort', abort, { once: true });
+        if (signal?.aborted) abort();
         adopt(
           stopping.signal.aborted
             ? Promise.reject(new Error(STOPPED_EARLY))
             : runStartup(),
+        );
+        void startPromise.then(
+          () => signal?.removeEventListener('abort', abort),
+          () => signal?.removeEventListener('abort', abort),
         );
       }
       return startPromise;

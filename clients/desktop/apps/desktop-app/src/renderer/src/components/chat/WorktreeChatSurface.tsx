@@ -1,3 +1,4 @@
+import { TerminalChatControls } from '@canopy/ui-shared/components/chat';
 import { ComposerWorkDrawerProvider } from './composer-work-drawer-context';
 import { useScopeCapabilities } from '@/hooks/useScopeCapabilities';
 import {
@@ -344,7 +345,11 @@ export const WorktreeChatSurface = memo(function WorktreeChatSurface({
       {/* A row so a Try it authorization pane can sit beside the chat column
           in either layout without touching the composer stack. It is also the
           size container the pane measures to cover the column when narrow. */}
-      <div className="@container/try-it relative flex min-h-0 min-w-0 flex-1">
+      <div
+        className="@container/try-it relative flex min-h-0 min-w-0 flex-1"
+        // Scopes a Claude Mod's selection read to this chat, in any layout.
+        data-chat-surface=""
+      >
         {terminalMode &&
         composerTab?.queuedHookPlaceholder !== true &&
         interfaceContext ? (
@@ -360,7 +365,7 @@ export const WorktreeChatSurface = memo(function WorktreeChatSurface({
                 into the composer next to the send button). */}
               <div className="pointer-events-none absolute right-3 bottom-2 z-20 flex items-center gap-2">
                 {claudeTerminalRuntime?.sdkSessionId ? (
-                  <div className="pointer-events-auto flex items-center gap-1 rounded-lg bg-card/95 p-1 shadow-sm backdrop-blur pointer-coarse:gap-4">
+                  <TerminalChatControls>
                     {claudeTerminalActiveTurn && (
                       <ChatWatcherButton
                         projectId={selectedWorktree.projectId}
@@ -376,7 +381,7 @@ export const WorktreeChatSurface = memo(function WorktreeChatSurface({
                         sdkSessionId={claudeTerminalRuntime.sdkSessionId}
                       />
                     )}
-                  </div>
+                  </TerminalChatControls>
                 ) : null}
                 <div className="pointer-events-auto">
                   <ChatInterfaceModeToggle

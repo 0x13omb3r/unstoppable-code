@@ -52,8 +52,21 @@ const ERROR_CODES = {
  *   echoes each request's. Off by default: the fake then serves no cost, as a
  *   web core before CAN-6180, and the desktop offers no Cost.
  */
-export async function startCloudChatsWebCore({ cost } = {}) {
-  const world = createCloudChatsWorld({ accountId: CLOUD_ACCOUNT.id });
+export async function startCloudChatsWebCore({
+  cost,
+  extraTasks = 0,
+  latencyMs = {},
+} = {}) {
+  const world = createCloudChatsWorld({
+    accountId: CLOUD_ACCOUNT.id,
+    extraTasks,
+  });
+  /**
+   * Each answered call's method, task and timing, for a perf scenario
+   * (CAN-6838). `latencyMs` delays a method's answer, as a loaded web core
+   * does, so calls that compete for it show.
+   */
+  const calls = [];
   const costMethods =
     cost === undefined
       ? []
@@ -248,12 +261,22 @@ export async function startCloudChatsWebCore({ cost } = {}) {
       return;
     }
     const params = message.params ?? {};
+    const call = {
+      method: message.method,
+      worktreeId: params.scope?.worktreeId,
+      startedAt: Date.now(),
+      endedAt: null,
+    };
+    calls.push(call);
+    const delay = latencyMs[message.method] ?? 0;
+    if (delay > 0) await new Promise((resolve) => setTimeout(resolve, delay));
     // An extra answer may settle later, as a slow web core does.
     const answer =
       message.method === INITIALIZE
         ? { result: initialize() }
         : (costAnswer(message.method, params) ??
           (await world.call(message.method, params)));
+    call.endedAt = Date.now();
     const subscriptionId = answer?.result?.subscriptionId;
     if (world.streams().includes(message.method) && subscriptionId)
       subscriptionOwners.set(subscriptionId, connectionId);
@@ -277,6 +300,8 @@ export async function startCloudChatsWebCore({ cost } = {}) {
     baseUrl: `http://127.0.0.1:${server.address().port}`,
     /** The seeded world: its `state` records sends and answers. */
     world,
+    /** Every answered call, in arrival order (CAN-6838). */
+    calls,
     /** The gateway answers the next `count` POSTs of `method` 503. */
     failWithGateway: (method, count = 1) =>
       gatewayFailures.set(method, (gatewayFailures.get(method) ?? 0) + count),

@@ -270,7 +270,6 @@ import {
   type AgentExperimentWriteResult,
   type AgentModelList,
 } from '@canopy/agent-actions';
-import { z } from 'zod';
 import {
   createConformanceTranscriptStore,
   createLimitCommitFailures,
@@ -284,7 +283,6 @@ import {
 import type {
   ChatCommandRequest,
   ChatCommandResult,
-  ChatSendMessageRequest,
   ChatStateCommandPort,
   ChatStateSnapshot,
   PersistedChatMessage,
@@ -297,12 +295,8 @@ import { createDesktopRuntime } from '../../canopy-runtime/desktop-runtime';
 import {
   createDesktopEnvironmentPort,
   desktopEnvironmentPortDeps,
-  type DesktopChatWorktreeResult,
 } from '../desktop-environment-port';
-import {
-  createDesktopAgentLineage,
-  DESKTOP_AGENT_ACTION_LIMITS,
-} from '../desktop-limits-port';
+import { DESKTOP_AGENT_ACTION_LIMITS } from '../desktop-limits-port';
 import { chatSendAdmissionCheck } from '../../services/chat-send-admission';
 import { createDesktopSplitPort } from '../desktop-split-port';
 import { createDesktopSettingsPort } from '../desktop-settings-port';
@@ -681,21 +675,6 @@ function makeDesktopHost(world: ConformanceWorld): {
     chatCommandPort: port,
   });
 
-  let created = 0;
-  const createChatWorktree = (): Promise<DesktopChatWorktreeResult> => {
-    created += 1;
-    const worktreeId = `agent-worktree-${created}`;
-    worktrees.get(workspaceId)?.push({
-      id: worktreeId,
-      branchName: worktreeId,
-      createdAt: CREATED_AT,
-      trackedBaseBranch: null,
-    });
-    return Promise.resolve({ ok: true, worktreeId });
-  };
-
-  const lineage = createDesktopAgentLineage();
-  lineage.record(world.current.chatId, world.callerDepth);
   const withdrawnModels = new Set<string>();
   const holds = createWriteHolds();
   const commitFailures = createLimitCommitFailures();
@@ -712,25 +691,6 @@ function makeDesktopHost(world: ConformanceWorld): {
     })),
     defaultModelId: world.defaultModelId,
   });
-  // The chat state owner's trusted-send materialization: a background tab,
-  // created once, that the first send adopts.
-  const reserveTab = (request: ChatSendMessageRequest): PersistedChatTab => {
-    const existing = findTab(
-      request.projectId,
-      request.worktreeId,
-      request.chatId,
-    );
-    if (existing) return existing;
-    const tab: PersistedChatTab = {
-      id: request.chatId,
-      title: request.title ?? request.text.slice(0, 60),
-      createdAt: CREATED_AT,
-      messages: [],
-      ...(request.model ? { model: request.model } : {}),
-    };
-    scope(request.projectId, request.worktreeId).tabs.push(tab);
-    return tab;
-  };
   const terminalChats = new Set<string>();
   const conformanceRoot = (chat: {
     workspaceId: string;
@@ -738,17 +698,6 @@ function makeDesktopHost(world: ConformanceWorld): {
   }): string => `/conformance/${chat.workspaceId}/${chat.worktreeId}`;
   const environment = createDesktopEnvironmentPort({
     runtime: () => dispatcher,
-    reserveChat: (request) => {
-      reserveTab(request);
-      return Promise.resolve();
-    },
-    messageCommitted: (chat, messageId) =>
-      Promise.resolve(
-        findTab(chat.workspaceId, chat.worktreeId, chat.chatId)?.messages.some(
-          (message) => message.id === messageId,
-        ) === true,
-      ),
-    createChatWorktree,
     listModels: () => Promise.resolve(models()),
     listWorkEntries: () => Promise.resolve([]),
     chatApprovalPolicy: (chat) =>
@@ -772,8 +721,6 @@ function makeDesktopHost(world: ConformanceWorld): {
     terminalDrivenChatIds: (_scope, chatIds) =>
       Promise.resolve(chatIds.filter((chatId) => terminalChats.has(chatId))),
     terminalTurnStates: () => Promise.resolve(() => undefined),
-    agentSenderFields: () => Promise.resolve(undefined),
-    lineage,
   });
 
   const runtime: CanopyInjectedToolRuntime = {
@@ -886,7 +833,6 @@ function makeDesktopHost(world: ConformanceWorld): {
         ),
       }),
     getWindow: () => settingsWindow,
-    hostedSettingsEnabled: () => true,
   });
   let forks = 0;
   const receipts =
@@ -1007,63 +953,6 @@ describe('desktop agent action host', () => {
       control: host.control,
       limitValues: DESKTOP_AGENT_ACTION_LIMITS,
     };
-  });
-});
-
-describe('desktop agent action host watchers', () => {
-  it('fires a chat.create watcher armed after its turn finished, once', async () => {
-    const world = loadConformanceWorld();
-    const host = makeDesktopHost(world);
-    const call = (): AgentActionCall<CanopyInjectedToolRuntime> => ({
-      host: host.runtime,
-      scope: { ...world.current },
-      turnKey: 'settled-turn',
-      toolUseId: 'settled-start-tool',
-      actorKey: 'desktop-actor',
-    });
-    const create = (): Promise<{ isError?: boolean; text: string }> =>
-      host.surface.execute(
-        'dispatch_action',
-        {
-          action: {
-            type: 'chat.create',
-            placement: 'current',
-            message: 'Review the parser.',
-            watchers: [{ label: 'Review finished' }],
-          },
-        },
-        call(),
-      );
-    const hold = host.control.holdNextChatStart();
-    mockWatcherState.failNextSetup = true;
-    const timedOut = create();
-    await hold.started;
-    hold.finish('timeout');
-    expect(JSON.parse((await timedOut).text)).toMatchObject({
-      ok: false,
-      error: { code: 'timeout', retryable: true },
-    });
-    const started = host.startedChatIds();
-    expect(started).toHaveLength(1);
-    const [chatId = ''] = started;
-    await expect(host.control.completeTurn(chatId)).resolves.toEqual([]);
-
-    const retried = z
-      .object({
-        ok: z.literal(true),
-        result: z.object({
-          chatId: z.string(),
-          watchers: z.tuple([
-            z.object({ ok: z.literal(true), watcherId: z.string() }),
-          ]),
-        }),
-      })
-      .parse(JSON.parse((await create()).text));
-    expect(retried.result.chatId).toBe(chatId);
-    await expect(host.control.firedWatchers()).resolves.toEqual([
-      retried.result.watchers[0].watcherId,
-    ]);
-    expect(mockWatcherState.watchers).toEqual([]);
   });
 });
 

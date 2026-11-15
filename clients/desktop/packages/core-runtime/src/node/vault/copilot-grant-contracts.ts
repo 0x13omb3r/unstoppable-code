@@ -279,6 +279,8 @@ export interface CopilotSelectionReceipt extends CopilotSelectionRequest {
   readonly pinGeneration: string;
 }
 export interface CopilotSelectionPort {
+  /** Exact prepared-intent CAS only. Reject uncertain cleanup so cancellation can retry. */
+  abandon?(identity: CopilotGrantBinding): Promise<void>;
   /**
    * Idempotently publish/reconcile this exact setup pin, or the P7 handoff.
    * A lost acknowledgement is unconfirmed. Account equality is insufficient.
@@ -314,7 +316,14 @@ export type CopilotGrantFailure = {
 export type CopilotGrantResult =
   | CopilotGrantFailure
   | { readonly kind: 'ready'; readonly head: CopilotGrantHead }
-  | { readonly kind: 'pending'; readonly operationId: string }
+  | {
+      readonly kind: 'pending';
+      readonly operationId: string;
+      readonly operation: {
+        readonly kind: CopilotGrantMutation['kind'] | 'remove';
+        readonly origin: CopilotGrantHead['origin'];
+      };
+    }
   | { readonly kind: 'removed' }
   | {
       readonly kind: 'delivered';
@@ -361,10 +370,14 @@ export interface CopilotVaultGrantAuthority {
   create(
     grant: CopilotVaultGrant,
     origin: 'setup' | 'import',
+    /** Synchronous redacted identity of this call's proposed CAS, before its acknowledgement. */
+    onCheckpoint?: (operationId: string) => void,
   ): Promise<CopilotGrantResult>;
   /** Same operation across storage uncertainty, process restart and lost pin acknowledgement. */
   resume(operationId: string): Promise<CopilotGrantResult>;
   status(): Promise<CopilotGrantResult>;
+  /** Synchronous, redacted live admission facts for the fixed local recipient. */
+  recipientGeneration(): number | undefined;
   cancel(operationId: string): Promise<CopilotGrantResult>;
   present(handle: string, expectedEpoch: string): Promise<CopilotGrantResult>;
   /** Closes recipient admission synchronously, retaining an owned pending successor. */

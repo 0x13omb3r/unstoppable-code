@@ -46,6 +46,28 @@ export interface CanopyAcceptedInitialize {
   readonly manifest: CanopyEffectiveManifest;
   /** Largest request the daemon reassembles from message parts, if it said. */
   readonly peerMaxMessageBytes: number | null;
+  /**
+   * The account the runtime serves this connection as, as its
+   * `authentication.principal.userId` names it, or null when it names none.
+   */
+  readonly principal: CanopyConnectionPrincipal | null;
+}
+
+export interface CanopyConnectionPrincipal {
+  readonly userId: string;
+}
+
+function principalOf(
+  authentication: unknown,
+): CanopyConnectionPrincipal | null {
+  if (typeof authentication !== 'object' || authentication === null)
+    return null;
+  const principal: unknown = Reflect.get(authentication, 'principal');
+  if (typeof principal !== 'object' || principal === null) return null;
+  const userId: unknown = Reflect.get(principal, 'userId');
+  return typeof userId === 'string' && userId.length > 0
+    ? Object.freeze({ userId })
+    : null;
 }
 
 function failure(
@@ -147,6 +169,7 @@ export function acceptCanopyInitializeResult(
     );
   const { runtime, selectedProtocolVersion, capabilities, limits } =
     parsed.data;
+  const principal = principalOf(parsed.data.authentication);
   const offered = [...options.protocolVersions];
   if (!offered.includes(selectedProtocolVersion))
     throw versionMismatch(
@@ -181,6 +204,7 @@ export function acceptCanopyInitializeResult(
       limits.maxMessageBytes > 0
         ? limits.maxMessageBytes
         : null,
+    principal,
   };
 }
 

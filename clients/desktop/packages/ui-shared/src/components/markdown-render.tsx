@@ -59,6 +59,7 @@ const FILE_URL = /^\s*file:/i;
 interface LocalLinkAllowance {
   readonly windowsPaths: boolean;
   readonly fileUrls: boolean;
+  readonly kept?: (href: string) => boolean;
 }
 
 const NO_LOCAL_LINKS: LocalLinkAllowance = {
@@ -107,7 +108,8 @@ function isAllowedLocalLink(
   return (
     (allowance.windowsPaths &&
       (WINDOWS_DRIVE_PATH.test(value) || isSlashlessLocalLineLink(value))) ||
-    (allowance.fileUrls && FILE_URL.test(value))
+    (allowance.fileUrls && FILE_URL.test(value)) ||
+    allowance.kept?.(value) === true
   );
 }
 
@@ -170,7 +172,7 @@ function stableSanitizedAnchorOverride(
     if (typeof owner === 'string') sanitizedAnchorsByTag.set(owner, anchors);
     else sanitizedAnchorsByOverride.set(owner, anchors);
   }
-  const key = `${allowance.windowsPaths ? 'w' : ''}${allowance.fileUrls ? 'f' : ''}`;
+  const key = `${allowance.windowsPaths ? 'w' : ''}${allowance.fileUrls ? 'f' : ''}${allowance.kept ? 'k' : ''}`;
   let anchor = anchors.get(key);
   if (!anchor) {
     anchor = sanitizedAnchorOverride(override, allowance);
@@ -402,6 +404,12 @@ export type MarkdownOptions = MarkdownToJSX.Options & {
    * its host instead of navigating (Remote Control transcripts, CAN-3172).
    */
   allowFileUrlLinks?: boolean;
+  /**
+   * Keep the link targets this accepts as written, for a custom anchor that
+   * hands them to its host and never navigates to them (a Claude Mod answers
+   * its own Markdown links). Fixed for the life of the anchor override.
+   */
+  keepLinkTarget?: (href: string) => boolean;
 };
 export type MarkdownOverrides = MarkdownToJSX.Overrides;
 
@@ -470,6 +478,9 @@ export function markdownOptions(
       options?.allowLocalFileLinks === true && anchorOverride !== undefined,
     fileUrls:
       options?.allowFileUrlLinks === true && anchorOverride !== undefined,
+    ...(options?.keepLinkTarget !== undefined && anchorOverride !== undefined
+      ? { kept: options.keepLinkTarget }
+      : {}),
   };
   const mergedOverrides: MarkdownOverrides = {
     ...DEFAULT_MARKDOWN_OVERRIDES,
@@ -480,7 +491,7 @@ export function markdownOptions(
   return {
     ...DEFAULT_MARKDOWN_OPTIONS,
     ...options,
-    ...(allowance.windowsPaths || allowance.fileUrls
+    ...(allowance.windowsPaths || allowance.fileUrls || allowance.kept
       ? {
           sanitizer: (value: string) =>
             isAllowedLocalLink(value, allowance)

@@ -1,3 +1,6 @@
+import { agentCatalogHarnesses } from './agent-catalog-compatibility';
+import { isSelectableAgentOverrideModel } from '@canopy/execution-engine/model-catalog';
+import { isConcreteAgentModel } from '@canopy/protocol/models';
 import { isAntigravityHarnessEnabled } from '../antigravity/feature-flag';
 import { isOpenCodeHarnessEnabled } from '../opencode/feature-flag';
 import { isCopilotHarnessEnabled } from '../copilot/feature-flag';
@@ -21,12 +24,20 @@ import { isCopilotHarnessEnabled } from '../copilot/feature-flag';
 // second package.json read.
 // ---------------------------------------------------------------------------
 
-import type { ModelCatalog, ModelCatalogOption } from '@canopy/protocol/models';
+import type {
+  ModelCatalog,
+  ModelCatalogHarnessChoice,
+  ModelCatalogOption,
+} from '@canopy/protocol/models';
 import type { WorkOwner } from '@canopy/protocol/llm-gateway';
-import { buildModelCatalogOption } from '@canopy/desktop-shared/lib/model-catalog-projection';
+import {
+  buildModelCatalogOption,
+  getModelCatalogHarnessChoices,
+} from '@canopy/desktop-shared/lib/model-catalog-projection';
 import {
   ANTIGRAVITY_MODELS,
   AGENT_MODELS,
+  APP_ADVISOR_PROJECT_ID,
   CLAUDE_MODELS,
   CODEX_ACCOUNT_MODELS,
   CODEX_MODELS,
@@ -34,13 +45,27 @@ import {
   COPILOT_MODELS,
   OPENCODE_MODELS,
   OLLAMA_MODELS,
+  getEffectiveSupportedThinkingLevelsForModel,
   getGatewayModelEntries,
   pinInheritingAgentModel,
+  resolveAgentModelDefinition,
+  resolveModelAlias,
 } from '@canopy/desktop-shared/types';
 import { isCursorHarnessEnabled } from '../cursor/feature-flag';
 import { isModelBlockedByCurrentPolicy } from '../lib/model-policy-state';
 import { getLastProjectedDefaultModel } from '../lib/default-model-lane-resolver';
 import { isModelExcludedByCurrentGatewayRequirement } from '../lib/model-gateway-state';
+
+/** The retained App Advisor settings reader already supplies its resolved default. */
+export function buildProjectedAppAdvisorModelCatalog(
+  defaultModel: string | undefined,
+  options: NonNullable<Parameters<typeof buildProjectedModelCatalog>[1]>,
+): ModelCatalog {
+  return buildProjectedModelCatalog(defaultModel, {
+    ...options,
+    projectId: APP_ADVISOR_PROJECT_ID,
+  });
+}
 
 /**
  * Build a flat, serializable snapshot of every model + custom Agent the desktop
@@ -64,6 +89,7 @@ export function buildProjectedModelCatalog(
     copilot?: boolean;
     opencode?: boolean;
     owner?: WorkOwner;
+    projectId?: string;
     /**
      * The model this catalog's destination pins an Agent on the default model
      * to (`resolveCatalogAgentDefaultModel`). Required, so no caller describes
@@ -79,25 +105,29 @@ export function buildProjectedModelCatalog(
   const antigravityEnabled =
     options.antigravity === true && isAntigravityHarnessEnabled();
   const projectChoice = (option: ModelCatalogOption): void => {
+    const preferredSurfaceSupported =
+      (antigravityEnabled ||
+        ![option.provider, option.harness, option.source].includes(
+          'antigravity',
+        )) &&
+      (openCodeEnabled ||
+        ![option.provider, option.harness, option.source].includes('opencode'));
     if (
-      !antigravityEnabled &&
-      (option.provider === 'antigravity' ||
-        option.harness === 'antigravity' ||
-        option.source === 'antigravity')
+      !preferredSurfaceSupported &&
+      (option.kind !== 'agent' ||
+        (option.agentSelection !== undefined &&
+          !option.agentSelection.supportedModels.length))
     )
       return;
+    // The bare Agent's preferred route can be unavailable while an explicit route works.
+    const projected = preferredSurfaceSupported
+      ? option
+      : { ...option, available: false };
     if (openCodeEnabled && antigravityEnabled) {
-      catalog.push(option);
+      catalog.push(projected);
       return;
     }
-    if (
-      !openCodeEnabled &&
-      (option.provider === 'opencode' ||
-        option.harness === 'opencode' ||
-        option.source === 'opencode')
-    )
-      return;
-    const { harnessChoices, ...legacy } = option;
+    const { harnessChoices, ...legacy } = projected;
     const choices = harnessChoices?.filter(
       (choice) =>
         (openCodeEnabled || choice.harness !== 'opencode') &&
@@ -119,7 +149,25 @@ export function buildProjectedModelCatalog(
       | 'opencode',
   ): void => {
     const option = buildModelCatalogOption(id, { provider, defaultModel });
-    if (option) projectChoice(option);
+    if (!option) return;
+    // Remote pickers need every runtime choice, not only the desktop display subset.
+    const choices = getModelCatalogHarnessChoices(id).map(
+      (choice): ModelCatalogHarnessChoice => ({
+        ...choice,
+        provider: provider === 'ollama' ? provider : choice.provider,
+        supportedThinkingLevels:
+          choice.supportedThinkingLevels ??
+          getEffectiveSupportedThinkingLevelsForModel(
+            id,
+            false,
+            choice.harness,
+            choice.harness,
+          ),
+      }),
+    );
+    projectChoice(
+      choices.length ? { ...option, harnessChoices: choices } : option,
+    );
   };
   const excluded = (id: string): boolean =>
     isModelExcludedByCurrentGatewayRequirement(id, options.owner) ||
@@ -164,21 +212,43 @@ export function buildProjectedModelCatalog(
     push(route.modelId, route.recommendedHarness);
     projectedIds.add(route.modelId);
   }
+  const concreteModels = [...catalog].filter(
+    (row) => row.kind === 'model' && isSelectableAgentOverrideModel(row.id),
+  );
   for (const id of AGENT_MODELS) {
-    // An inheriting Agent is judged by the route it would run on here.
-    if (excluded(pinInheritingAgentModel(id, options.agentDefaultModel))) {
-      continue;
-    }
+    const compatible = agentCatalogHarnesses(options.projectId, id);
+    const supportedModels = concreteModels.flatMap((row) => {
+      const harnesses = (
+        row.harnessChoices?.map((choice) => choice.harness) ??
+        (row.harness ? [row.harness] : [])
+      ).filter((harness) => compatible?.has(harness));
+      return harnesses.length ? [{ modelId: row.id, harnesses }] : [];
+    });
+    const routeId = pinInheritingAgentModel(id, options.agentDefaultModel);
+    const baseModel = resolveAgentModelDefinition(routeId)?.baseModel;
+    const preferredModel = baseModel ? resolveModelAlias(baseModel) : undefined;
+    const preferredExcluded = excluded(routeId);
+    if (preferredExcluded && compatible && !supportedModels.length) continue;
     const option = buildModelCatalogOption(id, {
-      // Agent rows resolve their base-model provider inside the shared
-      // builder; this fallback only labels a hypothetical non-Agent id.
       provider: 'claude',
       defaultModel,
       agentDefaultModel: options.agentDefaultModel,
     });
-    if (option) {
-      projectChoice(option);
-    }
+    if (option)
+      projectChoice({
+        ...option,
+        available: option.available && !preferredExcluded,
+        ...(compatible
+          ? {
+              agentSelection: {
+                ...(isConcreteAgentModel(preferredModel)
+                  ? { preferredModel }
+                  : {}),
+                supportedModels,
+              },
+            }
+          : {}),
+      });
   }
   return catalog;
 }

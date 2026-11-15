@@ -2,6 +2,8 @@ import { useState, type JSX, type ReactNode } from 'react';
 import { CHAT_DETAILS, type ChatDetail } from '@canopy/protocol/chat-detail';
 import type { AutoResumeMetadata } from '@canopy/protocol/portal';
 import {
+  InlineCode,
+  Surface,
   AutoResumeMarker,
   Button,
   ChatAppNameProvider,
@@ -48,11 +50,7 @@ const TENSES: readonly StepTense[] = [
 ];
 
 function Readout({ children }: { readonly children: ReactNode }): JSX.Element {
-  return (
-    <code className="rounded-md bg-depth px-2 py-1 font-mono text-2xs fg-secondary">
-      {children}
-    </code>
-  );
+  return <InlineCode>{children}</InlineCode>;
 }
 
 // ---------------------------------------------------------------------------
@@ -310,13 +308,13 @@ function ComposerBox({
   readonly narrow?: boolean;
 }): JSX.Element {
   return (
-    <div
-      className={`flex h-12 max-w-full items-center gap-2 rounded-2xl bg-secondary px-3 ${
-        narrow ? 'w-60' : 'w-160'
-      }`}
+    <Surface
+      variant="group"
+      padding="section-compact"
+      className={`max-w-full ${narrow ? 'w-60' : 'w-160'}`}
     >
-      {children}
-    </div>
+      <div className="flex min-h-8 items-center gap-2">{children}</div>
+    </Surface>
   );
 }
 

@@ -52,9 +52,17 @@ export function sidebarRowLabel(
   workspace: Pick<SidebarWorkspace, 'type'>,
   worktree: Pick<SnapshotWorktree, 'branch' | 'label'>,
 ): string {
-  const label = worktree.label?.trim();
-  if (label) return label;
-  return workspace.type === 'cowork' ? 'Session' : worktree.branch;
+  if (workspace.type === 'cowork') return untitledTaskLabel(worktree.label);
+  return worktree.label?.trim() || worktree.branch;
+}
+
+/**
+ * A cowork task's title, or the placeholder the sidebar shows for an untitled
+ * one. A list of tasks on the same host, such as the desktop More page of
+ * archived tasks, names an untitled task this way too (CAN-6792).
+ */
+export function untitledTaskLabel(title: string | undefined): string {
+  return title?.trim() || 'Session';
 }
 
 /**

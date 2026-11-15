@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, type JSX, type ReactNode } from 'react';
-import { ExternalLink, Plus, UserPlus } from '@canopy/ui-shared/icons/AppIcons';
+import { Plus, UserPlus } from '@canopy/ui-shared/icons/AppIcons';
 import { Button, buttonClassName, Notice } from '@canopy/ui-shared/components';
 import { PageHeader } from '@canopy/ui-shared/components/PageHeader';
 import { useOptionalSettingsStoreApi } from '@canopy/app-state/settings';
@@ -9,7 +9,6 @@ import {
   ORGANIZATION_SETTINGS_SUBTABS,
   type OrganizationDetail,
   type OrganizationSettingsSubtab,
-  type OrgTeamsLapseReason,
 } from '@canopy/protocol/settings';
 import {
   canEditOrg,
@@ -18,7 +17,6 @@ import {
   visibleOrganizationSettingsSubtabs,
 } from '@canopy/protocol/settings/organization-permissions';
 import {
-  LAPSED_LIVE_TABS,
   organizationSettingsSubtabItem,
   resolveOrganizationSettingsSubtab,
   teamNavItem,
@@ -51,28 +49,9 @@ import { TeamSettingsSection } from './settings/team-settings-section';
 import { useOrganizationSettingsSubtabSlots } from './settings/organization-settings-subtab-slots';
 import { canManageOrganizationExternalAgents } from './settings/external-agents-policy';
 import { TeamStatisticsSection } from './statistics/TeamStatisticsSection';
-import { TeamLapsedState } from './team-lapsed-state';
-import { useInviteSeatCharge } from './invite-seat-charge';
 import { useOrganizationSettingsSlots } from './organization-settings-slots';
 import { useMembershipChangeFollowUp } from './membership-change';
 import { Surface } from '@canopy/ui-shared/components';
-
-/**
- * Why an org's tabs are blocked, when they are (CAN-2311). `null` is the normal
- * case — a healthy org renders exactly as it always has.
- */
-export interface TeamLapsedInfo {
-  /** When the org's trial ended, if known. See `OrgEntitlements.trialEndedAt`. */
-  trialEndedAt: string | null;
-  /**
-   * Why the org lost `teams`, so the panel names the right remedy instead of
-   * asserting a trial expiry for a past-due or cancelled org. See
-   * `OrgTeamsAccess.lapseReason`.
-   */
-  lapseReason: OrgTeamsLapseReason | null;
-  /** Cheapest plan name that restores `teams`, for the CTA copy. */
-  requiredPlanName: string | null;
-}
 
 export interface TeamPageProps {
   initialDetail: OrganizationDetail;
@@ -87,11 +66,6 @@ export interface TeamPageProps {
   /** Whether organization memory is rolled out for this org. */
   memoryEnabled: boolean;
   projectsEnabled: boolean;
-  /**
-   * Server-resolved free app access (CAN-3926). The Billing settings subtab is
-   * then named "AI Credits" and drops the subscription plan.
-   */
-  freeAccess?: boolean;
   /** Which tab this route renders; the feed is the primary view. */
   activeTab: TeamTab;
   /**
@@ -112,13 +86,6 @@ export interface TeamPageProps {
    * by `OrganizationMemoryLayout` from the Memory page's own data.
    */
   memoryContent?: ReactNode;
-  /**
-   * Set when the org has LOST the `teams` capability (CAN-2311). Tabs outside
-   * {@link LAPSED_LIVE_TABS} render the lapsed panel instead of their content
-   * and are inert in the settings rail. Settings stays live, so the Billing
-   * subtab — the one surface that can undo the lapse — remains reachable.
-   */
-  lapsed?: TeamLapsedInfo | null;
   /**
    * Set when the viewer arrived here straight from redeeming an invite
    * (`/organization/<id>?joined=1`). Renders a one-line confirmation so the
@@ -164,13 +131,11 @@ export function TeamPage({
   billingEnabled,
   memoryEnabled,
   projectsEnabled,
-  freeAccess = false,
   activeTab,
   mobileBrowser,
   highlightItemId,
   digestContent,
   memoryContent,
-  lapsed = null,
   justJoined = false,
   inviteOnLoad = false,
   externalAgentsEnabled = false,
@@ -204,9 +169,6 @@ export function TeamPage({
   // Memory, and the billing deep link), refresh the server tree so the rail
   // catches up. Authorization stays server-side throughout.
   const setDetail = (next: OrganizationDetail): void => {
-    // Any membership change may change what an invite costs; the next
-    // Members visit reads billing again rather than reusing the cached check.
-    inviteSeatCharge.invalidate();
     const railChanged =
       next.name !== detail.name ||
       next.logoUrl !== detail.logoUrl ||
@@ -224,11 +186,6 @@ export function TeamPage({
   // The server refuses the other routes independently of this shell.
   const personal = detail.isPersonal === true;
   const canEdit = canEditOrg(detail.viewerRole);
-  // Not a tab gate: billing is a Settings subtab now, and this only decides
-  // whether the lapsed notice may point the viewer at the restore flow. Named
-  // for what it actually answers so the next reader does not hunt for a
-  // top-level Billing tab that no longer exists.
-  const canRestoreViaBilling = billingEnabled && canEdit;
 
   // Each Settings page is its own rail row (`?tab=`). The rail and this page
   // share one visibility rule; a stale or hidden `?tab=` shows the first
@@ -236,7 +193,7 @@ export function TeamPage({
   const settingsSubtabs = visibleOrganizationSettingsSubtabs({
     aiGatewayEnabled,
     viewerRole: detail.viewerRole,
-    lapsed: lapsed !== null,
+    lapsed: false,
     billingEnabled,
     canViewUsageStats: detail.canViewUsageStats,
     githubConnected: detail.githubConnection.connected,
@@ -254,30 +211,7 @@ export function TeamPage({
   const pageNavItem =
     settingsSubtab === null
       ? teamNavItem(activeTab)
-      : organizationSettingsSubtabItem(settingsSubtab, freeAccess);
-
-  // Carrying the info (rather than a boolean) keeps the panel's fields narrowed
-  // at the render site without a second `lapsed !== null` check.
-  const lapsedPanelInfo: TeamLapsedInfo | null =
-    lapsed !== null && !LAPSED_LIVE_TABS.has(activeTab) ? lapsed : null;
-
-  // A live tab on a lapsed org still needs to SAY the org is on hold — its
-  // content renders normally, but most of what it offers will be refused, and
-  // silently letting the user discover that through 403s would be worse than
-  // the blanked panel this replaced. This is deliberately tab-level and not
-  // subtab-aware: on Settings → Billing it sits above `TeamBillingSection`,
-  // which states the lapse again with the payment UI attached. The repetition
-  // is accepted over teaching the page shell to read `?tab=`.
-  const showLapsedNotice = lapsed !== null && LAPSED_LIVE_TABS.has(activeTab);
-
-  // Role-conditioned: the notice used to promise every viewer they could
-  // "update these settings, manage members, and leave or delete the
-  // organization", of which only leaving is true for a plain MEMBER (who can
-  // still reach Settings). It also promised member MANAGEMENT generally, but
-  // adding one is gated while lapsed -- only removal and role changes survive.
-  const lapsedNoticeAbilities = canEdit
-    ? 'You can still update the organization name and logo, remove members or change their roles, and leave or delete the organization'
-    : 'You can still leave the organization';
+      : organizationSettingsSubtabItem(settingsSubtab);
 
   // Leaving or deleting removes the membership, so the host's organization
   // switcher re-reads after landing on the index.
@@ -285,12 +219,7 @@ export function TeamPage({
   const afterMembershipRemoved = (): void =>
     followMembershipChange('/organization');
   const refreshPage = (): void => router.refresh();
-  // A billing change (a saved card, a plan change) can change whether an
-  // invite charges a seat.
-  const onBillingChanged = (): void => {
-    inviteSeatCharge.invalidate();
-    refreshPage();
-  };
+  const onBillingChanged = refreshPage;
 
   // The Personal header's invite promotes Personal to a team. The host's
   // promotion controller owns that flow; a host without one continues on
@@ -307,10 +236,9 @@ export function TeamPage({
 
   // Each page's sole action sits in the page header, so its panel holds only
   // rows. The shell owns the open state; the sections render the dialog and
-  // the inline form. Adding members and restructuring teams are refused while
-  // lapsed, so their actions are hidden rather than left to 403.
-  const canInvite = canManageMembers(detail.viewerRole) && lapsed === null;
-  const canCreateTeam = canManageSubTeams(detail.viewerRole) && lapsed === null;
+  // the inline form.
+  const canInvite = canManageMembers(detail.viewerRole);
+  const canCreateTeam = canManageSubTeams(detail.viewerRole);
   const [addingMember, setAddingMember] = useState(inviteOnLoad && canInvite);
   const [creatingTeam, setCreatingTeam] = useState(false);
   const [creatingProject, setCreatingProject] = useState(false);
@@ -319,28 +247,7 @@ export function TeamPage({
   const projectRepositoriesAvailable = teamProjectsRepositoriesAvailable(
     detail,
     projectsEnabled,
-    lapsed !== null,
   );
-  // Inviting into a paid per-seat organization can charge a prorated seat.
-  // Hosts that cannot confirm that charge inline hand the invite to the web.
-  const inviteSeatCharge = useInviteSeatCharge({
-    organizationId: detail.id,
-    enabled: canInvite && activeTab === 'members',
-    billingEnabled,
-    freeAccess,
-  });
-  const membersInviteHref = `${webOrigin}${teamNavItem('members').href(
-    detail.id,
-  )}?invite=1`;
-  // The invite dialog opens (including from `?invite=1`) only once inviting
-  // is known to run inline. An open dialog stays open if a pre-send recheck
-  // finds a charge, so its error explains the handoff the header now offers.
-  const [inviteDialogShown, setInviteDialogShown] = useState(false);
-  const showInviteDialog =
-    addingMember && (inviteSeatCharge.mode === 'inline' || inviteDialogShown);
-  if (showInviteDialog !== inviteDialogShown) {
-    setInviteDialogShown(showInviteDialog);
-  }
 
   // Sections whose page actions read their own state (the Timeline's Live
   // toggle, the Projects Refresh from GitHub) portal them into this slot,
@@ -354,34 +261,16 @@ export function TeamPage({
     />
   );
   const headerActions = ((): ReactNode => {
-    if (lapsedPanelInfo !== null) return undefined;
     switch (activeTab) {
       case 'feed':
         return headerSlotElement;
       case 'members':
         if (!canInvite) return undefined;
-        if (inviteSeatCharge.mode === 'handoff') {
-          // Only the button sits in the header row; the reason is a line
-          // below the header, so the header keeps one height.
-          return (
-            <Button
-              size="compact"
-              variant="secondary"
-              onClick={() => navigation.openExternal(membersInviteHref)}
-              data-testid="team-invite-on-web"
-            >
-              <ExternalLink size={14} />
-              Invite on the web
-            </Button>
-          );
-        }
         return (
           <Button
             size="compact"
             variant="secondary"
             onClick={() => setAddingMember(true)}
-            // Disabled until this host knows whether inviting can charge.
-            disabled={inviteSeatCharge.mode === 'checking'}
             data-testid="team-add-member"
           >
             <UserPlus size={14} />
@@ -432,25 +321,7 @@ export function TeamPage({
     }
   })();
 
-  const showInviteHandoffNote =
-    lapsedPanelInfo === null &&
-    activeTab === 'members' &&
-    canInvite &&
-    inviteSeatCharge.mode === 'handoff';
-
   const tabContent = ((): ReactNode => {
-    if (lapsedPanelInfo !== null) {
-      return (
-        <TeamLapsedState
-          orgId={detail.id}
-          orgName={detail.name}
-          trialEndedAt={lapsedPanelInfo.trialEndedAt}
-          lapseReason={lapsedPanelInfo.lapseReason}
-          requiredPlanName={lapsedPanelInfo.requiredPlanName}
-          canEdit={canEdit}
-        />
-      );
-    }
     switch (activeTab) {
       case 'feed':
         return (
@@ -497,12 +368,8 @@ export function TeamPage({
             viewerEmail={viewerEmail}
             onDetailChange={setDetail}
             onLeft={afterMembershipRemoved}
-            onBillingChanged={onBillingChanged}
-            onInvited={inviteSeatCharge.invalidate}
-            lapsed={lapsed !== null}
-            adding={showInviteDialog}
+            adding={addingMember && canInvite}
             onAddingChange={setAddingMember}
-            recheckInviteSeatCharge={inviteSeatCharge.recheck}
           />
         );
       case 'groups':
@@ -510,7 +377,6 @@ export function TeamPage({
           <TeamSubTeamsSection
             detail={detail}
             onDetailChange={setDetail}
-            orgLapsed={lapsed !== null}
             creating={creatingTeam}
             onCreatingChange={setCreatingTeam}
           />
@@ -520,7 +386,6 @@ export function TeamPage({
           <TeamProjectsSection
             detail={detail}
             onDetailChange={setDetail}
-            orgLapsed={lapsed !== null}
             projectsEnabled={projectsEnabled}
             creating={creatingProject}
             onCreatingChange={setCreatingProject}
@@ -539,8 +404,6 @@ export function TeamPage({
             onDetailChange={setDetail}
             onBillingChanged={onBillingChanged}
             memoryEnabled={memoryEnabled}
-            freeAccess={freeAccess}
-            lapsed={lapsed}
             onDeleted={afterMembershipRemoved}
             externalAgentsEnabled={externalAgentsEnabled}
             aiGatewayEnabled={aiGatewayEnabled}
@@ -580,38 +443,9 @@ export function TeamPage({
 
       <SettingsPageNotice />
 
-      {showInviteHandoffNote && (
-        <p
-          className="text-s fg-secondary"
-          data-testid="team-invite-web-handoff"
-        >
-          Inviting can add a paid seat. Continue in your browser.
-        </p>
-      )}
-
       {justJoined && (
         <Notice intent="positive" data-testid="team-joined-notice">
           {`You've joined ${detail.name}.`}
-        </Notice>
-      )}
-
-      {showLapsedNotice && (
-        <Notice intent="attention" data-testid="team-lapsed-notice">
-          {/*
-            Location-INDEPENDENT wording on purpose. This notice renders on
-            every tab in LAPSED_LIVE_TABS, which now includes Settings — so a
-            directional "from Settings → Billing" told a lapsed owner sitting on
-            Settings → Billing to navigate to where they already were. The
-            repetition of the lapse message is accepted (TeamBillingSection
-            restates it with the payment UI attached); a self-referential
-            instruction is a separate defect, and this phrasing stays true from
-            every tab including Billing itself.
-          */}
-          {`${detail.name} is on hold. ${lapsedNoticeAbilities}${
-            canRestoreViaBilling
-              ? ', or restore it from the Billing settings'
-              : ''
-          }. Other organization features stay paused until it is restored.`}
         </Notice>
       )}
 

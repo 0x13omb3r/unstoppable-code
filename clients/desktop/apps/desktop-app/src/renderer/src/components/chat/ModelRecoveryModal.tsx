@@ -17,25 +17,27 @@ import {
 } from '@canopy/desktop-shared/types';
 import { isGatewayRoutableModel } from '@canopy/execution-engine/lib/gateway-model-availability';
 import { isGuestAccount } from '@canopy/desktop-shared/lib/guest-account';
-import { lapsedOrgNames as lapsedOrgNamesFrom } from '@canopy/desktop-shared/lib/org-billing-state-parsing';
 import {
   AI_CREDITS_GUEST_PURCHASE_LABEL,
   AI_CREDITS_PURCHASE_LABEL,
   connectProviderLabel,
-  DialogModal,
   LoadingSpinner,
-  MODEL_LIBRARY_UNLOCK_COPY,
-  modelLibraryUnlockTitle,
-  modelLibraryWaitingInBrowserBody,
-  guestModelGateCopy,
-  GuestModelGateContent,
 } from '@canopy/ui-shared';
+import {
+  UnlockDialog,
+  UnlockDialogFrame,
+  useCreditsPurchase,
+  type UnlockDialogProgress,
+} from '@canopy/ui-app/credits';
+import type {
+  CreditsPromptOwner,
+  CreditsPurchaseMode,
+} from '@canopy/app-state/billing/credits';
 import { isCanopyCloudConnected } from '@/lib/canopy-cloud';
 import { mayChangeCanopyCloudIdentity } from '@/lib/canopyCloudAccountChange';
 import { brandText } from '@/lib/brand';
 import {
   CONTACT_ORG_ADMIN_COPY,
-  CONTACT_ORG_ADMIN_LAPSED_COPY,
   readSharedAiCreditsAvailability,
   resolveAiCreditsCoverage,
   useUnlockModelsAction,
@@ -56,7 +58,6 @@ import { guestModelGateTitle, guestModelGateToast } from '@/lib/guest-cta-copy';
 import { AuthLoginModal } from '@/components/settings/AuthLoginModal';
 import type { ModelRecovery } from '@/lib/modelPickerRowGate';
 import type { GuestModelFallback } from '@/lib/guestModelFallback';
-import { ErrorBanner } from '@canopy/ui-shared/components';
 import { reportClientAppError } from '@canopy/desktop-instrumentation/client';
 import { GetAiCreditsCta } from './GetAiCreditsCta';
 import { CreditsRecoveryView } from './CreditsRecoveryView';
@@ -160,6 +161,14 @@ const OUT_OF_CREDITS_BILLING_MODE_COPY =
 /** Case C's title: what the user asked to do, not the model they are on. */
 const BILLING_MODE_TITLE = 'Bill this chat to AI Credits';
 
+/**
+ * The purchase a guest's sign-in leads to. The live purchase mode can't say:
+ * the hand-off is bound to a signed-in, non-guest account, so it reads
+ * unavailable for every guest. Sign-in through the unlock gate opens checkout
+ * in the browser straight afterwards (`unlockModels`), so the gate names it.
+ */
+const GUEST_UNLOCK_PURCHASE_MODE: CreditsPurchaseMode = 'handoff';
+
 const COMMIT_FAILED_REASON =
   'We couldn’t switch models just now. Check your connection and try again.';
 
@@ -175,8 +184,8 @@ export interface ModelRecoveryModalProps {
   readonly onCancel: () => void;
   /**
    * Owner of the chat being recovered (CAN-3463). AI Credits spill only onto
-   * that owner's organization pool, so coverage, the lapsed-org list, and the
-   * contact-admin copy all describe that one org. Omitted = navigation context.
+   * that owner's organization pool, so coverage and the contact-admin copy
+   * describe that one org. Omitted = navigation context.
    */
   readonly aiCreditsScope?: AiCreditsScopeRequest;
   /**
@@ -265,19 +274,6 @@ type AccountRead =
       readonly status: 'settled';
       readonly availability: NativeAiCreditsAvailability;
       readonly guest: boolean;
-      /**
-       * Orgs that have lost the `teams` capability, read off the SAME account
-       * snapshot as `guest`.
-       *
-       * `resolveAiCreditsCoverage` never discovers these on its own — it only
-       * ever echoes back the names its caller hands it (`lapsedOrgNames` is a
-       * parameter with a `[]` default, see `openBillingPage.ts`). Omitting the
-       * argument therefore guarantees `coverage.lapsedOrgNames` is empty, which
-       * makes the lapsed branch below unreachable and drops a lapsed-org member
-       * onto the ordinary self-serve purchase copy. `OrgLapsedBanner` sources
-       * them the same way.
-       */
-      readonly lapsedOrgs: readonly string[];
       /**
        * CAN-4028 — this signed-in account still needs a card purchase before
        * the pending model can be selected. Snapshotted with the rest of the
@@ -422,6 +418,12 @@ function ModelRecoveryAttempt({
     !needsGatewayRoute ||
     (gatewayRoutesKnown && isGatewayRoutableModel(pending.model));
   const [read, setRead] = useState<AccountRead>({ status: 'loading' });
+  // How this host takes a purchase, from its client. Only the mode is read:
+  // the purchase itself opens through `unlockModels` (or the host's
+  // `onUnlockPurchase`), which picks the wallet. Until the host answers, and
+  // whenever it can't take one, no purchase is offered.
+  const unlockPurchaseMode: CreditsPurchaseMode =
+    useCreditsPurchase(null).mode ?? 'unavailable';
   const [loginOpen, setLoginOpen] = useState(false);
   const [signInBusy, setSignInBusy] = useState(false);
   const [retryBusy, setRetryBusy] = useState(false);
@@ -672,14 +674,6 @@ function ModelRecoveryAttempt({
         setRead({ status: 'inconclusive' });
         return;
       }
-      // Only the owner org's lapse can block this chat (CAN-3463); Personal
-      // work has no owner org, so no lapse applies to it.
-      const ownerOrganizationId = availability.ownerOrganization?.id;
-      const orgBillingStates = ownerOrganizationId
-        ? (account?.orgBillingStates ?? []).filter(
-            (state) => state.organizationId === ownerOrganizationId,
-          )
-        : [];
       const guest =
         !isCanopyCloudConnected(account) ||
         isGuestAccount(account ?? undefined);
@@ -702,15 +696,8 @@ function ModelRecoveryAttempt({
         availability,
         guest,
         libraryPurchaseRequired,
-        lapsedOrgs: lapsedOrgNamesFrom(
-          orgBillingStates,
-          orgBillingStates.map((state) => state.organizationId),
-        ),
       };
-      const coverage = resolveAiCreditsCoverage(
-        nextRead.availability,
-        nextRead.lapsedOrgs,
-      );
+      const coverage = resolveAiCreditsCoverage(nextRead.availability);
       // Coverage may have appeared between the row click and this snapshot, or
       // while a contact-admin/inconclusive branch was waiting on Try again. In
       // either case the recovery has succeeded: commit immediately instead of
@@ -1254,31 +1241,24 @@ function ModelRecoveryAttempt({
     onCancel();
   };
 
+  // Every step renders in the shared unlock dialog's frame. `hidden` while
+  // the cloud gate owns the screen — see `hiddenBehindCloudGate`; the subtree
+  // stays mounted underneath.
   const shell = (
     title: string,
     body: JSX.Element,
     actions?: JSX.Element,
   ): JSX.Element => (
-    <DialogModal
-      onClose={handleDismiss}
+    <UnlockDialogFrame
       title={title}
-      maxWidth="sm"
-      // Matches AuthLoginModal so the two never fight over stacking order.
-      // `hidden` while the cloud gate owns the screen — see
-      // `hiddenBehindCloudGate`; the subtree stays mounted underneath.
-      overlayClassName={hiddenBehindCloudGate ? 'hidden' : ''}
+      onDismiss={handleDismiss}
+      hidden={hiddenBehindCloudGate}
       dataTestId="model-recovery-modal"
-      ownerDocument={ownerDocument}
+      {...(ownerDocument === undefined ? {} : { ownerDocument })}
+      {...(actions === undefined ? {} : { actions })}
     >
-      <div className="flex flex-col gap-4">
-        <div className="text-s leading-relaxed fg-secondary">{body}</div>
-        {actions ? (
-          <div className="flex flex-col gap-2 pointer-coarse:gap-4">
-            {actions}
-          </div>
-        ) : null}
-      </div>
-    </DialogModal>
+      {body}
+    </UnlockDialogFrame>
   );
 
   // ---- Case H: billing-free, and deliberately NOT the continue dialog's copy.
@@ -1443,56 +1423,35 @@ function ModelRecoveryAttempt({
     const snapshotFallback =
       onUseGuestFallback === undefined ? undefined : pending.guestFallback;
     const fallback = snapshotFallback;
-    const copy = guestModelGateCopy({
-      modelLabel,
-      appName: brandText.appName,
-      access: thenPurchase ? 'needs_sign_in_then_purchase' : 'needs_sign_in',
-      ...(fallback === undefined ? {} : { fallbackLabel: fallback.label }),
-    });
+    const dismissGuestGate = (): void => {
+      if (!commitInFlightRef.current) onCancel();
+    };
     return (
-      <DialogModal
-        inset="flush"
-        onClose={(): void => {
-          if (!commitInFlightRef.current) onCancel();
-        }}
-        title={copy.title}
-        maxWidth="sm"
-        overlayClassName={hiddenBehindCloudGate ? 'hidden' : ''}
-        dataTestId="model-recovery-modal"
-        ownerDocument={ownerDocument}
-        trapFocus
-        initialFocusRef={guestSignInRef}
-        // The picker owns composer restoration and its originating-chat guard.
-        restoreFocusWhen={(): boolean => false}
-        closeButtonDisabled={fallbackBusy}
-        closeOnBackdrop={!fallbackBusy}
-        closeOnEscape={!fallbackBusy}
-      >
-        <GuestModelGateContent
-          subject={{
+      <UnlockDialog
+        // A guest has no wallet to read; the sign-in comes first.
+        owner={{ kind: 'unknown' }}
+        purchase={{ mode: GUEST_UNLOCK_PURCHASE_MODE }}
+        progress={{ kind: 'offer' }}
+        guest={{
+          subject: {
             modelLabel,
             appName: brandText.appName,
             access: thenPurchase
               ? 'needs_sign_in_then_purchase'
               : 'needs_sign_in',
-          }}
-          {...(fallback === undefined
+          },
+          ...(fallback === undefined
             ? {}
             : {
                 fallback: {
                   label: fallback.label,
                   onActivate: (): void => handleUseGuestFallback(fallback),
                 },
-              })}
-          dataTestId="model-recovery"
-          bodyTestId="model-recovery-needs-account"
-          dismissTestId="model-recovery-cancel"
-          busy={fallbackBusy}
-          error={fallbackError}
-          onDismiss={(): void => {
-            if (!commitInFlightRef.current) onCancel();
-          }}
-          renderSignIn={(label): JSX.Element => (
+              }),
+          busy: fallbackBusy,
+          error: fallbackError,
+          initialFocusRef: guestSignInRef,
+          renderSignIn: (label): JSX.Element => (
             <Button
               size="compact"
               variant="primary"
@@ -1533,9 +1492,16 @@ function ModelRecoveryAttempt({
             >
               {label}
             </Button>
-          )}
-        />
-      </DialogModal>
+          ),
+        }}
+        onDismiss={dismissGuestGate}
+        hidden={hiddenBehindCloudGate}
+        {...(ownerDocument === undefined ? {} : { ownerDocument })}
+        // The picker owns composer restoration and its originating-chat guard.
+        restoreFocus={{ when: (): boolean => false }}
+        dataTestId="model-recovery-modal"
+        testIdPrefix="model-recovery"
+      />
     );
   }
 
@@ -1559,193 +1525,70 @@ function ModelRecoveryAttempt({
     // current one, which can differ while the purchase is in flight. A
     // followed purchase names its own model, which an adopted purchase may
     // not share with this row.
-    const unlockTitle = modelLibraryUnlockTitle(
-      unlockRequestId === undefined ? modelLabel : unlockModelLabel,
-    );
-    const purchaseButton = (label: string): JSX.Element => (
-      <LoadingButton
-        size="compact"
-        variant="primary"
-        className="w-full"
-        data-testid="model-recovery-unlock-purchase"
-        loading={unlockAttempt.status === 'opening'}
-        spinnerTestId="model-recovery-unlock-purchase-spinner"
-        onClick={handleUnlockPurchase}
-      >
-        {label}
-      </LoadingButton>
-    );
-    const checkNowButton = (primary: boolean): JSX.Element => (
-      <LoadingButton
-        size="compact"
-        variant={primary ? 'primary' : 'secondary'}
-        className="w-full"
-        data-testid="model-recovery-unlock-check-now"
-        loading={unlockCheckBusy}
-        spinnerTestId="model-recovery-unlock-check-now-spinner"
-        loadingLabel={MODEL_LIBRARY_UNLOCK_COPY.checkingAction}
-        onClick={handleUnlockCheckNow}
-      >
-        {MODEL_LIBRARY_UNLOCK_COPY.checkNowAction}
-      </LoadingButton>
-    );
-
-    // The work belongs to an organization this user cannot fund. A personal
-    // purchase would not unlock it, so none is offered.
-    if (unlockAttempt.status === 'contact-admin') {
-      return shell(
-        unlockTitle,
-        <span data-testid="model-recovery-unlock-contact-admin">
-          {CONTACT_ORG_ADMIN_COPY}
-        </span>,
-      );
-    }
-
-    // Confirmed, but the model did not land. The unlock stands; only the
-    // selection is offered again — the one place "Use {model}" appears.
-    if (unlockPhase === 'apply-failed') {
-      return shell(
-        unlockTitle,
-        <span
-          role="status"
-          data-testid="model-recovery-unlock-apply-failed"
-          className="flex flex-col gap-2"
-        >
-          <span>{MODEL_LIBRARY_UNLOCK_COPY.confirmed}</span>
-          <span>
-            {unlockModelLabel === undefined
-              ? MODEL_LIBRARY_UNLOCK_COPY.selectionFailed
-              : `We couldn’t switch to ${unlockModelLabel} just now.`}
-          </span>
-        </span>,
-        <>
-          <LoadingButton
-            size="compact"
-            variant="primary"
-            className="w-full"
-            data-testid="model-recovery-unlock-use-model"
-            loading={unlockApplyBusy}
-            spinnerTestId="model-recovery-unlock-use-model-spinner"
-            onClick={handleUnlockApplyRetry}
-          >
-            {unlockModelLabel === undefined
-              ? MODEL_LIBRARY_UNLOCK_COPY.retrySelection
-              : `Use ${unlockModelLabel}`}
-          </LoadingButton>
-        </>,
-      );
-    }
-
-    // Confirmed. Either the host is applying the model right now and will
-    // close this modal, or there was nothing left to apply (the selection
-    // moved while the user was paying) and Close is the only thing to offer.
-    if (unlockPhase === 'applying' || unlockPhase === 'unlocked') {
-      return shell(
-        unlockTitle,
-        <span
-          role="status"
-          data-testid="model-recovery-unlock-confirmed"
-          className="flex items-center gap-2"
-        >
-          {unlockPhase === 'applying' && (
-            <LoadingSpinner
-              dataTestId="model-recovery-unlock-confirmed-spinner"
-              decorative
-            />
-          )}
-          {MODEL_LIBRARY_UNLOCK_COPY.confirmed}
-        </span>,
-      );
-    }
-
+    const unlockLabel =
+      unlockRequestId === undefined ? modelLabel : unlockModelLabel;
+    // Whether the owner can fund the unlock is learned from the purchase
+    // itself: the opening answers `contact-admin` for an organization this
+    // user cannot fund. Until then a purchase is offered.
+    const ownerOrganization = read.availability.ownerOrganization;
+    const unlockOwner: CreditsPromptOwner =
+      unlockAttempt.status === 'contact-admin' || ownerOrganization
+        ? {
+            kind: 'organization',
+            canFund: unlockAttempt.status !== 'contact-admin',
+            creditPool: false,
+          }
+        : { kind: 'personal' };
     // The poll stopped. That is all it means: the payment may still be in
     // progress, so nothing here calls it failed. The only way past it is an
     // explicit new purchase, which says it does not cancel this one.
-    if (unlockPhase === 'timed-out' && unlockRequestId !== undefined) {
-      const timedOutRequestId = unlockRequestId;
-      const openingNew = unlockAttempt.status === 'opening';
-      return shell(
-        unlockTitle,
-        <span
-          data-testid="model-recovery-unlock-timed-out"
-          className="flex flex-col gap-2"
-        >
-          <span role="status" className="flex flex-col gap-1">
-            <span className="fg-primary">
-              {MODEL_LIBRARY_UNLOCK_COPY.timedOutTitle}
-            </span>
-            <span>{MODEL_LIBRARY_UNLOCK_COPY.timedOutBody}</span>
-          </span>
-          <span data-testid="model-recovery-unlock-new-purchase-help">
-            {MODEL_LIBRARY_UNLOCK_COPY.newPurchaseHelp}
-          </span>
-          {unlockAttempt.status === 'adopted' &&
-          unlockAttempt.newPurchaseFailed === true ? (
-            <ErrorBanner
-              errorSource="model-recovery-unlock-failed"
-              error="We couldn’t open your browser. Try again."
-              className=""
-              testId="model-recovery-unlock-failed"
-            />
-          ) : null}
-        </span>,
-        <>
-          {checkNowButton(true)}
-          <LoadingButton
-            size="compact"
-            variant="secondary"
-            className="w-full"
-            data-testid="model-recovery-unlock-new-purchase"
-            loading={openingNew}
-            spinnerTestId="model-recovery-unlock-new-purchase-spinner"
-            onClick={(): void => openUnlockCheckout(timedOutRequestId)}
-          >
-            {MODEL_LIBRARY_UNLOCK_COPY.newPurchaseAction}
-          </LoadingButton>
-        </>,
-      );
-    }
-
-    // Checkout is open in the browser, whether this modal opened it or adopted
-    // it. Closing does not cancel: the purchase is in the browser, and the
-    // pending model is still applied, in the chat where it started, when it
-    // completes.
-    if (unlockPhase === 'waiting') {
-      return shell(
-        unlockTitle,
-        <span role="status" data-testid="model-recovery-unlock-waiting">
-          {modelLibraryWaitingInBrowserBody(unlockModelLabel)}
-        </span>,
-        <>{checkNowButton(false)}</>,
-      );
-    }
-
-    // Opened, but not (or no longer) followed: an organization-owned purchase
-    // cannot be read back, so a re-check here would be a button that can
-    // never report success, and no model is promised.
-    if (unlockAttempt.status === 'opened') {
-      return shell(
-        unlockTitle,
-        <span role="status" data-testid="model-recovery-unlock-waiting">
-          {modelLibraryWaitingInBrowserBody()}
-        </span>,
-      );
-    }
-
-    return shell(
-      unlockTitle,
-      <span data-testid="model-recovery-unlock" className="flex flex-col gap-2">
-        <span>{MODEL_LIBRARY_UNLOCK_COPY.purchaseBody}</span>
-        {unlockAttempt.status === 'failed' ? (
-          <ErrorBanner
-            errorSource="model-recovery-unlock-failed"
-            error="We couldn’t open your browser. Try again."
-            className=""
-            testId="model-recovery-unlock-failed"
-          />
-        ) : null}
-      </span>,
-      <>{purchaseButton(MODEL_LIBRARY_UNLOCK_COPY.purchaseAction)}</>,
+    const timedOutRequestId =
+      unlockPhase === 'timed-out' ? unlockRequestId : undefined;
+    // Checkout is in the browser, so after it opens each step is the pending
+    // intent's phase. Closing never cancels: the purchase is in the browser,
+    // and the pending model is still applied, in the chat where it started.
+    const progress: UnlockDialogProgress =
+      unlockPhase === 'apply-failed'
+        ? { kind: 'apply-failed', busy: unlockApplyBusy }
+        : unlockPhase === 'applying' || unlockPhase === 'unlocked'
+          ? { kind: 'confirmed', applying: unlockPhase === 'applying' }
+          : timedOutRequestId !== undefined
+            ? {
+                kind: 'timed-out',
+                checking: unlockCheckBusy,
+                opening: unlockAttempt.status === 'opening',
+                newPurchaseFailed:
+                  unlockAttempt.status === 'adopted' &&
+                  unlockAttempt.newPurchaseFailed === true,
+              }
+            : unlockPhase === 'waiting'
+              ? { kind: 'waiting', checking: unlockCheckBusy }
+              : unlockAttempt.status === 'opened'
+                ? { kind: 'opened' }
+                : { kind: 'offer' };
+    return (
+      <UnlockDialog
+        owner={unlockOwner}
+        purchase={{
+          mode: unlockPurchaseMode,
+          onStart: handleUnlockPurchase,
+          opening: unlockAttempt.status === 'opening',
+          openFailed: unlockAttempt.status === 'failed',
+        }}
+        progress={progress}
+        {...(unlockLabel === undefined ? {} : { modelLabel: unlockLabel })}
+        onCheckNow={handleUnlockCheckNow}
+        onNewPurchase={(): void => {
+          if (timedOutRequestId !== undefined)
+            openUnlockCheckout(timedOutRequestId);
+        }}
+        onRetrySelection={handleUnlockApplyRetry}
+        onDismiss={handleDismiss}
+        hidden={hiddenBehindCloudGate}
+        {...(ownerDocument === undefined ? {} : { ownerDocument })}
+        dataTestId="model-recovery-modal"
+        testIdPrefix="model-recovery"
+      />
     );
   }
 
@@ -1763,9 +1606,7 @@ function ModelRecoveryAttempt({
     );
   }
 
-  // Pass the lapsed names IN: the helper only ever echoes back what it is
-  // given, and it is what clears them again when the user can still spend.
-  const coverage = resolveAiCreditsCoverage(read.availability, read.lapsedOrgs);
+  const coverage = resolveAiCreditsCoverage(read.availability);
   const creditsLabel = AI_CREDITS_PURCHASE_LABEL;
   // Every purchase from this dialog goes to the browser, like the chat
   // banners, so the hand-off and Check again stay here and the composer
@@ -1839,8 +1680,7 @@ function ModelRecoveryAttempt({
   // ---- Org member whose org has the credit pool but no headroom. They cannot
   // self-serve, so there is NO purchase CTA — but this must not be a dead-end
   // modal either: headroom can be granted while it is open, so Try again stays.
-  if (coverage.showContactAdmin || coverage.lapsedOrgNames.length > 0) {
-    const lapsed = coverage.lapsedOrgNames.length > 0;
+  if (coverage.showContactAdmin) {
     const ownerOrganizationName =
       read.status === 'settled'
         ? read.availability.ownerOrganization?.name
@@ -1855,7 +1695,7 @@ function ModelRecoveryAttempt({
         ) : (
           `Your organization's AI Credits balance can't cover this model right now. `
         )}
-        {lapsed ? CONTACT_ORG_ADMIN_LAPSED_COPY : CONTACT_ORG_ADMIN_COPY}
+        {CONTACT_ORG_ADMIN_COPY}
         {creditsRecoveryView}
       </span>,
       <>
@@ -1887,7 +1727,7 @@ function ModelRecoveryAttempt({
           ? coverage.showPurchase
             ? OUT_OF_CREDITS_COPY
             : `To use ${modelLabel}, connect ${getProviderLabel(signInProvider)} or add ${brandText.appName} AI Credits.`
-          : `This model runs on ${brandText.appName} AI Credits. Add credits to start using it.`}
+          : `This model runs on ${brandText.appName} AI Credits. Buy AI Credits to start using it.`}
       {creditsRecoveryView}
     </span>,
     <>

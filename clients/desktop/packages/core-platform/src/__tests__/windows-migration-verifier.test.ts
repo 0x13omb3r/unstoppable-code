@@ -9,7 +9,6 @@ import {
 } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { setTimeout } from 'node:timers/promises';
 import { pathToFileURL } from 'node:url';
 import {
   createWindowsMigrationVerifier,
@@ -26,6 +25,7 @@ import {
   OWNED_CHILD_FILE,
   type OwnedChildLaunch,
 } from '../supervision/owned-child';
+import { loadOwnedChildProbe } from './fixtures/owned-child-probe';
 
 // CAN-5864 / CAN-4504 §6 W2 migration evidence. Native custody/signature/pins
 // with an INJECTED trust fixture, not authenticated release-package eligibility.
@@ -56,6 +56,30 @@ const compositionUrl = pathToFileURL(
 ).href;
 const launches = new Set<OwnedChildLaunch>();
 const directories = new Set<string>();
+
+let probe: object = {};
+function deleteAccess(file: string): number {
+  const method: unknown = Reflect.get(probe, 'deleteAccess');
+  if (typeof method !== 'function')
+    throw new Error('Native probe method absent: deleteAccess');
+  const result: unknown = Reflect.apply(method, probe, [file]);
+  if (typeof result !== 'number' || !Number.isSafeInteger(result) || result < 0)
+    throw new Error('Invalid native delete-access result');
+  return result;
+}
+
+async function expectWriteRefused(executable: string): Promise<void> {
+  const writing = open(executable, 'r+');
+  try {
+    await expect(writing).rejects.toHaveProperty('code');
+  } finally {
+    // A regression must not leave an unexpectedly writable file locked.
+    await writing.then(
+      (file) => file.close(),
+      () => undefined,
+    );
+  }
+}
 
 function trustFixture(
   image: WindowsMigrationCapture,
@@ -193,20 +217,45 @@ function capture(
 suite(
   'Windows W2 native image verification (disabled, injected prepared trust)',
   () => {
+    beforeAll(async () => {
+      probe = await loadOwnedChildProbe();
+    }, 600_000);
+
     afterEach(async () => {
+      const errors: unknown[] = [];
       for (const item of launches) {
-        item.channel.close();
-        await item.child.terminate(AbortSignal.timeout(10000));
+        let released = true;
+        try {
+          item.channel.close();
+        } catch (error) {
+          released = false;
+          errors.push(error);
+        }
+        try {
+          await item.child.terminate(AbortSignal.timeout(10000));
+        } catch (error) {
+          released = false;
+          errors.push(error);
+        }
+        if (released) launches.delete(item);
       }
-      launches.clear();
-      for (const dir of directories)
-        await rm(dir, {
-          recursive: true,
-          force: true,
-          maxRetries: 5,
-          retryDelay: 200,
-        });
-      directories.clear();
+      // Do not remove executable fixtures until every child is confirmed stopped.
+      if (launches.size === 0) {
+        for (const dir of directories) {
+          try {
+            await rm(dir, {
+              recursive: true,
+              force: true,
+              maxRetries: 5,
+              retryDelay: 200,
+            });
+            directories.delete(dir);
+          } catch (error) {
+            errors.push(error);
+          }
+        }
+      }
+      if (errors.length) throw new AggregateError(errors, 'W2 cleanup failed');
     }, 30000);
 
     it('verifies native signed images in both orientations, with lossless identity and channel-confined receipts', async () => {
@@ -431,49 +480,36 @@ suite(
       await copyFile(process.execPath, executable);
       const { channel, child } = await launch(executable);
       await report(channel);
+      // DELETE access alone does not rename/delete an executing image.
+      expect(deleteAccess(executable)).toBe(0);
       const image = capture(channel);
+      let retirementImage: WindowsMigrationCapture | undefined;
       try {
         await expect(
           rename(executable, executable + '.replaced'),
         ).rejects.toHaveProperty('code');
-        await expect(open(executable, 'r+')).rejects.toHaveProperty('code');
+        await expectWriteRefused(executable);
         expect(image.current()).toBe(true);
-        await child.terminate(AbortSignal.timeout(10000));
+        expect(deleteAccess(executable)).toBe(32); // ERROR_SHARING_VIOLATION
+        image.close();
         expect(image.current()).toBe(false);
-        // Prove the retained file pin, not just Windows' running-image lock.
+        expect(deleteAccess(executable)).toBe(0);
+        // Recapture before retirement to retain the exited-process pin proof.
+        retirementImage = capture(channel);
+        expect(retirementImage.current()).toBe(true);
+        await child.terminate(AbortSignal.timeout(10000));
+        expect(retirementImage.current()).toBe(false);
+        // Image teardown alone cannot cause a DELETE-access sharing violation.
+        expect(deleteAccess(executable)).toBe(32);
         await expect(
           rename(executable, executable + '.replaced'),
         ).rejects.toHaveProperty('code');
-        await expect(open(executable, 'r+')).rejects.toHaveProperty('code');
+        await expectWriteRefused(executable);
       } finally {
+        retirementImage?.close();
         image.close();
       }
-      // The pin closes synchronously; image teardown or scanners can still hold the file.
-      const started = performance.now();
-      const deadline = started + 2000;
-      let attempts = 0;
-      for (;;) {
-        try {
-          attempts++;
-          await rename(executable, executable + '.replaced');
-          break;
-        } catch (error) {
-          if (
-            typeof error !== 'object' ||
-            error === null ||
-            !('code' in error) ||
-            typeof error.code !== 'string' ||
-            !['EBUSY', 'EPERM', 'EACCES'].includes(error.code)
-          )
-            throw error;
-          if (performance.now() >= deadline)
-            throw new Error(
-              `Post-close executable rename still blocked after ${Math.round(performance.now() - started)} ms (${attempts} attempts, ${error.code})`,
-              { cause: error },
-            );
-          await setTimeout(50);
-        }
-      }
+      expect(deleteAccess(executable)).toBe(0);
     }, 30000);
 
     it('refuses a runnable unsigned image even with matching injected package/digest metadata', async () => {

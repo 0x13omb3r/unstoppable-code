@@ -764,10 +764,13 @@ function NeedsYouRow({
   };
 
   return (
-    <div
+    <Surface
       data-testid="feed-needs-you-row"
       data-kind={item.kind}
-      className="flex flex-col gap-2 border-b border-line-base py-3 last:border-b-0"
+      variant="section"
+      boundary="between-rows"
+      padding="row-block"
+      gap="inline"
     >
       <div className="flex min-w-0 flex-wrap items-start gap-x-3 gap-y-2">
         <StatusGlyph state="needs-you" size={14} label="Needs you" />
@@ -792,7 +795,7 @@ function NeedsYouRow({
       </div>
       {error === null ? null : <ActionError message={error} />}
       {renderDetails()}
-    </div>
+    </Surface>
   );
 }
 

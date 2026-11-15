@@ -1,0 +1,20 @@
+/* Office document surface exception to the semantic-token rule: DOCX paper
+   stays white in both themes so the document’s own ink keeps its contrast. */
+.docxPage {
+  border: 0;
+  background-color: #fff;
+}
+
+/* These edges occupy document layout space. An inset outline would change
+   the available box for slide geometry and the frozen spreadsheet grid. */
+.documentEdge {
+  border: var(--default-border-width) solid var(--line-base);
+}
+
+.unsupportedShape {
+  border: var(--default-border-width) dashed var(--line-base);
+}
+
+.frozenSheetEdge {
+  background-color: var(--bg-secondary);
+}

@@ -153,6 +153,8 @@ import { getLockedHarness } from '@/lib/chatProviderLock';
 import { backgroundProcessKindForTaskType } from '@canopy/desktop-shared/lib/background-work';
 import { requestBackgroundTaskStop } from '@canopy/app-state';
 import { ipcCanopyClient } from '@/client/ipc-canopy-client';
+import { readClaudeModSurface } from '@canopy/ui-app';
+import { openModPanePanel } from '@/lib/panels/mod-pane-panel-sync';
 import { addPlanExploreOriginWorktreeKeys } from '@/lib/planExploreWorktreeKeys';
 import { useClaudeTerminalStore } from '@/stores/claudeTerminalStore';
 import { useCodeReviewStore } from '@/stores/codeReviewStore';
@@ -3495,6 +3497,10 @@ function validateAppAdvisorAction(action: unknown): ActionValidationResult {
           // Bound to one chat; opened through the cost opener
           // (reveal-or-create), like plan panels.
           return requireStrings(action, ['chatId']) ?? valid();
+        case 'mod-pane':
+          // Bound to one pane of one chat; opened through the Mod pane
+          // opener (reveal-or-create).
+          return requireStrings(action, ['chatId', 'paneId']) ?? valid();
         default:
           return action.chatTabId === undefined &&
             action.fileTabId === undefined &&
@@ -3502,7 +3508,8 @@ function validateAppAdvisorAction(action: unknown): ActionValidationResult {
             action.sectionId === undefined &&
             action.variant === undefined &&
             action.planId === undefined &&
-            action.chatId === undefined
+            action.chatId === undefined &&
+            action.paneId === undefined
             ? valid()
             : invalid('instance binding');
       }
@@ -8646,6 +8653,65 @@ async function addCostPanelTab(
         error: {
           code: 'surface_unavailable',
           message: 'Cost panels are not available in the selected worktree.',
+        },
+      };
+    case 'failed':
+      return {
+        ok: false,
+        error: {
+          code: 'execution_failed',
+          message: 'Unable to add the panel tab.',
+        },
+      };
+  }
+}
+
+/**
+ * Opens, or reveals, one pane a Claude Mod has open in a chat of the
+ * selected worktree. A pane the chat's session does not list fails, so an
+ * agent never opens a tab that only says the pane is closed.
+ */
+async function addModPanePanelTab(
+  action: { readonly chatId: string; readonly paneId: string },
+  worktreeKey: string,
+  groupId: string,
+): Promise<{
+  ok: boolean;
+  result?: AppAdvisorJson;
+  error?: AppAdvisorActionError;
+}> {
+  const separator = worktreeKey.indexOf('/');
+  const chat = {
+    projectId: worktreeKey.slice(0, separator),
+    worktreeId: worktreeKey.slice(separator + 1),
+    chatId: action.chatId,
+  };
+  const pane = readClaudeModSurface(ipcCanopyClient, chat).roster.panes.find(
+    (open) => open.id === action.paneId,
+  );
+  if (pane === undefined) {
+    return {
+      ok: false,
+      error: {
+        code: 'invalid_target',
+        message: 'That chat has no open Mod pane with this paneId.',
+      },
+    };
+  }
+  const opened = await openModPanePanel(chat, pane, {
+    kind: 'group',
+    groupId,
+  });
+  switch (opened.status) {
+    case 'revealed':
+    case 'placed':
+      return { ok: true, result: { panelId: opened.location.panelId } };
+    case 'unavailable':
+      return {
+        ok: false,
+        error: {
+          code: 'surface_unavailable',
+          message: 'Mod panes are not available in the selected worktree.',
         },
       };
     case 'failed':
@@ -14468,6 +14534,9 @@ async function routeAction(
           target.worktreeKey,
           groupId,
         );
+      }
+      if (action.kind === 'mod-pane') {
+        return addModPanePanelTab(action, target.worktreeKey, groupId);
       }
       if (action.kind === 'subagents') {
         return addSubagentsPanelTab(

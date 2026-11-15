@@ -17,6 +17,7 @@ import {
   isClaudeModAdmissionLaunch,
   listClaudeAutoLoadedPlugins,
   listClaudeSessionModIds,
+  listClaudeSessionMods,
   type ClaudeModAdmissionInput,
   type ClaudeModAdmissionLaunch,
   type ClaudeModPluginInput,
@@ -71,6 +72,8 @@ export interface ClaudeModAdmissionEnvironment {
 export interface ResolveClaudeModAdmissionLaunchOptions extends ClaudeModAdmissionEnvironment {
   cwd: string;
   settingSources?: readonly SettingSource[];
+  /** The Claude session the launch resumes or forks, whose own Mods it admits. */
+  sessionId?: string;
   plugins?: readonly ClaudeModLaunchPluginRequest[];
   projectionRootDir?: string;
 }
@@ -156,6 +159,7 @@ export async function resolveClaudeModAdmissionContext(
   options: ClaudeModAdmissionEnvironment & {
     cwd: string;
     settingSources?: readonly SettingSource[];
+    sessionId?: string;
   },
 ): Promise<ClaudeModAdmissionContext | undefined> {
   const featureFlags = getFeatureFlagService();
@@ -252,6 +256,14 @@ export async function resolveClaudeModAdmissionContext(
     admissions,
     modsDisabled,
     ambientPlugins,
+    ...(options.sessionId !== undefined
+      ? {
+          sessionMods: listClaudeSessionMods(
+            configDirectory,
+            options.sessionId,
+          ),
+        }
+      : {}),
     // A resumed session reloads the Mods Claude wrote in it, consent or not.
     ...(modsDisabled || preferenceRead.authority === 'unreadable'
       ? { sessionModIds: listClaudeSessionModIds(configDirectory) }

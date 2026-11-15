@@ -25,6 +25,7 @@
  *   container, and close the child window (a no-op when the OS already
  *   closed it).
  */
+import { Surface } from '@canopy/ui-shared/components';
 import { useChatTabRename } from '@/components/chat/ChatTabRenameDialog';
 import { acquirePanelContentElement } from '@/components/panels/PanelContentRoot';
 import {
@@ -597,34 +598,41 @@ export function AuxPanelWindow({
     // `visible` (panel content gets the same derivation from
     // PanelContentRoot).
     <PanelHostContext.Provider value={auxPanelHostState(hostState)}>
-      <div
+      <Surface
         data-testid="panel-aux-window-root"
         data-window="aux"
         data-aux-window-id={auxWindowId}
         data-source-group-id={sourceGroupId}
         role="application"
         aria-label={`${brandText.appName} panels`}
-        className="flex h-full min-h-0 flex-1 flex-col bg-base fg-primary"
+        variant="app-pane"
+        extent="parent"
+        className="flex min-h-0 flex-1 flex-col"
       >
         {/* This row supplies window dragging and the traffic-light inset
             where the native frame is hidden. With a native frame it remains
             an ordinary source/merge header. App-region styles
             are inline via callback refs (see `setAppRegion`). */}
-        <header
+        <Surface
+          as="header"
+          variant="tinted-panel"
+          boundary="bottom"
+          extent="aux-toolbar"
+          padding="titlebar-trailing"
+          direction="row"
+          gap="inline"
           ref={(el): void => {
             setAppRegion(el, nativeWindowFrame ? 'no-drag' : 'drag');
           }}
           data-testid="panel-aux-window-top-bar"
-          className="flex h-9.5 shrink-0 items-center gap-2 border-b bg-card/50 pr-2"
+          className="shrink-0 items-center"
           // The traffic lights sit at a fixed on-screen position
           // (`trafficLightPosition: {x:15,y:12}`), so their 78px reservation
           // is divided by the interface-scale zoom (`--ui-zoom`, mirrored from
           // the opener's <html> inline style) instead of zooming with the bar.
-          style={{
-            paddingLeft: nativeWindowFrame
-              ? 8
-              : AUX_WINDOW_TRAFFIC_LIGHT_INSET_CSS,
-          }}
+          nativeLeadingInset={
+            nativeWindowFrame ? 8 : AUX_WINDOW_TRAFFIC_LIGHT_INSET_CSS
+          }
         >
           <div
             data-testid="panel-aux-window-source"
@@ -651,7 +659,7 @@ export function AuxPanelWindow({
               Move back
             </Button>
           </Tooltip>
-        </header>
+        </Surface>
         <PanelWorktreeContext.Provider value={ownerSelection}>
           <PanelGridHost
             layout={viewModel}
@@ -704,7 +712,7 @@ export function AuxPanelWindow({
           />
         )}
         {chatTabRename.dialog}
-      </div>
+      </Surface>
     </PanelHostContext.Provider>,
     container,
   );

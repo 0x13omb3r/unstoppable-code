@@ -25,6 +25,7 @@ import {
   computeClaudePluginContentDigest,
   inspectClaudePluginHooks,
   listClaudeAutoLoadedPlugins,
+  listClaudeSessionMods,
   type ClaudeModAuthority,
 } from '@canopy/execution-engine/node/plugins/claude-mod-admission';
 import type {
@@ -37,6 +38,10 @@ import {
 } from '../plugins/claude-enabled-plugins';
 import { claudeMarketplaceNames } from '../plugins/inherited-cursor-plugins';
 import { resolveClaudeModConfigDirectory } from '../agents/claude-mod-admission-launch';
+import {
+  bumpClaudeModConsentEpoch,
+  currentClaudeModConsentEpoch,
+} from '../agents/claude-mod-hot-reload-question';
 import { getFeatureFlagService } from '../feature-flags';
 import {
   readPreferencesFileDetailed,
@@ -436,6 +441,17 @@ async function resolveCurrentPluginDigest(
         return unreadable();
       }
     }
+    // shortcut: every session's copy counts, so two sessions' same-named Mods
+    // with different content read as ambiguous; pass the session when chats ask.
+    const sessionMods = resolvedPluginId.endsWith('@claude-session')
+      ? listClaudeSessionMods(claudeConfigDir)
+      : [];
+    for (const mod of sessionMods) {
+      if (mod.pluginId !== resolvedPluginId) continue;
+      if (mod.installPath === null || !addInstallPath(mod.installPath)) {
+        return unreadable();
+      }
+    }
   } catch {
     return unreadable();
   }
@@ -577,6 +593,77 @@ export async function admitClaudeMod(
   );
 }
 
+/**
+ * The person turned on the Mods Claude writes in a session: admit each Mod in
+ * that session's dev-mods folder at its current content. The session calls this
+ * at each turn end, while Claude may still be changing them. A Mod it cannot
+ * read is left out and stays off at the next start. `acceptedEpoch` is the
+ * consent epoch when the person answered: a Disallow or the kill switch since
+ * then wins, and nothing is written.
+ */
+export async function admitClaudeSessionMods(
+  claudeConfigDir: string,
+  sessionId: string,
+  acceptedEpoch: number,
+  onCommitted?: PreferencesCommitCallback,
+): Promise<ClaudeModOperationResult<readonly ClaudeModAdmission[]>> {
+  if (!isClaudeModAdmissionEnabled()) return succeeded([]);
+  if (currentClaudeModConsentEpoch() !== acceptedEpoch) return succeeded([]);
+  const read = await readPreferencesFileDetailed();
+  if (read.authority === 'unreadable') return failed('authority-unreadable');
+  let mods: ReturnType<typeof listClaudeSessionMods>;
+  try {
+    mods = listClaudeSessionMods(claudeConfigDir, sessionId);
+  } catch {
+    return failed('plugin-unreadable');
+  }
+  const admittedAt = new Date().toISOString();
+  const admissions = mods.flatMap((mod): ClaudeModAdmission[] => {
+    if (mod.installPath === null) return [];
+    const inspection = inspectClaudePluginHooks(mod.installPath);
+    if (!inspection.success || !inspection.hasMods) return [];
+    const contentDigest = computeClaudePluginContentDigest(mod.installPath);
+    return contentDigest
+      ? [{ pluginId: mod.pluginId, contentDigest, admittedAt }]
+      : [];
+  });
+  const isCurrent = (
+    current: readonly ClaudeModAdmission[],
+    admission: ClaudeModAdmission,
+  ): boolean =>
+    current.some(
+      (entry) =>
+        entry.pluginId === admission.pluginId &&
+        entry.contentDigest === admission.contentDigest,
+    );
+  const fresh = admissions.filter(
+    (admission) =>
+      read.authority !== 'ok' ||
+      !isCurrent(read.preferences.claudeModAdmissions, admission),
+  );
+  if (fresh.length === 0) return succeeded([]);
+  let superseded = false;
+  const write = await updatePreferencesAndNotify((latest) => {
+    // A Disallow or the kill switch committed since the answer wins.
+    superseded = currentClaudeModConsentEpoch() !== acceptedEpoch;
+    if (superseded) return {};
+    return {
+      claudeModAdmissions: [
+        ...latest.claudeModAdmissions.filter(
+          (entry) =>
+            !fresh.some((admission) => admission.pluginId === entry.pluginId),
+        ),
+        ...fresh,
+      ],
+    };
+  }, onCommitted);
+  if (!write.success) {
+    if (write.kind === 'callback') throw write.error;
+    return saveError(write.error);
+  }
+  return succeeded(superseded ? [] : fresh);
+}
+
 export async function revokeClaudeMod(
   input: RevokeClaudeModInput,
   onCommitted?: PreferencesCommitCallback,
@@ -589,6 +676,8 @@ export async function revokeClaudeMod(
 
   let revoked = false;
   const write = await updatePreferencesAndNotify((latest) => {
+    // Only session-written Mods get consent back from the hot-reload answer.
+    if (input.pluginId.endsWith('@claude-session')) bumpClaudeModConsentEpoch();
     revoked = latest.claudeModAdmissions.some(
       (entry) => entry.pluginId === input.pluginId,
     );
@@ -614,12 +703,10 @@ export async function setClaudeModKillSwitch(
   }
   const authority = await readableAuthority();
   if (!authority.ok) return failed('authority-unreadable');
-  const write = await updatePreferencesAndNotify(
-    () => ({
-      claudeModsDisabled: input.modsDisabled,
-    }),
-    onCommitted,
-  );
+  const write = await updatePreferencesAndNotify(() => {
+    if (input.modsDisabled) bumpClaudeModConsentEpoch();
+    return { claudeModsDisabled: input.modsDisabled };
+  }, onCommitted);
   if (!write.success) {
     if (write.kind === 'callback') throw write.error;
     return saveError(write.error);

@@ -1,3 +1,4 @@
+import { Badge } from '@canopy/ui-shared/components';
 import type {
   PluginDetails,
   PluginInfo,
@@ -830,14 +831,14 @@ export function PluginSelector({
           providerIconScope={providerIconScope}
           selectionCopy={selectionCopy}
           toolbarTrailing={
-            <span
+            <Badge
+              tone="neutral"
               data-testid="plugin-selector-scope"
               title={`Provider scope: ${PROVIDER_SCOPE_LABELS[effectiveScope]}`}
-              className="inline-flex shrink-0 items-center whitespace-nowrap rounded-full border px-2.5 py-1 text-xs fg-secondary"
             >
               <span className="sr-only">Provider scope: </span>
               {PROVIDER_SCOPE_LABELS[effectiveScope]}
-            </span>
+            </Badge>
           }
         />
       </div>

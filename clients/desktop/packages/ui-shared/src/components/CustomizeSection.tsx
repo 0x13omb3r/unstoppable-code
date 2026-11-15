@@ -9,6 +9,8 @@ export interface CustomizeSectionProps {
   readonly count?: number;
   /** Trailing heading controls (Update all, pipeline filters). */
   readonly actions?: ReactNode;
+  /** A short line under the heading, above its hairline. */
+  readonly description?: ReactNode;
   readonly children: ReactNode;
   readonly footnote?: ReactNode;
 }
@@ -19,6 +21,7 @@ export function CustomizeSection({
   title,
   count,
   actions,
+  description,
   children,
   footnote,
 }: CustomizeSectionProps): JSX.Element {
@@ -52,6 +55,14 @@ export function CustomizeSection({
           </Heading>
         </div>
         {actions}
+        {description && (
+          <p
+            data-testid={`${domId}-description`}
+            className="basis-full text-xs fg-tertiary"
+          >
+            {description}
+          </p>
+        )}
       </div>
       {children}
       {footnote && (

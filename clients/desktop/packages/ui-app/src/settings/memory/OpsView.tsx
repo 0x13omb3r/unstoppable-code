@@ -1,5 +1,10 @@
 'use client';
 
+import {
+  MemoryJobStatusLabel,
+  MemoryTimelineMark,
+} from '@canopy/ui-shared/components';
+
 import { useRef, useState, type JSX } from 'react';
 import type {
   ExplorerIngestJob,
@@ -44,26 +49,11 @@ const STATUSES: readonly ExplorerIngestJobStatus[] = [
   'DEAD',
 ];
 
-function statusClasses(status: ExplorerIngestJobStatus): string {
-  if (status === 'DONE') return 'bg-success-subtle fg-success';
-  if (status === 'FAILED' || status === 'DEAD') {
-    return 'bg-destructive-subtle fg-destructive';
-  }
-  if (status === 'RUNNING') return 'bg-accent-subtle fg-accent-strong';
-  return 'bg-base fg-secondary';
-}
-
 const JOB_COLUMNS: ReadonlyArray<DataTableColumn<ExplorerIngestJob>> = [
   {
     key: 'status',
     header: 'Status',
-    render: (job) => (
-      <span
-        className={`rounded-full px-2 py-0.5 text-xs font-semibold ${statusClasses(job.status)}`}
-      >
-        {job.status}
-      </span>
-    ),
+    render: (job) => <MemoryJobStatusLabel status={job.status} />,
   },
   {
     key: 'created',
@@ -238,7 +228,12 @@ export function OpsView({
           <Heading level={2} variant="section">
             Recently injected
           </Heading>
-          <div className="border-l pl-4 flex flex-col gap-4">
+          <Surface
+            variant="section"
+            boundary="left"
+            gap="group"
+            padding="nested"
+          >
             {searchEntries.length === 0 ? (
               <EmptyStateRow title="No search activity yet." />
             ) : (
@@ -249,11 +244,7 @@ export function OpsView({
                   key={entry.id}
                   className="relative"
                 >
-                  <span
-                    className={`absolute -left-5.25 top-1 h-2.5 w-2.5 rounded-full ${
-                      entry.gatePassed ? 'bg-success' : 'bg-fg-tertiary'
-                    }`}
-                  />
+                  <MemoryTimelineMark gatePassed={entry.gatePassed} />
                   <Stack gap="tight">
                     <div className="flex flex-wrap items-center gap-2 text-xs fg-secondary">
                       <time dateTime={entry.createdAt}>
@@ -310,7 +301,7 @@ export function OpsView({
                 </Stack>
               ))
             )}
-          </div>
+          </Surface>
         </Surface>
       </Stack>
 

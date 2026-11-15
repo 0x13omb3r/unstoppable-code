@@ -1,3 +1,17 @@
+import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import {
+  recordUsageSignals,
+  readUsage,
+  seedEntry,
+} from '../../memory/local/usage';
+import { setLocalMemoryReplicaHooks } from '../../memory/local/replica-hooks';
+import { createMemoryReplicaHooks } from '../../memory/sync/note-hooks';
+import { MemoryReplicaRegistry } from '../../memory/sync/replica-registry';
+import {
+  recordMemoryUsageDeltas,
+  takeMemoryUsagePush,
+  settleMemoryUsagePush,
+} from '../../memory/sync/outbox';
 import type { DatabaseSync } from 'node:sqlite';
 import type {
   MemoryChatSearchResult,
@@ -16,6 +30,7 @@ jest.mock('../../lib/preferences-store', () => ({
 }));
 
 import {
+  existsSync,
   mkdirSync,
   mkdtempSync,
   readFileSync,
@@ -414,6 +429,79 @@ describe('core.memory.entry.append over the real store (CAN-5993)', () => {
   });
 });
 
+describe('saved memory consolidation and explorer status (CAN-6056)', () => {
+  it('consumes a saved note, retains unlinked facts and reports health to local-memory:consolidation-status', async () => {
+    const dataDir = mkdtempSync(join(tmpdir(), 'memory-health-flow-'));
+    const previous = process.env.CANOPY_DATA_DIR;
+    process.env.CANOPY_DATA_DIR = dataDir;
+    try {
+      const { localMemoryStore } =
+        await import('../../memory/local/memory-store');
+      const { runLocalMemoryConsolidation } =
+        await import('../../memory/local/consolidation-task');
+      const {
+        consolidationRunOutcome,
+        readConsolidationState,
+        recordConsolidationRun,
+      } = await import('../../memory/local/consolidation-state');
+      const scope = { scope: 'user' } as const;
+      const scopeDir = join(dataDir, 'memory');
+      const fileKey = await localMemoryStore.saveNote(scope, {
+        text: 'Use focused checks before publishing.',
+        source: SOURCE,
+      });
+      expect(fileKey).toMatch(/^inbox\//);
+      mkdirSync(join(scopeDir, 'topics'), { recursive: true });
+      writeFileSync(join(scopeDir, 'MEMORY.md'), '# Memory\n');
+      writeFileSync(
+        join(scopeDir, 'topics', 'build-notes.md'),
+        '# Build notes\nUse the workspace package manager.\n',
+      );
+      const orphan = '# Recovery\nKeep this fact even when nothing links it.\n';
+      writeFileSync(join(scopeDir, 'topics', 'recovery.md'), orphan);
+      const result = await runLocalMemoryConsolidation({
+        scopeDir,
+        model: 'haiku',
+        thinkingLevel: 'off',
+        generate: () =>
+          Promise.resolve({
+            memoryMd:
+              '[Build](topics/build_notes.md) [Missing detail](topics/missing.md)',
+          }),
+      });
+      expect(result.status).toBe('success');
+      await recordConsolidationRun(scopeDir, consolidationRunOutcome(result));
+      expect(existsSync(join(scopeDir, fileKey))).toBe(false);
+      expect(
+        readFileSync(join(scopeDir, 'topics', 'recovery.md'), 'utf8'),
+      ).toBe(orphan);
+      expect(readFileSync(join(scopeDir, 'MEMORY.md'), 'utf8')).toBe(
+        '[Build](topics/build-notes.md) Missing detail\n',
+      );
+      const status = await localMemoryStore.consolidationStatus(scope);
+      expect(status.pendingNotes).toBe(0);
+      expect(status.metrics).toMatchObject({
+        topicCount: 2,
+        brokenLinkCount: 1,
+        orphanTopicCount: 1,
+        repairedLinkCount: 1,
+      });
+      expect(status.metrics?.inputBytes).toBeGreaterThan(0);
+      expect((await readConsolidationState(scopeDir))?.history).toHaveLength(1);
+      const retry = await import('../../memory/local/consolidation-task').then(
+        (module) => module.collectConsolidationInput(scopeDir),
+      );
+      expect(retry.linkHealth?.unresolvedLinks).toContainEqual({
+        source: 'MEMORY.md',
+        target: 'topics/missing.md',
+      });
+    } finally {
+      if (previous === undefined) delete process.env.CANOPY_DATA_DIR;
+      else process.env.CANOPY_DATA_DIR = previous;
+      rmSync(dataDir, { recursive: true, force: true });
+    }
+  });
+});
 // The history operations use the same memory grant, but never grant transcript dumping.
 // Real FTS projection backs these dispatcher cases; no transcript reader is injected.
 describe('core.memory.chats search and bounded excerpts (CAN-6051)', () => {
@@ -787,4 +875,107 @@ describe('archived memory through the core dispatcher (CAN-6048)', () => {
       payload: { code: 'core.memory.scopeUnavailable' },
     });
   });
+});
+
+// Cross-version usage persistence and the durable replica outbox share one use.
+it('records one generic sync delta for a positive signal and reuses it on retry', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'signal-sync-'));
+  const binding = {
+    accountId: '11111111-1111-4111-8111-111111111111',
+    scopeId: '22222222-2222-4222-8222-222222222222',
+    kind: 'user' as const,
+    projectId: null,
+  };
+  const registry = new MemoryReplicaRegistry();
+  const writes: Promise<void>[] = [];
+  const recorded = jest.fn(
+    (counts: ReadonlyMap<string, number>, at: string) => {
+      writes.push(recordMemoryUsageDeltas(dir, binding, counts, at));
+    },
+  );
+  registry.register({
+    accountId: binding.accountId,
+    scope: { kind: 'user' },
+    dir,
+    binding,
+    device: { deviceId: '33333333-3333-4333-8333-333333333333', label: 'test' },
+    onLocalChange: () => undefined,
+    recordUsage: recorded,
+    runConsolidation: () => Promise.reject(new Error('not used')),
+  });
+  setLocalMemoryReplicaHooks(createMemoryReplicaHooks(registry));
+  try {
+    expect((await readUsage(dir)).trackingSince).toBeNull();
+    await recordUsageSignals(dir, [
+      { fileKey: 'topics/build.md', citationCount: 0, usageSignalCount: 0 },
+    ]);
+    expect(recorded).not.toHaveBeenCalled();
+    expect((await readUsage(dir)).trackingSince).toBeNull();
+    await recordUsageSignals(dir, [
+      { fileKey: 'topics/Build.md', citationCount: 1, usageSignalCount: 1 },
+      { fileKey: './topics/build.md', citationCount: 1, usageSignalCount: 0 },
+    ]);
+    await Promise.all(writes);
+    expect(recorded).toHaveBeenCalledTimes(1);
+    expect(recorded.mock.calls[0]?.[0]).toEqual(
+      new Map([['topics/build.md', 1]]),
+    );
+    const first = await takeMemoryUsagePush(dir, binding);
+    expect(first?.deltas).toHaveLength(1);
+    const delta = first?.deltas[0];
+    expect(delta?.fileKey).toBe('topics/build.md');
+    expect(delta?.uses).toBe(1);
+    expect(typeof delta?.lastUsedAt).toBe('string');
+    expect(await takeMemoryUsagePush(dir, binding)).toEqual(first);
+    expect(recorded).toHaveBeenCalledTimes(1);
+    expect((await readUsage(dir)).entries.get('topics/build.md')).toMatchObject(
+      { usageCount: 1, citationCount: 1, usageSignalCount: 1 },
+    );
+    expect(first).not.toBeNull();
+    if (first) {
+      await settleMemoryUsagePush(dir, binding, first.seq);
+      await settleMemoryUsagePush(dir, binding, first.seq);
+    }
+    expect(await takeMemoryUsagePush(dir, binding)).toBeNull();
+    expect(
+      (await readUsage(dir)).entries.get('topics/build.md')?.usageCount,
+    ).toBe(1);
+  } finally {
+    setLocalMemoryReplicaHooks(null);
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+it('keeps missing signal counters unknown when legacy rows share an identity', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'signal-unknown-'));
+  try {
+    const now = new Date().toISOString();
+    await writeFile(
+      join(dir, 'usage.json'),
+      JSON.stringify({
+        version: 1,
+        trackingSince: now,
+        entries: {
+          'topics/Build.md': { usageCount: 1, createdAt: now, lastUsedAt: now },
+          'topics/build.md': { usageCount: 1, createdAt: now, lastUsedAt: now },
+        },
+      }),
+    );
+    const row = (await readUsage(dir)).entries.get('topics/build.md');
+    expect(row?.usageCount).toBe(2);
+    expect(row?.citationCount).toBeUndefined();
+    expect(row?.usageSignalCount).toBeUndefined();
+    await seedEntry(dir, 'topics/other.md');
+    expect(
+      (await readUsage(dir)).entries.get('topics/other.md')?.usageSignalCount,
+    ).toBeUndefined();
+    await recordUsageSignals(dir, [
+      { fileKey: 'topics/other.md', citationCount: 1, usageSignalCount: 0 },
+    ]);
+    expect((await readUsage(dir)).entries.get('topics/other.md')).toMatchObject(
+      { citationCount: 1, usageSignalCount: 0 },
+    );
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
 });

@@ -1,6 +1,10 @@
 import { useCallback, useEffect, useState, type JSX } from 'react';
 import { getModelDisplayName } from '@canopy/desktop-shared/types';
-import { ModelUnlockConfirmedNotice } from '@canopy/ui-shared/components';
+import {
+  CreditsNotice,
+  type CreditsNoticeOwner,
+  type CreditsNoticePurchase,
+} from '@canopy/ui-app/credits';
 import {
   useChatTargetAiCreditsScope,
   useStableAiCreditsScope,
@@ -15,6 +19,10 @@ import {
 } from '@/lib/modelUnlockConfirmation';
 import { readBillingOwnerKey } from '@/lib/openBillingPage';
 import type { ChatBannerTarget } from '@/stores/aiCreditsBannerStore';
+
+// The unlock purchase is complete; nothing is left to buy here.
+const UNLOCK_OWNER: CreditsNoticeOwner = { kind: 'unknown' };
+const UNLOCK_PURCHASE: CreditsNoticePurchase = { kind: 'elsewhere' };
 
 interface ModelUnlockConfirmedBannerProps {
   target: ChatBannerTarget | null;
@@ -104,9 +112,12 @@ export function ModelUnlockConfirmedBanner({
       ? getModelDisplayName(model)
       : undefined;
   return (
-    <ModelUnlockConfirmedNotice
-      {...(credits !== null ? { credits } : {})}
-      {...(addedCredits !== null ? { addedCredits } : {})}
+    <CreditsNotice
+      condition="model_locked"
+      owner={UNLOCK_OWNER}
+      placement="composer"
+      purchase={UNLOCK_PURCHASE}
+      arrived={{ addedCredits, balanceCredits: credits }}
       {...(modelLabel !== undefined ? { modelLabel } : {})}
       onDismiss={handleDismiss}
     />

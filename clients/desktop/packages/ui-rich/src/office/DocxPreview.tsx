@@ -14,6 +14,7 @@ import { useEffect, useState, type JSX } from 'react';
 import { buildDocxPreviewSrcDoc, sanitizeDocxHtml } from './docx-sanitize';
 import { parseOfficeDocument } from './office-parse-client';
 import { OfficePreviewBanner } from './OfficePreviewBanner';
+import { OfficeDocumentFrame } from './OfficeDocumentSurface';
 
 export interface DocxPreviewProps {
   readonly bytes: ArrayBuffer;
@@ -77,12 +78,9 @@ export function DocxPreview({
           </DelayedLoadingPlaceholder>
         </div>
       ) : (
-        <iframe
+        <OfficeDocumentFrame
           title={fileName}
           srcDoc={state.srcDoc}
-          sandbox=""
-          referrerPolicy="no-referrer"
-          className="min-h-0 flex-1 border-0 bg-white"
           data-testid="docx-preview-frame"
         />
       )}

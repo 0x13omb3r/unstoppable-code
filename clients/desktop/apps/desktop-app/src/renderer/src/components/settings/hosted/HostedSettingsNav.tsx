@@ -100,9 +100,6 @@ export function HostedSettingsNav({
   const digestsFlag = useFeatureFlagsStore((state) =>
     state.isEnabled(CLIENT_FEATURE_FLAGS.canopyDigestsEnabled.key),
   );
-  const freeAccessFlag = useFeatureFlagsStore((state) =>
-    state.isEnabled(CLIENT_FEATURE_FLAGS.canopyFreeAccessEnabled.key),
-  );
   const aiGatewayFlag = useFeatureFlagsStore((state) =>
     state.isEnabled(CLIENT_FEATURE_FLAGS.canopyAiGatewaySettingsEnabled.key),
   );
@@ -123,7 +120,6 @@ export function HostedSettingsNav({
             flags: {
               billingEnabled: billingFlag,
               digestsEnabled: digestsFlag,
-              freeAccess: freeAccessFlag,
             },
             browsedOrganizationId: organizationKnown
               ? null
@@ -136,7 +132,6 @@ export function HostedSettingsNav({
       persisted,
       billingFlag,
       digestsFlag,
-      freeAccessFlag,
       organizationKnown,
       browsedOrganizationId,
       organizationName,

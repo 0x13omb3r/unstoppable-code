@@ -1,3 +1,4 @@
+import { Dot } from '@canopy/ui-shared/components';
 import { saveCurrentLayoutAsDefault } from '@/lib/panels/default-layout-save';
 import { useScopeCapabilities } from '@/hooks/useScopeCapabilities';
 import {
@@ -122,6 +123,7 @@ export function WorkspaceLayoutControls({
   // toggle for its panel instead of the next action.
   const sidePanelLabel = 'Toggle side panel';
   const terminalLabel = 'Toggle bottom drawer';
+  const terminalAttentionLabel = 'Terminal running or has unread output';
   const terminalNeedsAttention = useTerminalDrawerAttentionStore((state) => {
     const entry = state.worktrees[worktreeKey];
     const boundTerminalIds = new Set(
@@ -311,19 +313,24 @@ export function WorkspaceLayoutControls({
                 onClick={toggleTerminal}
                 aria-label={terminalLabel}
                 aria-pressed={terminalVisible}
-                title={terminalLabel}
+                title={
+                  terminal?.collapsed && terminalNeedsAttention
+                    ? terminalAttentionLabel
+                    : terminalLabel
+                }
               />
               {terminal && terminal.collapsed && terminalNeedsAttention && (
                 <span
-                  data-testid="workspace-layout-terminal-attention"
-                  className="absolute right-0.5 top-0.5 h-2 w-2 rounded-full bg-warning"
+                  className="absolute right-0.5 top-0.5 inline-flex"
                   role="status"
-                  title="Terminal running or has unread output"
-                  aria-label="Terminal running or has unread output"
+                  title={terminalAttentionLabel}
                 >
-                  <span className="sr-only">
-                    Terminal running or has unread output
-                  </span>
+                  <Dot
+                    tone="attention"
+                    size="large"
+                    data-testid="workspace-layout-terminal-attention"
+                    label={terminalAttentionLabel}
+                  />
                 </span>
               )}
             </span>

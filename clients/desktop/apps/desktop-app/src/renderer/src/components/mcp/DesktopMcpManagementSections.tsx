@@ -13,11 +13,15 @@ import type {
   McpServerStatusEntry,
 } from '@canopy/execution-engine/types/mcp-servers';
 import {
+  CopyMcpServerDialog,
+  mcpServerCopySlots,
   McpServerManagementCard,
   type McpAction,
   type McpTestConnectionOutcome,
 } from '@canopy/ui-app/capability';
 import { useCurrentUiStateReporter } from '@/hooks/useCurrentUiStateReporter';
+import { useCanopyDesktopCloudChatsEnabled } from '@/hooks/useCanopyDesktopCloudChatsEnabled';
+import { useCapabilities } from '@canopy/app-state/CanopyClientProvider';
 import { withIpcErrorMessage } from '@/lib/ipcErrorMessage';
 import {
   accountMcpConnectionKey,
@@ -35,6 +39,7 @@ import {
   cloudHeadersProblem,
   cloudMcpHeaders,
   cloudUrlProblem,
+  copyMcpServerToCloud,
   isCloudReadyUrl,
   deleteDesktopMcpTarget,
   loadSignedInAccountId,
@@ -43,6 +48,10 @@ import {
 } from './mcpManagementOperations';
 import type { AccountMcpDetailSignIn } from './useAccountMcpActionRequests';
 import { Stack, ErrorBanner } from '@canopy/ui-shared/components';
+
+function hostOf(url: string): string {
+  return URL.canParse(url) ? new URL(url).host : url;
+}
 
 /** Host lifecycle stays here; both hosts render the same feature sections. */
 export function DesktopMcpManagementSections({
@@ -117,6 +126,11 @@ export function DesktopMcpManagementSections({
   const [promotion, setPromotion] = useState<{ accountId: string } | null>(
     null,
   );
+  const [copying, setCopying] = useState<{ accountId: string } | null>(null);
+  // Add to cloud: the per-server action until the cloud chat picker (CAN-6175
+  // R5) makes its own Add to cloud the main entry point (CAN-6176 PR 4b).
+  const { cloudCapabilityLinks } = useCapabilities();
+  const cloudChatsEnabled = useCanopyDesktopCloudChatsEnabled();
   const [credential, setCredential] = useState<{
     accountId: string;
     kind: AccountMcpCredentialKind;
@@ -164,6 +178,7 @@ export function DesktopMcpManagementSections({
         if (!mounted.current) return;
         setAccountId(id);
         setPromotion((open) => (open?.accountId === id ? open : null));
+        setCopying((open) => (open?.accountId === id ? open : null));
         setCredential((open) => (open?.accountId === id ? open : null));
       });
     };
@@ -337,6 +352,7 @@ export function DesktopMcpManagementSections({
     actionPending: managing,
     deleteConfirmOpen: confirming,
     promoteDialogOpen: promotion !== null,
+    copyDialogOpen: copying !== null,
     credentialDialogOpen: credential !== null,
     deviceServer: server !== null,
   });
@@ -407,6 +423,26 @@ export function DesktopMcpManagementSections({
                 action: accountAction,
               }
             : undefined,
+          copyToCloud:
+            cloudCapabilityLinks === true &&
+            cloudChatsEnabled &&
+            custom &&
+            server &&
+            !cloud &&
+            !provider
+              ? promotionReason
+                ? { available: false, reason: promotionReason }
+                : {
+                    available: true,
+                    run: (): Promise<void> => {
+                      if (accountId) {
+                        clearErrors();
+                        setCopying({ accountId });
+                      }
+                      return Promise.resolve();
+                    },
+                  }
+              : undefined,
           moveToCloud:
             custom &&
             server &&
@@ -501,6 +537,29 @@ export function DesktopMcpManagementSections({
         error={refreshError}
         blockMessageFromReplay
       />
+      {copying && server && server.configs[0] && (
+        <CopyMcpServerDialog
+          serverName={server.definition.name}
+          host={hostOf(server.definition.url ?? '')}
+          slots={mcpServerCopySlots(server, server.configs[0].id)}
+          signsInOnCloud={server.definition.oauth !== undefined}
+          onCopy={async (secretSlots): Promise<void> => {
+            const config = server.configs[0];
+            if (!config) return;
+            await requireCapturedMcpAccount(copying.accountId);
+            await copyMcpServerToCloud({
+              serverId: server.definition.id,
+              url: server.definition.url ?? '',
+              displayName: server.definition.name,
+              configId: config.id,
+              secretSlots,
+              expectedAccountId: copying.accountId,
+            });
+            await refresh();
+          }}
+          onClose={(): void => setCopying(null)}
+        />
+      )}
       {promotion && server && (
         <McpPromoteDialog
           serverId={server.definition.id}

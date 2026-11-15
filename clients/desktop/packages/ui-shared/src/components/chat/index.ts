@@ -83,3 +83,7 @@ export * from './approval-file-change-rows';
 export * from './ApprovalFileChangePreview';
 
 export * from './turn-file-styles';
+export * from './CompactTranscriptMessage';
+export * from './ChatControlSurfaces';
+export * from './TranscriptSurfaces';
+export * from './ChatDropOverlay';

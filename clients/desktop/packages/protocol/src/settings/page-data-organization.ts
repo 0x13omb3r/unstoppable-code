@@ -110,8 +110,9 @@ export interface OrganizationTeamPageData {
   digestsEnabled: boolean;
   projectsEnabled: boolean;
   billingNeedsAttention: boolean;
+  /** @deprecated Retained for shipped clients, which require it; the server always sends `true`. */
   freeAccess: boolean;
-  /** Non-null when the org lost `teams`; gated tabs render the lapsed panel. */
+  /** @deprecated Retained for shipped clients, which require it; the server always sends `null`: no organization lapses. */
   lapsed: OrganizationLapsedInfo | null;
   /** The request came from a phone or tablet browser. Always false on desktop. */
   mobileBrowser: boolean;
@@ -256,7 +257,9 @@ const teamPageDataFields = {
   digestsEnabled: z.boolean(),
   projectsEnabled: z.boolean(),
   billingNeedsAttention: z.boolean(),
+  /** @deprecated Retained for shipped clients, which require it; the server always sends `true`. */
   freeAccess: z.boolean(),
+  /** @deprecated Retained for shipped clients, which require it; the server always sends `null`. */
   lapsed: organizationLapsedInfoSchema.nullable(),
   mobileBrowser: z.boolean(),
   externalAgentsEnabled: z.boolean().optional(),

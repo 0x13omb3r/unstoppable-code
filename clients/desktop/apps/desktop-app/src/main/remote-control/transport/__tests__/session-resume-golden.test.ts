@@ -581,21 +581,41 @@ describe('session resume across relay drops', () => {
   it('holds request deadlines while suspended', async () => {
     const env = pair();
     const link = await connect(env);
+    // The hold runs on a fake clock. The controller retries resume every
+    // 50 ms here, which makes it `resuming` until the relay answers that
+    // the host is unreachable, so a real-time sleep would land on either
+    // state. The relay's own delivery stays on real setImmediate.
+    jest.useFakeTimers({ doNotFake: ['setImmediate', 'nextTick'] });
     env.relay.drop(env.host.identity.deviceId);
     await env.relay.settle();
     // The request is sent once the controller knows the host dropped, so its
     // deadline never starts before the hold.
     expect(link.controllerSession.state).toBe('suspended');
-    // Suspended for longer than the deadline, which must not run meanwhile,
-    // and well inside the controller's 1.5 s resume deadline, with slack on
-    // both sides. After the resume the deadline's full 500 ms covers the
-    // resume handshake and the answer, even on a loaded machine.
+    // Shorter than the 50 ms resume retry: a deadline started while
+    // suspended would fire before the first retry's `resuming` pauses it.
     const answer = link.controllerRpc.request('echo', 'held', {
-      timeoutMs: 500,
+      timeoutMs: 40,
     });
-    await new Promise<void>((resolve) => setTimeout(resolve, 650));
+    let settled = false;
+    // Also handles a rejection, so a failure below cannot leave one to
+    // surface in a later test when the peers close.
+    const markSettled = (): void => {
+      settled = true;
+    };
+    void answer.then(markSettled, markSettled);
+    // Many deadlines' worth of hold, inside the controller's 1.5 s resume
+    // deadline, retrying resume all the while.
+    await jest.advanceTimersByTimeAsync(1_000);
+    await env.relay.settle();
+    expect(env.controller.endpoint.count('resume1')).toBeGreaterThan(1);
+    expect(settled).toBe(false);
     expect(link.controllerSession.state).toBe('suspended');
     env.relay.connect(env.host.identity.deviceId);
+    await env.relay.settle();
+    // Resumed with no clock advance, so a broken resume fails here rather
+    // than at the test timeout. The deadline's budget after a resume is not
+    // exercised: the fake clock stays still until the answer arrives.
+    expect(link.controllerSession.state).toBe('active');
     await expect(answer).resolves.toBe('held');
   });
 

@@ -82,6 +82,34 @@ export interface RendererRelaySurfaceResolution {
   readonly caller: CanopyCallerDescriptor;
 }
 
+/**
+ * The minor schema revisions main reads for one method (protocol rule 5):
+ * `revision` is the highest, `minimum` the lowest, `revision` when unset.
+ * Main asks for the highest of them the connection's manifest advertises,
+ * and for none when it advertises none of them (CAN-6841).
+ *
+ * For a request, a `revision` the renderer sends lower is raised to that
+ * one. One it sends with none is raised only when `whenAbsent` is
+ * `'raise'`, for a method whose revision 1 takes no `revision`; the default
+ * `'keep'` sends it as is. A stream always opens at it.
+ */
+export interface RevisionPolicy {
+  readonly revision: number;
+  readonly minimum?: number;
+  readonly whenAbsent?: 'raise' | 'keep';
+}
+
+/** The highest revision both main and the manifest read, if any. */
+function negotiatedRevision(
+  policy: RevisionPolicy,
+  advertised: number,
+): number | undefined {
+  const highest = Math.min(policy.revision, advertised);
+  return highest > 1 && highest >= (policy.minimum ?? policy.revision)
+    ? highest
+    : undefined;
+}
+
 export interface RendererRelayOptions {
   readonly bindingProvider: RelayBindingProvider;
   /** Runs on every invocation; throws for an untrusted sender or main-frame URL. */
@@ -115,12 +143,10 @@ export interface RendererRelayOptions {
    * session's definitions, so it can follow a flag that changes.
    */
   readonly refuseCall?: (method: string) => CanopyErrorPayload | null;
-  /**
-   * The minor schema revision main asks for, by stream (protocol rule 5):
-   * a stream opens with `revision` only when the connection's manifest
-   * advertises that revision, as the web client's `withRevision` does.
-   */
-  readonly streamRevisions?: Readonly<Record<string, number>>;
+  /** The revisions main reads, by stream; see `RevisionPolicy`. */
+  readonly streamRevisions?: Readonly<Record<string, RevisionPolicy>>;
+  /** The revisions main reads, by request method; see `RevisionPolicy`. */
+  readonly requestRevisions?: Readonly<Record<string, RevisionPolicy>>;
   readonly host?: RendererRelayHostOptions;
   readonly clientVersion?: string;
   readonly limits?: Partial<RendererRelayLimits>;
@@ -153,6 +179,16 @@ export interface RendererRelay {
     event: RendererRelayEvent,
     input: unknown,
   ): Promise<CanopyCoreRelayReply>;
+  /**
+   * Whether the main window that sent `event` has an open `method` stream
+   * whose params `matches`: what it follows right now, on its own session.
+   * Never opens a session; any other surface follows nothing.
+   */
+  follows(
+    event: RendererRelayEvent,
+    method: string,
+    matches: (params: Readonly<Record<string, unknown>>) => boolean,
+  ): boolean;
   dispose(): void;
 }
 
@@ -182,6 +218,9 @@ const RelayRequestSchema = z.discriminatedUnion('kind', [
     subscriptionId: SubscriptionIdSchema,
   }),
   z.strictObject({ kind: z.literal('close') }),
+  // The session's account and advertised revisions, for a client that must
+  // decide what a request may carry before it sends it (CAN-6828).
+  z.strictObject({ kind: z.literal('describe') }),
 ]);
 type RelayRequest = z.output<typeof RelayRequestSchema>;
 type RelayParams = Record<string, unknown>;
@@ -294,6 +333,9 @@ interface Dispatched {
 }
 
 interface RelayStream {
+  /** The stream's operation and the params it was opened with. */
+  readonly method: string;
+  readonly params: Readonly<Record<string, unknown>>;
   readonly handle: CanopyClientStreamHandle<unknown, unknown>;
   readonly iterator: AsyncIterator<RelayFrame>;
   /** A read that passed its deadline leaves its pull here for the next read. */
@@ -682,11 +724,12 @@ export function createRendererRelay(
     const release = reserveCall(session);
     const callOptions = { metadata, signal: session.signal };
     // The slot is held until the client settles the call, at its deadline at the latest.
-    const work = clientFor(session).then((client) =>
-      kind === 'query'
-        ? client.query(method, params, callOptions)
-        : client.instruction(method, params, callOptions),
-    );
+    const work = clientFor(session).then((client) => {
+      const sent = withRequestRevision(client, method, params);
+      return kind === 'query'
+        ? client.query(method, sent, callOptions)
+        : client.instruction(method, sent, callOptions);
+    });
     work.then(release, release);
     return raceDeadline(
       work,
@@ -696,21 +739,50 @@ export function createRendererRelay(
     );
   }
 
-  /** The stream's params with the revision the manifest advertises, if any. */
-  function withStreamRevision(
+  /** A request's params raised to the revision main asks for, when advertised. */
+  function withRequestRevision(
     client: CanopyClient,
     method: string,
     params: RelayParams,
   ): RelayParams {
-    const revisions = options.streamRevisions;
-    const revision =
+    const policies = options.requestRevisions;
+    const policy =
+      policies !== undefined && hasOwn(policies, method)
+        ? policies[method]
+        : undefined;
+    if (policy === undefined) return params;
+    const revision = negotiatedRevision(
+      policy,
+      client.manifest.schemaRevisions?.get(method) ?? 1,
+    );
+    if (revision === undefined) return params;
+    const sent = params.revision;
+    const raises =
+      sent === undefined
+        ? policy.whenAbsent === 'raise'
+        : typeof sent === 'number' && sent < revision;
+    return raises ? { ...params, revision } : params;
+  }
+
+  /** The stream's params at the highest revision both sides read, if any. */
+  function withStreamRevision(
+    client: CanopyClient,
+    revisions: Readonly<Record<string, RevisionPolicy>> | undefined,
+    method: string,
+    params: RelayParams,
+  ): RelayParams {
+    const policy =
       revisions !== undefined && hasOwn(revisions, method)
         ? revisions[method]
         : undefined;
-    const advertised = client.manifest.schemaRevisions?.get(method) ?? 1;
-    return revision !== undefined && advertised >= revision
-      ? { ...params, revision }
-      : params;
+    const revision =
+      policy === undefined
+        ? undefined
+        : negotiatedRevision(
+            policy,
+            client.manifest.schemaRevisions?.get(method) ?? 1,
+          );
+    return revision === undefined ? params : { ...params, revision };
   }
 
   /**
@@ -738,9 +810,11 @@ export function createRendererRelay(
     const releaseCall = reserveCall(session);
     session.openingStreams += 1;
     const opening = clientFor(session).then((client) =>
-      client.openStream(method, withStreamRevision(client, method, params), {
-        metadata,
-      }),
+      client.openStream(
+        method,
+        withStreamRevision(client, options.streamRevisions, method, params),
+        { metadata },
+      ),
     );
     return new Promise((resolve, reject) => {
       let settled = false;
@@ -774,6 +848,8 @@ export function createRendererRelay(
           session.signal.removeEventListener('abort', onAbort);
           const subscriptionId = randomUUID();
           session.streams.set(subscriptionId, {
+            method,
+            params,
             handle,
             iterator: handle.frames[Symbol.asyncIterator](),
             next: null,
@@ -879,11 +955,52 @@ export function createRendererRelay(
     }
   }
 
+  /**
+   * The account the session's connection serves, as the runtime's
+   * `core.runtime.initialize` named it, and the schema revisions it
+   * advertises for the operations this surface may call or open.
+   */
+  async function describe(session: RelaySession): Promise<{
+    readonly principalId: string | null;
+    readonly schemaRevisions: Readonly<Record<string, number>>;
+  }> {
+    const client = await raceDeadline(
+      clientFor(session),
+      session.signal,
+      limits.deadlineMs,
+    );
+    const schemaRevisions: Record<string, number> = {};
+    const callable = [
+      ...Object.keys(relayDefinitions.queries).map(
+        (method) => ['query', method] as const,
+      ),
+      ...Object.keys(relayDefinitions.instructions).map(
+        (method) => ['instruction', method] as const,
+      ),
+      // A stream's too: the renderer reads from it whether a chat's events
+      // carry sandbox.changed (CAN-6841).
+      ...Object.keys(relayDefinitions.streams).map(
+        (method) => ['stream', method] as const,
+      ),
+    ];
+    for (const [kind, method] of callable) {
+      if (!allows(session.surface, kind, method)) continue;
+      const revision = client.manifest.schemaRevisions?.get(method);
+      if (revision !== undefined) schemaRevisions[method] = revision;
+    }
+    return {
+      principalId: client.principal?.userId ?? null,
+      schemaRevisions,
+    };
+  }
+
   async function dispatch(
     session: RelaySession,
     input: RelayRequest,
   ): Promise<Dispatched> {
     switch (input.kind) {
+      case 'describe':
+        return { value: await describe(session) };
       case 'close':
         session.close();
         return { value: null };
@@ -962,6 +1079,25 @@ export function createRendererRelay(
           error: { ...payload, retry: relayRetryFor(method, payload.retry) },
         };
       }
+    },
+    follows(event, method, matches): boolean {
+      let resolved: RendererRelaySurfaceResolution;
+      try {
+        resolved = options.resolveSurface(event);
+      } catch {
+        return false;
+      }
+      if (resolved.surface !== 'main') return false;
+      const session = sessions.get(event.sender);
+      if (
+        session === undefined ||
+        session.closed ||
+        session.surface !== resolved.surface
+      )
+        return false;
+      for (const stream of session.streams.values())
+        if (stream.method === method && matches(stream.params)) return true;
+      return false;
     },
     dispose(): void {
       disposed = true;

@@ -967,10 +967,38 @@ export interface QueuedMessageEditFailure extends InlineFailure {
   text: string;
 }
 
+/**
+ * Text from a queued message's edit that wasn't saved: the host refused or
+ * failed the save, or the message left the queue while it was being edited
+ * (CAN-6799). Kept until dismissed, so nothing typed is lost.
+ */
+export interface UnsavedQueuedEdit {
+  worktreeKey: string;
+  chatId: string;
+  /** The queued message's identity, `queuedMessageEditFailureKey`. */
+  id: string;
+  text: string;
+}
+
 export interface ChatQueueSlice {
   /** Row-level edit failures, keyed by `queuedMessageEditFailureKey`. */
   queuedMessageEditFailures: Readonly<Record<string, QueuedMessageEditFailure>>;
   dismissQueuedMessageEditFailure: (entryKey: string) => void;
+  /** Unsaved edit texts, one per chat and message, oldest first. */
+  unsavedQueuedEdits: readonly UnsavedQueuedEdit[];
+  /** Keeps an edit's text, replacing an earlier one for the same message. */
+  keepUnsavedQueuedEdit: (edit: UnsavedQueuedEdit) => void;
+  dismissUnsavedQueuedEdit: (edit: UnsavedQueuedEdit) => void;
+  /**
+   * Keeps `text` from an editor that closed without Save or Cancel when its
+   * message has left the chat's queue; a message still queued (the editor
+   * closed for a tab switch) keeps nothing.
+   */
+  keepQueuedEditIfRowLeft: (
+    openedIn: { worktreeKey: string; chatId: string },
+    message: QueuedChatMessage,
+    text: string,
+  ) => void;
   clearQueuedMessage: (
     index: number,
     target?: { projectId: string; worktreeId: string; chatId: string },

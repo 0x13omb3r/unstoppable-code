@@ -1,3 +1,4 @@
+import { FileTreeEditorRow } from '@canopy/ui-shared/components';
 import { EmbeddedFileTreeToolbar } from './EmbeddedFileTreeToolbar';
 import {
   createContext,
@@ -73,6 +74,8 @@ import { FileTypeIcon } from '@canopy/ui-shared/icons';
 import {
   FieldError,
   FileRootGroupRow,
+  FileTreeFolderEmptyRow,
+  FileTreeFolderLoadingRow,
   FileTreeRow,
   FilesTreeRefreshButton,
   ErrorBanner,
@@ -119,6 +122,8 @@ import { useScopeCapabilities } from '@/hooks/useScopeCapabilities';
 import { Button, LoadingButton } from '@canopy/ui-shared/components';
 import { sandboxStatusOf } from '@canopy/protocol/cloud-session';
 import { CloudSandboxStatusLine } from '@canopy/ui-app/cloud-sandbox-status';
+import { useCloudWorktreeSandboxState } from '@/stores/chat/web-core/sandbox-states';
+import { useCloudFilesWake } from './cloud-files-wake';
 import { useBusyChatIds } from '@/lib/panels/busy-chat-panels';
 
 const EMPTY_EXPANDED_PATHS = new Set<string>();
@@ -360,11 +365,10 @@ function InlineTreeEditorRow({
   }, [interaction]);
 
   return (
-    <div
+    <FileTreeEditorRow
       role="treeitem"
       aria-level={depth + 1}
-      className="flex w-full items-start gap-1.5 rounded-md px-2 py-1 text-xs fg-primary"
-      style={{ paddingLeft: `${depth * 16 + 8}px` }}
+      depth={depth}
       data-testid="files-tree-inline-editor-container"
       data-parent-path={inlineEditorParentPath(editor)}
       data-create-kind={
@@ -428,7 +432,7 @@ function InlineTreeEditorRow({
           </FieldError>
         )}
       </Stack>
-    </div>
+    </FileTreeEditorRow>
   );
 }
 
@@ -862,18 +866,21 @@ function DirectoryChildren({
   }
 
   if (!entry) {
-    // Expanding an uncached folder should not replace or shift the visible
-    // tree with a transient loading row. The native request resolves in the
-    // background and inserts children in one update. A create placeholder is
-    // still rendered immediately at its final depth while that request runs.
+    // An open folder with no listing yet is loading: its request runs, or is
+    // about to. The loading row waits out the shared delay, so a local
+    // listing that lands at once still inserts its children in one update.
+    // A create placeholder renders at its final depth meanwhile (CAN-6756).
     return createEditor ? (
       <InlineTreeEditorRow editor={createEditor} depth={depth} />
     ) : (
-      <></>
+      <FileTreeFolderLoadingRow depth={depth} />
     );
   }
 
   const entries = entry.data.entries;
+  // Said, so an empty folder never reads as one still loading (CAN-6756).
+  if (entries.length === 0 && !createEditor)
+    return <FileTreeFolderEmptyRow depth={depth} />;
 
   return (
     <>
@@ -2332,6 +2339,23 @@ export function FilesTreeTab({
     retireFileTreeTombstones,
     worktreeId,
   ]);
+  // Opening Files on a sleeping sandbox wakes it, once; while that wake or a
+  // turn wakes it, the panel says so and lists again until it answers
+  // (CAN-6724).
+  // The worktree's sandbox as the web core reports it (CAN-6766).
+  const cloudSandbox = useCloudWorktreeSandboxState(
+    localFiles ? null : projectId,
+    localFiles ? null : worktreeId,
+  );
+  const sandboxWakePending = useCloudFilesWake({
+    active: !localFiles && effectiveVisible,
+    projectId,
+    worktreeId,
+    notAwake: sandboxNotAwake,
+    busy: busySignature !== '',
+    sandbox: cloudSandbox,
+    relist: () => refreshVisibleDirectoriesRef.current?.() ?? Promise.resolve(),
+  });
 
   const visibleRowIds = useCallback((): string[] => {
     const host = hostRef.current;
@@ -3428,7 +3452,7 @@ export function FilesTreeTab({
   const sandboxStatus =
     sandboxNotAwake === undefined
       ? null
-      : sandboxStatusOf(sandboxNotAwake, false);
+      : sandboxStatusOf(sandboxNotAwake, sandboxWakePending);
 
   let body: JSX.Element;
   if (!projectId || !worktreeId) {
@@ -3730,8 +3754,8 @@ export function FilesTreeTab({
         </Surface>
       )}
       {sandboxStatus !== null && sandboxStatus.kind !== 'ready' && (
-        // No Wake here: a message's turn wakes the sandbox (CAN-6547 tracks
-        // a Wake on desktop).
+        // No Wake here: opening the panel wakes it once, and a message's turn
+        // wakes it (CAN-6724).
         <CloudSandboxStatusLine
           kind={sandboxStatus.kind}
           pending={false}

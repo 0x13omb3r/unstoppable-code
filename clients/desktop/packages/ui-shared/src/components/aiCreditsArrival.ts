@@ -1,5 +1,5 @@
 import { formatCredits } from '../lib/billing-format';
-import { MODEL_LIBRARY_UNLOCK_COPY } from './modelLibraryLock';
+import { MODEL_LIBRARY_UNLOCK_COPY } from './creditsPromptCopy';
 
 /**
  * Copy for the arrival confirmation in the usage-limit banner (CAN-5160).

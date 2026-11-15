@@ -1,7 +1,7 @@
-import { Heading } from '@canopy/ui-shared/components';
 import { useEffect, useState, type JSX } from 'react';
 import {
   Button,
+  Heading,
   ListRow,
   SegmentedControl,
   Surface,
@@ -80,11 +80,14 @@ function OverviewCard({
       data-testid={`components-lab-card-${entry.id}`}
       className="flex min-w-0 flex-col items-center gap-3"
     >
-      <div className="pointer-events-none aspect-4/3 w-full overflow-hidden rounded-row">
+      <Surface
+        variant="outline"
+        className="pointer-events-none aspect-4/3 w-full overflow-hidden"
+      >
         <LabOverviewContext.Provider value>
           {Stage ? <Stage /> : null}
         </LabOverviewContext.Provider>
-      </div>
+      </Surface>
       <Button
         variant="link"
         aria-label={`Open the ${entry.name} sheet`}

@@ -1,4 +1,8 @@
 import {
+  DiagramFieldRow,
+  DiagramNodeSurface,
+} from '@canopy/ui-shared/components';
+import {
   forwardRef,
   useCallback,
   useEffect,
@@ -95,24 +99,18 @@ interface SelectedEntity {
 
 const CHANGE_STYLES: Record<
   DataModelChangeType,
-  { border: string; tone: BadgeTone; row: string; label: string }
+  { tone: BadgeTone; label: string }
 > = {
   added: {
-    border: 'border-l-line-positive',
     tone: 'success',
-    row: 'bg-success-subtle',
     label: 'Added',
   },
   removed: {
-    border: 'border-l-line-destructive',
     tone: 'danger',
-    row: 'bg-destructive-subtle line-through decoration-destructive/50',
     label: 'Removed',
   },
   changed: {
-    border: 'border-l-line-attention',
     tone: 'warning',
-    row: 'bg-warning-subtle',
     label: 'Changed',
   },
 };
@@ -141,15 +139,9 @@ function FieldRow({
   field: DataModelField;
   change?: DataModelChangeType;
 }): JSX.Element {
-  const style = change ? CHANGE_STYLES[change] : undefined;
   const keyChip = field.kind ? FIELD_KIND_CHIP[field.kind] : null;
   return (
-    <div
-      className={`flex items-center gap-1.5 rounded-sm px-1.5 py-0.5 ${
-        style ? style.row : ''
-      }`}
-      style={{ minHeight: 20 }}
-    >
+    <DiagramFieldRow change={change}>
       {keyChip && <Badge size="compact">{keyChip}</Badge>}
       <span className="min-w-0 truncate text-2xs font-medium fg-primary">
         {field.name}
@@ -162,7 +154,7 @@ function FieldRow({
       {field.nullable === true && (
         <span className="shrink-0 text-3xs fg-secondary">?</span>
       )}
-    </div>
+    </DiagramFieldRow>
   );
 }
 
@@ -172,26 +164,18 @@ function DataModelEntityNodeView({
 }: NodeProps<DataModelFlowNode>): JSX.Element {
   const change = data.changeType;
   const style = change ? CHANGE_STYLES[change] : undefined;
-  const searchRing =
-    data.searchState === 'active'
-      ? 'ring-2 ring-line-attention'
-      : data.searchState === 'match'
-        ? 'ring-1 ring-line-attention/60'
-        : '';
   const height = dataModelEntityHeightForFieldCount(data.fields.length);
   return (
-    <div
-      className={`flex flex-col overflow-hidden rounded-md border bg-card text-left ${
-        style ? `border-l-4 ${style.border}` : ''
-      } ${searchRing}`}
-      style={{
-        width: DATA_MODEL_ENTITY_WIDTH,
-        height,
-        maxHeight: DATA_MODEL_ENTITY_MAX_LAYOUT_HEIGHT,
-      }}
+    <DiagramNodeSurface
+      kind="entity"
+      width={DATA_MODEL_ENTITY_WIDTH}
+      height={height}
+      maxHeight={DATA_MODEL_ENTITY_MAX_LAYOUT_HEIGHT}
+      change={change}
+      search={data.searchState}
     >
       <Handle type="target" position={Position.Top} className="!opacity-0" />
-      <div className="flex shrink-0 items-center gap-1.5 border-b px-2.5 py-1.5">
+      <Surface variant="diagram-toolbar" className="shrink-0">
         {style && (
           <Badge size="compact" tone={style.tone}>
             {style.label}
@@ -201,7 +185,7 @@ function DataModelEntityNodeView({
           {data.name}
         </span>
         {data.kind && <Badge size="compact">{data.kind}</Badge>}
-      </div>
+      </Surface>
       <div className="flex min-h-0 flex-1 flex-col gap-px overflow-auto px-1.5 py-1">
         {data.fields.length === 0 ? (
           <p className="px-1.5 py-0.5 text-3xs italic fg-secondary">
@@ -218,7 +202,7 @@ function DataModelEntityNodeView({
         )}
       </div>
       <Handle type="source" position={Position.Bottom} className="!opacity-0" />
-    </div>
+    </DiagramNodeSurface>
   );
 }
 
@@ -948,7 +932,14 @@ export const PlanDataModelDiffDiagram = forwardRef<
       data-testid="plan-data-model-diff-diagram"
       className="relative flex min-h-0 flex-1 flex-col"
     >
-      <div className="flex shrink-0 flex-wrap items-center gap-2 border-b px-2 py-1.5">
+      <Surface
+        variant="section"
+        boundary="bottom"
+        gap="inline"
+        direction="row"
+        padding="picker-section"
+        className="shrink-0 flex-wrap items-center"
+      >
         <div
           data-testid="data-model-diff-view-toggle"
           className="flex items-center gap-1"
@@ -967,9 +958,14 @@ export const PlanDataModelDiffDiagram = forwardRef<
           />
         </div>
         {primaryView === 'diff' && (
-          <div
+          <Surface
             data-testid="data-model-diff-presentation-toggle"
-            className="flex items-center gap-1 border-l pl-2"
+            variant="section"
+            boundary="left"
+            gap="tight"
+            direction="row"
+            padding="nested-tight"
+            className="items-center"
           >
             <SegmentedControl
               label="Diff layout"
@@ -982,9 +978,9 @@ export const PlanDataModelDiffDiagram = forwardRef<
                 { value: 'split', label: 'Split' },
               ]}
             />
-          </div>
+          </Surface>
         )}
-      </div>
+      </Surface>
 
       <div className="relative flex min-h-0 flex-1 flex-col">
         {isUpdating && (

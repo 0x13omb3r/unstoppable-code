@@ -1,4 +1,4 @@
-import type { JSX } from 'react';
+import type { JSX, ReactNode } from 'react';
 
 export interface ProjectChoiceCardProps {
   readonly testId: string;
@@ -41,5 +41,25 @@ export function ProjectChoiceCard({
           word. */}
       <div className="text-xs wrap-anywhere">{description}</div>
     </button>
+  );
+}
+
+/** A project destination whose action and secondary controls are siblings. */
+export function ProjectDestinationCard({
+  active,
+  testId,
+  children,
+}: {
+  readonly active: boolean;
+  readonly testId: string;
+  readonly children: ReactNode;
+}): JSX.Element {
+  return (
+    <div
+      data-testid={testId}
+      className={`flex flex-col items-start rounded-md border ${active ? 'bg-subtle ring-1 ring-line-accent' : 'focus-within:ring-1 focus-within:ring-line-accent/40'}`}
+    >
+      {children}
+    </div>
   );
 }

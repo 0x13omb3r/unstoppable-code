@@ -241,9 +241,9 @@ export function classifyArchiveRecovery(
   return {
     stage: receipt.stage,
     effects,
-    disposition: receipt.cancelled
-      ? 'cancelled'
-      : (receipt.retention ?? (unfinished ? 'resolving' : 'held')),
+    disposition:
+      receipt.retention ??
+      (receipt.cancelled ? 'cancelled' : unfinished ? 'resolving' : 'held'),
     conflict:
       effects !== undefined &&
       (effects.copies.includes('conflict') ||
@@ -252,13 +252,14 @@ export function classifyArchiveRecovery(
     worktreeFence: unfinished || receipt.retention === 'deleting',
     projectFence: unfinished,
     relocationNeedsQualification: receipt.retention !== 'deleted',
-    payloadRule: receipt.cancelled
-      ? 'source'
-      : receipt.retention === 'deleted'
+    payloadRule:
+      receipt.retention === 'deleted'
         ? 'absent'
         : receipt.retention === 'deleting'
           ? 'subset'
-          : 'exact',
+          : receipt.cancelled
+            ? 'source'
+            : 'exact',
   };
 }
 
@@ -1056,6 +1057,34 @@ export class ArchiveRecoveryStore {
         );
     }
     return this.writeStage(intent, 'withdrawn');
+  }
+
+  /** Requires the caller's durable, canonically committed project-deletion adoption. */
+  public async beginProjectDeletionDiscard(
+    receipt: ArchiveRecoveryReceipt,
+  ): Promise<ArchiveRecoveryReceipt> {
+    const evidence = await this.inspect(receipt);
+    if (
+      receipt.cancelled ||
+      receipt.stage === 'completed' ||
+      !evidence.classification.conflict ||
+      !['exact', 'absent'].includes(evidence.payload)
+    )
+      throw new ArchiveRecoveryRefusedError(
+        'Pending recovery is not safely discardable.',
+      );
+    const updated = {
+      ...receipt,
+      stage: 'completed' as const,
+      cancelled: true as const,
+      retention: 'deleting' as const,
+    };
+    await writeFileAtomically(
+      join(this.directory(receipt), 'receipt.json'),
+      JSON.stringify(updated),
+      { durable: true, mode: 0o600 },
+    );
+    return updated;
   }
 
   public async beginDeletion(

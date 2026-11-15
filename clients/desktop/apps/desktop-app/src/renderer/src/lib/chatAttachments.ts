@@ -17,12 +17,11 @@ import { CLOUD_ATTACHMENTS_MAX_PER_MESSAGE } from '@canopy/protocol/cloud-attach
 import { reportClientAppError } from '@canopy/desktop-instrumentation/client';
 import {
   CLOUD_ATTACHMENT_ACCEPT,
-  CLOUD_ATTACHMENT_LIMIT_MESSAGE,
-  cloudAttachmentMediaType,
-  cloudAttachmentRefusal,
   rememberCloudAttachmentSource,
+  screenCloudAttachmentFiles,
 } from '@/cloud-chats/cloud-chat-attachments';
 import { isCoworkChatTarget } from '@/lib/cowork';
+import { isWebCoreScope } from '@/lib/chat-authority';
 import { useChatStore } from '@/stores/chatStore';
 import { uploadWebCoreChatAttachment } from '@/stores/chat/web-core';
 import { useFileListStore } from '@/stores/fileListStore';
@@ -125,6 +124,10 @@ export async function importChatAttachments(
   isCurrent?: () => boolean,
 ): Promise<AttachmentMeta[]> {
   if (isCurrent?.() === false) return [];
+  // A cloud chat's files upload through the web core
+  // (`importWebCoreChatFiles`); no local IPC may carry its ids.
+  if (isWebCoreScope(target.projectId) || isWebCoreScope(target.worktreeId))
+    throw new Error("A cloud chat's files can't be staged on this computer.");
   // Cowork chats key as (workspaceId, 'home'); route their attachments through
   // the workspace-items attachment IPC, which stores them under the
   // workspace's managed `.{brand}/attachments` dir. `target.projectId` is the
@@ -176,7 +179,7 @@ export const CLOUD_UPLOAD_FAILURE: Readonly<Record<string, string>> = {
 const UNREADABLE_FILE = "Couldn't read it. It may have moved";
 
 /** Files the person picks for a cloud chat, from the renderer's own picker. */
-function pickCloudAttachmentFiles(): Promise<File[]> {
+export function pickCloudAttachmentFiles(): Promise<File[]> {
   return new Promise((resolve) => {
     const input = document.createElement('input');
     input.type = 'file';
@@ -262,16 +265,6 @@ export async function importWebCoreChatFiles(
   const chosen = files ?? (await pickCloudAttachmentFiles());
   if (chosen.length === 0 || isCurrent?.() === false)
     return { attachments: [], problems: [] };
-  const problems: string[] = [];
-  const accepted = chosen.flatMap((file) => {
-    const refusal = cloudAttachmentRefusal(file);
-    const mediaType = cloudAttachmentMediaType(file);
-    if (refusal === null && mediaType !== null) return [{ file, mediaType }];
-    problems.push(
-      `${file.name}: ${refusal ?? 'Attachment type is not supported'}`,
-    );
-    return [];
-  });
   const key = `${target.projectId}/${target.worktreeId}`;
   const chatKey = `${key}/${target.chatId}`;
   const pending =
@@ -279,24 +272,25 @@ export async function importWebCoreChatFiles(
       .getState()
       .worktreeChats[key]?.tabs.find((tab) => tab.id === target.chatId)
       ?.pendingAttachments?.length ?? 0;
-  const room = Math.max(
-    0,
+  const { accepted: taken, problems } = screenCloudAttachmentFiles(
+    chosen,
     CLOUD_ATTACHMENTS_MAX_PER_MESSAGE -
       pending -
       (uploadingByChat.get(chatKey) ?? 0),
   );
-  if (accepted.length > room) problems.push(CLOUD_ATTACHMENT_LIMIT_MESSAGE);
-  const taken = accepted.slice(0, room);
   if (taken.length === 0) return { attachments: [], problems };
   setUploading(chatKey, (uploadingByChat.get(chatKey) ?? 0) + taken.length);
   // Each file settles on its own: one that can't be read or sent leaves the
   // rest attached.
   const uploads = taken.map(async ({ file, mediaType }) => {
     try {
+      const bytes = new Uint8Array(await file.arrayBuffer());
+      // A caller that stopped wanting it while it was read opens no upload.
+      if (isCurrent?.() === false) return null;
       const result = await uploadWebCoreChatAttachment(target, {
         name: file.name,
         mediaType,
-        bytes: new Uint8Array(await file.arrayBuffer()),
+        bytes,
       });
       if (result.ok) {
         // Kept so a new chat can take it again if this one is deleted

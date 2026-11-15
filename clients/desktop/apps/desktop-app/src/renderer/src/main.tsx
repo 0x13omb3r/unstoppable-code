@@ -1,3 +1,4 @@
+import { CreditsPurchaseProvider } from '@canopy/ui-app/credits';
 // The diagrams load xyflow on demand, but its stylesheet stays first among
 // the startup styles, where it always was, so the cascade is unchanged.
 import '@xyflow/react/dist/style.css';
@@ -128,31 +129,35 @@ export function startRenderer(
       <RootErrorBoundary>
         <WorkspaceStartupGate>
           <CanopyClientProvider client={ipcCanopyClient}>
-            <HostMermaidExportProvider notify={postDiagramExportToast}>
-              <EarlyAccessUiProviders>
-                {/* One-at-a-time suggestions and their master switch (CAN-4343). */}
-                <SuggestionsProvider>
-                  <DesktopCostCurrencyProvider>
-                    <DesktopTerminalRuntime />
-                    <OrgProjectDeepLinkBridge />
-                    <OrgProjectAddStoreBridge />
-                    <OnboardingTipsPreferencesBridge />
-                    <SuggestionsPreferencesBridge />
-                    {/* The desktop file-session controller owns file tabs only in
+            <CreditsPurchaseProvider client={ipcCanopyClient}>
+              <HostMermaidExportProvider notify={postDiagramExportToast}>
+                <EarlyAccessUiProviders>
+                  {/* One-at-a-time suggestions and their master switch (CAN-4343). */}
+                  <SuggestionsProvider>
+                    <DesktopCostCurrencyProvider>
+                      <DesktopTerminalRuntime />
+                      <OrgProjectDeepLinkBridge />
+                      <OrgProjectAddStoreBridge />
+                      <OnboardingTipsPreferencesBridge />
+                      <SuggestionsPreferencesBridge />
+                      {/* The desktop file-session controller owns file tabs only in
                       the main window; the standalone App Advisor renderer has
                       none. */}
-                    {isMainSurface && <DesktopFileSessionRuntime />}
-                    {/* Deletion and archive refusals open this review (CAN-5335). */}
-                    <LifecycleJournalQuarantineHost client={ipcCanopyClient} />
-                    {/* A refused single-row removal offers a discard (CAN-5336). */}
-                    <DesktopWorktreeDiscardHost />
-                    {/* A refused project deletion offers its discards (CAN-5337). */}
-                    {isMainSurface && <DesktopProjectDeletionDiscardHost />}
-                    <RootApp />
-                  </DesktopCostCurrencyProvider>
-                </SuggestionsProvider>
-              </EarlyAccessUiProviders>
-            </HostMermaidExportProvider>
+                      {isMainSurface && <DesktopFileSessionRuntime />}
+                      {/* Deletion and archive refusals open this review (CAN-5335). */}
+                      <LifecycleJournalQuarantineHost
+                        client={ipcCanopyClient}
+                      />
+                      {/* A refused single-row removal offers a discard (CAN-5336). */}
+                      <DesktopWorktreeDiscardHost />
+                      {/* A refused project deletion offers its discards (CAN-5337). */}
+                      {isMainSurface && <DesktopProjectDeletionDiscardHost />}
+                      <RootApp />
+                    </DesktopCostCurrencyProvider>
+                  </SuggestionsProvider>
+                </EarlyAccessUiProviders>
+              </HostMermaidExportProvider>
+            </CreditsPurchaseProvider>
           </CanopyClientProvider>
         </WorkspaceStartupGate>
       </RootErrorBoundary>,

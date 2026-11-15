@@ -1151,3 +1151,67 @@ test('Google pipeline patches and native result persist under Google attribution
     restoreGoldenEnvironment(setCurrentService);
   }
 });
+
+it('reloads local-memory injection and holdout anchors for newly supported providers', async () => {
+  useGoldenTimers();
+  const host = createDesktopHost(setCurrentService);
+  host.setClock(GOLDEN_START_TIME);
+  try {
+    await host.boot();
+    const writer = host.incarnations[0]?.service;
+    if (!writer) throw new Error('Writer did not boot');
+    await writer.start();
+    for (const provider of ['antigravity', 'copilot'] as const) {
+      for (const holdout of [false, true]) {
+        const chatId = `${provider}-memory-${holdout}`;
+        writer.startChatTurn({
+          ...chatStart(chatId, provider),
+          injectedPrompts: [
+            {
+              kind: 'local_memory',
+              provider,
+              applicationCondition: holdout
+                ? 'local_memory_withheld_for_turn'
+                : 'local_memory_enabled_for_turn',
+              text: holdout ? '' : 'Delivered local recall',
+            },
+          ],
+        });
+        writer.observeChatEvent(PROJECT, WORKTREE, chatId, {
+          type: 'system',
+          subtype: 'init',
+          provider,
+          session_id: chatId,
+        });
+        writer.completeChatTurn(PROJECT, WORKTREE, chatId, 'success');
+      }
+    }
+    await writer.flush();
+    const entries = (await writer.loadHistory({})).entries;
+    expect(entries).toHaveLength(4);
+    await host.boot();
+    const reader = host.incarnations[1]?.service;
+    if (!reader) throw new Error('Reader did not boot');
+    await reader.start();
+    for (const entry of entries) {
+      const response = await reader.loadTranscript(entry);
+      expect(response.type).toBe('success');
+      if (response.type !== 'success')
+        throw new Error('Transcript unavailable');
+      const holdout = entry.chatId?.endsWith('-true') === true;
+      expect(response.injectedPrompts).toEqual([
+        {
+          kind: 'local_memory',
+          provider: entry.provider,
+          applicationCondition: holdout
+            ? 'local_memory_withheld_for_turn'
+            : 'local_memory_enabled_for_turn',
+          text: holdout ? '' : 'Delivered local recall',
+        },
+      ]);
+    }
+  } finally {
+    await disposeAll(host);
+    restoreGoldenEnvironment(setCurrentService);
+  }
+});

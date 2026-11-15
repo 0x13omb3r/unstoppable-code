@@ -1,3 +1,4 @@
+import { Surface } from '@canopy/ui-shared/components';
 import {
   OrgProjectRelationshipNotice,
   type OrgProjectRelationshipActions,
@@ -96,13 +97,18 @@ export function OrgProjectPlaceholderRow({
           `border-<color>` utility though: those are inert (CAN-2734), and the
           unlayered base style already paints `--line-base` here.
         */}
-        <span
+        <Surface
+          as="span"
+          variant="dashed"
+          size="small"
           role="img"
           aria-label={statusText}
-          className="flex shrink-0 items-center justify-center rounded border border-dashed p-1 fg-quaternary"
+          className="flex shrink-0 items-center justify-center"
         >
-          <FolderIcon size="sm" aria-hidden="true" />
-        </span>
+          <span className="p-1 fg-quaternary">
+            <FolderIcon size="sm" aria-hidden="true" />
+          </span>
+        </Surface>
       </Tooltip>
       <div className="min-w-0 flex-1">
         <div className="truncate text-s fg-primary" title={project.name}>

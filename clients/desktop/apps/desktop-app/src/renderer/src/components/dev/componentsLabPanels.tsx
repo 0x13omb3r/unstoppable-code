@@ -8,6 +8,7 @@ import {
 } from 'react';
 import type { OpenCodeAccountSnapshot } from '@canopy/protocol/portal';
 import {
+  DropdownMenuSurface,
   Button,
   CodeBlock,
   ComposerDrawer,
@@ -671,9 +672,14 @@ const getLabel = (item: Command): string => item.label;
 
 function Frame({ children }: { readonly children: ReactNode }): JSX.Element {
   return (
-    <div className="w-full max-w-sm overflow-hidden rounded-xl bg-popover shadow-md">
+    <DropdownMenuSurface
+      role="presentation"
+      shell="picker"
+      padding="none"
+      className="w-full max-w-sm overflow-hidden"
+    >
       {children}
-    </div>
+    </DropdownMenuSurface>
   );
 }
 

@@ -121,6 +121,109 @@ export function CustomizePartsSpecimen(): JSX.Element {
           )}
         </SpecimenGrid>
       </SpecimenPanel>
+      <SpecimenPanel title="Installed row Update badge (New Customize)">
+        <SpecimenGrid min={320}>
+          {[
+            { label: 'Update available', name: 'Review changes' },
+            { label: 'Long name truncates before the badge', name: LONG_NAME },
+          ].map(({ label, name }) => {
+            const entry: UnifiedPluginEntry = {
+              id: `lab-update-${name.length}`,
+              kind: 'skill',
+              origin: 'installed-standalone',
+              name,
+              description: '',
+              categories: [],
+              typeLabel: 'Skill',
+              components: { skills: 1, mcpServers: 0, commands: 0, agents: 0 },
+              providerSupport: { claude: true, codex: true },
+              state: 'installed',
+              updateAvailable: true,
+              recommended: false,
+              ref: {
+                type: 'skill',
+                skillName: 'review-changes',
+                sourceId: 'lab',
+              },
+            };
+            return (
+              <SpecimenCell key={entry.id} label={label} wide>
+                <div className="max-w-full" style={{ width: 420 }}>
+                  <CustomizeInstalledRow
+                    entry={entry}
+                    sectionId="installed"
+                    onSelect={noop}
+                    showEntryType
+                    updateBadge
+                  />
+                </div>
+              </SpecimenCell>
+            );
+          })}
+        </SpecimenGrid>
+      </SpecimenPanel>
+      <SpecimenPanel title="Plugin row skill match (New Customize search)">
+        <SpecimenGrid min={320}>
+          {[
+            {
+              label: 'Three matches, more skills',
+              names: [
+                'Assessing Heatmaps',
+                'Building a Dashboard',
+                'Querying PostHog Data',
+              ],
+              moreCount: 181,
+            },
+            {
+              label: 'One match, one more',
+              names: ['Session Replay'],
+              moreCount: 1,
+            },
+            {
+              label: 'Long skill name wraps',
+              names: [LONG_NAME],
+              moreCount: 0,
+            },
+          ].map(({ label, names, moreCount }) => {
+            const entry: UnifiedPluginEntry = {
+              id: `lab-skill-match-${label.length}`,
+              kind: 'plugin',
+              origin: 'marketplace',
+              name: 'PostHog',
+              description: '',
+              categories: [],
+              typeLabel: 'Plugin',
+              components: {
+                skills: names.length + moreCount,
+                mcpServers: 1,
+                commands: 0,
+                agents: 0,
+              },
+              providerSupport: { claude: true, codex: true },
+              state: 'installed',
+              recommended: false,
+              ref: {
+                type: 'marketplace-plugin',
+                marketplaceId: 'lab',
+                pluginName: 'posthog',
+              },
+            };
+            return (
+              <SpecimenCell key={entry.id} label={label} wide>
+                <div className="max-w-full" style={{ width: 420 }}>
+                  <CustomizeInstalledRow
+                    entry={entry}
+                    sectionId="installed"
+                    onSelect={noop}
+                    showEntryType
+                    skillMatch={{ names, moreCount }}
+                  />
+                </div>
+              </SpecimenCell>
+            );
+          })}
+        </SpecimenGrid>
+      </SpecimenPanel>
       <SpecimenPanel title="McpRowHealth">
         <SpecimenGrid min={240}>
           <SpecimenCell label="Plugin MCP: signed in, no connection check yet">

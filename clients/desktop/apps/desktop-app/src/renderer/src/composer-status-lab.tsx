@@ -1,6 +1,7 @@
 import './styles/globals.css';
 import { createRoot } from 'react-dom/client';
 import { CanopyClientProvider } from '@canopy/app-state';
+import { CreditsPurchaseProvider } from '@canopy/ui-app/credits';
 import { ipcCanopyClient } from '@/client/ipc-canopy-client';
 import { brand } from '@/lib/brand';
 import { applyBrandDocumentHead } from '@/lib/brandDocumentHead';
@@ -75,14 +76,18 @@ if (!rootElement) {
   throw new Error('Root element not found');
 }
 
-// `?view=states` shows every composer state side by side.
+// `?view=states` shows every composer state side by side. The model picker's
+// recovery reads the purchase mode, so both views sit inside a purchase
+// provider; with no client (the lab has no bridge) nothing can be bought.
 createRoot(rootElement).render(
-  labParams.get('view') === 'states' ? (
-    // The code-selection chips read the file viewer's store.
-    <CanopyClientProvider client={ipcCanopyClient}>
-      <ComposerStatesGallery />
-    </CanopyClientProvider>
-  ) : (
-    <ComposerStatusLabPage />
-  ),
+  <CreditsPurchaseProvider client={null}>
+    {labParams.get('view') === 'states' ? (
+      // The code-selection chips read the file viewer's store.
+      <CanopyClientProvider client={ipcCanopyClient}>
+        <ComposerStatesGallery />
+      </CanopyClientProvider>
+    ) : (
+      <ComposerStatusLabPage />
+    )}
+  </CreditsPurchaseProvider>,
 );

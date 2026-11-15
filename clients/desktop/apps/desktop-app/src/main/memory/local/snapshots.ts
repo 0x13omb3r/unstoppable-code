@@ -1,7 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import {
   mkdir,
-  readFile,
   readdir,
   rename,
   rm,
@@ -27,6 +26,7 @@ import {
   assertMemoryScopeLockHeld,
   ensureOwnerOnlyMemoryDir,
   isMemoryMarkdownFileName,
+  readMemoryText,
 } from './memory-files';
 import { topicIdentity } from '@canopy/memory-consolidation/topic-identity';
 
@@ -126,15 +126,6 @@ function parseManifest(value: unknown): SnapshotManifest | null {
     hasIndex: value.hasIndex,
     topics: value.topics.filter(isSnapshotTopicFilename),
   };
-}
-
-async function readTextOrNull(filePath: string): Promise<string | null> {
-  try {
-    return await readFile(filePath, 'utf8');
-  } catch (error) {
-    if (isNodeError(error, 'ENOENT')) return null;
-    throw error;
-  }
 }
 
 /**
@@ -244,10 +235,10 @@ function snapshotId(now: Date): string {
 export async function readLocalMemoryState(
   scopeDir: string,
 ): Promise<LocalMemoryState> {
-  const memoryMd = await readTextOrNull(join(scopeDir, 'MEMORY.md'));
+  const memoryMd = await readMemoryText(join(scopeDir, 'MEMORY.md'));
   const topicFiles: Array<{ filename: string; content: string }> = [];
   for (const filename of await listTopicFilenames(scopeDir)) {
-    const content = await readTextOrNull(join(scopeDir, 'topics', filename));
+    const content = await readMemoryText(join(scopeDir, 'topics', filename));
     if (content !== null) topicFiles.push({ filename, content });
   }
   return { memoryMd, topicFiles };
@@ -342,7 +333,7 @@ async function readManifest(
   scopeDir: string,
   id: string,
 ): Promise<SnapshotManifest | null> {
-  const raw = await readTextOrNull(
+  const raw = await readMemoryText(
     join(snapshotsDir(scopeDir), id, SNAPSHOT_MANIFEST),
   );
   if (raw === null) return null;
@@ -381,14 +372,20 @@ export async function readLocalMemorySnapshot(
     throw new Error("Couldn't find that memory snapshot.");
   }
   const root = join(snapshotsDir(scopeDir), id);
+  const requiredText = async (path: string): Promise<string> => {
+    const content = await readMemoryText(path);
+    if (content === null)
+      throw new Error("Couldn't read that memory snapshot.");
+    return content;
+  };
   const memoryMd = manifest.hasIndex
-    ? await readFile(join(root, 'MEMORY.md'), 'utf8')
+    ? await requiredText(join(root, 'MEMORY.md'))
     : null;
   const topicFiles: Array<{ filename: string; content: string }> = [];
   for (const filename of manifest.topics) {
     topicFiles.push({
       filename,
-      content: await readFile(join(root, 'topics', filename), 'utf8'),
+      content: await requiredText(join(root, 'topics', filename)),
     });
   }
   return {
@@ -685,7 +682,7 @@ function createLocalMemoryWriteGuard(
     }
     let live: string | null;
     try {
-      live = await readTextOrNull(path);
+      live = await readMemoryText(path);
     } catch (error) {
       stopped = true;
       throw error;

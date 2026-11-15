@@ -1,3 +1,4 @@
+import { SourceLayerSurface } from '@canopy/ui-shared/components';
 import { Stack } from '@canopy/ui-shared/components';
 import type { JSX, ReactNode } from 'react';
 import {
@@ -58,13 +59,10 @@ export function SourceInfoLayers<L extends SourceInfoLayer>({
       <p className="text-xs fg-secondary">{priorityLabel}</p>
       <Stack gap="inline">
         {layers.map((layer, index) => (
-          <div
+          <SourceLayerSurface
             key={layer.sourceKey}
-            className={`${separateBody ? 'flex flex-col gap-1.5 ' : ''}rounded-lg border p-3 text-xs ${
-              layer.status === activeStatus
-                ? 'border-line-positive bg-success/[0.06]'
-                : 'bg-fg-primary/[0.02]'
-            }`}
+            active={layer.status === activeStatus}
+            separateBody={separateBody}
           >
             <div className="flex items-center justify-between">
               <span
@@ -84,7 +82,7 @@ export function SourceInfoLayers<L extends SourceInfoLayer>({
               </span>
             </div>
             {renderBody(layer)}
-          </div>
+          </SourceLayerSurface>
         ))}
         {layers.length === 0 && (
           <p className="py-2 text-xs fg-secondary">{emptyText}</p>

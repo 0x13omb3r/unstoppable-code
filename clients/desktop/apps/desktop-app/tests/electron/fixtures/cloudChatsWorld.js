@@ -1,8 +1,9 @@
 import { randomUUID } from 'node:crypto';
-import {
-  isUuid,
-  webCoreRequestSchema,
-} from '../../../src/main/canopy-runtime/renderer-relay/__tests__/web-core-wire.ts';
+import * as webCoreWire from '../../../src/main/canopy-runtime/renderer-relay/__tests__/web-core-wire.ts';
+
+// The perf harness's tsx loads this TypeScript as CommonJS, and Playwright as
+// ESM; take the exports from whichever shape the loader produced (CAN-6838).
+const { isUuid, webCoreRequestSchema } = webCoreWire.default ?? webCoreWire;
 
 /**
  * A seeded cloud chat world for the desktop E2E harness (CAN-6280): the web
@@ -96,6 +97,33 @@ const text = (id, role, body, offset) => ({
   blocks: [{ type: 'text', text: body }],
   timestamp: AT_MS + offset * 1000,
 });
+
+/**
+ * A committed reply's meter, as the web core serves it at revision 2 of
+ * `core.chat.transcript.page` and `core.chat.events` (CAN-6509): the model
+ * it ran on, its token usage and its cost.
+ */
+const replyMeter = (sourceKey, contextTokens) => ({
+  model: { id: 'e2e-cloud-model', name: 'Cloud model', contextWindow: 200_000 },
+  usage: {
+    inputTokens: contextTokens - 400,
+    outputTokens: 250,
+    cacheReadTokens: 400,
+    contextTokens,
+    contextWindow: 200_000,
+  },
+  costUsd: '0.04',
+  sourceKey,
+});
+
+/** The seeded replies' meters; the reply still asking a question has none. */
+function seedMeters() {
+  const ids = SEEDED_CLOUD_CHATS.messageIds;
+  return new Map([
+    [ids.firstReply, replyMeter('e2e-cloud-turn-1', 12_000)],
+    [ids.otherChatReply, replyMeter('e2e-cloud-turn-5', 8_000)],
+  ]);
+}
 
 function seedTranscripts() {
   const ids = SEEDED_CLOUD_CHATS.messageIds;
@@ -468,11 +496,25 @@ function webCoreRefusal(method, params) {
  * One world per test. `accountId` must be the signed-in account's id: main
  * closes a connection whose initialize names another principal.
  */
-export function createCloudChatsWorld({ accountId }) {
+/**
+ * The ids of `count` extra tasks seeded in the project for a perf scenario
+ * (CAN-6838): lowercase UUIDs, newest first, each its own root chat.
+ */
+export function extraCloudTaskIds(count) {
+  return Array.from(
+    { length: count },
+    (_, index) =>
+      `7e2c1f4a-3b5d-4c8e-9a1f-1${index.toString(16).padStart(11, '0')}`,
+  );
+}
+
+export function createCloudChatsWorld({ accountId, extraTasks = 0 }) {
   const seeded = SEEDED_CLOUD_CHATS;
   const state = {
     revision: 4,
     transcripts: seedTranscripts(),
+    /** Each committed reply's meter, by message id (CAN-6755). */
+    meters: seedMeters(),
     runtime: { [seeded.rootChatId]: 'idle', [seeded.secondChatId]: 'idle' },
     questions: [
       {
@@ -486,6 +528,10 @@ export function createCloudChatsWorld({ accountId }) {
     sends: [],
     /** Tasks archived through `core.chat.archive` (CAN-6511); the list drops them. */
     archived: new Set(),
+    /** Each archived task's container revision, which a restore is fenced by. */
+    archiveRevisions: new Map(),
+    /** Every `core.archive.container.restore` the desktop made, in order. */
+    restores: [],
     /** The chats' saved deliverables (CAN-6587); `addDeliverable` adds one. */
     deliverables: [],
     /** Every `worker.artifact.download.read` made, main's and the renderer's. */
@@ -500,12 +546,19 @@ export function createCloudChatsWorld({ accountId }) {
     answers: [],
     /**
      * The chats the web core holds, by id: each one's task (a task's own
-     * chat is the task) and title. `core.chat.create` adds to it.
+     * chat is the task) and title. `core.chat.create` adds to it. A chat
+     * whose reply ran names the harness it ran on, which the snapshot
+     * serves in its settings (CAN-6761); one with none serves no settings.
      */
     chats: new Map([
       [
         seeded.rootChatId,
-        { worktreeId: seeded.taskId, title: seeded.taskTitle, createdAt: AT },
+        {
+          worktreeId: seeded.taskId,
+          title: seeded.taskTitle,
+          createdAt: AT,
+          executionHarness: 'claude',
+        },
       ],
       [
         seeded.secondChatId,
@@ -515,6 +568,15 @@ export function createCloudChatsWorld({ accountId }) {
           createdAt: AT,
         },
       ],
+      // Extra tasks a perf scenario seeds (CAN-6838), each with no messages.
+      ...extraCloudTaskIds(extraTasks).map((chatId, index) => [
+        chatId,
+        {
+          worktreeId: chatId,
+          title: `Perf task ${index + 1}`,
+          createdAt: new Date(AT_MS - (index + 1) * 60_000).toISOString(),
+        },
+      ]),
     ]),
     /** Each chat's attachments, by chat id (CAN-6175 R8d). */
     attachments: new Map([[seeded.secondChatId, [...seeded.attachments]]]),
@@ -567,6 +629,9 @@ export function createCloudChatsWorld({ accountId }) {
     /** Every `worker.filesystem.entry.delete` the desktop made, in order. */
     deletes: [],
   };
+  // An extra task starts with no messages, as a created one does (CAN-6838).
+  for (const chatId of extraCloudTaskIds(extraTasks))
+    state.transcripts[chatId] = [];
   /** Each running turn's reply, committed when its timer fires or Stop lands. */
   const finishers = new Map();
   /** Turns a send named that haven't started yet: turn id → chat and prompt. */
@@ -582,11 +647,17 @@ export function createCloudChatsWorld({ accountId }) {
   const cursor = () => ({ daemonEpoch: EPOCH, sequence });
 
   /** Sends `item` to every open subscription of `stream` that `matches`. */
+  /**
+   * `item` may be a function of the subscription's open params, for a stream
+   * whose items differ by the revision it was opened at.
+   */
   const emit = (stream, item, matches = () => true) => {
     sequence += 1;
     for (const [subscriptionId, subscription] of subscriptions) {
       if (subscription.method !== stream || !matches(subscription.params))
         continue;
+      const value =
+        typeof item === 'function' ? item(subscription.params) : item;
       const notification = {
         jsonrpc: '2.0',
         method: `${stream}.item`,
@@ -595,7 +666,7 @@ export function createCloudChatsWorld({ accountId }) {
           cursor: cursor(),
           itemId: randomUUID(),
           occurredAt: new Date().toISOString(),
-          item,
+          item: value,
         },
       };
       for (const listener of listeners) listener(notification);
@@ -653,6 +724,24 @@ export function createCloudChatsWorld({ accountId }) {
     kind: 'chat',
     createdAt: chat.createdAt,
     transcriptRevision: state.transcripts[chat.chatId].length,
+    // The web core's tab settings: the harness the chat's last answer ran
+    // on, the rule the web's model picker applies (CAN-6761).
+    ...(chat.executionHarness === undefined
+      ? {}
+      : {
+          settings: {
+            model: null,
+            providerId: null,
+            executionHarness: chat.executionHarness,
+            modelSelectionMode: 'manual',
+            thinkingLevel: null,
+            speed: null,
+            planMode: false,
+            approvalMode: null,
+            interfaceMode: null,
+            customTitle: null,
+          },
+        }),
   });
 
   /**
@@ -692,21 +781,38 @@ export function createCloudChatsWorld({ accountId }) {
       (each) => each.scope?.chatId?.toLowerCase() === chatId,
     );
 
+  /** Revision 2 of the transcript and events puts each reply's meter on it. */
+  const EVENTS_REVISION = 2;
+  const TRANSCRIPT_PAGE_REVISION = 2;
+  const metered = (message, revision) => {
+    const meter = state.meters.get(message.id);
+    return revision === EVENTS_REVISION && meter !== undefined
+      ? { ...message, meter }
+      : message;
+  };
+
   const chatBatch = (worktreeId, changes) => {
     const baseRevision = state.revision;
     state.revision += 1;
+    const eventId = randomUUID();
+    const occurredAt = new Date().toISOString();
     emit(
       'core.chat.events',
-      {
+      // Each reply's meter only on a stream opened at revision 2 (CAN-6509).
+      (params) => ({
         schemaVersion: 1,
-        eventId: randomUUID(),
-        occurredAt: new Date().toISOString(),
+        eventId,
+        occurredAt,
         projectId: seeded.workspaceId,
         worktreeId,
         baseRevision,
         revision: state.revision,
-        changes,
-      },
+        changes: changes.map((change) =>
+          change.type === 'message.upserted'
+            ? { ...change, message: metered(change.message, params.revision) }
+            : change,
+        ),
+      }),
       (params) => params.scope?.worktreeId?.toLowerCase() === worktreeId,
     );
     // Every committed batch also names its task on the sidebar's stream
@@ -804,6 +910,10 @@ export function createCloudChatsWorld({ accountId }) {
             const reply = text(`${user.id}-reply`, 'assistant', body, 0);
             reply.timestamp = Date.now();
             messages.push(reply);
+            state.meters.set(
+              reply.id,
+              replyMeter(turnId, 10_000 + messages.length * 1_000),
+            );
             delete state.activeTurns[chatId];
             chatBatch(worktreeId, [
               { type: 'message.upserted', chatId, message: user },
@@ -870,6 +980,66 @@ export function createCloudChatsWorld({ accountId }) {
           ],
           nextCursor: null,
         });
+      case 'core.archive.container.list': {
+        // As the web core lists retained items (archive.ts): an archived task
+        // is a locked work-entry container named by its chat.
+        if (
+          params.workspaceId !== undefined &&
+          !same(params.workspaceId, seeded.workspaceId)
+        )
+          return ok({ workspaceId: params.workspaceId, containers: [] });
+        return ok({
+          workspaceId: params.workspaceId ?? null,
+          containers: [...state.archived].map((chatId) => ({
+            archiveId: `work-entry:${chatId}`,
+            kind: 'work-entry',
+            workspaceId: seeded.workspaceId,
+            workspaceName: seeded.workspaceName,
+            revision: state.archiveRevisions.get(chatId) ?? 1,
+            name: state.chats.get(chatId)?.title ?? 'Untitled',
+            branchName: null,
+            archivedAt: AT,
+            expiresAt: null,
+            locked: true,
+            lockedAt: AT,
+            chatCount: 0,
+            archivedChatCount: 0,
+            executionCount: 0,
+            partiallyRestored: false,
+            scope: { workspaceId: seeded.workspaceId, chatId },
+          })),
+        });
+      }
+      case 'core.archive.container.restore': {
+        // In place only, at the listed revision, as the web core restores.
+        state.restores.push(params);
+        const [kind, chatId] = params.archiveId.split(':');
+        if (kind !== 'work-entry' || !state.archived.has(chatId))
+          return refuse('not_found', 'The archived item was not found.');
+        if (!same(params.destinationScope.workspaceId, seeded.workspaceId))
+          return refuse(
+            'invalid_argument',
+            'The web core restores an archived item only in place.',
+          );
+        if (
+          params.expectedRevision !== (state.archiveRevisions.get(chatId) ?? 1)
+        )
+          return refuse(
+            'failed_precondition',
+            'The archived item changed.',
+            'core.archive.revisionConflict',
+          );
+        state.archived.delete(chatId);
+        state.revision += 1;
+        return ok({
+          operation: {
+            operationId: randomUUID(),
+            kind: 'core.archive.container.restore',
+            status: 'completed',
+          },
+          restoredScope: { workspaceId: seeded.workspaceId, chatId },
+        });
+      }
       case 'core.chat.archive': {
         // As the web core serves it: archiving a task's own chat archives
         // the task with its tabs (CAN-6511).
@@ -1077,7 +1247,11 @@ export function createCloudChatsWorld({ accountId }) {
         if (messages === undefined)
           return refuse('not_found', 'No such chat.', 'core.chat.notFound');
         return ok({
-          messages,
+          messages: messages.map((message) =>
+            params.revision === TRANSCRIPT_PAGE_REVISION
+              ? metered(message, EVENTS_REVISION)
+              : message,
+          ),
           totalMessages: messages.length,
           transcriptRevision: messages.length,
         });
@@ -1180,17 +1354,28 @@ export function createCloudChatsWorld({ accountId }) {
           updatedAt: new Date().toISOString(),
         });
       }
-      case 'core.catalog.snapshot.get':
+      case 'core.catalog.snapshot.get': {
+        // An empty `kinds` asks for every kind, as on the web core.
+        const wants = (kind) =>
+          (params.kinds ?? []).length === 0 || params.kinds.includes(kind);
         return ok({
           revision: 1,
-          // An empty `kinds` asks for every kind, as on the web core.
-          entries: CATALOG_ENTRIES.filter(
-            (entry) =>
-              (params.kinds ?? []).length === 0 ||
-              params.kinds.includes(entry.kind),
-          ),
+          entries: CATALOG_ENTRIES.filter((entry) => wants(entry.kind)),
           generatedAt: AT,
+          // Revision 2 also answers the hosted model catalog, as the web
+          // core does (CAN-6093); the seeded world lists no models.
+          ...(params.revision !== undefined && wants('model')
+            ? {
+                cloudModels: {
+                  models: [],
+                  modelHarnesses: {},
+                  defaultModelId: null,
+                  defaultModelBlocked: false,
+                },
+              }
+            : {}),
         });
+      }
       case 'core.catalog.selection.get':
         return ok({ revision: 1, selectedItemIds: [], unavailableItemIds: [] });
       case 'worker.filesystem.roots.list':
@@ -1626,6 +1811,8 @@ export function createCloudChatsWorld({ accountId }) {
       'core.approval.request.respond',
       'core.chat.create',
       'core.chat.archive',
+      'core.archive.container.list',
+      'core.archive.container.restore',
       'core.catalog.snapshot.get',
       'core.catalog.selection.get',
       'core.artifact.list',
@@ -1887,6 +2074,9 @@ export function createCloudChatsWorld({ accountId }) {
     schemaRevisions: () => ({
       'core.chat.live.events': LIVE_EVENTS_REVISION,
       'core.approval.request.list': APPROVAL_LIST_REVISION,
+      // Each answer's meter (CAN-6509), which the desktop asks for (CAN-6755).
+      'core.chat.transcript.page': TRANSCRIPT_PAGE_REVISION,
+      'core.chat.events': EVENTS_REVISION,
     }),
   };
 }

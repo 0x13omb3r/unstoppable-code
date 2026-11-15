@@ -4,6 +4,7 @@ import { CLIENT_FEATURE_FLAGS } from '@canopy/protocol/feature-flags';
 import {
   IPC_CHANNELS,
   type CloudChatFileDownloadResult,
+  type CloudChatFilesWakeResult,
   type CloudChatAttachmentUploadResult,
   type CloudChatsReconnectResult,
 } from '@canopy/desktop-shared/types';
@@ -26,6 +27,10 @@ import {
   createCloudChatFileDownload,
   createWebCoreFileReader,
 } from '../canopy-cloud/cloud-chat-file-download';
+import {
+  createCloudFilesWake,
+  createWebCoreFilesWaker,
+} from '../canopy-cloud/cloud-files-wake';
 import type {
   RendererRelayEvent,
   RendererRelaySurfaceResolution,
@@ -83,6 +88,7 @@ export function desktopWebCoreBindingOptions(): WebCoreBindingOptions {
  */
 export function registerCloudChatsHandlers(
   resolveSurface: (event: RendererRelayEvent) => RendererRelaySurfaceResolution,
+  followsCloudChat: (event: RendererRelayEvent, chatId: string) => boolean,
 ): void {
   const reconnect = createWebCoreReconnect({
     isEnabled: cloudChatsEnabled,
@@ -131,6 +137,19 @@ export function registerCloudChatsHandlers(
         choosePath: (filename) => chooseSavePath(event, filename),
         withReader: reader,
       })(target, file);
+    },
+  );
+  // The Files panel of a sleeping cloud chat the window has open asks main
+  // to wake it, once per open; the relay never carries a wake (CAN-6724).
+  const wakeFiles = createCloudFilesWake({
+    isEnabled: binding.isEnabled,
+    wake: createWebCoreFilesWaker(binding, app.getVersion()),
+  });
+  registerIpcHandler<[unknown], CloudChatFilesWakeResult>(
+    IPC_CHANNELS.cloudChatsWakeFiles,
+    (event, target) => {
+      requireMainWindow(event);
+      return wakeFiles(target, (chatId) => followsCloudChat(event, chatId));
     },
   );
 }

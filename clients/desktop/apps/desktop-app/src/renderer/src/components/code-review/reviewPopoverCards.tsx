@@ -1,3 +1,4 @@
+import { Surface } from '@canopy/ui-shared/components';
 import { Stack } from '@canopy/ui-shared/components';
 import { useState, type JSX } from 'react';
 import type {
@@ -44,7 +45,7 @@ export function ReviewAnnotationCard({
   onClear,
 }: ReviewAnnotationCardProps): JSX.Element {
   return (
-    <div className="flex flex-col gap-2 rounded-lg border bg-popover p-3">
+    <Surface variant="review-card">
       {sourceLabel ? (
         <span className="text-2xs font-medium fg-secondary">{sourceLabel}</span>
       ) : null}
@@ -78,7 +79,7 @@ export function ReviewAnnotationCard({
           {discussLabel}
         </Button>
       </div>
-    </div>
+    </Surface>
   );
 }
 

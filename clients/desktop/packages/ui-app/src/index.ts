@@ -123,6 +123,7 @@ export {
   type ChatTranscriptProps,
   type ChatTranscriptWorktreeSetup,
 } from './code/ChatTranscript';
+export { TurnNotices, type ChatTurnNotice } from './code/TurnNotices';
 export { ChatComposer, type ChatComposerProps } from './code/ChatComposer';
 export {
   QueuedMessageStack,
@@ -134,6 +135,7 @@ export {
   type ComposerWorkDrawerBackground,
   type ComposerWorkDrawerSections,
   type ComposerWorkDrawerProps,
+  type ComposerWorkExtraKind,
 } from './code/ComposerWorkDrawer';
 export {
   ChatMessageView,
@@ -750,6 +752,7 @@ export {
   deriveWorktreeUiStatus,
   isTreeLayout,
   orderedWorkspaces,
+  untitledTaskLabel,
   workspaceLayout,
   worktreesForWorkspace,
   type WorktreeUiStatus,
@@ -831,7 +834,6 @@ export {
   type SplitGroupSeed,
   type WorktreePanelLayout,
 } from './code/panels/panel-layout-store';
-export * from './code/shell/SidebarPlanSubtitle';
 export { FeedbackSubmissionHeldError } from './feedback/feedback-submission-held-error';
 // Keep the base form on its on-demand subpath, outside the startup barrel.
 export type {
@@ -946,6 +948,7 @@ export {
   toUsageIndicatorUsage,
   type ComposerOverflowMenuArgs,
 } from './code/composer/composer-helpers';
+export { portalAgentModelRows } from './code/composer/portal-agent-selection';
 export {
   usePlanModeSuggestion,
   type PlanModeSuggestion,
@@ -1057,11 +1060,7 @@ export {
   type OrgRepositoryOwnerNoticeCopyInput,
   type OrgRepositoryOwnerNoticeProps,
 } from './org-projects/OrgRepositoryOwnerNotice';
-export {
-  OrgContextEmptyState,
-  type OrgContextEmptyStatePlanMissing,
-  type OrgContextEmptyStateProps,
-} from './org-projects/OrgContextEmptyState';
+export { OrgContextEmptyState } from './org-projects/OrgContextEmptyState';
 export {
   DraftComposerEditor,
   type DraftComposerEditorProps,

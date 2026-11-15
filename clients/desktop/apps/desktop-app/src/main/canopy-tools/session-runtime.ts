@@ -90,6 +90,7 @@ import {
 import { activeAgentCoreOperations } from './active-agent-core-operations';
 import { LOCAL_DESKTOP_AUTHORITY_ID } from '../canopy-runtime/desktop-runtime-identity';
 import { getChatStateService } from '../services/chat-state-service';
+import { markPersonOnlyChatQuestion } from '../chat-questions/respond';
 
 /** GetGitPreferences reads as its own principal, with only the config read grant (CAN-5992). */
 const AGENT_GIT_PREFERENCES_CALLER: CanopyCallerDescriptor = {
@@ -285,10 +286,17 @@ export async function requestAnswersFromRenderer(options: {
   askUserTimeoutMs?: number;
   onRequestCreated?: (requestId: string) => void;
   signal?: AbortSignal;
+  /** Only a person may answer: marked before anything can see the question. */
+  personOnly?: boolean;
 }): Promise<McpQuestionAnswer[]> {
   if (options.signal?.aborted) throw new Error('ask_user_cancelled');
 
   const requestId = randomUUID();
+  if (options.personOnly) {
+    markPersonOnlyChatQuestion(requestId);
+    // The chat state also settles a question by its tool use ID.
+    if (options.toolUseId) markPersonOnlyChatQuestion(options.toolUseId);
+  }
   const payload: McpAskUserEvent = {
     requestId,
     projectId: options.projectId,

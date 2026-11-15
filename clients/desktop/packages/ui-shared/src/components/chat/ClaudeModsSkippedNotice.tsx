@@ -66,6 +66,8 @@ export const CLAUDE_MODS_SKIPPED_COPY = {
   sources: {
     'skills-dir': 'From your skills folder',
     synced: 'From your claude.ai account',
+    // Only the resumed session's own Mods reach its notice.
+    'claude-session': 'Written by Claude in this chat',
   },
 } as const;
 
@@ -73,6 +75,7 @@ export const CLAUDE_MODS_SKIPPED_COPY = {
 const INLINE_ALLOW_MARKETPLACES: ReadonlySet<string> = new Set([
   'skills-dir',
   'synced',
+  'claude-session',
 ]);
 
 function splitPluginId(pluginId: string): {
@@ -122,10 +125,13 @@ export function claudeModsSkippedSourceLabel(pluginId: string): string | null {
     return CLAUDE_MODS_SKIPPED_COPY.sources['skills-dir'];
   }
   if (marketplace === 'synced') return CLAUDE_MODS_SKIPPED_COPY.sources.synced;
+  if (marketplace === 'claude-session') {
+    return CLAUDE_MODS_SKIPPED_COPY.sources['claude-session'];
+  }
   return null;
 }
 
-/** Skills-folder and synced plugins have no details page; allow them inline. */
+/** Skills-folder, synced and session-written Mods have no details page; allow them inline. */
 export function isClaudeModsInlineAllowPluginId(pluginId: string): boolean {
   const { marketplace } = splitPluginId(pluginId);
   return marketplace !== null && INLINE_ALLOW_MARKETPLACES.has(marketplace);

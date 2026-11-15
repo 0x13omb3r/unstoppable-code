@@ -23,7 +23,6 @@ import type {
 import { canEditOrgEnforcedSettings } from '@canopy/protocol/settings/organization-permissions';
 import { useSettingsBrand, useSettingsClient } from '../host';
 import { useSettingsErrorCopy, type SettingsFailure } from '../errors';
-import { ORGANIZATION_LAPSED_ERROR } from './organization-known-errors';
 import {
   getOrganizationConfig,
   updateMemberUsageDataPolicy,
@@ -180,7 +179,6 @@ function MemberUsageDataCardBody({
       setError(
         errorCopy.actionFailure(err, {
           action: 'update member usage data',
-          known: [ORGANIZATION_LAPSED_ERROR],
         }),
       );
     } finally {

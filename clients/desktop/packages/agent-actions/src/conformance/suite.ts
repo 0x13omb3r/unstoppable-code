@@ -148,6 +148,18 @@ export interface AgentConformanceWorldControl {
   gatewayWriteCount?(): number;
   archiveChat(chatId: string): Promise<void>;
   /**
+   * A seeded chat's state as the host stores it, or null. Hosts whose agent
+   * surface reads no chat state (chat.get is retired) supply it, for the
+   * cases that check a chat's state after acting on it.
+   */
+  chatState?(chatId: string): Promise<string | null>;
+  /**
+   * Starts a turn in a seeded chat, as a message from the calling chat
+   * would. Hosts whose agent surface cannot message the seeded chats
+   * (chat.send_message is retired) supply it.
+   */
+  startTurn?(chatId: string, text: string): Promise<void>;
+  /**
    * Makes a seeded chat one the host cannot deliver chat.send_message to,
    * or deliverable again. Hosts that never refuse a listed chat omit it.
    */
@@ -228,13 +240,19 @@ export type AgentConformanceHoldOutcome = 'succeed' | 'fail' | 'timeout';
 export interface AgentConformanceHost<H> {
   surface: AgentActionSurface<H>;
   capabilities: AgentActionHostCapabilities;
+  /**
+   * The project the limit cases create tasks in with projects.create_task,
+   * for a host whose project actions accept no seeded workspace id. The
+   * seeded workspace by default.
+   */
+  creationProjectId?: string;
   /** A call from the world's current chat with this identity. */
   call(identity: AgentConformanceCallIdentity): AgentActionCall<H>;
   control: AgentConformanceWorldControl;
   /**
    * The caps the host's limits port applies, when they differ from
-   * `AGENT_ACTION_LIMITS`. An infinite `perUserPerHour` or `perParentTurn`
-   * is no such cap, and the suite skips the cases that need it.
+   * `AGENT_ACTION_LIMITS`. An infinite `perUserPerHour`, `perParentTurn` or
+   * `maxDepth` is no such cap, and the suite skips the cases that need it.
    */
   limitValues?: AgentActionLimitValues;
 }
@@ -242,7 +260,7 @@ export interface AgentConformanceHost<H> {
 /** One of the host's caps, or null when it has none. */
 function hostCap(
   host: { limitValues?: AgentActionLimitValues },
-  cap: 'perParentTurn' | 'perUserPerHour',
+  cap: 'perParentTurn' | 'perUserPerHour' | 'maxDepth',
 ): number | null {
   const value = (host.limitValues ?? AGENT_ACTION_LIMITS)[cap];
   return Number.isFinite(value) ? value : null;
@@ -260,6 +278,26 @@ function perTurnCap(host: {
   limitValues?: AgentActionLimitValues;
 }): number | null {
   return hostCap(host, 'perParentTurn');
+}
+
+/**
+ * An action that starts a chat with `message` on this host: chat.create
+ * where it is offered, else its projects.create_task replacement, so the
+ * creation limits stay covered once chat.create is retired.
+ */
+function startChatAction<H>(
+  current: Session<H>,
+  world: ConformanceWorld,
+  message: string,
+): Record<string, unknown> | null {
+  if (current.supports('chat.create')) return { type: 'chat.create', message };
+  if (current.supports('projects.create_task'))
+    return {
+      type: 'projects.create_task',
+      projectId: current.host.creationProjectId ?? world.current.workspaceId,
+      initialMessage: message,
+    };
+  return null;
 }
 
 export type MakeAgentConformanceHost<H> = (
@@ -1493,12 +1531,15 @@ export function runAgentActionConformance<H>(
       chatId: string,
       identity: AgentConformanceCallIdentity,
     ): Promise<unknown> =>
-      at(
-        (await current.dispatchAs({ type: 'chat.get', chatId }, identity)).json,
-        'result',
-        'chat',
-        'state',
-      );
+      !current.supports('chat.get') && current.host.control.chatState
+        ? current.host.control.chatState(chatId)
+        : at(
+            (await current.dispatchAs({ type: 'chat.get', chatId }, identity))
+              .json,
+            'result',
+            'chat',
+            'state',
+          );
 
     t.it(
       'refuses unsupported hosts, malformed payloads, the calling chat, and chats outside the workspace',
@@ -3001,6 +3042,53 @@ export function runAgentActionConformance<H>(
       );
     });
 
+    t.describe('retired actions', () => {
+      t.it('names the replacement of each retired action', async () => {
+        const current = await session();
+        const retired: [Record<string, unknown>, string][] = [
+          [{ type: 'chat.create', message: 'Retired' }, 'projects.create_task'],
+          [
+            { type: 'chat.send_message', chatId: 'c2', message: 'Retired' },
+            'projects.send_message',
+          ],
+          [{ type: 'workspace.get' }, 'projects.list'],
+          [{ type: 'worktree.list' }, 'projects.list_tasks'],
+          [{ type: 'chat.list' }, 'projects.list_task_chats'],
+          [
+            { type: 'chat.get', chatId: 'c2' },
+            'projects.get_last_agent_response',
+          ],
+        ];
+        // A host with the project actions has retired the environment ones;
+        // only a host without them (the reference host) may still offer them.
+        const replaced = current.supports('projects.send_message');
+        for (const [action, replacement] of retired) {
+          const type = String(action.type);
+          if (current.supports(type)) {
+            check(!replaced, `${type} is still offered beside ${replacement}`);
+            continue;
+          }
+          checkSubset(
+            (await current.dispatch(action)).json,
+            { ok: false, error: { code: 'unsupported_action' } },
+            `${type} after retirement`,
+          );
+          const text = (await current.dispatch(action)).result.text;
+          checkSubset(
+            (await current.dispatch({ type, unexpected: true })).json,
+            { ok: false, error: { code: 'unsupported_action' } },
+            `${type} with an invalid payload after retirement`,
+          );
+          check(
+            text.includes(`${type} was removed`) &&
+              text.includes(replacement) &&
+              !text.includes('"retryable": true'),
+            `${type} names ${replacement} and is not retryable`,
+          );
+        }
+      });
+    });
+
     t.describe('limits', () => {
       t.it(
         'refuses a write without a turn key instead of counting it in a shared turn',
@@ -3047,30 +3135,19 @@ export function runAgentActionConformance<H>(
         const current = await session();
         const perParentTurn = perTurnCap(current.host);
         if (perParentTurn === null) return;
-        if (
-          !current.host.capabilities.limits ||
-          !current.supports('chat.create')
-        )
-          return;
+        const start = (message: string): Record<string, unknown> | null =>
+          startChatAction(current, world, message);
+        const tooMany = start('One too many');
+        if (!current.host.capabilities.limits || !tooMany) return;
         for (let index = 0; index < perParentTurn; index += 1) {
           checkSubset(
-            (
-              await current.dispatch({
-                type: 'chat.create',
-                message: `Task ${index}`,
-              })
-            ).json,
+            (await current.dispatch(start(`Task ${index}`) ?? tooMany)).json,
             { ok: true },
-            `chat.create ${index + 1} in one turn`,
+            `chat creation ${index + 1} in one turn`,
           );
         }
         checkSubset(
-          (
-            await current.dispatch({
-              type: 'chat.create',
-              message: 'One too many',
-            })
-          ).json,
+          (await current.dispatch(tooMany)).json,
           {
             ok: false,
             result: {
@@ -3570,9 +3647,12 @@ export function runAgentActionConformance<H>(
       t.it('caps chats per user per hour', async () => {
         const current = await session();
         const perUserPerHour = hourlyCap(current.host);
+        const start = (message: string): Record<string, unknown> | null =>
+          startChatAction(current, world, message);
+        const tooMany = start('One too many');
         if (
           !current.host.capabilities.limits ||
-          !current.supports('chat.create') ||
+          !tooMany ||
           perUserPerHour === null
         )
           return;
@@ -3590,10 +3670,9 @@ export function runAgentActionConformance<H>(
             started += 1;
             checkSubset(
               (
-                await current.dispatch(
-                  { type: 'chat.create', message: `Task ${started}` },
-                  { turnKey: `hourly-turn-${turn}` },
-                )
+                await current.dispatch(start(`Task ${started}`) ?? tooMany, {
+                  turnKey: `hourly-turn-${turn}`,
+                })
               ).json,
               { ok: true },
               `chat.create ${started} in the hour`,
@@ -3602,10 +3681,9 @@ export function runAgentActionConformance<H>(
         }
         checkSubset(
           (
-            await current.dispatch(
-              { type: 'chat.create', message: 'One too many' },
-              { turnKey: 'hourly-turn-last' },
-            )
+            await current.dispatch(tooMany, {
+              turnKey: 'hourly-turn-last',
+            })
           ).json,
           {
             ok: false,
@@ -3624,14 +3702,15 @@ export function runAgentActionConformance<H>(
           ...world,
           callerDepth: AGENT_ACTION_LIMITS.maxDepth,
         });
+        const nested = startChatAction(current, world, 'Nested');
         if (
           !current.host.capabilities.limits ||
-          !current.supports('chat.create')
+          !nested ||
+          hostCap(current.host, 'maxDepth') === null
         )
           return;
         checkSubset(
-          (await current.dispatch({ type: 'chat.create', message: 'Nested' }))
-            .json,
+          (await current.dispatch(nested)).json,
           {
             ok: false,
             result: { reason: 'depth', limit: AGENT_ACTION_LIMITS.maxDepth },
@@ -4733,11 +4812,14 @@ export function runAgentActionConformance<H>(
             watcherId,
             'an identical project watcher is deduped',
           );
-          await current.dispatch({
-            type: 'chat.send_message',
-            chatId: 'c2',
-            message: 'Run the checks again.',
-          });
+          if (!current.supports('chat.send_message') && control.startTurn)
+            await control.startTurn('c2', 'Run the checks again.');
+          else
+            await current.dispatch({
+              type: 'chat.send_message',
+              chatId: 'c2',
+              message: 'Run the checks again.',
+            });
           checkEqual(
             await control.completeTurn('c2'),
             [watcherId],

@@ -1,3 +1,4 @@
+import { DialogActionFooter } from '@canopy/ui-shared/components';
 import { Stack, CodeBlock } from '@canopy/ui-shared/components';
 import { type JSX } from 'react';
 import { Notice } from '@canopy/ui-shared/components';
@@ -125,7 +126,7 @@ export function SplitFailureModal({
         )}
       </div>
 
-      <div className="flex flex-wrap items-center justify-end gap-2 border-t px-6 py-3">
+      <DialogActionFooter wrap center>
         <Button
           size="compact"
           onClick={onLeave}
@@ -172,7 +173,7 @@ export function SplitFailureModal({
             Plan new split
           </Button>
         )}
-      </div>
+      </DialogActionFooter>
     </DialogModal>
   );
 }

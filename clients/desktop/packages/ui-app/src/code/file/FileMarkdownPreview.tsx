@@ -13,6 +13,7 @@ import {
 import { Button } from '@canopy/ui-shared/components/Button';
 import {
   MARKDOWN_ROOT_PROPS,
+  DocumentProse,
   Markdown,
   MermaidExportProvider,
   markdownOptions,
@@ -23,12 +24,6 @@ import {
 import { REPLAY_BLOCK_CLASS } from '@canopy/ui-shared/lib/replay-privacy';
 import { FrontmatterBlock } from './FrontmatterBlock';
 import { parseFrontmatterAndBody } from './frontmatter';
-
-// Shared prose styling — kept in sync with the chat markdown surface so a file
-// preview and an inline assistant message read identically. Notebook Markdown
-// cells reuse it too.
-export const FILE_MARKDOWN_PROSE_CLASSES =
-  'prose prose-sm [--tw-prose-body:var(--fg-primary)] dark:prose-invert max-w-none break-words prose-p:my-0.5 prose-pre:my-1.5 prose-pre:overflow-x-auto prose-pre:bg-fg-primary/[0.06] prose-pre:fg-primary/80 prose-code:fg-accent prose-code:before:content-none prose-code:after:content-none prose-headings:fg-primary prose-a:fg-accent prose-strong:fg-primary prose-li:my-0.5';
 
 /** Absolute (navigable-as-is) URL schemes; everything else is host-relative. */
 function isExternalHref(href: string): boolean {
@@ -237,11 +232,11 @@ function FileMarkdownPreviewImpl({
         data-testid="file-markdown-preview"
       >
         <FrontmatterBlock frontmatter={parsedContent.frontmatter} />
-        <div className={FILE_MARKDOWN_PROSE_CLASSES} {...MARKDOWN_ROOT_PROPS}>
+        <DocumentProse variant="preview" {...MARKDOWN_ROOT_PROPS}>
           <MermaidExportProvider destination={diagramSaveDestination}>
             <Markdown options={options}>{parsedContent.body}</Markdown>
           </MermaidExportProvider>
-        </div>
+        </DocumentProse>
       </div>
     </div>
   );

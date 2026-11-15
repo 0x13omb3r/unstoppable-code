@@ -7,6 +7,7 @@ export function linuxUpdateCopy(
 ): {
   apt: { command: string; introduction: string; bootstrap: string } | null;
   downloadLabel: string;
+  downloadTooltip: string;
   manual: string;
   unsupported: string;
   unavailable: string;
@@ -29,6 +30,9 @@ export function linuxUpdateCopy(
   return {
     apt,
     downloadLabel: apt ? 'Reinstall Linux package' : 'Download Linux update',
+    // Sidebar tooltip only; the full verification guidance and checksum stay
+    // in Settings, where there is room for them.
+    downloadTooltip: 'Opens the official release site',
     manual: apt
       ? `${apt.introduction} ${apt.command}. ${apt.bootstrap}`
       : `Linux updates must be installed manually. Download ${brand.displayName} from the official site and verify its published checksum before installing with your package manager.`,

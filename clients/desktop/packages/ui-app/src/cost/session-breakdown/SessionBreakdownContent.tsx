@@ -1,5 +1,9 @@
 'use client';
 
+import {
+  ContextUsagePlotSurface,
+  CostSourceSwatch,
+} from '@canopy/ui-shared/components';
 import { useId, useState, type JSX, type ReactNode } from 'react';
 import type { CostNavigator } from '@canopy/app-core';
 import type {
@@ -158,11 +162,7 @@ function SourceRow({
           />
         ) : null}
       </span>
-      <span
-        aria-hidden="true"
-        className="size-2 shrink-0 rounded-xs"
-        style={{ backgroundColor: COST_SOURCE_COLORS[source] }}
-      />
+      <CostSourceSwatch color={COST_SOURCE_COLORS[source]} />
       <span className="fg-primary">{COST_SOURCE_LABELS[source]}</span>
       <span className="tabular-nums fg-tertiary">{count}</span>
       <span className="ml-auto shrink-0 tabular-nums fg-primary">
@@ -551,7 +551,7 @@ function ContextTimeline({
 
   return (
     <div className="flex flex-col gap-1">
-      <div className="relative h-16 w-full rounded-sm bg-muted">
+      <ContextUsagePlotSurface>
         <svg
           viewBox={`0 0 ${lastX} 100`}
           preserveAspectRatio="none"
@@ -585,7 +585,7 @@ function ContextTimeline({
             className="fg-accent"
           />
         </svg>
-      </div>
+      </ContextUsagePlotSurface>
       <div className="flex justify-between text-2xs tabular-nums fg-tertiary">
         <span>Turn 1</span>
         <span>{`Turn ${points.length}`}</span>

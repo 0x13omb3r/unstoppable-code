@@ -6,17 +6,20 @@ import {
   CoreChatLifecycleResultSchema,
   CoreChatSnapshotGetResultSchema,
   CLOUD_CURATED_SKILL_SOURCE_ID,
+  CORE_CATALOG_SNAPSHOT_GET_SCHEMA_REVISION,
   collectionEntryId,
   mcpServerEntryId,
   pluginEntryId,
   skillEntryId,
   type CanopyErrorPayload,
+  type CatalogCloudModels,
   type CatalogEntry,
 } from '@canopy/protocol/canopy-core';
-import type {
-  ModelCatalog,
-  ModelCatalogOption,
-  ModelCatalogProvider,
+import {
+  readProjectableCloudModel,
+  toModelCatalog,
+  type ModelCatalog,
+  type ProjectableCloudModelOption,
 } from '@canopy/protocol/models';
 import type {
   PortalChatTabPluginSelections,
@@ -25,7 +28,6 @@ import type {
   PortalPluginCatalogPlugin,
   PortalPluginCatalogSkill,
 } from '@canopy/protocol/portal';
-import { isThinkingLevel } from '@canopy/protocol/thinking';
 import { CoreCoworkRequestError, type CoreCoworkInvoker } from './invoker';
 
 /** The cloud chat a catalog reads and writes for (web core ids, unprefixed). */
@@ -52,6 +54,12 @@ export interface CloudChatCatalogState {
    * computer's items to the cloud's (CAN-6176).
    */
   entries: readonly CatalogEntry[];
+  /**
+   * The snapshot marks the plugins this desktop uploaded (CAN-6725), so one
+   * without the mark was never copied from it. False on the web, and against
+   * a web core that predates the mark.
+   */
+  thisDesktopUploads: boolean;
   selections: PortalChatTabPluginSelections;
   /** The selection revision of the last read (`core.catalog.selection.get`). */
   selectionRevision: number | null;
@@ -76,15 +84,6 @@ export interface CloudChatCatalog {
 }
 
 const MODEL_ENTRY_PREFIX = 'model:';
-const MODEL_PROVIDERS: readonly ModelCatalogProvider[] = [
-  'claude',
-  'codex',
-  'ollama',
-  'cursor',
-  'opencode',
-  'copilot',
-  'antigravity',
-];
 const SET_MODEL_PROVIDERS = [
   'claude',
   'codex',
@@ -109,32 +108,64 @@ const emptySelections = (): PortalChatTabPluginSelections => ({
   mcpServerRefs: [],
 });
 
-const providerOf = (value: string): ModelCatalogProvider =>
-  MODEL_PROVIDERS.find((provider) => provider === value) ?? 'unknown';
-
-function modelOption(entry: CatalogEntry): ModelCatalogOption | null {
+/**
+ * A model entry as the hosted catalog row it lists, for a web core that sent
+ * no `cloudModels`: Core's provider is the row's vendor. The entries carry no
+ * family, Legacy flag or default, so those stay absent.
+ */
+function projectableModelOf(
+  entry: CatalogEntry,
+): ProjectableCloudModelOption | null {
   const { content } = entry;
   if (content.kind !== 'model' || !entry.entryId.startsWith(MODEL_ENTRY_PREFIX))
     return null;
-  const thinking = content.thinkingLevels?.filter(isThinkingLevel);
   return {
     id: entry.entryId.slice(MODEL_ENTRY_PREFIX.length),
     label: entry.name,
     ...(entry.description === '' ? {} : { description: entry.description }),
-    provider: providerOf(content.providerId),
+    provider: content.providerId,
+    family: null,
     ...(content.harness === undefined ? {} : { harness: content.harness }),
-    kind: 'model',
-    available: true,
-    ...(thinking === undefined || thinking === null
-      ? {}
-      : { supportedThinkingLevels: thinking }),
     ...(content.contextWindow === null
       ? {}
       : { contextWindow: content.contextWindow }),
+    ...(content.thinkingLevels === undefined || content.thinkingLevels === null
+      ? {}
+      : { thinkingLevels: content.thinkingLevels }),
     ...(content.fastMode === undefined
       ? {}
-      : { supportsFastMode: content.fastMode }),
+      : { fastModeSupported: content.fastMode }),
   };
+}
+
+/**
+ * The models a cloud chat's composer offers, projected exactly as the web's
+ * picker projects them (`toModelCatalog`), so they group by vendor and family
+ * and carry the AI Credits source, the Legacy flag and the owner's default
+ * (CAN-6753). The rows come from the hosted catalog the web core answers at
+ * revision 2, or from the entries when it sent none. A model the account's
+ * library keeps locked is left out: the cloud composer has no unlock flow.
+ */
+export function cloudChatModels(
+  entries: readonly CatalogEntry[],
+  cloudModels?: CatalogCloudModels,
+): ModelCatalog {
+  if (cloudModels === undefined)
+    return toModelCatalog(
+      entries.flatMap((entry) => {
+        const row =
+          entry.availability === 'available' ? projectableModelOf(entry) : null;
+        return row === null ? [] : [row];
+      }),
+      null,
+    );
+  return toModelCatalog(
+    cloudModels.models.flatMap((model) => {
+      const row = readProjectableCloudModel(model);
+      return row === null ? [] : [row];
+    }),
+    cloudModels.defaultModelId,
+  ).filter((option) => option.libraryEligibility !== 'locked');
 }
 
 interface MappedCatalog {
@@ -152,19 +183,20 @@ interface MappedCatalog {
  * run are offered: a locked model or an unavailable capability is left out of
  * the lists (the cloud composer has no unlock or sign-in flow), while its ref
  * is kept so saving a selection does not drop it. Entries without a ref are
- * left out entirely.
+ * left out entirely. The models come from {@link cloudChatModels}, from the
+ * revision 2 `cloudModels` when the snapshot carries them.
  *
  * Source reads the web core's label for each entry, never a raw id. A curated
  * skill is a member of a curated plugin the catalog also lists, so it is
  * offered through that plugin, as the web's picker does, and listed on its
  * own only while `selectedEntryIds` names it (CAN-6397).
  */
-export function mapCloudChatCatalog(
+function mapCloudChatCatalog(
   entries: readonly CatalogEntry[],
   selectedEntryIds: readonly string[] = [],
+  cloudModels?: CatalogCloudModels,
 ): MappedCatalog {
   const selected = new Set(selectedEntryIds);
-  const models: ModelCatalogOption[] = [];
   const skills: PortalPluginCatalogSkill[] = [];
   const plugins: PortalPluginCatalogPlugin[] = [];
   const mcpServers: PortalPluginCatalogMcpServer[] = [];
@@ -174,12 +206,6 @@ export function mapCloudChatCatalog(
   for (const entry of entries) {
     const { content } = entry;
     switch (content.kind) {
-      case 'model': {
-        const option = modelOption(entry);
-        if (option !== null && entry.availability === 'available')
-          models.push(option);
-        break;
-      }
       case 'skill': {
         const ref = content.selectionRef;
         if (ref === undefined) {
@@ -264,7 +290,7 @@ export function mapCloudChatCatalog(
     }
   }
   return {
-    models,
+    models: cloudChatModels(entries, cloudModels),
     plugins: { collections: [], skills, plugins, mcpServers },
     unavailableMcpServers,
     refs,
@@ -316,6 +342,7 @@ export function createCloudChatCatalog(
     plugins: null,
     unavailableMcpServers: [],
     entries: [],
+    thisDesktopUploads: false,
     selections: emptySelections(),
     selectionRevision: null,
     selectionConflict: false,
@@ -361,6 +388,8 @@ export function createCloudChatCatalog(
           scope: { workspaceId: scope.workspaceId },
           kinds: [],
           includeUnavailable: true,
+          // Revision 2 also answers the hosted model catalog (CAN-6753).
+          revision: CORE_CATALOG_SNAPSHOT_GET_SCHEMA_REVISION,
         }),
         invoker.request('core.catalog.selection.get', {
           scope: { chatId: scope.chatId },
@@ -373,9 +402,8 @@ export function createCloudChatCatalog(
           chatId: scope.chatId,
         }),
       ]);
-      const entries = CatalogSnapshotGetResultSchema.parse(
-        unwrap(snapshot),
-      ).entries;
+      const { entries, cloudModels, thisDesktopUploads } =
+        CatalogSnapshotGetResultSchema.parse(unwrap(snapshot));
       const selected = CatalogSelectionGetResultSchema.parse(unwrap(selection));
       const tab = CoreChatSnapshotGetResultSchema.parse(
         unwrap(chat),
@@ -386,7 +414,11 @@ export function createCloudChatCatalog(
       const readModel =
         epochAtRead === modelEpoch && pendingModels === 0 ? model : undefined;
       if (readModel !== undefined) savedModel = readModel;
-      const mapped = mapCloudChatCatalog(entries, selected.selectedItemIds);
+      const mapped = mapCloudChatCatalog(
+        entries,
+        selected.selectedItemIds,
+        cloudModels,
+      );
       if (mapped.withoutRef > 0)
         options.logDev?.(
           `[cloud-chat-catalog] ${mapped.withoutRef} catalog entries carry no selection ref and are left out of the picker`,
@@ -398,6 +430,7 @@ export function createCloudChatCatalog(
         plugins: mapped.plugins,
         unavailableMcpServers: mapped.unavailableMcpServers,
         entries,
+        thisDesktopUploads: thisDesktopUploads === true,
         selections: selectionsOf(selected.selectedItemIds, mapped.refs),
         selectionRevision: selected.revision,
         selectionConflict: conflict,

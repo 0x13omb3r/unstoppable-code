@@ -1,3 +1,4 @@
+import { Surface } from '@canopy/ui-shared/components';
 import { lazy, Suspense, type JSX } from 'react';
 import { POSTHOG_REPLAY_BLOCK_CLASS } from '@canopy/desktop-instrumentation/posthog-replay-privacy';
 import type { FileDiffImagePreview } from '@canopy/desktop-shared/types';
@@ -158,10 +159,18 @@ function ImagePreviewPanel({
   src?: string;
 }): JSX.Element {
   return (
-    <div className="flex min-w-0 flex-1 flex-col overflow-hidden bg-fg-primary/[0.02]">
-      <div className="shrink-0 border-b px-3 py-1.5 text-2xs font-medium fg-secondary">
-        {label}
-      </div>
+    <Surface
+      variant="quiet-panel"
+      className="flex min-w-0 flex-1 flex-col overflow-hidden"
+    >
+      <Surface
+        variant="section"
+        boundary="bottom"
+        padding="compact-toolbar"
+        className="shrink-0"
+      >
+        <span className="text-2xs font-medium fg-secondary">{label}</span>
+      </Surface>
       <div className="flex min-h-0 flex-1 items-center justify-center overflow-auto p-4">
         {src ? (
           <img
@@ -173,7 +182,7 @@ function ImagePreviewPanel({
           <span className="text-s fg-secondary">Image unavailable</span>
         )}
       </div>
-    </div>
+    </Surface>
   );
 }
 

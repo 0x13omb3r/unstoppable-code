@@ -4,14 +4,12 @@ import { memo, useMemo, type JSX, type MemoExoticComponent } from 'react';
 import {
   Stack,
   Markdown,
+  DocumentProse,
   type MarkdownOptions,
   CodeBlock,
 } from '@canopy/ui-shared/components';
 import { REPLAY_BLOCK_CLASS } from '@canopy/ui-shared/lib/replay-privacy';
-import {
-  FILE_MARKDOWN_PROSE_CLASSES,
-  useFileMarkdownOptions,
-} from '../FileMarkdownPreview';
+import { useFileMarkdownOptions } from '../FileMarkdownPreview';
 import type { FileContentScrollBinding } from '../FileViewer';
 import {
   codeFenceMarkdown,
@@ -83,9 +81,9 @@ function markdownContent(
   options: MarkdownOptions,
 ): JSX.Element {
   return (
-    <div className={FILE_MARKDOWN_PROSE_CLASSES}>
+    <DocumentProse variant="preview">
       <Markdown options={options}>{source}</Markdown>
-    </div>
+    </DocumentProse>
   );
 }
 

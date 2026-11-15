@@ -189,8 +189,7 @@ const noop = (): void => undefined;
 
 /**
  * The page a placeholder names, as the loaded page will: a bare or hidden
- * `?tab=` opens the viewer's first Settings page, and with free access on
- * Billing is named for its AI credits. Without the organization's bootstrap
+ * `?tab=` opens the viewer's first Settings page. Without the organization's bootstrap
  * yet, the route's own page.
  */
 function usePlaceholderPageItem(
@@ -214,7 +213,7 @@ function usePlaceholderPageItem(
     ) ??
     route.subtab ??
     'general';
-  return organizationSettingsSubtabItem(subtab, organization.freeAccess);
+  return organizationSettingsSubtabItem(subtab);
 }
 
 export interface OrganizationSettingsPlaceholderProps {

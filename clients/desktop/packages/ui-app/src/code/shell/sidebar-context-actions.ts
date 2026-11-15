@@ -91,13 +91,14 @@ export function resolveSidebarContextActions({
   context,
   organizations,
   personalOrganizationId,
-  freeAccess,
+  creditsVisible,
   authenticated = true,
 }: {
   readonly context: WorkspaceContext;
   readonly organizations: readonly WorkspaceContextOrganization[];
   readonly personalOrganizationId: string | null;
-  readonly freeAccess: boolean;
+  /** AI Credits are on for this viewer (billing enabled). */
+  readonly creditsVisible: boolean;
   /** A host with independently loaded account state must fence stale memberships. */
   readonly authenticated?: boolean;
 }): SidebarContextActions {
@@ -138,7 +139,7 @@ export function resolveSidebarContextActions({
       : null,
     invite: invitable ? { kind: 'invite', organization: invitable } : null,
     creditsOrganizationId:
-      freeAccess &&
+      creditsVisible &&
       (organization.role === 'OWNER' || organization.role === 'ADMIN')
         ? organization.id
         : null,

@@ -4,6 +4,7 @@ import {
   CANOPY_STREAM_DEFINITIONS,
   CORE_INSTRUCTION_DEFINITIONS,
   CoreChatListResultSchema,
+  CoreChatMessageMeterSchema,
   CoreChatSnapshotGetResultSchema,
   CoreChatTranscriptPageResultSchema,
 } from '@canopy/protocol/canopy-core';
@@ -20,6 +21,7 @@ import type {
   ChatStateChangedEvent,
   ChatStateSnapshot,
   ChatTabMetadataPatch,
+  ChatTabUsage,
   McpQuestion,
   McpQuestionAnswer,
   PersistedChatMessage,
@@ -34,8 +36,17 @@ import {
   clampModelThinkingLevel,
   type ThinkingLevel,
 } from '@canopy/protocol/thinking';
-import type { ModelCatalogOption } from '@canopy/protocol/models';
+import type {
+  AgentExecutionHarness,
+  ModelCatalogOption,
+} from '@canopy/protocol/models';
+import {
+  readPortalChatMessageAttachments,
+  type PortalChatUsage,
+} from '@canopy/protocol/portal';
+import type { ChatUsageAnswer } from '@canopy/protocol/cloud-session';
 import { webCoreLocalId, webCoreScopeId } from '@/lib/chat-authority';
+import { cloudAttachmentPath } from '@/cloud-chats/cloud-chat-attachments';
 
 /**
  * Translation between the web core's `core.chat.*` protocol and the desktop
@@ -101,11 +112,24 @@ export interface WebCoreIds {
   readonly messageToCore: (id: string) => string;
 }
 
+/**
+ * A message without the meter transcript pages and events now carry
+ * (CAN-6509): the store folds each answer's meter into its tab's usage
+ * (CAN-6755) and keeps the message itself as revision 1 gives it.
+ */
+function withoutMeter(message: PersistedChatMessage): PersistedChatMessage {
+  if (!Object.prototype.hasOwnProperty.call(message, 'meter')) return message;
+  const copy = { ...message };
+  Reflect.deleteProperty(copy, 'meter');
+  return copy;
+}
+
 function messages(
   values: readonly unknown[],
   ids: WebCoreIds,
 ): PersistedChatMessage[] {
-  return values.filter(isPersistedChatMessage).map((message) => {
+  return values.filter(isPersistedChatMessage).map((raw) => {
+    const message = withoutMeter(raw);
     const id = ids.messageToStore(message.id);
     // A timer names its turn's prompt, which the store may hold under the
     // id it sent it with.
@@ -118,9 +142,34 @@ function messages(
       mapped = true;
       return { ...block, userMessageId };
     });
-    if (id === message.id && !mapped) return message;
-    return { ...message, id, ...(mapped ? { blocks } : {}) };
+    const attachmentPaths = transcriptAttachmentPaths(message);
+    if (id === message.id && !mapped && attachmentPaths === undefined)
+      return message;
+    return {
+      ...message,
+      id,
+      ...(mapped ? { blocks } : {}),
+      ...(attachmentPaths === undefined ? {} : { attachmentPaths }),
+    };
   });
+}
+
+/**
+ * The chips a user message's attachments show (CAN-6771): the transcript
+ * carries each one's id and name, as the web reads them, so a message read
+ * back shows them however it was sent. Undefined when it carries none, or
+ * already names its paths.
+ */
+function transcriptAttachmentPaths(
+  message: PersistedChatMessage,
+): string[] | undefined {
+  if ((message.attachmentPaths?.length ?? 0) > 0) return undefined;
+  const attachments = readPortalChatMessageAttachments(
+    Reflect.get(message, 'attachments'),
+  );
+  return attachments?.map((attachment) =>
+    cloudAttachmentPath(attachment.attachmentId, attachment.filename),
+  );
 }
 
 type TurnEnds = NonNullable<PersistedChatTab['turnEnds']>;
@@ -179,6 +228,19 @@ function isProvider(value: unknown): value is AgentProviderType {
   return typeof value === 'string' && PROVIDERS.has(value);
 }
 
+const HARNESSES: ReadonlySet<string> = new Set<AgentExecutionHarness>([
+  'claude',
+  'codex',
+  'cursor',
+  'opencode',
+  'copilot',
+  'antigravity',
+]);
+
+function isHarness(value: unknown): value is AgentExecutionHarness {
+  return typeof value === 'string' && HARNESSES.has(value);
+}
+
 const optionalString = (value: unknown): string | undefined =>
   typeof value === 'string' && value.length > 0 ? value : undefined;
 
@@ -189,6 +251,9 @@ function tabFields(source: JsonRecord): Partial<PersistedChatTab> {
     optionalString(source.modelId) ?? optionalString(settings.model);
   const provider = source.providerId ?? settings.providerId;
   const customTitle = optionalString(settings.customTitle);
+  // The harness the chat runs on, which its picker holds it to as the web's
+  // does (CAN-6761). None from a web core that names none: no restriction.
+  const harness = settings.executionHarness;
   return {
     ...(source.kind === 'chat' || source.kind === 'file'
       ? { kind: source.kind }
@@ -196,8 +261,23 @@ function tabFields(source: JsonRecord): Partial<PersistedChatTab> {
     ...(model === undefined ? {} : { model }),
     ...(isProvider(provider) ? { providerType: provider } : {}),
     ...(customTitle === undefined ? {} : { customTitle }),
+    ...(isHarness(harness) ? { capturedHarness: harness } : {}),
     ...(typeof source.unread === 'boolean' ? { unread: source.unread } : {}),
   };
+}
+
+/**
+ * The harness a chat's own snapshot names for it (CAN-6761), or undefined
+ * when it names none or the snapshot does not open that chat.
+ */
+export function snapshotChatHarness(
+  value: unknown,
+  chatId: string,
+): AgentExecutionHarness | undefined {
+  const parsed = CoreChatSnapshotGetResultSchema.safeParse(value);
+  if (!parsed.success) return undefined;
+  const item = parsed.data.tabs.items.find((each) => each.chatId === chatId);
+  return item === undefined ? undefined : tabFields(item).capturedHarness;
 }
 
 /**
@@ -693,6 +773,104 @@ export function withTranscriptPages(
   };
 }
 
+/**
+ * One of the chat's own answers, as the cloud composer's usage meter folds it
+ * (CAN-6755): revision 2 of `core.chat.transcript.page` and `core.chat.events`
+ * puts each assistant answer's meter on its row (CAN-6509). A row with no
+ * meter, as revision 1 serves every row, is an answer that reported nothing.
+ */
+export interface MeteredAnswer {
+  readonly id: string;
+  readonly timestamp: number;
+  readonly answer: ChatUsageAnswer;
+}
+
+const USD_AMOUNT = /^\d+(\.\d+)?$/;
+
+/**
+ * What an answer cost, as REST's `classifyCost` prices it for the web's
+ * meter: the incurred cost of a split row, else its cost; none while pending.
+ */
+function answerCostUsd(
+  costUsd: string | undefined,
+  incurredCostUsd: string | undefined,
+): number | undefined {
+  const raw = (incurredCostUsd ?? costUsd)?.trim();
+  if (raw === undefined || !USD_AMOUNT.test(raw)) return undefined;
+  const value = Number(raw);
+  return Number.isFinite(value) ? value : undefined;
+}
+
+/**
+ * A transcript row as the chat's answer for its usage meter, or null for a
+ * row that is not one: a user row, or a subagent's reply, which meters its
+ * task as the web's meter skips it (CAN-6509). A meter outside the
+ * protocol's bounds counts as none.
+ */
+export function meteredAnswer(value: unknown): MeteredAnswer | null {
+  if (
+    !isRecord(value) ||
+    value.role !== 'assistant' ||
+    typeof value.id !== 'string' ||
+    typeof value.timestamp !== 'number' ||
+    value.parentToolUseId !== undefined
+  )
+    return null;
+  const meter =
+    value.meter === undefined
+      ? undefined
+      : CoreChatMessageMeterSchema.safeParse(value.meter).data;
+  const costUsd = answerCostUsd(meter?.costUsd, meter?.incurredCostUsd);
+  return {
+    id: value.id,
+    timestamp: value.timestamp,
+    answer: {
+      ...(meter?.usage === undefined ? {} : { usage: meter.usage }),
+      ...(meter?.model === undefined
+        ? {}
+        : {
+            model: {
+              id: meter.model.id,
+              ...(meter.model.contextWindow === undefined
+                ? {}
+                : { contextWindow: meter.model.contextWindow }),
+            },
+          }),
+      ...(costUsd === undefined ? {} : { costUsd }),
+      createdAtMs: value.timestamp,
+    },
+  };
+}
+
+/**
+ * The chat's usage as its tab holds it, from the fold the web's composer
+ * meter shows (`foldChatUsage`), with the same rule the composer applies: a
+ * window with no measured context reads as none, so the Context row stays
+ * hidden rather than showing an empty context. No fold, no usage: the meter
+ * never shows a zero for a chat that reported nothing.
+ */
+export function chatTabUsage(
+  usage: PortalChatUsage | undefined,
+): ChatTabUsage | undefined {
+  if (usage === undefined) return undefined;
+  return {
+    contextTokens: usage.contextTokens ?? 0,
+    contextWindow:
+      usage.contextTokens === undefined ? 0 : (usage.contextWindow ?? 0),
+    maxOutputTokens: 0,
+    // Shown nowhere for a cloud chat, whose meter hides USD (CAN-5028).
+    totalCostUsd: usage.totalCostUsd ?? 0,
+    inputTokens: usage.inputTokens ?? 0,
+    outputTokens: usage.outputTokens ?? 0,
+    cacheReadInputTokens: usage.cacheReadTokens ?? 0,
+    cacheCreationInputTokens: usage.cacheWriteTokens ?? 0,
+    durationMs: 0,
+    durationApiMs: 0,
+    numTurns: usage.numTurns ?? 0,
+    model: usage.model ?? '',
+  };
+}
+
 /** A transcript page as `chat.getTranscriptPage` returns it. */
 export function translateTranscriptPage(
   value: unknown,
@@ -758,6 +936,11 @@ function metadataPatch(patch: JsonRecord): ChatTabMetadataPatch {
       ? { customTitle: patch.customTitle }
       : {}),
     ...(typeof patch.unread === 'boolean' ? { unread: patch.unread } : {}),
+    // The harness a turn's answer runs on (CAN-6777). An event only adds or
+    // confirms one: a missing or unknown value leaves the tab's as it is.
+    ...(isHarness(patch.executionHarness)
+      ? { capturedHarness: patch.executionHarness }
+      : {}),
   };
 }
 

@@ -1,3 +1,4 @@
+import { DocumentProse } from '@canopy/ui-shared/components/Markdown';
 import {
   Button,
   Surface,
@@ -15,7 +16,6 @@ import {
   type JSX,
 } from 'react';
 import { Markdown } from '@canopy/ui-shared/components';
-import { POSTHOG_REPLAY_BLOCK_CLASS } from '@canopy/desktop-instrumentation/posthog-replay-privacy';
 import { useStandaloneChatStore } from '@/stores/standaloneChatStore';
 import { dismissPageLikeViewers } from '@/lib/dismissPageLikeViewers';
 import type { ChatTab } from '@/stores/chatStore';
@@ -259,12 +259,13 @@ export function StandaloneArchiveViewer({
               </div>
             </Surface>
           ) : summary ? (
-            <div
+            <DocumentProse
+              variant="archive"
+              replay="block"
               data-testid="standalone-archive-summary"
-              className={`${POSTHOG_REPLAY_BLOCK_CLASS} prose prose-sm [--tw-prose-body:var(--fg-primary)] dark:prose-invert max-w-none break-words prose-p:my-0.5 prose-pre:my-1.5 prose-pre:bg-fg-primary/[0.06] prose-pre:fg-primary/80 prose-code:fg-success prose-code:before:content-none prose-code:after:content-none prose-headings:fg-primary prose-a:fg-accent prose-strong:fg-primary prose-li:my-0.5`}
             >
               <Markdown>{summary}</Markdown>
-            </div>
+            </DocumentProse>
           ) : (
             <div className="py-8 text-center text-s fg-secondary">
               {legacySummaryOnly

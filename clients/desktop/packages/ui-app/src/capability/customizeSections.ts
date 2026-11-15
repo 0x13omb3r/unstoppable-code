@@ -1,12 +1,20 @@
 import {
   alwaysAvailableReason,
   BUNDLED_SKILL_FOOTNOTE,
+  customizeDiscoveryEntryMatches,
+  customizeDiscoveryNeedsAttention,
+  customizeEntryIsCopyOfSharedWithViewer,
+  customizeEntrySharedWithViewer,
+  customizeSkillMatch,
+  type CustomizeDiscoveryFilters,
+  type CustomizeSkillMatch,
   DEFAULT_PIPELINE_FILTERS,
   entryHasInstalledStatus,
   isBundledSkill,
   isPluginServerResult,
   marketplaceEntryInTab,
   pipelineFiltersActive,
+  rankCustomizeByRelevance,
   type MarketplaceCatalogTabId,
   type MarketplaceTypeTabId,
   type PipelineFilterValues,
@@ -100,6 +108,17 @@ export interface CustomizeTabModelInput {
   readonly projectTemplatesAvailable?: boolean;
   /** Plugin shares eligible for Shared by me on the MCP servers tab. */
   readonly mcpSharedEntryIds?: ReadonlySet<string>;
+  /**
+   * New Customize's filter menu (CAN-6809). Omitted while the
+   * `customize-discovery` Labs experiment is off, which leaves every list
+   * exactly as before.
+   */
+  readonly discoveryFilters?: CustomizeDiscoveryFilters;
+  /**
+   * New Customize's Shared with me toggle (CAN-6810): list only items others
+   * shared with the viewer. Read only while `discoveryFilters` is set.
+   */
+  readonly sharedWithMeOnly?: boolean;
 }
 
 export interface CustomizeTabModel {
@@ -109,6 +128,16 @@ export interface CustomizeTabModel {
   readonly searchActive: boolean;
   readonly batchableUpdates: readonly UnifiedPluginEntry[];
   readonly showUpdateAll: boolean;
+  /**
+   * Installed rows with a surfaced update, whichever section lists them: the
+   * Updates section today, an Installed row's badge in New Customize.
+   */
+  readonly updateEntryIds: readonly string[];
+  /**
+   * New Customize search (CAN-6812): row id to the "Includes" line of a
+   * plugin row whose skills matched. Empty otherwise.
+   */
+  readonly skillMatches: ReadonlyMap<string, CustomizeSkillMatch>;
 }
 
 /**
@@ -218,7 +247,7 @@ function surfacedUpdate(
 }
 
 /** A surfaced update or a shared copy whose source changed (CAN-5309). */
-function entryHasUpdate(
+export function entryHasUpdate(
   entry: UnifiedPluginEntry,
   supportedUpdateKinds: readonly CustomizeUpdateKind[] | undefined,
 ): boolean {
@@ -552,6 +581,88 @@ export function buildCustomizeTabModel(
   // its plugin; every other view keeps listing them as the plugin (CAN-3653).
   const keepPluginProvided = searchActive && input.tab === 'app';
   const candidates = unique(input.entries);
+  // A plugin's skills, for the skill tier of New Customize's search order.
+  const bundledSkillNames = new Map<string, string[]>();
+  for (const entry of candidates) {
+    if (!isBundledSkill(entry)) continue;
+    const names = bundledSkillNames.get(entry.bundledBy.entryId) ?? [];
+    names.push(entry.name);
+    bundledSkillNames.set(entry.bundledBy.entryId, names);
+  }
+  const skillNamesOf = (entry: UnifiedPluginEntry): readonly string[] => [
+    ...new Set([
+      ...(bundledSkillNames.get(entry.id) ?? []),
+      ...(entry.bundledSkillNames ?? []),
+      ...(entry.marketplaceListings ?? []).flatMap((listing) =>
+        listing.id === entry.id
+          ? []
+          : [
+              ...(bundledSkillNames.get(listing.id) ?? []),
+              ...(listing.bundledSkillNames ?? []),
+            ],
+      ),
+    ]),
+  ];
+  // New Customize's filter menu (CAN-6809); every entry passes while it is off.
+  const discoveryFilters = input.discoveryFilters;
+  const discovery = discoveryFilters !== undefined;
+  // New Customize keeps a plugin's skills inside the plugin (CAN-6812): no
+  // bundled skill gets its own row, the plugin row stands for them and a
+  // search reaches the plugin through them.
+  // A plugin, or the integration card a plugin folded into on desktop.
+  const standsForPlugin = (entry: UnifiedPluginEntry): boolean =>
+    entry.kind === 'plugin' || entry.integration?.plugin !== undefined;
+  const skillMatchOf = (
+    entry: UnifiedPluginEntry,
+  ): CustomizeSkillMatch | undefined =>
+    discovery && searchActive && standsForPlugin(entry)
+      ? customizeSkillMatch(skillNamesOf(entry), query)
+      : undefined;
+  // On the Skills tab the plugin row replaces its skill rows: an installed
+  // plugin whose skills were listed, or any plugin a search reached through
+  // a skill.
+  const inTab = (entry: UnifiedPluginEntry): boolean =>
+    marketplaceEntryInTab(entry, input.tab) ||
+    (discovery &&
+      input.tab === 'skill' &&
+      standsForPlugin(entry) &&
+      (bundledSkillNames.has(entry.id) || skillMatchOf(entry) !== undefined));
+  const hasUpdate = (entry: UnifiedPluginEntry): boolean =>
+    entryHasUpdate(entry, input.supportedUpdateKinds);
+  const sharedWithMeOnly = discovery && input.sharedWithMeOnly === true;
+  // Shared with me lists every kind it counts, so a shared collection or
+  // agent shows without Also show.
+  const appliedDiscoveryFilters =
+    discoveryFilters && sharedWithMeOnly
+      ? { ...discoveryFilters, collections: true, agents: true }
+      : discoveryFilters;
+  // A share's installed copy stays its Installed row under Shared with me:
+  // that copy carries the install's status and update, not its share alias.
+  const sharedWithMeInstallIds = new Set(
+    sharedWithMeOnly
+      ? candidates.flatMap((entry) =>
+          customizeEntrySharedWithViewer(entry) &&
+          entry.installedEntryId !== undefined
+            ? [entry.installedEntryId]
+            : [],
+        )
+      : [],
+  );
+  const matchesDiscovery = (entry: UnifiedPluginEntry): boolean =>
+    appliedDiscoveryFilters === undefined ||
+    (customizeDiscoveryEntryMatches(
+      entry,
+      appliedDiscoveryFilters,
+      marketplaceEntryIsInstalled(
+        entry,
+        isBundledSkill(entry) ? undefined : input.installedStatusStates,
+      ),
+      hasUpdate(entry),
+    ) &&
+      (!sharedWithMeOnly ||
+        customizeEntrySharedWithViewer(entry) ||
+        customizeEntryIsCopyOfSharedWithViewer(entry) ||
+        sharedWithMeInstallIds.has(entry.id)));
   const tabEntries = (
     keepPluginProvided
       ? [...candidates, ...pluginServerResults(candidates)]
@@ -559,9 +670,12 @@ export function buildCustomizeTabModel(
   ).filter(
     (entry) =>
       (keepPluginProvided || !listedAsItsPlugin(entry)) &&
-      marketplaceEntryInTab(entry, input.tab) &&
+      !(discovery && isBundledSkill(entry)) &&
+      inTab(entry) &&
       (entry.kind !== 'agent' || input.agentsAvailable === true) &&
-      (entry.kind !== 'blueprint' || input.projectTemplatesAvailable === true),
+      (entry.kind !== 'blueprint' ||
+        input.projectTemplatesAvailable === true) &&
+      matchesDiscovery(entry),
   );
   // Ranked search determines matching identities; section order remains stable.
   const matchIds = (rows: UnifiedPluginEntry[]): Set<string> | null =>
@@ -569,7 +683,12 @@ export function buildCustomizeTabModel(
       ? new Set(
           marketplaceResultEntries(searchUnifiedEntries(rows, query, null))
             .map((entry) => entry.id)
-            .concat(input.searchMatchedEntryIds ?? []),
+            .concat(input.searchMatchedEntryIds ?? [])
+            .concat(
+              rows.flatMap((entry) =>
+                skillMatchOf(entry) === undefined ? [] : [entry.id],
+              ),
+            ),
         )
       : null;
   const matches = matchIds(tabEntries);
@@ -643,14 +762,26 @@ export function buildCustomizeTabModel(
       input.installedStatusSnapshot,
       input.supportedUpdateKinds,
     );
-  const installed = groupMarketplaceListings(
+  const groupedInstalled = groupMarketplaceListings(
     allInstalled.filter(matchesStatus),
     entries,
   );
+  // New Customize lists what needs the person first (CAN-6810): an update,
+  // a sign-in or a failing connection, the same rows Attention finds. The
+  // rest keep today's order. Membership never changes.
+  const needsAttention = (entry: UnifiedPluginEntry): boolean =>
+    hasUpdate(entry) || customizeDiscoveryNeedsAttention(entry);
+  const installed = discovery
+    ? [
+        ...groupedInstalled.filter(needsAttention),
+        ...groupedInstalled.filter((entry) => !needsAttention(entry)),
+      ]
+    : groupedInstalled;
   const updates = installed.filter((entry) =>
     surfacedUpdate(entry, input.supportedUpdateKinds),
   );
-  if (updates.length) section('updates', 'Updates', updates);
+  // New Customize shows an update as a badge on its Installed row instead.
+  if (updates.length && !discovery) section('updates', 'Updates', updates);
   if (
     input.tab !== 'blueprint' &&
     (installed.length ||
@@ -670,9 +801,9 @@ export function buildCustomizeTabModel(
       previewLimit === undefined ? installed : installed.slice(0, previewLimit);
     section(
       'installed',
-      input.tab === 'collection'
+      input.tab === 'collection' && !discovery
         ? 'Added'
-        : input.tab === 'agent'
+        : input.tab === 'agent' && !discovery
           ? 'Your agents'
           : 'Installed',
       installed,
@@ -700,7 +831,10 @@ export function buildCustomizeTabModel(
       (entry) =>
         entry.kind === 'plugin' &&
         ownedByViewer(entry) &&
-        input.mcpSharedEntryIds?.has(entry.id) === true,
+        input.mcpSharedEntryIds?.has(entry.id) === true &&
+        // These shares stay out of the tab's entries, so they take the
+        // filter menu here.
+        matchesDiscovery(entry),
     );
     const shareMatches = matchIds(eligible);
     return eligible.filter(
@@ -709,16 +843,19 @@ export function buildCustomizeTabModel(
         matchesStatus(entry),
     );
   };
-  const owned = !input.ownershipAvailable
-    ? []
-    : input.tab === 'app'
-      ? mcpOwned()
-      : entries.filter(
-          (entry) =>
-            ownedByViewer(entry) &&
-            entry.kind !== 'app' &&
-            matchesStatus(entry),
-        );
+  // New Customize has no Shared by me section (CAN-6810): an installed share
+  // is its Installed row, any other one stays in Browse.
+  const owned =
+    !input.ownershipAvailable || discovery
+      ? []
+      : input.tab === 'app'
+        ? mcpOwned()
+        : entries.filter(
+            (entry) =>
+              ownedByViewer(entry) &&
+              entry.kind !== 'app' &&
+              matchesStatus(entry),
+          );
   if (owned.length)
     section(
       'shared-by-me',
@@ -740,8 +877,11 @@ export function buildCustomizeTabModel(
     // When Shared by me is shown, the viewer's own share folded into its
     // local Collection lists only there; the local row stands for it under
     // Installed.
+    // New Customize lists an item once (CAN-6810): its Installed row is
+    // enough.
     const installedCollectionShares = entries.filter(
       (entry) =>
+        !discovery &&
         entry.ref.type === 'shared-collection' &&
         entry.origin === 'shared' &&
         isInstalled(entry) &&
@@ -766,27 +906,44 @@ export function buildCustomizeTabModel(
                   (value) => value.toLowerCase() === category,
                 )))),
       );
-    const groups =
+    const allGroups =
       input.tab === 'all'
         ? allBrowseGroups(browse, searchActive, input.suggestedNames)
         : undefined;
-    const browseEntries = groups
-      ? unique(groups.flatMap((group) => group.entries))
+    // New Customize's Browse is one list (CAN-6810): today's group order,
+    // flattened, and each item once.
+    const groups = discovery ? undefined : allGroups;
+    const browseOrder = allGroups
+      ? unique(allGroups.flatMap((group) => group.entries))
       : groupMarketplaceListings(browse);
+    const browseEntries =
+      discovery && searchActive
+        ? rankCustomizeByRelevance(browseOrder, query, skillNamesOf)
+        : browseOrder;
     if (
       browseEntries.length ||
       (input.tab === 'workflow' &&
         (searchActive || pipelineFiltersActive(filters) || !!category))
     ) {
-      section('browse', BROWSE_TITLES[input.tab], browseEntries, {
-        ...(groups ? { groups } : {}),
-        ...(!browseEntries.length
-          ? { emptyReason: searchActive ? 'search' : 'pipeline-filters' }
-          : {}),
-      });
+      section(
+        'browse',
+        discovery ? 'Browse' : BROWSE_TITLES[input.tab],
+        browseEntries,
+        {
+          ...(groups ? { groups } : {}),
+          ...(!browseEntries.length
+            ? { emptyReason: searchActive ? 'search' : 'pipeline-filters' }
+            : {}),
+        },
+      );
     }
   }
   const batchableUpdates = updates.filter((entry) => entry.kind === 'skill');
+  const skillMatches = new Map<string, CustomizeSkillMatch>();
+  for (const row of sections.flatMap((section) => section.entries)) {
+    const match = skillMatchOf(row);
+    if (match) skillMatches.set(row.id, match);
+  }
   return {
     sections,
     // A share and its installation are one item.
@@ -798,5 +955,7 @@ export function buildCustomizeTabModel(
     searchActive,
     batchableUpdates,
     showUpdateAll: batchableUpdates.length > 1,
+    updateEntryIds: updates.map((entry) => entry.id),
+    skillMatches,
   };
 }

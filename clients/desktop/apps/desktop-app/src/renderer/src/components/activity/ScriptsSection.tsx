@@ -1,3 +1,4 @@
+import { SourceLayerSurface } from '@canopy/ui-shared/components';
 import { useCallback, useEffect, useMemo, useState, type JSX } from 'react';
 import {
   ScriptsSectionBody,
@@ -292,13 +293,10 @@ function WorkspaceLifecycleInfoModal({
                   {item.info && (
                     <div className="flex flex-col gap-1.5">
                       {item.info.layers.map((layer) => (
-                        <div
+                        <SourceLayerSurface
                           key={layer.sourceKey}
-                          className={`flex flex-col gap-1 rounded border px-2 py-1.5 ${
-                            layer.status === 'active'
-                              ? 'border-line-positive bg-success/[0.05]'
-                              : 'bg-base/50'
-                          }`}
+                          variant="script"
+                          active={layer.status === 'active'}
                         >
                           <div className="flex items-center justify-between gap-2">
                             <span
@@ -321,7 +319,7 @@ function WorkspaceLifecycleInfoModal({
                               {layer.command}
                             </CodeBlock>
                           )}
-                        </div>
+                        </SourceLayerSurface>
                       ))}
                     </div>
                   )}

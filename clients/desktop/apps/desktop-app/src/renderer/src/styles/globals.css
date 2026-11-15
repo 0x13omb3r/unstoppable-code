@@ -12,7 +12,7 @@
 
 /* Every top-level page reserves the same scrollbar width, whether or not its
  * current tab overflows, so shared centered containers never change geometry. */
-.page-scroll-gutter {
+:is(.page-scroll-gutter, [data-page-scroll-gutter]) {
   scrollbar-gutter: stable;
 }
 
@@ -595,7 +595,7 @@ body[data-app-advisor-docked] {
  * (`[data-settings-layout='inset']`). */
 .settings-page-overlay[data-settings-layout='inset']
   [data-settings-card]
-  > .page-scroll-gutter {
+  > :is(.page-scroll-gutter, [data-page-scroll-gutter]) {
   padding-top: 24px;
 }
 
@@ -717,7 +717,8 @@ body[data-app-advisor-docked] {
 /* A page's card keeps the same strip on both sides as the scrollbar's
  * reserved one, so content centered in the card (the New Task composer) has
  * equal insets. */
-[data-window-layout='inset'] .page-scroll-gutter {
+[data-window-layout='inset']
+  :is(.page-scroll-gutter, [data-page-scroll-gutter]) {
   scrollbar-gutter: stable both-edges;
 }
 
@@ -925,7 +926,7 @@ html[data-platform='darwin'] .app-sidebar-material .bg-sidebar:not(.sticky) {
   background-color: color-mix(in srgb, var(--fg-warning) 65%, transparent);
 }
 
-.browser-bar {
+[data-browser-bar] {
   container: browser-bar / inline-size;
 }
 
@@ -1709,7 +1710,7 @@ body[data-sidebar-menu-open] .sidebar-resizable-surface * {
  * top margin) above the viewport bottom. */
 /* Real workspace headers always remain in normal flow. The independently
  * rendered slot below is the only pinned workspace-row surface. */
-.sidebar-workspace-sticky-header {
+:is(.sidebar-workspace-sticky-header, [data-sidebar-workspace-header]) {
   position: relative;
 }
 
@@ -1718,8 +1719,14 @@ body[data-sidebar-menu-open] .sidebar-resizable-surface * {
  * cannot reveal a duplicate underneath. Opacity (not visibility/display)
  * keeps flow layout intact for sortable and scroll geometry; AppSidebar also
  * makes only the covered original inert, then restores it with the pin. */
-.sidebar-workspace-sticky-header[data-sidebar-sticky-flow-hidden='true'],
-.sidebar-workspace-sticky-header[data-sidebar-selected-pin-flow-hidden='true'],
+:is(
+  .sidebar-workspace-sticky-header,
+  [data-sidebar-workspace-header]
+)[data-sidebar-sticky-flow-hidden='true'],
+:is(
+  .sidebar-workspace-sticky-header,
+  [data-sidebar-workspace-header]
+)[data-sidebar-selected-pin-flow-hidden='true'],
 [data-sidebar-selected-item][data-sidebar-selected-pin-flow-hidden='true'],
 [data-sidebar-item-group-header][data-sidebar-selected-pin-flow-hidden='true'] {
   opacity: 0;

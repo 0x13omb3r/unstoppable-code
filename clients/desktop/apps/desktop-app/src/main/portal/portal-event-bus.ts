@@ -425,6 +425,7 @@ export async function emitWorktreeDiffStatsDelta(
       worktreeId,
       owner,
       await catalogAgentDefaultModel(workspaceId),
+      workspaceId,
     )[0];
     if (!enrichedEntity) return;
     enqueuePortalEvent(
@@ -447,6 +448,9 @@ export async function emitWorktreeDiffStatsDelta(
 
 /** Refresh already-hydrated composer catalogs after a provider account changes. */
 export async function notifyPortalModelCatalogChanged(): Promise<void> {
+  const { invalidateAgentCatalogCompatibility } =
+    await import('./agent-catalog-compatibility');
+  invalidateAgentCatalogCompatibility();
   if (!active) return;
   const revision = ++catalogRevision;
   const current = (): boolean => active && revision === catalogRevision;
@@ -495,6 +499,7 @@ export async function notifyPortalModelCatalogChanged(): Promise<void> {
             worktreeId,
             owner,
             await catalogAgentDefaultModel(workspaceId),
+            workspaceId,
           ),
         );
       enqueuePortalEvent(

@@ -63,6 +63,8 @@ export interface ResolvedPluginRuntime {
    */
   codexPluginMcpSources?: Record<string, CodexPluginMcpSource>;
   claudeModAdmission?: ClaudeModAdmissionLaunch;
+  opencodePlugins?: ResolvedPluginPath[];
+  opencodeSkills?: ResolvedSkill[];
 }
 
 export interface CodexPluginMcpSource {
@@ -73,7 +75,7 @@ export interface CodexPluginMcpSource {
 }
 
 export interface ResolvePluginsOptions {
-  purpose?: 'claude-session' | 'codex-session';
+  purpose?: 'claude-session' | 'codex-session' | 'opencode-session';
   runtimeDirs?: {
     rootDir: string;
     claudePluginDir: string;
@@ -304,7 +306,7 @@ function extractPluginMcpServers(
   return result;
 }
 
-function readPluginMcpConfigObjects(
+export function readPluginMcpConfigObjects(
   plugin: ResolvedPluginPath,
 ): Record<string, Record<string, unknown>> {
   const manifest = readJson<Record<string, unknown>>(
@@ -423,6 +425,7 @@ export function resolveCwdRelativePathArg(arg: string, cwd: string): string {
 function resolveNativeCodexPluginMcpServers(
   plugin: ResolvedPluginPath,
   warnings: string[],
+  openCode = false,
 ): {
   servers: Record<string, unknown>;
   sources: Record<string, CodexPluginMcpSource>;
@@ -438,6 +441,20 @@ function resolveNativeCodexPluginMcpServers(
 
   let hasDisabledMcpServers = false;
   for (const [serverName, rawServer] of Object.entries(rawServers)) {
+    if (
+      openCode &&
+      [
+        'allowedTools',
+        'disabledTools',
+        'enabled_tools',
+        'disabled_tools',
+        'default_tools_approval_mode',
+        'tools',
+      ].some((key) => rawServer[key] !== undefined)
+    )
+      throw new Error(
+        `OpenCode cannot apply the selected MCP tool policy for ${serverName}.`,
+      );
     if (rawServer.enabled === false) {
       hasDisabledMcpServers = true;
       continue;
@@ -639,6 +656,15 @@ function resolvePluginSelection(
   const codexPurpose = purpose === 'codex-session';
 
   if (!codexPurpose) {
+    if (!facets.claude && purpose === 'opencode-session' && facets.codex) {
+      return resolvePluginSelection(
+        marketplaceId,
+        pluginName,
+        marketplaces,
+        warnings,
+        'codex-session',
+      );
+    }
     if (!facets.claude) {
       warnings.push(
         `Plugin "${pluginName}" in marketplace "${marketplaceId}" is only available for Codex; skipping for Claude.`,
@@ -951,6 +977,7 @@ export function resolvePlugins(
   const resolvedPlugins: ResolvedPluginPath[] = [];
   for (const resource of options?.packageOverlay?.resources ?? []) {
     if (
+      purpose !== 'opencode-session' &&
       resource.provider !== (purpose === 'codex-session' ? 'codex' : 'claude')
     ) {
       continue;
@@ -1002,14 +1029,18 @@ export function resolvePlugins(
     }
   }
 
-  if (purpose === 'codex-session') {
+  if (purpose === 'codex-session' || purpose === 'opencode-session') {
     for (const plugin of resolvedPlugins) {
-      if (plugin.provider !== 'codex' || plugin.mode !== 'native') {
+      if (
+        purpose === 'codex-session' &&
+        (plugin.provider !== 'codex' || plugin.mode !== 'native')
+      ) {
         continue;
       }
       const pluginMcpResolution = resolveNativeCodexPluginMcpServers(
         plugin,
         warnings,
+        purpose === 'opencode-session',
       );
       Object.assign(mcpServers, pluginMcpResolution.servers);
       Object.assign(codexPluginMcpSources, pluginMcpResolution.sources);
@@ -1023,7 +1054,8 @@ export function resolvePlugins(
     options?.packageOverlay?.resources ?? []
   ).flatMap((resource) =>
     resource.kind === 'standalone_skill' &&
-    resource.provider === (purpose === 'codex-session' ? 'codex' : 'claude')
+    (purpose === 'opencode-session' ||
+      resource.provider === (purpose === 'codex-session' ? 'codex' : 'claude'))
       ? [
           {
             name: path.basename(resource.rootPath),
@@ -1033,7 +1065,7 @@ export function resolvePlugins(
       : [],
   );
   const skills = [...packagedSkills, ...resolveSkillRefs(selections, warnings)];
-  if (purpose !== 'codex-session' && skills.length > 0) {
+  if (purpose === 'claude-session' && skills.length > 0) {
     const pluginDir = buildClaudeSkillPluginDir(
       options?.runtimeDirs?.claudePluginDir ??
         path.join(getCanopyDataDir(), 'pipeline-plugins', 'claude-skills'),
@@ -1093,7 +1125,7 @@ export function resolvePlugins(
   let finalSdkPlugins: SdkPluginConfig[];
   let claudeModAdmission: ClaudeModAdmissionLaunch | undefined;
   const admissionContext =
-    purpose === 'codex-session'
+    purpose !== 'claude-session'
       ? undefined
       : options?.claudeModAdmissionContext;
   const settingSources =
@@ -1191,6 +1223,9 @@ export function resolvePlugins(
 
   return {
     warnings,
+    ...(purpose === 'opencode-session'
+      ? { opencodePlugins: resolvedPlugins, opencodeSkills: skills }
+      : {}),
     sdkPlugins: finalSdkPlugins,
     selectedCapabilityRoots,
     mcpServers,

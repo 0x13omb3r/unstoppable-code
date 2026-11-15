@@ -1,5 +1,5 @@
 import { useMemo, type JSX, type ReactNode } from 'react';
-import { AI_CREDIT_USD_PER_CREDIT } from '@canopy/protocol/settings/billing-plan-catalog';
+import { AI_CREDIT_USD_PER_CREDIT } from '@canopy/protocol/billing';
 import {
   CostCurrencyContext,
   type CostCurrency,

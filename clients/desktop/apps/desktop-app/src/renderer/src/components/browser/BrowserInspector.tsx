@@ -3,7 +3,11 @@ import {
   useBrowserStore,
   type BrowserInspectorTabId,
 } from '@/stores/browserStore';
-import { HeaderActionButton, TabBar } from '@canopy/ui-shared/components';
+import {
+  BrowserInspectorSurface,
+  HeaderActionButton,
+  TabBar,
+} from '@canopy/ui-shared/components';
 import { CloseMediumIcon } from '@canopy/ui-shared/icons/AppIcons';
 import { useEffect, useRef, type JSX } from 'react';
 import { BrowserConsolePanel } from './BrowserConsolePanel';
@@ -64,7 +68,7 @@ export function BrowserInspector({
   ]);
 
   return (
-    <div className="flex min-h-0 min-w-0 flex-1 flex-col border-l bg-card/40">
+    <BrowserInspectorSurface>
       {
         // Early access: the tabs and, at the row's end, a way to close the
         // details.
@@ -103,6 +107,6 @@ export function BrowserInspector({
         <BrowserSnapshotsPanel browserId={browserId} />
       )}
       {activeTab === 'files' && <BrowserFilesPanel browserId={browserId} />}
-    </div>
+    </BrowserInspectorSurface>
   );
 }

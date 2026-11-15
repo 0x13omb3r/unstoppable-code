@@ -369,6 +369,16 @@ export interface UnifiedPluginEntry {
    */
   installedFrom?: UnifiedEntryInstalledFrom;
   /**
+   * Set on a local copy of a share someone else published when the share row
+   * is folded into this row (CAN-6810): the folded row's entry id and share
+   * date, so Shared with me lists the copy and counts the share once. Not
+   * displayed.
+   */
+  copyOfSharedWithViewer?: {
+    readonly shareEntryId: string;
+    readonly sharedSince: string;
+  };
+  /**
    * A receipted shared copy whose source hash differs from the installed
    * receipt (CAN-5309); separate from the GitHub `updateAvailable`.
    */
@@ -412,11 +422,27 @@ export interface UnifiedPluginEntry {
   /** Set on a plugin, installed or not: every MCP server it bundles. */
   bundledServers?: readonly UnifiedEntryBundledServer[];
   /**
+   * Set on a plugin, installed or not, or on the integration card a plugin
+   * folded into, when its source lists them: the names of the skills it
+   * bundles, so New Customize can find the plugin through a skill and show
+   * them in its row (CAN-6812).
+   */
+  bundledSkillNames?: readonly string[];
+  /**
    * Set on an MCP search result that stands for a bundled server no row or
    * card represents. `bundledBy` names its plugin; it has no installation,
    * health, sharing or install action of its own.
    */
   pluginServerResult?: true;
+  /**
+   * Catalog entries that are the same integration share this key (CAN-6808):
+   * a Claude and a Codex plugin, the MCP catalog card and a connector for one
+   * product. Additive and optional: an entry without it is its own
+   * integration, and ids never change.
+   */
+  integrationKey?: string;
+  /** The integration's preferred MCP endpoint, the same on every copy. */
+  integrationEndpoint?: string;
   ref: UnifiedEntryRef;
 }
 

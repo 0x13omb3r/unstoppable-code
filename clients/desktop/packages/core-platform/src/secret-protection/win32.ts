@@ -1,3 +1,4 @@
+import { untrackedProtectionWork, type NativeProtectionWork } from './work';
 import { createHash } from 'node:crypto';
 import type {
   PlatformKeySlot,
@@ -62,12 +63,13 @@ export function createWindowsSecretProtection(
   native: () => CredentialNative | undefined,
   namespace: CredentialNamespace,
   unavailable: PlatformSecretProtectionUnavailableReason = 'backend_failed',
+  work: NativeProtectionWork = untrackedProtectionWork,
 ): PlatformSecretProtectionServices {
   const identity = { ...namespace };
   let tail = Promise.resolve();
   function enqueue<T>(
     signal: AbortSignal,
-    work: (cancel: Uint32Array) => Promise<T>,
+    run: (cancel: Uint32Array) => Promise<T>,
     clean = (): void => undefined,
   ): Promise<T> {
     if (signal.aborted) {
@@ -90,22 +92,24 @@ export function createWindowsSecretProtection(
         }
       };
       signal.addEventListener('abort', abort, { once: true });
-      const pending = tail
-        .then(async () => {
-          if (signal.aborted) abort();
-          if (cancelled) return;
-          started = true;
-          try {
-            resolve(await work(cancellation));
-          } catch (error) {
-            // AbortSignal.throwIfAborted may throw a caller-owned non-Error.
-            // eslint-disable-next-line @typescript-eslint/prefer-promise-reject-errors
-            reject(error);
-          } finally {
-            clean();
-          }
-        })
-        .finally(() => signal.removeEventListener('abort', abort));
+      const pending = work.track(() =>
+        tail
+          .then(async () => {
+            if (signal.aborted) abort();
+            if (cancelled) return;
+            started = true;
+            try {
+              resolve(await run(cancellation));
+            } catch (error) {
+              // AbortSignal.throwIfAborted may throw a caller-owned non-Error.
+              // eslint-disable-next-line @typescript-eslint/prefer-promise-reject-errors
+              reject(error);
+            } finally {
+              clean();
+            }
+          })
+          .finally(() => signal.removeEventListener('abort', abort)),
+      );
       tail = pending.catch(() => undefined);
     });
   }
@@ -128,13 +132,15 @@ export function createWindowsSecretProtection(
     const target = identity.prefix + name;
     let result: unknown;
     try {
-      result = await backend.run(
-        operation,
-        target,
-        credentialMutexName(target, identity.principalSid),
-        bytes,
-        identity.principalSid,
-        cancellation,
+      result = await work.track(() =>
+        backend.run(
+          operation,
+          target,
+          credentialMutexName(target, identity.principalSid),
+          bytes,
+          identity.principalSid,
+          cancellation,
+        ),
       );
     } catch {
       return {

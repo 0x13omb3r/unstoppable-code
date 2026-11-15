@@ -125,6 +125,7 @@ export interface PluginHookInfo {
   event: string;
   matcher?: string;
   hookType: string;
+  async?: boolean;
   command?: string;
 }
 

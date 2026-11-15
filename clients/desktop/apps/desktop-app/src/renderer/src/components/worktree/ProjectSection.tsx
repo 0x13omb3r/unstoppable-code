@@ -1,3 +1,4 @@
+import { SidebarWorkspaceFrame } from '@canopy/ui-shared/components';
 import {
   Fragment,
   useEffect,
@@ -775,7 +776,7 @@ export function ProjectSection({
     : -1;
   const creatingPlaceholder = (
     <div
-      className="group/sidebar-item flex items-center gap-1.5 rounded-row px-1.5 py-1.5 fg-primary/80"
+      className="group/sidebar-item flex items-center gap-1.5 px-1.5 py-1.5 fg-primary/80"
       role="status"
       aria-label="Creating worktree"
       data-testid="sidebar-worktree-creating-placeholder"
@@ -947,17 +948,19 @@ export function ProjectSection({
   };
 
   return (
-    <div
+    <SidebarWorkspaceFrame
+      code
+      highlightPlaying={highlightPlaying}
       ref={(node): void => {
         sectionRef.current = node;
       }}
-      className={`relative rounded-lg ${
+      spacing={
         hasFollowingWorkspace
           ? showsExpandedContent || showsCollapsedSelectedRow
-            ? 'mb-2'
-            : 'mb-px'
-          : ''
-      } ${highlightPlaying ? 'workspace-highlight-pulse' : ''}`}
+            ? 'expanded'
+            : 'compact'
+          : 'none'
+      }
       data-workspace-expanded={workspaceExpanded ? 'true' : 'false'}
       data-sidebar-workspace-id={project.id}
       onAnimationEnd={(event): void => {
@@ -977,7 +980,7 @@ export function ProjectSection({
       <SidebarSection
         collapsible={false}
         hideHeader={hideWorkspaceHeader}
-        headerClassName="sidebar-workspace-sticky-header z-30"
+        headerVariant="sticky-workspace"
         headerSurface="sidebar"
         header={hideWorkspaceHeader ? undefined : renderProjectHeader('flow')}
       >
@@ -1197,6 +1200,6 @@ export function ProjectSection({
           )}
         </>
       )}
-    </div>
+    </SidebarWorkspaceFrame>
   );
 }

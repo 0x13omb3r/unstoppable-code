@@ -1,3 +1,4 @@
+import { FailedQueuedRunSurface } from '@canopy/ui-shared/components';
 import type { JSX } from 'react';
 import { Button } from '@canopy/ui-shared/components';
 import { HookIcon } from '@canopy/ui-shared/icons';
@@ -129,7 +130,7 @@ export function FailedQueuedHookPipelineCard({
   onDismiss,
 }: FailedQueuedHookPipelineCardProps): JSX.Element {
   return (
-    <div className="flex items-start justify-between gap-2 rounded-md border border-line-destructive/30 bg-destructive/5 px-2.5 py-1.5">
+    <FailedQueuedRunSurface>
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-1.5">
           <span className="truncate text-s font-medium fg-primary">
@@ -152,7 +153,7 @@ export function FailedQueuedHookPipelineCard({
       >
         Dismiss
       </Button>
-    </div>
+    </FailedQueuedRunSurface>
   );
 }
 
@@ -194,7 +195,7 @@ export function FailedPendingExecutionCard({
   onDismiss,
 }: FailedPendingExecutionCardProps): JSX.Element {
   return (
-    <div className="flex items-start justify-between gap-2 rounded-md border border-line-destructive/30 bg-destructive/5 px-2.5 py-1.5">
+    <FailedQueuedRunSurface>
       <div className="min-w-0 flex-1">
         <div className="truncate text-s font-medium fg-primary">
           {entry.pipelineName}
@@ -214,6 +215,6 @@ export function FailedPendingExecutionCard({
       >
         Dismiss
       </Button>
-    </div>
+    </FailedQueuedRunSurface>
   );
 }

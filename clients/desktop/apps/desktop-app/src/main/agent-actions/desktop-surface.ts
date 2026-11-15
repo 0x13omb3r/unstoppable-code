@@ -87,8 +87,6 @@ const SPLIT_TOOL_KEYS: ReadonlySet<AgentActionToolKey> =
 const LIMITED_ACTION_TYPES: ReadonlySet<string> = new Set([
   'installed_items.set_status',
   'installed_items.uninstall',
-  'chat.create',
-  'chat.send_message',
   'experiments.set_enabled',
 ]);
 

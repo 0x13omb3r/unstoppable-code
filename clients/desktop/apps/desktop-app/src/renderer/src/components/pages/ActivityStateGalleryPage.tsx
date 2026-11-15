@@ -1,4 +1,8 @@
 import {
+  ActivityGalleryToolbar,
+  GalleryHiddenSectionMark,
+} from '@canopy/ui-shared/components';
+import {
   createElement,
   useReducer,
   useState,
@@ -263,9 +267,9 @@ function HiddenStatePreview({
   return (
     <Surface variant="dashed" data-activity-gallery-preview="true">
       <div className="flex items-center min-h-22 gap-3 px-4 py-3">
-        <span className="inline-flex h-7 w-7 items-center justify-center rounded-md bg-warning-subtle fg-warning">
+        <GalleryHiddenSectionMark>
           <WarningIcon size={16} />
-        </span>
+        </GalleryHiddenSectionMark>
         <div className="min-w-0">
           <p className="text-s font-semibold fg-primary">Section hidden</p>
           <p className="mt-0.5 text-2xs leading-relaxed fg-secondary">
@@ -412,7 +416,7 @@ export function ActivityStateGalleryPage(): JSX.Element {
             </p>
           </header>
 
-          <div className="sticky top-0 z-10 flex flex-wrap items-center justify-between gap-3 rounded-lg bg-base/95 p-2 shadow-sm backdrop-blur">
+          <ActivityGalleryToolbar>
             <SegmentedControl
               label="Gallery view"
               value={view}
@@ -436,7 +440,7 @@ export function ActivityStateGalleryPage(): JSX.Element {
                 Advance all
               </HeaderActionButton>
             </div>
-          </div>
+          </ActivityGalleryToolbar>
 
           {view === 'chat' ? (
             <div className="min-h-0 flex-1">

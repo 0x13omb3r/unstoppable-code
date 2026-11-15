@@ -10,9 +10,9 @@ import type { TurnGroup, TurnGroupOrMessage } from './types';
  * the previous section's user message, exactly like the sidebar's sticky
  * workspace headers.
  *
- * Watcher-fired user messages intentionally do NOT start sections: they are
- * Canopy-generated follow-ups, so they scroll with the preceding turn's flow
- * and the previous real user message stays stuck through them.
+ * Watcher-fired user messages and automatic resumes do NOT start sections:
+ * they are Canopy-generated follow-ups, so they scroll with the preceding
+ * turn's flow and the previous real user message stays stuck through them.
  */
 export interface TranscriptStickySection {
   /** Stable key — the head item's user/message id. */
@@ -29,18 +29,10 @@ export interface TranscriptStickySection {
   stickyGroup?: TurnGroup;
 }
 
-/**
- * Human prompts and trusted automatic resumes keep their own section and
- * message anchor. A resume is non-human but still starts an addressable turn:
- * queue navigation must reveal it after an offscreen reply completes.
- * Watcher turns and non-user standalone messages continue the previous section.
- */
+/** Only human prompts start sticky sections; automatic turns stay inline. */
 function startsStickySection(item: TurnGroupOrMessage): boolean {
   const message = item.kind === 'turn-group' ? item.userMessage : item.message;
-  return (
-    isHumanAuthoredUserMessage(message) ||
-    (message.role === 'user' && message.userMessageSource === 'auto_resume')
-  );
+  return isHumanAuthoredUserMessage(message);
 }
 
 /**

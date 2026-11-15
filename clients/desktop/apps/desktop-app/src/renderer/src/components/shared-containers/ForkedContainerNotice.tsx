@@ -1,3 +1,4 @@
+import { Surface } from '@canopy/ui-shared/components';
 import { useRef, type JSX } from 'react';
 import { ForkedFromNotice } from './ForkedFromNotice';
 import {
@@ -36,8 +37,8 @@ export function ForkedContainerNotice({
   if (provenance === null) return null;
 
   return (
-    <div className="shrink-0 border-b bg-subtle px-3 py-1.5">
+    <Surface variant="notice-strip" className="shrink-0">
       <ForkedFromNotice provenance={provenance} focusRef={provenanceRef} />
-    </div>
+    </Surface>
   );
 }

@@ -138,11 +138,10 @@ import { settingsRouteIdSchema } from './routes';
  * through the isolated settings session.
  *
  * Deliberately absent (financial; web-only behind `inlineCheckout`):
- * `billing/seat-quote`, `billing/setup-intent`, `billing/payment-method`
- * (confirm and delete), `billing/subscription/{cancel,resume,change}`
- * (including the plan-change quote GET), `billing/credits/top-up` and the
- * `billing/credits/auto-top-up` mutation. The automatic top-up SETTINGS are
- * read through `organization.billing.credits` (`CreditsSummary.autoTopUp`).
+ * `billing/setup-intent`, `billing/payment-method` (confirm and delete),
+ * `billing/credits/top-up` and the `billing/credits/auto-top-up` mutation. The
+ * automatic top-up SETTINGS are read through `organization.billing.credits`
+ * (`CreditsSummary.autoTopUp`).
  *
  * Not table entries: the feed SSE stream (a `settings.subscribe` scope, see
  * `events.ts`), the organization invoice detail (no API route exists; it is

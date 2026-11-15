@@ -1,3 +1,5 @@
+import type { CopilotHostSelection } from '@canopy/protocol/copilot-selection';
+import type { ProjectDeletionPendingRecovery } from '@canopy/protocol/portal/project-deletion-discard';
 import type { AntigravityModelEntry } from '@canopy/execution-engine/lib/antigravity-models';
 import type { AssistantMode } from '@canopy/execution-engine/types/assistant-mode';
 import type { WorkspaceType } from '@canopy/execution-engine/types/workspace-type';
@@ -336,6 +338,10 @@ import type {
   ClaudeModsUpdate,
   ClaudeModsUpdateResult,
 } from '@canopy/protocol/claude-mods';
+import type {
+  ClaudeModSurfaceCommandArgs,
+  ClaudeModSurfacePushEvent,
+} from '@canopy/protocol/extension-ui';
 export type {
   FileIndexingPreferences,
   FileIndexingCustomGlob,
@@ -460,6 +466,14 @@ import type {
   DelegationWorkspaceChanges,
 } from '@canopy/protocol/delegation';
 import type { ManagedDelegationMode } from '@canopy/protocol/delegation/discovery';
+import type {
+  ManagedDelegationModelPolicy,
+  ManagedDelegationPolicyCatalogResult,
+} from '@canopy/protocol/delegation/model-policy';
+export type {
+  ManagedDelegationModelPolicy,
+  ManagedDelegationPolicyCatalogResult,
+} from '@canopy/protocol/delegation/model-policy';
 import type {
   CreateMemoryReportResult,
   MemoryDiagnosticsStatus,
@@ -620,7 +634,10 @@ import type {
   DesktopBillingDeepLink,
   EntitlementSource,
 } from '@canopy/protocol/billing';
-import type { ModelLibraryAccess } from '@canopy/protocol/models';
+import type {
+  AgentExecutionHarness,
+  ModelLibraryAccess,
+} from '@canopy/protocol/models';
 import type { DigestPreferences } from '@canopy/protocol/digests';
 import type { InstallUpdateEmailPreference } from '@canopy/protocol/account-notifications';
 import type { ModelRoutingAttributionV1 } from '@canopy/protocol/model-routing';
@@ -2042,6 +2059,24 @@ export type CloudChatFileDownloadResult =
         | 'write_failed';
     };
 
+/**
+ * Main's Files wake of a sleeping cloud chat (CAN-6724): woke it, or why
+ * not. `not_open` is a chat this window doesn't follow; `refused` is the web
+ * core's answer that it is still not awake or can't be woken by a read.
+ */
+export type CloudChatFilesWakeResult =
+  | { ok: true }
+  | {
+      ok: false;
+      reason:
+        | 'disabled'
+        | 'rejected'
+        | 'not_open'
+        | 'refused'
+        | 'unauthenticated'
+        | 'offline';
+    };
+
 /** Cloud cowork chats over the web core (CAN-4185). */
 /** A server this computer lets the account's cloud chats reach (CAN-6176). */
 export interface CloudReachBackServerView {
@@ -2120,6 +2155,12 @@ export interface CloudChatsApi {
     target: CloudChatUploadTarget,
     file: CloudChatFileDownloadRequest,
   ): Promise<CloudChatFileDownloadResult>;
+  /**
+   * Wakes the sleeping sandbox of a cloud chat this window has open, once,
+   * for its Files panel (CAN-6724). Main sends the wake on its own web core
+   * connection; the renderer relay never can.
+   */
+  wakeFiles(target: CloudChatUploadTarget): Promise<CloudChatFilesWakeResult>;
 }
 
 /**
@@ -3026,7 +3067,11 @@ export interface NativeAiCreditsAvailability {
    * compatibility with older main processes (CAN-3926 sidebar balance).
    */
   ownerOrganizationBalanceCredits?: number;
-  /** Native pricing page URL (`{cloudBaseUrl}/pricing`) for the uncovered CTA. */
+  /**
+   * The web AI Credits page (`{cloudBaseUrl}/account/billing`), the uncovered
+   * CTA's last-resort fallback. Named for the retired pricing page; the name
+   * stays because this DTO is tunneled to remote-control peers.
+   */
   pricingUrl: string;
   /**
    * The read could not be completed, so every flag above is a DEFAULT rather
@@ -3191,6 +3236,9 @@ export interface CanopyCloudEntitlementsState {
    * granted without a subscription, so plan, trial, and upgrade surfaces are
    * hidden and only AI Credits remain purchasable. Optional because older
    * servers omit it; a missing value means tier behavior.
+   *
+   * @deprecated Kept on the tunneled entitlements DTO for older remote peers,
+   * which still read it. Current renderers never show tier UI, whatever it says.
    */
   freeAccess?: boolean;
   /**
@@ -5089,12 +5137,14 @@ export interface ArchiveWorkspaceWorktreeRequest {
 }
 
 export interface DeleteWorkspaceRequest {
+  discardPendingRecovery?: ProjectDeletionPendingRecovery[];
   workspaceId: string;
   /** CAN-5337: the interrupted deletion the user confirmed superseding. */
   supersedeInterruptedDeletion?: string;
 }
 
 export interface DeleteProjectRequest {
+  discardPendingRecovery?: ProjectDeletionPendingRecovery[];
   projectId: string;
   /** CAN-5337: the interrupted deletion the user confirmed superseding. */
   supersedeInterruptedDeletion?: string;
@@ -7322,6 +7372,8 @@ export interface PreferencesData extends TerminalDrawerPreferences {
    * renderer saves that include it are rejected.
    */
   copilotAccount?: CopilotAccount;
+  /** Main-owned durable vault selection. Null is damaged authority, never legacy. */
+  copilotVaultSelection?: CopilotHostSelection | null;
   /** Executable path for the local Cursor approval-check diagnostic. */
   cursorAgentPath?: string;
   /** Default layout mode snapshotted only when a new workspace entity is created. */
@@ -7472,6 +7524,8 @@ export interface PreferencesData extends TerminalDrawerPreferences {
    * (CAN-1969).
    */
   localMemoryEnabled: boolean;
+  /** Opt-in transcript extraction; the rollout flag must also be enabled. */
+  localMemoryLearnFromChats: boolean;
   // True once the user has explicitly set localMemoryEnabled (Settings
   // toggle or App Advisor action); lets migrations distinguish a deliberate
   // opt-out from an incidentally materialized default.
@@ -7762,6 +7816,8 @@ export interface PreferencesData extends TerminalDrawerPreferences {
   managedDelegationMaxDepth?: number;
   /** Lifetime retained-result limit for managed delegation; defaults to the shipped cap. */
   managedDelegationLifetimeLimit?: number;
+  /** Allowed models for managed delegates; absent means All models, every route. */
+  managedDelegationModelPolicy?: ManagedDelegationModelPolicy;
   codexMultiAgentWorktreeChatsEnabled: boolean;
   codexMultiAgentStandaloneChatsEnabled: boolean;
   codexMultiAgentPipelinesEnabled: boolean;
@@ -8288,6 +8344,14 @@ export interface SetPipelineDisabledPreferenceRequest {
   id: string;
   disabled: boolean;
 }
+
+/** Usage-data saves carry only the switches the member explicitly changed. */
+export type PreferencesSavePatch = Omit<
+  Partial<PreferencesData>,
+  'usageData'
+> & {
+  usageData?: Partial<UsageDataPreferences>;
+};
 
 export interface PreferencesFile {
   version: 1;
@@ -11258,6 +11322,12 @@ export interface PersistedChatTab {
   transcript?: TranscriptDescriptor;
   /** Transport projection only. False means history has not been selected. */
   transcriptLoaded?: boolean;
+  /**
+   * Web core projection only: the harness a cloud chat runs on, from its
+   * snapshot's settings (CAN-6761). Its model picker offers only models on
+   * it, as the web's does. Absent when the web core names none.
+   */
+  capturedHarness?: AgentExecutionHarness;
   transcriptWindow?: Omit<TranscriptPage, 'messages'>;
   /** Injected organization-memory facts keyed by their sent user message id. */
   memoryByMessageId?: Record<string, AppliedOrgMemoryTurn>;
@@ -11728,7 +11798,10 @@ export interface ArchivedChatSummary {
   turnCount: number;
   archivedAt: string;
   createdAt: string;
-  /** Whether `createdAt` falls within the restore window (7 days). */
+  /**
+   * Whether the chat's last activity (the later of `createdAt` and its newest
+   * message timestamp) falls within the restore window (7 days).
+   */
   restorable: boolean;
   /** Whether the archived chat is unread (drives the unread color). */
   unread: boolean;
@@ -19514,6 +19587,8 @@ export interface ManagedDelegationApi {
   worktreeSummary: (
     req: ManagedDelegationWorktreeSummaryRequest,
   ) => Promise<ManagedDelegationWorktreeSummaryResult>;
+  /** Settings catalog for Allowed models: configured models and their routes. */
+  getModelPolicyCatalog: () => Promise<ManagedDelegationPolicyCatalogResult>;
   /** Local desktop observation only; does not initialize execution. */
   getLifetimeStatus: (
     req: ManagedDelegationLifetimeStatusRequest,
@@ -19608,7 +19683,7 @@ export interface CanopyApi {
   ) => Promise<PreferencesLoadResult>;
   acknowledgePreferencesLoadError: () => Promise<void>;
   savePreferences: (
-    preferences: Partial<PreferencesData>,
+    preferences: PreferencesSavePatch,
     options?: PreferencesProjectionOptions,
   ) => Promise<PreferencesSaveResult>;
   setPipelineDisabledPreference: (
@@ -19628,6 +19703,14 @@ export interface CanopyApi {
   updateClaudeMods: (
     update: ClaudeModsUpdate,
   ) => Promise<ClaudeModsUpdateResult>;
+  /** A Claude Mod's toasts, status lines and log lines, as its chats get them. */
+  onClaudeModSurfacePush: (
+    cb: (event: ClaudeModSurfacePushEvent) => void,
+  ) => () => void;
+  /** What the person did on a chat's Mod surface, for its session to send. */
+  sendClaudeModSurfaceCommand: (
+    args: ClaudeModSurfaceCommandArgs,
+  ) => Promise<void>;
   /**
    * Persists ONE approval surface default, merged inside the preferences write
    * queue. Settings must use this rather than `savePreferences` with a whole
@@ -21756,6 +21839,9 @@ export interface AppAdvisorUiStateSnapshot {
     localMemory?: {
       loaded: boolean;
       enabled: boolean;
+      /** Absent from snapshots produced before chat learning was introduced. */
+      learnFromChats?: boolean;
+      learningAvailable?: boolean;
     };
     /**
      * Settings › Memory's Sync section (CAN-5188), reported while it is
@@ -22544,9 +22630,12 @@ export interface AppAdvisorUiStateSnapshot {
         /**
          * The chat it shows, for `chat` tabs, or whose visuals it lists, for
          * the `chat-visuals` tab. A chat tab's address is this id in the
-         * selected worktree (`taskId` is its `worktreeId`).
+         * selected worktree (`taskId` is its `worktreeId`). For a `mod-pane`
+         * tab, the chat whose Claude Mod opened the pane.
          */
         chatId?: string;
+        /** The pane's id, for `mod-pane` tabs (with `chatId`). */
+        paneId?: string;
       }>;
       activePanelId?: string;
       /** Present and true when the group is collapsed in the panel grid. */
@@ -22688,6 +22777,8 @@ export interface AppAdvisorUiStateSnapshot {
       actionPending: boolean;
       deleteConfirmOpen: boolean;
       promoteDialogOpen: boolean;
+      /** The Add to cloud consent dialog (CAN-6176 PR 4b); absent from older builds. */
+      copyDialogOpen?: boolean;
       credentialDialogOpen: boolean;
       deviceServer: boolean;
     };
@@ -23260,9 +23351,15 @@ type PanelAddTabAction = {
         | 'plan-diagram'
         | 'chat-visuals'
         | 'session-breakdown'
+        | 'mod-pane'
       >;
     }
   | { kind: 'chat'; chatTabId: string }
+  /**
+   * One pane a Claude Mod has open in a chat of the selected worktree. An
+   * open panel for the pane is revealed where it is.
+   */
+  | { kind: 'mod-pane'; chatId: string; paneId: string }
   /**
    * One chat's Session breakdown. An open breakdown for the
    * chat is revealed where it is instead of being added again.
@@ -27443,6 +27540,8 @@ export const IPC_CHANNELS = {
     REMOTE_IPC_CHANNELS.preferencesUpdateOnboardingTips,
   claudeModsGet: REMOTE_IPC_CHANNELS.claudeModsGet,
   claudeModsUpdate: REMOTE_IPC_CHANNELS.claudeModsUpdate,
+  claudeModSurfacePush: REMOTE_IPC_CHANNELS.claudeModSurfacePush,
+  claudeModSurfaceCommand: REMOTE_IPC_CHANNELS.claudeModSurfaceCommand,
   preferencesSetApprovalDefault: 'preferences:set-approval-default',
   preferencesCreatePrimaryDataDir: 'preferences:create-primary-data-dir',
   preferencesOpenMemoryDir: 'preferences:open-memory-dir',
@@ -27650,9 +27749,9 @@ export const IPC_CHANNELS = {
   worktreeArchive: REMOTE_IPC_CHANNELS.worktreeArchive,
   worktreeActivityEntities: REMOTE_IPC_CHANNELS.worktreeActivityEntities,
   worktreeCheckRemovalAdmission: 'worktree:check-removal-admission',
-  worktreeRecoveryList: 'worktree:recovery-list',
-  worktreeRecoveryResolve: 'worktree:recovery-resolve',
-  worktreeRecoveryFinish: 'worktree:recovery-finish',
+  worktreeRecoveryList: REMOTE_IPC_CHANNELS.worktreeRecoveryList,
+  worktreeRecoveryResolve: REMOTE_IPC_CHANNELS.worktreeRecoveryResolve,
+  worktreeRecoveryFinish: REMOTE_IPC_CHANNELS.worktreeRecoveryFinish,
   worktreeDiscardDescribe: REMOTE_IPC_CHANNELS.worktreeDiscardDescribe,
   worktreeDiscard: REMOTE_IPC_CHANNELS.worktreeDiscard,
   workspaceDeleteDiscardDescribe:
@@ -28406,6 +28505,8 @@ export const IPC_CHANNELS = {
   managedDelegationTree: 'managed-delegation:tree',
   managedDelegationTranscriptPage: 'managed-delegation:transcript-page',
   managedDelegationRoots: 'managed-delegation:roots',
+  managedDelegationModelPolicyCatalog:
+    'managed-delegation:model-policy-catalog',
   managedDelegationWorktreeSummary: 'managed-delegation:worktree-summary',
   managedDelegationExtendLifetimeLimit:
     REMOTE_IPC_CHANNELS.managedDelegationExtendLifetimeLimit,
@@ -28481,6 +28582,7 @@ export const IPC_CHANNELS = {
   cloudReachBackDisallow: 'cloud-reach-back:disallow',
   cloudChatsUploadAttachment: 'cloud-chats:upload-attachment',
   cloudChatsDownloadFile: 'cloud-chats:download-file',
+  cloudChatsWakeFiles: 'cloud-chats:wake-files',
   cloudCopyAnalyze: 'cloud-copy:analyze',
   orgProjectsMoveBackToPersonal: 'org-projects:move-back-to-personal',
   orgProjectsOwnershipChanged: 'org-projects:ownership-changed',

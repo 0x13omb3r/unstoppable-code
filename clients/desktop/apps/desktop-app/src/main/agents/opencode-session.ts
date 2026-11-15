@@ -59,6 +59,10 @@ import {
 } from '@canopy/desktop-shared/lib/cursor-capabilities';
 import { materializeSelectedCapabilityRoot } from '@canopy/desktop-shared/node/cursor/capability-root';
 import { runOpenCodeTurn } from '@canopy/desktop-shared/node/opencode/turn-driver';
+import {
+  prepareOpenCodeCommandHooks,
+  createOpenCodeCommandHooks,
+} from '@canopy/desktop-shared/node/opencode/command-hooks';
 import { captureHomeCapabilities } from './delegation/capture-home-capabilities';
 import { resolveOpenCodeMcpCall } from '../opencode/mcp-servers';
 import {
@@ -608,6 +612,23 @@ export class OpenCodeProvider implements AgentProvider {
             : undefined;
         const capabilities =
           resolved?.cursorCapabilities ?? emptyCursorCapabilityProjection();
+        const selectedHooks = await prepareOpenCodeCommandHooks(
+          resolved?.sdkPlugins.map((plugin) => plugin.path) ?? [],
+          join(profile, 'selected-hook-plugins'),
+          runtime.signal,
+        );
+        let mcpSnapshot: OpenCodeCapabilitySnapshot['mcp'] = [];
+        const commandHooks = createOpenCodeCommandHooks({
+          hooks: selectedHooks.hooks,
+          cwd: opts.cwd,
+          env: runtime.env,
+          signal: runtime.signal,
+          approval: currentApproval,
+          spawnProcess: runtime.spawnProcess,
+          processOwner: runtime.processOwner,
+          permissionMode: planMode ? 'plan' : approvalMode,
+          mcpSnapshot: () => mcpSnapshot,
+        });
         const capabilityRoot = join(profile, 'selected-capabilities');
         const prepared = await materializeSelectedCapabilityRoot(
           capabilityRoot,
@@ -645,6 +666,7 @@ export class OpenCodeProvider implements AgentProvider {
           new Set(
             [
               ...inheritedNotices,
+              ...selectedHooks.warnings,
               ...(resolved?.cursorNotices ?? []),
               ...prepared.warnings,
             ].map((warning) => warning.split('Cursor').join('OpenCode')),
@@ -678,7 +700,6 @@ export class OpenCodeProvider implements AgentProvider {
         const toolSurface = cowork
           ? ('opencode-acp-standalone' as const)
           : ('opencode-acp' as const);
-        let mcpSnapshot: OpenCodeCapabilitySnapshot['mcp'] = [];
         const approved = new Map<string, number>();
         const checkMcp = async (
           server: string,
@@ -791,6 +812,7 @@ export class OpenCodeProvider implements AgentProvider {
           sdkSessionId: sessionId ?? key,
           providerType: 'opencode',
           model: turnModel,
+          supportsPreviewImages: runtime.supportsVision,
           authToken: token,
           createdAt: Date.now(),
           hookHandler: () => undefined,
@@ -936,7 +958,7 @@ export class OpenCodeProvider implements AgentProvider {
             resumePolicy: 'recover',
             contextReset,
             capabilityChanges: 'announce',
-            capabilityRoots: [capabilityRoot],
+            capabilityRoots: [capabilityRoot, ...selectedHooks.capabilityRoots],
             capabilityContext: {
               selections: context.selections,
               commands: prepared.commandIds,
@@ -946,6 +968,7 @@ export class OpenCodeProvider implements AgentProvider {
               systemPrompt: opts.systemPromptAppend,
               planMode,
               approvalMode,
+              commandHooks: selectedHooks.hooks,
               providerSettingsSources: runtime.inferenceRoute
                 ? ['host-inference']
                 : ['managed-provider-config', 'native-opencode-auth'],
@@ -1023,6 +1046,12 @@ export class OpenCodeProvider implements AgentProvider {
             mcpServers: servers,
           },
           {
+            beforeTool: selectedHooks.hooks.length
+              ? commandHooks.before
+              : undefined,
+            afterTool: selectedHooks.hooks.length
+              ? commandHooks.after
+              : undefined,
             displayTool: (tool) => {
               const identity = resolveOpenCodeMcpCall(
                 tool.name,

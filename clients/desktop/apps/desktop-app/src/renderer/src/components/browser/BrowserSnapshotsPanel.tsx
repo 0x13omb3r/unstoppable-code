@@ -1,3 +1,4 @@
+import { ImageThumbnail } from '@canopy/ui-shared/components';
 import { type JSX } from 'react';
 import { CHAT_UNIT_LABEL } from '@canopy/protocol';
 import { ChatIcon, TrashIcon } from '@canopy/ui-shared/icons';
@@ -52,10 +53,10 @@ export function BrowserSnapshotsPanel({
           >
             <div className="flex items-center gap-2">
               {entry.dataUrl && (
-                <img
+                <ImageThumbnail
+                  variant="browser-snapshot"
                   src={entry.dataUrl}
                   alt={entry.filename}
-                  className="h-12 w-16 shrink-0 rounded object-cover"
                 />
               )}
               <span

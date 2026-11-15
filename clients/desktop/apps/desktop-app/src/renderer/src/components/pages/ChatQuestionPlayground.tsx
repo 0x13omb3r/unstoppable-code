@@ -1,3 +1,4 @@
+import { QuestionPlaygroundPhase } from '@canopy/ui-shared/components';
 import { useEffect, useState, type JSX } from 'react';
 import { ChatContent } from '../chat/ChatContent';
 import {
@@ -165,12 +166,12 @@ export function ChatQuestionPlayground(): JSX.Element {
                 aria-label="Submission path"
               >
                 {phases.map((phase) => (
-                  <span
+                  <QuestionPlaygroundPhase
                     key={phase}
-                    className={`border-b pb-1 text-xs ${machine.phase === phase ? 'border-line-primary fg-primary' : 'border-transparent fg-tertiary'}`}
+                    active={machine.phase === phase}
                   >
                     {phase}
-                  </span>
+                  </QuestionPlaygroundPhase>
                 ))}
               </div>
               <div className="flex flex-wrap gap-2">

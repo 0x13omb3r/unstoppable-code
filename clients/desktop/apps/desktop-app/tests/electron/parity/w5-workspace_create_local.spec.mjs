@@ -680,7 +680,7 @@ test('workspace_create_local/concurrent_client: a CLI create while the app runs 
   }
 });
 
-test('workspace_create_local/concurrent_client: a CLI create that chose its id before the app created the same name fails after initializing its repo', async () => {
+test('workspace_create_local/concurrent_client: a CLI create that reserved its id first keeps it, and the app takes the next id (CAN-6790)', async () => {
   test.skip(
     process.platform === 'win32',
     'The race gate is a POSIX shell hook.',
@@ -690,7 +690,8 @@ test('workspace_create_local/concurrent_client: a CLI create that chose its id b
   const { window, userDataDir } = launched;
   try {
     // Hold the CLI inside the initial commit of its new repo: it has already
-    // chosen the id `my-app` and created <data>/repos/my-app.
+    // reserved the id `my-app` in the shared W5 log (CAN-5761) and created
+    // <data>/repos/my-app.
     const gateDir = path.join(fixtures, 'gate');
     mkdirSync(path.join(gateDir, 'hooks'), { recursive: true });
     writeFileSync(
@@ -716,23 +717,30 @@ test('workspace_create_local/concurrent_client: a CLI create that chose its id b
     writeFileSync(path.join(gateDir, 'release'), '');
     const result = await cli;
 
+    // The app skips the id the CLI reserved, so neither create loses its
+    // project or leaves a repo behind.
     expect(appItem).toMatchObject({
-      id: 'my-app',
+      id: 'my-app-2',
       repoPath: path.join(userDataDir, 'repos', 'my-app-2'),
     });
-    expect(result.code).toBe(1);
-    expect(result.stdout).toBe('');
-    expect(result.stderr).toBe(
-      'Error: A project with id my-app already exists\n',
-    );
-    // The CLI's repo stays behind, owned by no project.
+    expect(result.code).toBe(0);
+    expect(result.stderr).toBe('');
+    expect(JSON.parse(result.stdout)).toMatchObject({
+      id: 'my-app',
+      type: 'single-repo',
+    });
     expect(
       git(path.join(userDataDir, 'repos', 'my-app'), ['log', '--format=%s']),
     ).toMatch(/^Initialize .+ workspace$/);
     expect(readIndexIds(userDataDir)).toEqual([
       DEFAULT_COWORK_WORKSPACE_ID,
+      'my-app-2',
       'my-app',
     ]);
+    expect(orphanManifestIds(userDataDir)).toEqual([]);
+    await expect
+      .poll(() => loadProjectIds(window))
+      .toEqual(readIndexIds(userDataDir));
   } finally {
     await closeCanopy(launched.electronApp, userDataDir);
   }

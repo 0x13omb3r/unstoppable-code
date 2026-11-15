@@ -1,4 +1,6 @@
 'use client';
+import { StatusIllustration } from '@canopy/ui-shared/components';
+import { DialogActionFooter } from '@canopy/ui-shared/components';
 import {
   Fieldset,
   Stack,
@@ -207,9 +209,9 @@ export function PublicProfileSection({
               disc it has always had, and omits `mt-0.5`/`shrink-0`, which are
               written for a horizontal `items-start` row and would push the
               glyph off centre here. */}
-                  <span className="flex h-12 w-12 items-center justify-center rounded-full bg-accent-subtle fg-accent-strong">
+                  <StatusIllustration variant="profile" tone="accent">
                     <Globe size={22} aria-hidden="true" />
-                  </span>
+                  </StatusIllustration>
                   <Heading level={2} variant="section">
                     Set up your public profile
                   </Heading>
@@ -441,7 +443,7 @@ export function PublicProfileSection({
                 </Stack>
               </Fieldset>
 
-              <div className="flex items-center justify-end gap-3 border-t pt-4">
+              <DialogActionFooter center gap="item" padding="top">
                 {saved && !dirty && (
                   <span
                     className="flex items-center gap-1 text-s fg-success"
@@ -459,7 +461,7 @@ export function PublicProfileSection({
                 >
                   {editor.busy ? 'Saving…' : 'Save changes'}
                 </Button>
-              </div>
+              </DialogActionFooter>
             </div>
           </SettingsCard>
 

@@ -1,5 +1,6 @@
 import type { JSX } from 'react';
 import {
+  AI_CREDITS_PURCHASE_LABEL,
   CreditsRecoveryNotice,
   NoticeButton,
   OUT_OF_CREDITS_TITLE,
@@ -15,7 +16,7 @@ export function CreditsNoticesSpecimen(): JSX.Element {
     <div className="flex flex-col gap-6">
       <SpecimenPanel title="CreditsRecoveryNotice">
         <SpecimenCell
-          label="Purchase arm: the message, a retained-message line and the action"
+          label="Purchase arm: the retained message and the action"
           wide
         >
           <div className="w-full">
@@ -23,15 +24,16 @@ export function CreditsNoticesSpecimen(): JSX.Element {
               intent="attention"
               title={OUT_OF_CREDITS_TITLE}
               role="none"
-              detailLines={[retainedMessageCopy('composer')]}
               actions={
                 <>
                   <NoticeButton variant="secondary">Try again</NoticeButton>
-                  <NoticeButton variant="primary">Add credits</NoticeButton>
+                  <NoticeButton variant="primary">
+                    {AI_CREDITS_PURCHASE_LABEL}
+                  </NoticeButton>
                 </>
               }
             >
-              Add credits to keep going.
+              {retainedMessageCopy('composer')}
             </CreditsRecoveryNotice>
           </div>
         </SpecimenCell>
@@ -41,22 +43,21 @@ export function CreditsNoticesSpecimen(): JSX.Element {
               intent="attention"
               title={OUT_OF_CREDITS_TITLE}
               role="none"
-              detailLines={[retainedMessageCopy('queue')]}
               contactAdmin
               onDismiss={noop}
             >
-              Your spend quota is used up.
+              {retainedMessageCopy('queue', { canBuy: false })}
             </CreditsRecoveryNotice>
           </div>
         </SpecimenCell>
         <SpecimenCell label="Contact-admin line only" wide>
           <div className="w-full">
             <CreditsRecoveryNotice intent="attention" role="none" contactAdmin>
-              You can't add credits yourself.
+              You can't buy AI Credits yourself.
             </CreditsRecoveryNotice>
           </div>
         </SpecimenCell>
-        <SpecimenCell label="Several detail lines, one per line" wide>
+        <SpecimenCell label="Several detail sentences, one paragraph" wide>
           <div className="w-full">
             <CreditsRecoveryNotice
               intent="destructive"

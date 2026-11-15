@@ -1,7 +1,7 @@
 import { useEffect, useState, type JSX } from 'react';
-import { W5RecoveryNotice } from '@canopy/ui-shared/components';
+import { WorktreeRecoveryPanel } from '@canopy/ui-app/worktree-discard';
 import type { W5RecoveryStatus } from '@canopy/protocol/portal';
-import { useCapabilities } from '@canopy/app-state';
+import { useCanopyClient, useCapabilities } from '@canopy/app-state';
 import { useRemoteControlStore } from '@/stores/remoteControlStore';
 
 export function WorkspaceRecoveryNotice(): JSX.Element | null {
@@ -9,6 +9,7 @@ export function WorkspaceRecoveryNotice(): JSX.Element | null {
     (store) => store.context.mode === 'local',
   );
   const capabilities = useCapabilities();
+  const client = useCanopyClient();
   const [status, setStatus] = useState<W5RecoveryStatus | null>(null);
   const [busy, setBusy] = useState(false);
   const paused =
@@ -40,12 +41,13 @@ export function WorkspaceRecoveryNotice(): JSX.Element | null {
       clearInterval(timer);
     };
   }, [local, paused]);
-  if (!local || !status) return null;
+  if (!local) return null;
   return (
-    <W5RecoveryNotice
-      status={status}
+    <WorktreeRecoveryPanel
+      client={client}
+      status={status ?? undefined}
       canRecover={capabilities.workspaceRecovery === true}
-      busy={busy}
+      coldBusy={busy}
       onRecover={(): void => {
         if (busy) return;
         setBusy(true);

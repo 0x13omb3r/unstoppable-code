@@ -3,8 +3,9 @@ import { Button } from './Button';
 import { LoadingSpinner } from './LoadingSpinner';
 import {
   AI_CREDITS_HANDOFF_COPY,
+  AI_CREDITS_REOPEN_BILLING_LABEL,
   aiCreditsHandoffSentence,
-} from './aiCreditsPurchaseCopy';
+} from './creditsPromptCopy';
 
 /**
  * What a **Check again** after a billing hand-off concluded (CAN-5162).
@@ -21,7 +22,6 @@ export const AI_CREDITS_CHECK_UNCOVERED_COPY = aiCreditsHandoffSentence(
 export const AI_CREDITS_CHECK_FAILED_COPY = aiCreditsHandoffSentence(
   AI_CREDITS_HANDOFF_COPY.checkFailed,
 );
-export const AI_CREDITS_REOPEN_BILLING_LABEL = 'Reopen billing';
 
 export interface AiCreditsCheckFeedbackProps {
   readonly kind: AiCreditsCheckFeedbackKind;

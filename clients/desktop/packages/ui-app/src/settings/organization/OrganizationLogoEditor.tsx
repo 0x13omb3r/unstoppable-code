@@ -4,6 +4,7 @@ import { useRef, type ChangeEvent, type JSX } from 'react';
 import {
   Button,
   DISPLAY_AVATAR_SIZE_PX,
+  MediaEditOverlay,
   type DisplayAvatarSize,
   ErrorBanner,
 } from '@canopy/ui-shared/components';
@@ -72,16 +73,13 @@ export function OrganizationLogoEditor({
           style={{ width: px, height: px }}
         >
           <OrganizationLogo name={name} logoUrl={logoUrl} size={size} />
-          <span
-            aria-hidden="true"
-            className="absolute inset-0 flex items-center justify-center rounded-md bg-black/40 text-white opacity-0 transition-opacity group-hover:opacity-100 group-focus-visible:opacity-100"
-          >
+          <MediaEditOverlay>
             {busy ? (
               <span className="text-xs font-medium">…</span>
             ) : (
               <Camera size={Math.max(16, Math.round(px / 4))} />
             )}
-          </span>
+          </MediaEditOverlay>
         </button>
       ) : (
         <button

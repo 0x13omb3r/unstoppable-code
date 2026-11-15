@@ -1,7 +1,6 @@
 import type { AiGatewayConnectionResult } from '@canopy/protocol/model-gateway/discovery';
 import type { AiGatewayPreset } from '@canopy/protocol/model-gateway/presets';
 import type { KnownSettingsError } from '../errors';
-import { ORGANIZATION_LAPSED_ERROR } from '../organization/organization-known-errors';
 
 export const AI_GATEWAY_ERROR_SCOPE = 'settings.ai-gateway';
 
@@ -14,7 +13,6 @@ export const AI_GATEWAY_STALE_COPY =
 
 export const AI_GATEWAY_KNOWN_ERRORS: readonly KnownSettingsError[] = [
   { status: 409, copy: AI_GATEWAY_STALE_COPY },
-  ORGANIZATION_LAPSED_ERROR,
 ];
 
 /**

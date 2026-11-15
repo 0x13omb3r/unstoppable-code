@@ -1,3 +1,7 @@
+import { buildProjectedModelCatalog } from '../portal/model-catalog-projection';
+import { resolveCatalogAgentDefaultModel } from '../agents/agent-default-model';
+import { resolveAiCreditsScopeOwner } from '../agents/work-owner';
+import { peekPortalProviderAvailability } from '../auth/provider-auth-state';
 import { projectSidebarItemGroups } from './sidebar-item-groups-service';
 import { CLIENT_FEATURE_FLAGS } from '@canopy/protocol/feature-flags';
 import { getFeatureFlagService } from '../feature-flags';
@@ -202,11 +206,53 @@ export async function buildDesktopSessionSnapshot(
     });
   }
 
+  const destinationCatalog = async (
+    projectId: string,
+    worktreeId?: string,
+    chatId?: string,
+  ): Promise<NonNullable<PortalSessionShellState['availableModels']>> => {
+    const owner = await resolveAiCreditsScopeOwner({
+      kind: 'work',
+      projectId,
+      worktreeId,
+      chatId,
+    });
+    return buildProjectedModelCatalog(undefined, {
+      cursor: true,
+      antigravity: projectId !== 'app-advisor',
+      copilot: true,
+      opencode: true,
+      owner,
+      projectId,
+      agentDefaultModel: await resolveCatalogAgentDefaultModel(projectId),
+    });
+  };
+  if (standaloneChatLocalId !== undefined) {
+    standaloneChats = await Promise.all(
+      standaloneChats.map(async (chat) => ({
+        ...chat,
+        availableModels: await destinationCatalog(
+          chat.projectLocalId,
+          chat.workEntryId,
+          chat.localId,
+        ),
+      })),
+    );
+  }
+  const availableModels = target?.workspaceLocalId
+    ? await destinationCatalog(target.workspaceLocalId, target.worktreeLocalId)
+    : undefined;
   const appAdvisorItemGroups = await projectSidebarItemGroups({
     appAdvisor: true,
   });
   return {
     ...(appAdvisorItemGroups === undefined ? {} : { appAdvisorItemGroups }),
+    ...(availableModels === undefined
+      ? {}
+      : {
+          availableModels,
+          providerAvailability: peekPortalProviderAvailability(),
+        }),
     workspaces: snapshotWorkspaces,
     worktrees,
     chatProjects: [],

@@ -3,6 +3,8 @@ import {
   CORE_APPROVAL_INSTRUCTION_DEFINITIONS,
   CORE_APPROVAL_QUERY_DEFINITIONS,
   CORE_APPROVAL_STREAM_DEFINITIONS,
+  CORE_ARCHIVE_COMMAND_INSTRUCTION_DEFINITIONS,
+  CORE_ARCHIVE_QUERY_DEFINITIONS,
   CORE_ARTIFACT_QUERY_DEFINITIONS,
   CORE_CATALOG_INSTRUCTION_DEFINITIONS,
   CORE_CATALOG_QUERY_DEFINITIONS,
@@ -86,6 +88,10 @@ export const WEB_CORE_RELAY_OPERATIONS: ReadonlySet<string> = new Set([
   'core.chat.create',
   'core.chat.update',
   'core.chat.archive',
+  // A cloud project's archived tasks, and restoring one in place (CAN-6511).
+  // The rest of the archive (update, delete, chat.get) stays off the relay.
+  'core.archive.container.list',
+  'core.archive.container.restore',
   'core.chat.message.send',
   'core.chat.send.receipt',
   'core.chat.turn.cancel',
@@ -156,6 +162,7 @@ export const WEB_CORE_RELAY_DEFINITIONS: RelayDefinitions = {
       CORE_CHAT_TASK_QUERY_DEFINITIONS,
       CORE_CATALOG_QUERY_DEFINITIONS,
       CORE_ARTIFACT_QUERY_DEFINITIONS,
+      CORE_ARCHIVE_QUERY_DEFINITIONS,
       CORE_APPROVAL_QUERY_DEFINITIONS,
       CORE_PIPELINE_RUN_READ_QUERY_DEFINITIONS,
       WORKER_FILESYSTEM_QUERY_DEFINITIONS,
@@ -168,6 +175,7 @@ export const WEB_CORE_RELAY_DEFINITIONS: RelayDefinitions = {
     composeCanopyInstructionRegistries(
       CORE_INSTRUCTION_DEFINITIONS,
       CORE_CATALOG_INSTRUCTION_DEFINITIONS,
+      CORE_ARCHIVE_COMMAND_INSTRUCTION_DEFINITIONS,
       CORE_APPROVAL_INSTRUCTION_DEFINITIONS,
       CORE_CHAT_QUESTION_INSTRUCTION_DEFINITIONS,
       CORE_WORKSPACE_COMMAND_INSTRUCTION_DEFINITIONS,
@@ -300,9 +308,11 @@ const WEB_CORE_WAKING_FILE_OPERATIONS: ReadonlySet<string> = new Set([
 
 /**
  * The params a renderer's web core call is sent with: without `wake` on the
- * file operations (CAN-6114). Main never carries the same-origin wake proof,
- * so the web core would refuse a relayed wake; the call goes as a non-waking
- * one, and a sleeping sandbox answers its `sandbox_sleeping` refusal.
+ * file operations (CAN-6114). The relay's connection never carries the
+ * same-origin wake proof, so the web core would refuse a relayed wake; the
+ * call goes as a non-waking one, and a sleeping sandbox answers its
+ * `sandbox_sleeping` refusal. Files wakes through main's own call instead
+ * (CAN-6724, `cloud-files-wake.ts`).
  */
 export function webCoreRelayNarrowParams(
   method: string,

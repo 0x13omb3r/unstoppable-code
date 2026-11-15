@@ -78,6 +78,10 @@ import {
   readChatExcerpt,
 } from '../../canopy-tools/session-runtime';
 import { buildDelegateDeferredToolsGuidance } from '../../canopy-tools/prompting';
+import { rootChatAddressPrompt } from '@canopy/desktop-shared/lib/chat-address-prompt';
+import type { ProjectChatAddress } from '@canopy/desktop-shared/lib/project-discovery';
+import type { BotChatAddress } from '@canopy/desktop-shared/lib/bot-discovery';
+import { agentChatAddress } from '../../lib/agent-chat-address';
 import type { DelegateDeferredToolsSource } from './delegate-deferred-tools';
 
 /** The only typed actions a delegate may search for or dispatch. */
@@ -385,6 +389,8 @@ export interface DelegateCanopyTools {
   readonly tools: readonly DelegateCanopyTool[];
   /** The child works in its own checkout, not the parent's worktree. */
   readonly isolated: boolean;
+  /** The root chat that owns the delegation tree. */
+  readonly rootAddress: ProjectChatAddress | BotChatAddress;
   toolForClaudeName(name: string): DelegateCanopyTool | undefined;
   toolForCodexName(name: string): DelegateCanopyTool | undefined;
   /** Approval only, for transports with a separate authorization step. */
@@ -507,7 +513,7 @@ export function delegateAppToolGuidance(
       tool.key === 'search_deferred_tools' ||
       tool.key === 'load_deferred_tools',
   );
-  return `\nApp tools from the parent project are available: ${names.join(', ')}. Use them for this project's saved memory, script output, pipeline definitions, review comments, and code graph${runsScripts ? ", and to list or run the parent worktree's configured scripts" : ''}.${appTools.isolated ? " Script output, review comments, and the code graph describe the parent's worktree, which can differ from this checkout." : ''}${watches ? ' Watchers and wakeups you create notify this delegated task, not the parent chat: a notification resumes you by steering your active run or starting a follow-up run, so end your run after registering one instead of waiting.' : ''} Each call follows the parent's approval policy.${hasDeferredTools ? ` ${buildDelegateDeferredToolsGuidance(harness === 'antigravity' || harness === 'cursor' || harness === 'copilot' || harness === 'opencode' ? 'claude' : harness)}` : ''}`;
+  return `\nApp tools from the parent project are available: ${names.join(', ')}. Use them for this project's saved memory, script output, pipeline definitions, review comments, and code graph${runsScripts ? ", and to list or run the parent worktree's configured scripts" : ''}.${appTools.isolated ? " Script output, review comments, and the code graph describe the parent's worktree, which can differ from this checkout." : ''}${watches ? ' Watchers and wakeups you create notify this delegated task, not the parent chat: a notification resumes you by steering your active run or starting a follow-up run, so end your run after registering one instead of waiting.' : ''} Each call follows the parent's approval policy. ${rootChatAddressPrompt(appTools.rootAddress)}${hasDeferredTools ? ` ${buildDelegateDeferredToolsGuidance(harness === 'antigravity' || harness === 'cursor' || harness === 'copilot' || harness === 'opencode' ? 'claude' : harness)}` : ''}`;
 }
 
 function unavailable(name: string): CanopyInjectedToolTextResult {
@@ -623,6 +629,11 @@ export function createDelegateCanopyTools(
     toolForClaudeName: (name) => byClaudeName.get(name),
     toolForCodexName: (name) => byCodexName.get(name),
     isolated: scope.isolated,
+    rootAddress: agentChatAddress(
+      scope.projectId,
+      scope.worktreeId,
+      scope.chatId,
+    ),
     authorize,
     run,
     execute: async (

@@ -330,6 +330,11 @@ interface StandaloneChatState {
   chatProjects: ChatProjectData[];
   /** The Work Entry whose panel grid is currently rendered, when selected. */
   activeWorkEntryId: string | null;
+  /**
+   * The Work Entry the page has moved to while its tabs load for the first
+   * time: the page shows it loading, never another entry's grid (CAN-6754).
+   */
+  loadingWorkEntryId: string | null;
   activeChatProjectId: string;
   /**
    * Non-null when this store instance is pinned to a single workspace (the
@@ -718,6 +723,8 @@ export function currentCoworkDestinationRequestId(): number {
   return coworkDestinationRequestId;
 }
 let coworkTransientSelectionRequestId: number | null = null;
+/** The entry the switch holding the transient selection moves to. */
+let coworkTransientSelectionEntryId: string | null = null;
 
 /** In-flight cold-start run shared by concurrent `initialize()` callers. */
 let initializeInFlight: Promise<void> | null = null;
@@ -753,6 +760,7 @@ export const useStandaloneChatStore = create<StandaloneChatState>(
     workEntries: [],
     chatProjects: [],
     activeWorkEntryId: null,
+    loadingWorkEntryId: null,
     activeChatProjectId: currentDefaultCoworkWorkspaceId(),
     scopedWorkspaceId: null,
     initialized: false,
@@ -843,6 +851,7 @@ export const useStandaloneChatStore = create<StandaloneChatState>(
       set({
         workEntries: entries,
         activeWorkEntryId: entryId,
+        loadingWorkEntryId: null,
         archiveOverlayChatId: null,
         activeSummary: null,
         activeArchiveData: null,
@@ -973,6 +982,7 @@ export const useStandaloneChatStore = create<StandaloneChatState>(
           set({
             workEntries: entries,
             activeWorkEntryId: entryId,
+            loadingWorkEntryId: null,
             archiveOverlayChatId: null,
             activeSummary: null,
             activeArchiveData: null,
@@ -1323,6 +1333,7 @@ export const useStandaloneChatStore = create<StandaloneChatState>(
         activeChatProjectId: projectId,
         workEntries: [],
         activeWorkEntryId: null,
+        loadingWorkEntryId: null,
         archiveOverlayChatId: null,
         activeSummary: null,
         activeArchiveData: null,
@@ -1386,6 +1397,7 @@ export const useStandaloneChatStore = create<StandaloneChatState>(
       set({
         workEntries: entries,
         activeWorkEntryId: entryId,
+        loadingWorkEntryId: null,
         archiveOverlayChatId: null,
         activeSummary: null,
         activeArchiveData: null,
@@ -1656,13 +1668,25 @@ export const useStandaloneChatStore = create<StandaloneChatState>(
           ? null
           : { projectId: workspaceId, worktreeId: previousActiveEntryId };
 
+      // Only a destination that isn't another entry switch (a cancelled
+      // navigation, an archive overlay) gets here with the transient id still
+      // this one's: a newer switch takes the id, and the page and selection
+      // with it, so a late load never moves them back.
       const restoreSupersededSelection = (): void => {
         if (coworkTransientSelectionRequestId !== destinationRequestId) {
           return;
         }
         coworkTransientSelectionRequestId = null;
-        if (get().activeWorkEntryId === entryId) {
-          return;
+        // The page moved to this entry when the switch began; it goes back
+        // with the selection, unless something else has moved it since.
+        if (
+          get().activeChatProjectId === workspaceId &&
+          get().activeWorkEntryId === entryId
+        ) {
+          set({ activeWorkEntryId: previousActiveEntryId });
+        }
+        if (get().loadingWorkEntryId === entryId) {
+          set({ loadingWorkEntryId: null });
         }
         const currentSelection = useChatStore.getState().selectedWorktree;
         if (
@@ -1692,7 +1716,14 @@ export const useStandaloneChatStore = create<StandaloneChatState>(
       if (
         get().activeWorkEntryId === entryId &&
         selected?.projectId === workspaceId &&
-        selected.worktreeId === entryId
+        selected.worktreeId === entryId &&
+        // While a switch to this entry still loads its tabs, this request
+        // takes it over, so that switch's late supersede check never undoes
+        // the page this click asked for.
+        !(
+          coworkTransientSelectionRequestId !== null &&
+          coworkTransientSelectionEntryId === entryId
+        )
       ) {
         // Already selected — just make sure the overlay is closed.
         if (get().archiveOverlayChatId !== null) {
@@ -1712,13 +1743,41 @@ export const useStandaloneChatStore = create<StandaloneChatState>(
         project?.defaultPluginSelections,
       );
       coworkTransientSelectionRequestId = destinationRequestId;
+      coworkTransientSelectionEntryId = entryId;
       chatStore.selectWorktree(workspaceId, entryId, {
         deferTabLoad: true,
         ...(options?.attentionLanding === true
           ? { attentionLanding: true }
           : {}),
       });
-      await chatStore.loadTabs();
+      // The page moves with the selection, before the entry's tabs load: the
+      // grid of the entry open before, and its composer bound to that entry,
+      // never stay mounted while this one loads, which for a cloud task's
+      // first read takes seconds. An entry whose tabs aren't loaded yet shows
+      // loading until this switch lands; one already loaded shows its own
+      // grid at once (CAN-6754).
+      const tabsLoaded =
+        useChatStore.getState().worktreeChats[`${workspaceId}/${entryId}`] !==
+        undefined;
+      set({
+        activeWorkEntryId: entryId,
+        loadingWorkEntryId: tabsLoaded ? null : entryId,
+        archiveOverlayChatId: null,
+        activeSummary: null,
+        activeArchiveData: null,
+      });
+      try {
+        await chatStore.loadTabs();
+      } catch (error) {
+        // A load that throws leaves the page on this entry, never loading.
+        if (
+          coworkTransientSelectionRequestId === destinationRequestId &&
+          get().loadingWorkEntryId === entryId
+        ) {
+          set({ loadingWorkEntryId: null });
+        }
+        throw error;
+      }
       const selectionAfterLoad = useChatStore.getState().selectedWorktree;
       if (
         coworkDestinationRequestId !== destinationRequestId ||
@@ -1744,6 +1803,7 @@ export const useStandaloneChatStore = create<StandaloneChatState>(
 
       set({
         activeWorkEntryId: entryId,
+        loadingWorkEntryId: null,
         archiveOverlayChatId: null,
         activeSummary: null,
         activeArchiveData: null,
@@ -2039,7 +2099,7 @@ export const useStandaloneChatStore = create<StandaloneChatState>(
         get().activeWorkEntryId !== entryId
       )
         return;
-      set({ activeWorkEntryId: null });
+      set({ activeWorkEntryId: null, loadingWorkEntryId: null });
       const chatStore = useChatStore.getState();
       const selected = chatStore.selectedWorktree;
       if (selected?.projectId === projectId && selected.worktreeId === entryId)
@@ -2695,6 +2755,7 @@ export const useStandaloneChatStore = create<StandaloneChatState>(
     clearActiveWorkEntry: (): void => {
       set({
         activeWorkEntryId: null,
+        loadingWorkEntryId: null,
         archiveOverlayChatId: null,
         activeSummary: null,
         activeArchiveData: null,
@@ -2791,6 +2852,7 @@ export const useStandaloneChatStore = create<StandaloneChatState>(
         set({
           activeChatProjectId: projectId,
           activeWorkEntryId: null,
+          loadingWorkEntryId: null,
           workEntries: [],
           archiveOverlayChatId: null,
           activeSummary: null,

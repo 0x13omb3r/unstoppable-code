@@ -3359,6 +3359,7 @@ export class ChatStateV2Repository {
     ) => Promise<T>,
     isCurrent?: () => boolean,
     options: TranscriptPreviewOptions = {},
+    consumePinned?: (preview: CapturedTranscriptPreview) => Promise<T>,
   ): Promise<T> {
     const assertCurrent = (): void => {
       if (isCurrent && !isCurrent())
@@ -3375,9 +3376,13 @@ export class ChatStateV2Repository {
         entry.lifecycle === 'disposed'
       )
         throw scopeDrainingError();
-      await this.load(scope, entry);
+      if (consumePinned && entry.lifecycle !== 'ready')
+        throw new Error('Chat learning defers cold transcript stores');
+      if (!consumePinned) await this.load(scope, entry);
       assertCurrent();
-      const preview = await entry.backend.captureTranscriptPreview(chatId);
+      const preview = consumePinned
+        ? await entry.backend.captureCommittedTranscriptPreview(chatId)
+        : await entry.backend.captureTranscriptPreview(chatId);
       // Registration owns close retries even when cancellation arrives while
       // capture is awaiting the filesystem. A failed first close must remain
       // visible to drain/deletion rather than orphaning open handles.
@@ -3407,14 +3412,16 @@ export class ChatStateV2Repository {
       const descriptor = captured.descriptor;
       const committedIncluded =
         options.reuseCommittedPrefix?.(descriptor) !== true;
-      const value = await consume(
-        committedIncluded ? captured.messages() : captured.activeMessages(),
-        descriptor,
-        {
-          committedIncluded,
-          ...(captured.journalProjected ? { journalProjected: true } : {}),
-        },
-      );
+      const value = consumePinned
+        ? await consumePinned(captured)
+        : await consume(
+            committedIncluded ? captured.messages() : captured.activeMessages(),
+            descriptor,
+            {
+              committedIncluded,
+              ...(captured.journalProjected ? { journalProjected: true } : {}),
+            },
+          );
       captured.assertComplete();
       assertCurrent();
       projected = { success: true, value };

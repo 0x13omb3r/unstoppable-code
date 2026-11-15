@@ -2266,6 +2266,72 @@ export function bindCloudCopyAnalysis(
     });
 }
 
+export interface PackageConsentFacts {
+  contentHash: string;
+  /** False when the analysis found something that blocks the package. */
+  ready: boolean;
+  /** `resourceId|provider|root/path` for each file the package would carry. */
+  files: string[];
+  /** `assetId/relativePath` for each file the analysis left out. */
+  withheld: string[];
+}
+
+/**
+ * The files a live analysis would package with the given optional resources,
+ * and the ones it left out, so a later republish can be held to the same
+ * consent. Null when the analysis expired or never existed.
+ */
+export function packageAnalysisConsentFacts(
+  analysisId: string,
+  selectedOptionalResourceIds: readonly string[],
+): PackageConsentFacts | null {
+  pruneAnalyses();
+  const analysis = analyses.get(analysisId);
+  if (!analysis || Date.parse(analysis.summary.expiresAt) <= Date.now())
+    return null;
+  return consentFactsOf(analysis.summary, selectedOptionalResourceIds);
+}
+
+/**
+ * The consent facts of an analysis summary. `withheld` names both kinds of
+ * file left out: a share's asset files and a cloud copy's member files (a
+ * skill's or plugin's own secret-looking, git-ignored or linked files), so
+ * a file newly left out of either changes the facts and asks again.
+ */
+export function consentFactsOf(
+  summary: PipelinePackageAnalysisSummary,
+  selectedOptionalResourceIds: readonly string[],
+): PackageConsentFacts {
+  const manifest = summary.manifest
+    ? selectPipelinePackageManifest(
+        summary.manifest,
+        selectedOptionalResourceIds,
+      )
+    : null;
+  return {
+    contentHash: summary.pipelineContentHash,
+    ready: summary.state === 'ready' && summary.blockers.length === 0,
+    files: (manifest?.resources ?? [])
+      .flatMap((resource) =>
+        resource.trees.flatMap((tree) =>
+          tree.entries.map(
+            (entry) =>
+              `${resource.id}|${tree.provider}|${tree.rootName}/${entry.path}`,
+          ),
+        ),
+      )
+      .sort(),
+    withheld: [
+      ...(summary.withheldFiles ?? []).map(
+        (file) => `${file.assetId}/${file.relativePath}`,
+      ),
+      ...(summary.withheldMemberFiles ?? []).map(
+        (file) => `member:${file.rootName}/${file.relativePath}`,
+      ),
+    ].sort(),
+  };
+}
+
 export function cancelPackageAnalysis(analysisId: string): void {
   analyses.delete(analysisId);
 }
@@ -2380,6 +2446,11 @@ function retryable(error: unknown): boolean {
 interface PackageAttempt {
   /** Epoch ms after which no further request or backoff may start. */
   readonly deadline: number;
+  /**
+   * The caller's own budget, checked before every request and retry; it
+   * throws once that budget is spent, so nothing more is sent.
+   */
+  readonly stillInTime?: () => void;
   readonly credentialContext?: CanopyCloudCredentialContext;
   readonly getWindow?: () => BrowserWindow | null;
 }
@@ -2443,6 +2514,7 @@ async function withRetry<T>(
   task: (timeoutMs: number) => Promise<T>,
 ): Promise<T> {
   for (let attempt = 1; ; attempt += 1) {
+    packageAttempt.stillInTime?.();
     const remaining = packageAttempt.deadline - Date.now();
     if (remaining <= 0) {
       throw new ShareOperationError(
@@ -2565,6 +2637,7 @@ async function commitAnalyzedCapabilityPackage(
   getWindow?: () => BrowserWindow | null,
   beforeCommit?: () => Promise<void>,
   credentialContext?: CanopyCloudCredentialContext,
+  stillInTime?: () => void,
 ): Promise<{ uploadId: string; packageRef: PipelinePackageRef }> {
   const { manifest, readBlob } = await readAnalyzedCapabilityPackage(request);
   return commitCapabilityPackageUpload(
@@ -2573,6 +2646,7 @@ async function commitAnalyzedCapabilityPackage(
     getWindow,
     beforeCommit,
     credentialContext,
+    stillInTime,
   );
 }
 
@@ -2583,7 +2657,10 @@ export async function commitCapabilityPackageUpload(
   beforeCommit?: () => Promise<void>,
   /** The publishing account's context; resolved here when absent. */
   givenCredentialContext?: CanopyCloudCredentialContext,
+  /** The caller's budget, checked before preparing and every request. */
+  stillInTime?: () => void,
 ): Promise<{ uploadId: string; packageRef: PipelinePackageRef }> {
+  stillInTime?.();
   const startedAt = Date.now();
   emitProgress(getWindow, { stage: 'Preparing files…' });
   // One credential context for every package request (prepare, blobs,
@@ -2600,6 +2677,7 @@ export async function commitCapabilityPackageUpload(
   // upload is prepared; preparation runs under the base allowance.
   const prepareAttempt: PackageAttempt = {
     deadline: packageDeadline(0, startedAt),
+    ...(stillInTime === undefined ? {} : { stillInTime }),
     getWindow,
     ...(credentialContext ? { credentialContext } : {}),
   };
@@ -3011,6 +3089,8 @@ export async function createSubjectCapabilityPackage(
   getWindow?: () => BrowserWindow | null,
   /** The publishing account's context, so the package lands in that account. */
   credentialContext?: CanopyCloudCredentialContext,
+  /** Checked before preparing and every request; throwing stops it. */
+  stillInTime?: () => void,
 ): Promise<{
   capabilityPackage: PipelinePackageRef;
   committedPackageUploadId: string;
@@ -3023,6 +3103,7 @@ export async function createSubjectCapabilityPackage(
     getWindow,
     undefined,
     credentialContext,
+    stillInTime,
   );
   return {
     capabilityPackage: committed.packageRef,

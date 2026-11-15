@@ -34,8 +34,13 @@ function getCache(ownerDocument: Document): FontCache {
 /** The range of a face that declares none: every code point. */
 const FULL_UNICODE_RANGE = 'U+0-10FFFF';
 
+/**
+ * Reads one `@font-face` descriptor. `style` needs only `getPropertyValue`, so
+ * both DOM libraries accept a font-face rule's style: TypeScript 7.0's types it
+ * as `CSSStyleDeclaration`, 7.1's as `CSSFontFaceDescriptors`.
+ */
 function descriptor(
-  style: CSSStyleDeclaration,
+  style: Pick<CSSStyleDeclaration, 'getPropertyValue'>,
   name: string,
   fallback: string,
 ): string {

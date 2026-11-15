@@ -17,6 +17,7 @@
 // passes `addOffered={false}`, leaving Add to Cloud the row's one action.
 // ---------------------------------------------------------------------------
 
+import { ProjectCatalogHeader } from '@canopy/ui-shared/components';
 import { useState, type JSX, type ReactNode } from 'react';
 import { Button, EmptyState, Notice } from '@canopy/ui-shared';
 import {
@@ -278,7 +279,7 @@ export function OrgProjectCatalogList({
             // Stays pinned while the list scrolls; it covers the scroll
             // container's top padding so rows never show above it, and a
             // short fade below it lets rows slide under it softly.
-            <div className="sticky top-0 z-10 -mx-5 -mt-3 flex flex-col gap-2 bg-card px-5 pt-3 pb-2 after:pointer-events-none after:absolute after:inset-x-0 after:top-full after:h-4 after:bg-linear-to-b after:from-card after:to-transparent">
+            <ProjectCatalogHeader>
               <SearchField
                 value={search}
                 onValueChange={setSearch}
@@ -287,7 +288,7 @@ export function OrgProjectCatalogList({
                 data-testid="add-workspace-org-catalog-search"
               />
               {destination}
-            </div>
+            </ProjectCatalogHeader>
           )}
           {catalog === undefined && stale === false ? (
             <DelayedLoadingPlaceholder slowNote="Still loading projects…">

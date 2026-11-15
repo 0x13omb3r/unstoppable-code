@@ -1,3 +1,4 @@
+import { ActivitySwatch } from '@canopy/ui-shared/components';
 import { type JSX, useEffect, useMemo, useState } from 'react';
 import type {
   UsageCountsTimeseriesBucket,
@@ -416,10 +417,9 @@ export function MetricsChart({
                   aria-pressed={!hidden}
                   data-testid={`usage-chart-legend-${spec.id}-${opt.value}`}
                 >
-                  <span
-                    aria-hidden="true"
-                    className="inline-block h-2 w-2 rounded-sm"
-                    style={{ backgroundColor: colorForSeries(opt.value) }}
+                  <ActivitySwatch
+                    size="selector"
+                    color={colorForSeries(opt.value)}
                   />
                   <span>{opt.label}</span>
                 </Button>

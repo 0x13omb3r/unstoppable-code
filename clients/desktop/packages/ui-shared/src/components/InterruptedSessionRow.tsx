@@ -66,6 +66,9 @@ export interface InterruptedSessionRowProps {
   layout?: keyof typeof LAYOUT_CLASS;
   indent?: keyof typeof INDENT_CLASS;
   as?: 'div' | 'li';
+  role?: string;
+  'aria-live'?: 'off' | 'polite' | 'assertive';
+  separated?: boolean;
   'data-testid'?: string;
 }
 
@@ -93,6 +96,9 @@ export function InterruptedSessionRow({
   layout = 'selection',
   indent = 'none',
   as: Element = 'div',
+  role,
+  'aria-live': ariaLive,
+  separated = false,
   'data-testid': testId,
 }: InterruptedSessionRowProps): JSX.Element {
   const titleClass = `block truncate text-s ${disabled ? 'fg-secondary' : 'fg-primary'} ${replayMaskTitle ? REPLAY_MASK_CLASS : ''}`;
@@ -147,7 +153,9 @@ export function InterruptedSessionRow({
   return (
     <Element
       data-testid={testId}
-      className={`flex items-start ${LAYOUT_CLASS[layout]} ${INDENT_CLASS[indent]}`}
+      role={role}
+      aria-live={ariaLive}
+      className={`flex items-start ${LAYOUT_CLASS[layout]} ${INDENT_CLASS[indent]}${separated ? ' border-t border-[var(--line-base)]' : ''}`}
     >
       {selection ? null : leading}
       <div className="min-w-0 flex-1">

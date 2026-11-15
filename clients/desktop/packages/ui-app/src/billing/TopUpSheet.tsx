@@ -16,6 +16,8 @@ import {
 } from '@canopy/protocol/billing';
 import type { ModelLibraryAccess } from '@canopy/protocol/models';
 import {
+  AI_CREDITS_PROCESSING_COPY,
+  AI_CREDITS_PURCHASE_LABEL,
   Button,
   buttonClassName,
   DialogFormField,
@@ -220,8 +222,8 @@ function useTopUpCheckout({
 }
 
 /**
- * The AI credits checkout: the amount, the card when one is missing, and what
- * happened to the payment. Shared by the billing pages' "Buy credits" button
+ * The AI Credits checkout: the amount, the card when one is missing, and what
+ * happened to the payment. Shared by the billing pages' Buy AI Credits button
  * and by the chat composer's model unlock, which differ only in the intent
  * they open it with.
  */
@@ -308,7 +310,7 @@ export function TopUpSheet({
   const total = breakdown ? formatUsd(breakdown.totalCents / 100) : null;
   const payLabel =
     total === null
-      ? 'Buy credits'
+      ? AI_CREDITS_PURCHASE_LABEL
       : unlock
         ? `Pay ${total} and unlock`
         : `Pay ${total}`;
@@ -347,7 +349,7 @@ export function TopUpSheet({
       ? PROCESSING_COPY
       : state.status === 'confirming_credits' ||
           state.status === 'credits_delayed'
-        ? 'Payment received. Your AI credits are still processing. You won’t be charged again.'
+        ? AI_CREDITS_PROCESSING_COPY
         : state.status === 'confirming_access'
           ? CONFIRMING_COPY
           : state.status === 'access_delayed'
@@ -361,7 +363,9 @@ export function TopUpSheet({
   return (
     <DialogModal
       inset="flush"
-      title={unlock ? MODEL_LIBRARY_UNLOCK_COPY.title : 'Buy AI credits'}
+      title={
+        unlock ? MODEL_LIBRARY_UNLOCK_COPY.title : AI_CREDITS_PURCHASE_LABEL
+      }
       subtitle={
         unlock
           ? canSelectModel
@@ -490,7 +494,7 @@ export function TopUpSheet({
           />
           <ValueRows dataTestId={tid('credits-top-up-breakdown')}>
             <ValueRow
-              label="Credits"
+              label="AI Credits"
               value={
                 breakdown
                   ? formatUsd(breakdown.baseCents / 100)

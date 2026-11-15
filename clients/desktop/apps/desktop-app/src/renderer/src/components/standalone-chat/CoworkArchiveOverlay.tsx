@@ -10,6 +10,7 @@
  * Stacking: `z-30` — above chat grid/composer surfaces by paint order in the
  * same stacking context, while staying below semantic app overlay tiers.
  */
+import { Surface } from '@canopy/ui-shared/components';
 import { useCallback, useEffect, type JSX } from 'react';
 import {
   Button,
@@ -28,6 +29,8 @@ import {
 import { StandaloneArchiveViewer } from '@/components/standalone-chat/StandaloneArchiveViewer';
 import { ArchivedContainerView } from '@/components/archive/ArchivedContainerView';
 import { ArchivedContainersOverviewPage } from '@/components/archive/ArchivedContainersOverviewPage';
+import { CloudArchivedTasksPage } from '@/cloud-chats/CloudArchivedTasksPage';
+import { isWebCoreScope } from '@/lib/chat-authority';
 
 const SUMMARY_LOADING = '__loading__';
 
@@ -128,8 +131,10 @@ export function CoworkArchiveOverlay({
 
   if (archivedEntryViewer !== null) {
     return (
-      <div
-        className="electron-no-drag absolute inset-0 z-30 flex flex-col bg-base"
+      <Surface
+        variant="pane"
+        dragRegion={false}
+        className="absolute inset-0 z-30 flex flex-col"
         data-testid="cowork-archive-overlay"
       >
         {surface === 'app-advisor' && (
@@ -145,7 +150,7 @@ export function CoworkArchiveOverlay({
           containerId={archivedEntryViewer.containerId}
           onClose={closeArchivedViewerToOverview}
         />
-      </div>
+      </Surface>
     );
   }
 
@@ -154,28 +159,45 @@ export function CoworkArchiveOverlay({
       return null;
     }
     return (
-      <div
-        className="electron-no-drag absolute inset-0 z-30 flex flex-col bg-base"
+      <Surface
+        variant="pane"
+        dragRegion={false}
+        className="absolute inset-0 z-30 flex flex-col"
         data-testid="cowork-archive-overlay"
       >
         {surface === 'app-advisor' && (
           <div className="electron-drag h-10.75 shrink-0" />
         )}
-        <ArchivedContainersOverviewPage
-          workspaceId={archivedOverviewWorkspaceId}
-          surface={surface}
-          onClose={closeArchivedOverview}
-        />
-      </div>
+        {isWebCoreScope(archivedOverviewWorkspaceId) ? (
+          // A cloud project's archive is the web core's (CAN-6511).
+          <CloudArchivedTasksPage
+            projectId={archivedOverviewWorkspaceId}
+            onClose={closeArchivedOverview}
+          />
+        ) : (
+          <ArchivedContainersOverviewPage
+            workspaceId={archivedOverviewWorkspaceId}
+            surface={surface}
+            onClose={closeArchivedOverview}
+          />
+        )}
+      </Surface>
     );
   }
 
   return (
-    <div
-      className="electron-no-drag absolute inset-0 z-30 flex flex-col bg-base"
+    <Surface
+      variant="pane"
+      dragRegion={false}
+      className="absolute inset-0 z-30 flex flex-col"
       data-testid="cowork-archive-overlay"
     >
-      <div className="flex shrink-0 justify-end border-b px-3 py-1.5">
+      <Surface
+        variant="section"
+        boundary="bottom"
+        padding="compact-toolbar"
+        className="flex shrink-0 justify-end"
+      >
         <Button
           variant="ghost"
           size="compact"
@@ -184,7 +206,7 @@ export function CoworkArchiveOverlay({
         >
           Back
         </Button>
-      </div>
+      </Surface>
       {activeSummary === SUMMARY_LOADING ? (
         <DelayedLoadingPlaceholder slowNote="Still loading archive…">
           <Skeleton
@@ -210,6 +232,6 @@ export function CoworkArchiveOverlay({
           legacySummaryOnly={activeArchiveData?.legacySummaryOnly ?? true}
         />
       )}
-    </div>
+    </Surface>
   );
 }

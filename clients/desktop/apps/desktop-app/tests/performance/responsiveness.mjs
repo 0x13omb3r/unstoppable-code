@@ -1,3 +1,48 @@
+/**
+ * No scenario's frame-delay liveness budget may exceed this. A renderer that
+ * holds a frame for a second is hung whatever the scenario, so its samples
+ * stay unresponsive.
+ */
+export const SCENARIO_FRAME_DELAY_CEILING_MS = 1_000;
+
+/** Frame-delay liveness budgets of the scenarios that measured above the default. */
+export const SCENARIO_RESPONSIVENESS_THRESHOLDS = Object.freeze({
+  // Measured on the hosted macOS runner in two matched E2E-build pairs, 28
+  // samples (runs 43580874538 and 43582613105). Every sample's worst frame
+  // delay sat between 115.9 and 251.5 ms, with a median of 166.6 ms (ten
+  // 60 Hz frames), on unchanged and changed builds alike. The budget is the
+  // worst sample plus 50% headroom, 377 ms, rounded up to 380 ms.
+  'cloud-cowork-first-open': Object.freeze({ rendererFrameDelayMaxMs: 380 }),
+});
+
+/**
+ * The liveness thresholds for one scenario's samples: the profile's defaults,
+ * with the scenario's own frame-delay budget on E2E builds when it has one.
+ */
+export function scenarioResponsivenessThresholds(
+  name,
+  defaults,
+  { releaseLike = false, overrides = SCENARIO_RESPONSIVENESS_THRESHOLDS } = {},
+) {
+  const scenario = overrides[name];
+  if (releaseLike || !scenario) return defaults;
+  const keys = Object.keys(scenario);
+  if (keys.length !== 1 || keys[0] !== 'rendererFrameDelayMaxMs')
+    throw new Error(
+      `${name}: a scenario may set only the frame-delay liveness budget`,
+    );
+  const budgetMs = scenario.rendererFrameDelayMaxMs;
+  if (!Number.isFinite(budgetMs) || budgetMs < defaults.rendererFrameDelayMaxMs)
+    throw new Error(
+      `${name}: frame-delay budget ${budgetMs} ms is below the default`,
+    );
+  if (budgetMs > SCENARIO_FRAME_DELAY_CEILING_MS)
+    throw new Error(
+      `${name}: frame-delay budget ${budgetMs} ms is past the ${SCENARIO_FRAME_DELAY_CEILING_MS} ms ceiling`,
+    );
+  return Object.freeze({ ...defaults, rendererFrameDelayMaxMs: budgetMs });
+}
+
 function violation(metric, value, budgetMs, description, toleranceMs = 0) {
   if (!Number.isFinite(value) || value <= budgetMs + toleranceMs) return null;
   return { metric, value, budgetMs, unit: 'ms', description };

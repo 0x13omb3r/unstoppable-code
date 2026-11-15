@@ -486,3 +486,4 @@ export const CLOUD_SESSION_TERMINAL_KEEPALIVE_INTERVAL_MS = 60_000;
 export * from './agent-task';
 export * from './agent-task-row';
 export * from './sandbox-status';
+export * from './chat-usage';

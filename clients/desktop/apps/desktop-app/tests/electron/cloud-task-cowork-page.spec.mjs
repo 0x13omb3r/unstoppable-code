@@ -601,6 +601,63 @@ test("a cloud task archives from its own tab's menu or its sidebar row, and a re
   });
 });
 
+test("an archived cloud task waits on its project's More page, and Restore brings it back to the sidebar (CAN-6511)", async () => {
+  test.setTimeout(180_000);
+  await withSeededCoworkPage(async (window, cloud, handlerErrors) => {
+    const taskId = SEEDED_CLOUD_CHATS.taskId;
+    const project = `web-core:${SEEDED_CLOUD_CHATS.workspaceId}`;
+    const row = window.locator(
+      `[data-testid="worktree-row"][data-worktree-id="web-core:${taskId}"]`,
+    );
+    // Archived from the sidebar without opening it, the project is left with
+    // no chat: its More page must stay over the cowork page's cold start.
+    await expect(row.first()).toBeVisible({ timeout: 30_000 });
+    await row.first().click({ button: 'right' });
+    await window.getByTestId('worktree-actions-menu-archive').first().click();
+    const rowConfirm = window.getByTestId('portal-delete-worktree-confirm');
+    await rowConfirm.getByRole('button', { name: /^Archive/ }).click();
+    await expect(row).toHaveCount(0, { timeout: 15_000 });
+
+    // The project's More row counts the archived task and opens its page.
+    const more = window.getByTestId(`sidebar-project-${project}-archived-link`);
+    await expect(more).toBeVisible({ timeout: 15_000 });
+    await expect(more).toContainText('1');
+    await more.click();
+    const restore = window.getByTestId(
+      `cloud-more-tasks-restore-work-entry:${taskId}`,
+    );
+    await expect(restore).toBeVisible({ timeout: 15_000 });
+    await expect(
+      window.getByTestId(`cloud-more-tasks-item-work-entry:${taskId}`),
+    ).toContainText(SEEDED_CLOUD_CHATS.taskTitle);
+    // It stays: a project with no chat left doesn't swap it for the cold
+    // start.
+    await window.waitForTimeout(1_500);
+    await expect(restore).toBeVisible();
+
+    // Restore brings the task back in place, and the page lets it go.
+    await restore.click();
+    await expect(row.first()).toBeVisible({ timeout: 15_000 });
+    await expect(restore).toHaveCount(0);
+    expect(cloud.world.state.restores).toEqual([
+      expect.objectContaining({
+        archiveId: `work-entry:${taskId}`,
+        destinationScope: { workspaceId: SEEDED_CLOUD_CHATS.workspaceId },
+        conflictPolicy: 'fail',
+      }),
+    ]);
+    expect(cloud.world.state.archived.has(taskId)).toBe(false);
+    // Nothing local is asked about the cloud project's archive.
+    expect(
+      handlerErrors.filter(
+        (error) =>
+          error.includes(SEEDED_CLOUD_CHATS.workspaceId) ||
+          error.includes(taskId),
+      ),
+    ).toEqual([]);
+  });
+});
+
 test("a cloud task's Activity lists its project's workspace files, and no Summary (CAN-6568)", async () => {
   test.setTimeout(180_000);
   await withSeededCoworkPage(async (window, cloud) => {

@@ -1,5 +1,7 @@
 'use client';
 
+import { DigestSharedMarker } from '@canopy/ui-shared/components';
+
 import { useEffect, useMemo, useRef, useState, type JSX } from 'react';
 import {
   Button,
@@ -455,12 +457,7 @@ export function DigestShareControls({
         onClick={(): void => (open ? dismiss() : setOpen(true))}
       >
         <ShareIcon size={16} aria-hidden="true" />
-        {isShared && (
-          <span
-            aria-hidden="true"
-            className="h-1.5 w-1.5 rounded-full bg-accent"
-          />
-        )}
+        {isShared && <DigestSharedMarker />}
         {isShared ? 'Shared' : 'Share'}
       </Button>
 

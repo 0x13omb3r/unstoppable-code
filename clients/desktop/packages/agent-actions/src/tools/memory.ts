@@ -122,11 +122,13 @@ const READ_FILES =
   'Files are limited to MEMORY.md, one .md file directly under topics/ or inbox/, or an archived note or import under inbox/.consolidated/ or imported/.consolidated/. Pruned topics are excluded.';
 const REMEMBER_THIS =
   'An explicit "remember this" request from the user MUST trigger this tool.';
+const SAVE_GUIDANCE =
+  'Favor useful context that would be hard to learn again from the repo: preferences, decisions and their reasons, failed approaches, and environment quirks.';
 
 export function saveMemoryDescription(reach: AgentMemoryReach): string {
   return reach === 'device'
-    ? `Save durable local memory. Use user scope for personal preferences that apply everywhere, and workspace scope for facts about this repo or project. ${REMEMBER_THIS}`
-    : `Save durable memory to the chat owner's user memory, which their desktop app reads too while memory sync is on. Use user scope for personal preferences and facts that apply everywhere; cloud chats have no workspace memory, so workspace scope is refused. ${REMEMBER_THIS}`;
+    ? `Save durable local memory. ${SAVE_GUIDANCE} Use user scope for personal preferences that apply everywhere, and workspace scope for context specific to this repo or project. ${REMEMBER_THIS}`
+    : `Save durable memory to the chat owner's user memory, which their desktop app reads too while memory sync is on. ${SAVE_GUIDANCE} Use user scope for personal preferences and context that apply everywhere; cloud chats have no workspace memory, so workspace scope is refused. ${REMEMBER_THIS}`;
 }
 
 export function searchMemoryDescription(reach: AgentMemoryReach): string {

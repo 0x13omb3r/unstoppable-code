@@ -88,6 +88,8 @@ export interface CapabilityRequirement {
   readonly itemGrouping?: true;
   /** Requires the host to read a work scope's observed cost. */
   readonly costInsights?: true;
+  /** Requires the host to stream a Claude session's Mod surface. */
+  readonly claudeModSurface?: true;
 }
 
 const FILE_SYSTEM_ACCESS_RANK: Readonly<Record<FileSystemAccessLevel, number>> =
@@ -207,6 +209,12 @@ export function meetsCapabilityRequirement(
   if (requirement.costInsights === true && capabilities.costInsights !== true) {
     return false;
   }
+  if (
+    requirement.claudeModSurface === true &&
+    capabilities.claudeModSurface !== true
+  ) {
+    return false;
+  }
   return true;
 }
 
@@ -256,6 +264,8 @@ export function meetsCapabilityRequirement(
  *   scope's Agent Ledger can render it.
  * - `cost` / `session-breakdown` — need the `costInsights` capability: only a
  *   host that reads the scope's observed cost can render them.
+ * - `mod-pane` — needs `claudeModSurface`: only a host that streams a Claude
+ *   session's Mod surface has a pane to draw.
  *
  * Keyed by the closed union so adding a kind to `PANEL_KINDS` without
  * deciding its gating is a compile error.
@@ -284,6 +294,7 @@ export const PANEL_CAPABILITY_REQUIREMENTS: Readonly<
   'session-breakdown': { costInsights: true },
   // Desktop-only for now: the web panel grid has no new-tab picker yet.
   'new-tab': { localExecution: true },
+  'mod-pane': { claudeModSurface: true },
 };
 
 /**

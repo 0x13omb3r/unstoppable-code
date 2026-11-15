@@ -1,3 +1,7 @@
+import {
+  assertAdmittedWriter,
+  STORAGE_OWNERSHIP,
+} from '@canopy/core-runtime/storage';
 import { randomUUID } from 'node:crypto';
 import { mkdir, open, readFile, rename, unlink } from 'node:fs/promises';
 import { basename, dirname, join } from 'node:path';
@@ -31,6 +35,12 @@ export async function writeCanonicalWatcherStore(
   filePath: string,
   rows: readonly unknown[],
 ): Promise<void> {
+  assertAdmittedWriter(
+    'app_advisor_watchers_canonical',
+    'electron_main',
+    'main/app-advisor/chat-watcher-storage',
+    STORAGE_OWNERSHIP,
+  );
   const previous = await readStoreFile(filePath);
   const serialized = `${JSON.stringify({
     ...previous,

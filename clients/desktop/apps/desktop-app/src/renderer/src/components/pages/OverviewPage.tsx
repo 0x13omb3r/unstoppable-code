@@ -1,3 +1,4 @@
+import { OverviewWorkflowPlaceholder } from '@canopy/ui-shared/components';
 import { Stack } from '@canopy/ui-shared/components';
 import {
   type JSX,
@@ -291,7 +292,7 @@ export function OverviewPage(): JSX.Element {
               }
             />
           ) : unread ? (
-            <div className="h-1.5 w-full rounded-full bg-muted/50" />
+            <OverviewWorkflowPlaceholder />
           ) : (
             <div className="flex items-center gap-2 text-xs fg-secondary">
               <LoadingSpinner sizePx={12} />

@@ -38,7 +38,6 @@ import {
 import { requestApprovalDecision } from '../approvals/prompt-bridge';
 import { requestSecretInputApproval } from '../approvals/secret-input';
 import { cancelApproval } from '../approvals/pending-approvals';
-import { isHostedSettingsEnabled } from '../services/hosted-settings-feature-flag';
 import { accountUsesDeviceModelGateway } from '@canopy/desktop-shared/lib/org-model-gateway';
 import type { CanopyCloudAccountEntry } from '../lib/canopy-cloud-account-store';
 import {
@@ -58,11 +57,8 @@ interface DiscoveryReceipt {
 }
 const discoveries = new Map<string, DiscoveryReceipt>();
 export function desktopAiGatewayEnabled(): boolean {
-  return (
-    isHostedSettingsEnabled() &&
-    getFeatureFlagService().isEnabled(
-      CLIENT_FEATURE_FLAGS.canopyAiGatewaySettingsEnabled.key,
-    )
+  return getFeatureFlagService().isEnabled(
+    CLIENT_FEATURE_FLAGS.canopyAiGatewaySettingsEnabled.key,
   );
 }
 function json(value: unknown): AgentJson {

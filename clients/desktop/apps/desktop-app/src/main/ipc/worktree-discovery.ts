@@ -16,6 +16,7 @@ import {
   type AgentProviderType,
   type ChatTabPluginSelections,
   type CodexSelectedCapabilityRoot,
+  type SlashCommandData,
   type WorktreeDiscovery,
   type WorktreeDiscoveryEvent,
   type WorktreeDiscoveryRequest,
@@ -46,8 +47,22 @@ interface InflightDiscovery {
 
 // Keep removal-aborted runs until settlement, even if the provider already exits.
 const inflight = new Map<string, InflightDiscovery>();
+
+/** Each chat's last discovery and where it went, for the session's additions. */
+const lastChatDiscovery = new Map<
+  string,
+  {
+    readonly event: WorktreeDiscoveryEvent & { discovery: WorktreeDiscovery };
+    readonly getWindow: () => SendableBrowserWindow | null;
+    readonly requesterWindow: SendableBrowserWindow | null | undefined;
+  }
+>();
+
 subscribeWorkspaceTargetRemoval((projectId, worktreeId) => {
   const prefix = `${projectId}/${worktreeId}`;
+  for (const key of lastChatDiscovery.keys()) {
+    if (key.startsWith(`${prefix}/`)) lastChatDiscovery.delete(key);
+  }
   for (const [key, run] of inflight) {
     if (
       (key !== prefix && !key.startsWith(`${prefix}/`)) ||
@@ -87,6 +102,14 @@ function emit(
   event: WorktreeDiscoveryEvent,
   requesterWindow?: SendableBrowserWindow | null,
 ): void {
+  const { chatId, discovery } = event;
+  if (chatId !== undefined && discovery !== null) {
+    lastChatDiscovery.set(`${event.projectId}/${event.worktreeId}/${chatId}`, {
+      event: { ...event, discovery },
+      getWindow,
+      requesterWindow,
+    });
+  }
   const primaryWindow = getWindow();
   sendToWindow(primaryWindow, IPC_CHANNELS.worktreeDiscoveryEvent, event);
   if (requesterWindow && requesterWindow !== primaryWindow) {
@@ -384,6 +407,58 @@ export function triggerDiscovery(
       providerType,
       selectedRepoId,
     ),
+  );
+}
+
+/**
+ * Adds the commands a live Claude session reports that the chat's discovery
+ * lacks. A Mod registers its commands as the session starts, which the
+ * discovery session, sent no prompt, never does. `describe` is asked only
+ * when a name is missing. Nothing changes for a chat with no discovery yet,
+ * or one discovered for another provider.
+ */
+export async function addSessionSlashCommands(
+  chat: { projectId: string; worktreeId: string; chatId: string },
+  names: readonly string[],
+  describe: () => Promise<readonly SlashCommandData[]>,
+): Promise<void> {
+  const key = `${chat.projectId}/${chat.worktreeId}/${chat.chatId}`;
+  const known = lastChatDiscovery.get(key);
+  if (
+    known === undefined ||
+    (known.event.discovery.providerType ?? 'claude') !== 'claude'
+  )
+    return;
+  const listed = new Set(
+    known.event.discovery.slashCommands.map((c) => c.name),
+  );
+  if (names.every((name) => listed.has(name))) return;
+  const described = await describe();
+  // A newer discovery may have landed meanwhile; add to that one.
+  const latest = lastChatDiscovery.get(key);
+  if (latest === undefined) return;
+  const present = new Set(
+    latest.event.discovery.slashCommands.map((c) => c.name),
+  );
+  const missing = described.filter((command) => !present.has(command.name));
+  if (missing.length === 0) return;
+  emit(
+    latest.getWindow,
+    {
+      ...latest.event,
+      discovery: {
+        ...latest.event.discovery,
+        slashCommands: [
+          ...latest.event.discovery.slashCommands,
+          ...missing.map((command) => ({
+            name: command.name,
+            description: command.description,
+            argumentHint: command.argumentHint ?? '',
+          })),
+        ],
+      },
+    },
+    latest.requesterWindow,
   );
 }
 

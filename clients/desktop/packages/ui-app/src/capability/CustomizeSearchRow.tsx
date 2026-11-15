@@ -11,6 +11,11 @@ import type {
   MarketplaceTypeTabId,
 } from '@canopy/ui-shared/lib';
 import { customizeTabHasInstalledStatuses } from './customizeSections';
+import {
+  CustomizeDiscoveryFilterMenu,
+  type CustomizeDiscoveryFilterMenuProps,
+} from './CustomizeDiscoveryFilterMenu';
+import { useCustomizeDiscoveryEnabled } from './CustomizeDiscoveryProvider';
 
 export interface CustomizeSearchRowProps {
   readonly tab: MarketplaceTypeTabId;
@@ -28,6 +33,12 @@ export interface CustomizeSearchRowProps {
    * apply reads as Any.
    */
   readonly updateFilterAvailable?: boolean;
+  /**
+   * The host's links for New Customize's filter menu (CAN-6809). While the
+   * `customize-discovery` Labs experiment is on the menu replaces the
+   * Installed status filter, whose statuses its Status filter covers.
+   */
+  readonly discovery?: CustomizeDiscoveryFilterMenuProps;
   readonly className?: string;
 }
 
@@ -42,13 +53,17 @@ export function CustomizeSearchRow({
   installedStatusFilter,
   onInstalledStatusFilterChange,
   updateFilterAvailable = false,
+  discovery,
   className,
 }: CustomizeSearchRowProps): JSX.Element {
+  const discoveryEnabled = useCustomizeDiscoveryEnabled();
   return (
     <PageSearchRow testId="customize-search-row" className={className}>
       {/* The search takes the row; the status filter follows it. */}
       <MarketplaceSearchField {...search} />
-      {customizeTabHasInstalledStatuses(tab) &&
+      {discoveryEnabled && <CustomizeDiscoveryFilterMenu {...discovery} />}
+      {!discoveryEnabled &&
+        customizeTabHasInstalledStatuses(tab) &&
         onInstalledStatusFilterChange !== undefined && (
           <PageSearchControls>
             <InstalledStatusFilterDropdown

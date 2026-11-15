@@ -1048,7 +1048,8 @@ export async function createCanopyClient(
     await session.close(failure);
     throw failure;
   }
-  const { runtime, identity, manifest, peerMaxMessageBytes } = session.accepted;
+  const { runtime, identity, manifest, peerMaxMessageBytes, principal } =
+    session.accepted;
   if (peerMaxMessageBytes !== null)
     connection.allowPeerMessageBytes?.(peerMaxMessageBytes);
   return {
@@ -1056,6 +1057,7 @@ export async function createCanopyClient(
     runtime,
     identity,
     manifest,
+    ...(principal === null ? {} : { principal }),
     signal: session.signal,
     onLeaseEvicted: (listener) => {
       session.leaseEvictions.add(listener);

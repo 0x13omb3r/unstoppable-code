@@ -17,6 +17,7 @@
  * arrangement. `disposeLayout` runs from WorktreeManager's archive path when
  * a worktree is deleted.
  */
+import { Surface } from '@canopy/ui-shared/components';
 import { lazy, Suspense, useMemo, type JSX } from 'react';
 import {
   localPlatform,
@@ -116,9 +117,11 @@ export function WorktreePart({
   }
 
   return (
-    <section
+    <Surface
       data-testid="worktree-part"
-      className="relative flex min-h-55 min-w-0 flex-1 flex-col overflow-hidden bg-card/50"
+      as="section"
+      variant="workspace-panel"
+      className="relative flex min-w-0 flex-1 flex-col overflow-hidden"
     >
       {/* Persistent worktree chrome: PR/branch status + worktree-level
           controls (archived chats, launch, layout), full content-region
@@ -145,6 +148,6 @@ export function WorktreePart({
         hostState={hostState}
       />
       {auxWindowHosts}
-    </section>
+    </Surface>
   );
 }

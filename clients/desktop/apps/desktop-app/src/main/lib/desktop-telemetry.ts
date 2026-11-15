@@ -1,3 +1,4 @@
+import type { MemoryConsolidationMetrics } from '@canopy/protocol/local-memory';
 import {
   recordPostHogProviderConnection,
   recordPostHogShippingMilestone,
@@ -964,4 +965,26 @@ export function startRemotePairingTelemetry(
   } catch {
     return undefined;
   }
+}
+
+/** Only numeric measurements; no paths, filenames, labels or memory text. */
+export function recordMemoryConsolidationTelemetry(
+  metrics: MemoryConsolidationMetrics,
+): void {
+  scheduleTelemetry(() => {
+    emitTelemetryOperation('canopy.memory_consolidation', randomUUID(), {
+      index_bytes: metrics.indexBytes,
+      topic_count: metrics.topicCount,
+      topic_bytes: metrics.topicBytes,
+      input_bytes: metrics.inputBytes,
+      growth_bytes: metrics.growthBytes,
+      ...(metrics.growthRatio === null
+        ? {}
+        : { growth_ratio: metrics.growthRatio }),
+      broken_link_count: metrics.brokenLinkCount,
+      orphan_topic_count: metrics.orphanTopicCount,
+      repaired_link_count: metrics.repairedLinkCount,
+    });
+    return Promise.resolve();
+  });
 }

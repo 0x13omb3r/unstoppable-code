@@ -95,6 +95,8 @@ export interface ActiveComposerView {
   queuedHookPlaceholder?: boolean;
   executionHarness?: ChatTab['executionHarness'];
   executionHarnessExplicitlyChosen?: boolean;
+  /** The harness a cloud chat runs on, which its picker holds it to (CAN-6761). */
+  capturedHarness?: ChatTab['capturedHarness'];
   id: string;
   title: string;
   status: ChatTab['status'];
@@ -351,6 +353,7 @@ export function toActiveComposerView(
     ...(tab.executionHarnessExplicitlyChosen === true
       ? { executionHarnessExplicitlyChosen: true }
       : {}),
+    ...(tab.capturedHarness ? { capturedHarness: tab.capturedHarness } : {}),
     ...(tab.pendingPlanExit ? { pendingPlanExit: tab.pendingPlanExit } : {}),
     ...(tab.pendingPlanExitRequestId
       ? { pendingPlanExitRequestId: tab.pendingPlanExitRequestId }

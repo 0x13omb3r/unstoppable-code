@@ -1,3 +1,4 @@
+import { Divider } from '@canopy/ui-shared/components';
 import { useMemo, type JSX } from 'react';
 import { isToday, startOfDay } from './calendarDateUtils';
 import {
@@ -19,7 +20,7 @@ import {
 } from './dayWeekLayout';
 import { NowIndicator } from './NowIndicator';
 import { RichHoverTooltip } from '@/components/shared/RichHoverTooltip';
-import { Surface } from '@canopy/ui-shared/components';
+import { CalendarDayNumber, Surface } from '@canopy/ui-shared/components';
 
 const DAY_HEIGHT = 24 * HOUR_PX;
 const HOURS: readonly number[] = Array.from(
@@ -160,31 +161,31 @@ export function DayWeekTimeGrid({
   return (
     <Surface variant="outline" className="flex flex-col overflow-hidden">
       {/* Day headers */}
-      <div className="flex border-b bg-fg-primary/[0.02]">
+      <Surface variant="quiet-panel" boundary="bottom" className="flex">
         <div className="w-14 shrink-0" />
         {days.map((day) => {
           const today = isToday(day, now);
           return (
-            <div
+            <Surface
+              variant="section"
+              boundary="left"
               key={day.getTime()}
-              className="flex-1 border-l px-2 py-1.5 text-center"
+              className="flex-1"
             >
-              <div className="text-3xs fg-secondary ">
-                {day.toLocaleDateString(undefined, { weekday: 'short' })}
+              <div className="px-2 py-1.5 text-center">
+                <div className="text-3xs fg-secondary ">
+                  {day.toLocaleDateString(undefined, { weekday: 'short' })}
+                </div>
+                <CalendarDayNumber
+                  day={day.getDate()}
+                  today={today}
+                  density="day-header"
+                />
               </div>
-              <div
-                className={`mx-auto mt-0.5 flex h-6 w-6 items-center justify-center rounded-full text-s ${
-                  today
-                    ? 'bg-destructive font-semibold text-white'
-                    : 'fg-primary'
-                }`}
-              >
-                {day.getDate()}
-              </div>
-            </div>
+            </Surface>
           );
         })}
-      </div>
+      </Surface>
       {/* Scrollable hour body */}
       <div className="max-h-150 overflow-y-auto">
         <div className="flex" style={{ height: DAY_HEIGHT }}>
@@ -215,9 +216,11 @@ export function DayWeekTimeGrid({
                 {HOURS.map((hour) => (
                   <div
                     key={hour}
-                    className="absolute right-0 left-0 border-t"
+                    className="absolute inset-x-0"
                     style={{ top: hour * HOUR_PX }}
-                  />
+                  >
+                    <Divider aria-hidden />
+                  </div>
                 ))}
                 {positioned.map((item) => (
                   <EventChip

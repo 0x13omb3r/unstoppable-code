@@ -9,38 +9,26 @@ import {
   SETTINGS_CARD_ROW_CLASS,
 } from '@canopy/ui-shared/components/settings/SettingsCard';
 import { useEffect, useMemo, useRef, useState, type JSX } from 'react';
-import { Lock } from '@canopy/ui-shared/icons/AppIcons';
 import {
   Button,
   DelayedLoadingPlaceholder,
   ErrorBanner,
-  Notice,
   Skeleton,
   SettingsRowsRow,
   ToggleSwitch,
-  Tooltip,
   EmptyStateRow,
   Heading,
 } from '@canopy/ui-shared/components';
-import { organizationBillingPath } from '@canopy/protocol/billing';
 import type {
   OrganizationConfigDetail,
   OrganizationDetail,
 } from '@canopy/protocol/settings/organization';
-import { MODEL_POLICY_CAPABILITY } from '@canopy/protocol/settings/organization';
-import { lowestPlanNameWithCapability } from '@canopy/protocol/settings/billing-plan-catalog';
 import { canEditOrgEnforcedSettings } from '@canopy/protocol/settings/organization-permissions';
-import {
-  SettingsConfirmDialog,
-  SettingsLink,
-  useSettingsClient,
-} from '../host';
+import { SettingsConfirmDialog, useSettingsClient } from '../host';
 import { useSettingsErrorCopy, useSettingsLoadFailure } from '../errors';
-import { ORGANIZATION_LAPSED_ERROR } from './organization-known-errors';
 import {
   fetchOrgModelCatalog,
   getOrganizationConfig,
-  getOrgBillingSummary,
   updateBlockedModelIds,
   updateEnforceMemberModelPolicy,
   type OrgModelCatalogEntry,
@@ -55,12 +43,6 @@ const PAGE_SIZE = 15;
 
 interface TeamModelPolicySectionProps {
   detail: OrganizationDetail;
-  /**
-   * Server-resolved free app access (CAN-3926). Every capability is granted
-   * then, so the card skips the plan read: a failed read must not paint an
-   * "Upgrade" door over a feature the organization already has.
-   */
-  freeAccess?: boolean;
 }
 
 /**
@@ -86,29 +68,20 @@ interface TeamModelPolicySectionProps {
  * is possible, but only through the explicit, confirmed "Mark all as reviewed"
  * action.
  *
- * Entitlement changes what the card offers, not whether the policy is real:
- * an org whose plan lapsed while enforcement is ON still gets working controls,
- * limited to the relaxing direction the server accepts (see `relaxOnly` below).
- * The upsell-only door is for orgs with no live policy at all.
- *
  * Self-gated on `canEditOrgEnforcedSettings`, like the data-sharing card it
  * sits beside.
  */
 export function TeamModelPolicySection({
   detail,
-  freeAccess = false,
 }: TeamModelPolicySectionProps): JSX.Element | null {
   if (!canEditOrgEnforcedSettings(detail.viewerRole)) {
     return null;
   }
 
-  return <ModelPolicyCard detail={detail} freeAccess={freeAccess} />;
+  return <ModelPolicyCard detail={detail} />;
 }
 
-function ModelPolicyCard({
-  detail,
-  freeAccess = false,
-}: TeamModelPolicySectionProps): JSX.Element {
+function ModelPolicyCard({ detail }: TeamModelPolicySectionProps): JSX.Element {
   const client = useSettingsClient();
   const errorCopy = useSettingsErrorCopy(MODEL_POLICY_ERROR_SCOPE);
   const loadErrorCopy = useSettingsLoadFailure(MODEL_POLICY_ERROR_SCOPE);
@@ -130,22 +103,6 @@ function ModelPolicyCard({
   const [loadAttempt, setLoadAttempt] = useState(0);
 
   /**
-   * `null` until the billing read resolves, and permanently `null` if it
-   * fails — the same three-state contract the data-sharing card uses. An
-   * unknown entitlement rendered as "entitled" would paint an interactive
-   * policy card for an org that does not have the capability, and every toggle
-   * on it would 403.
-   */
-  const [planEntitled, setEntitled] = useState<boolean | null>(null);
-  const entitled = freeAccess ? true : planEntitled;
-  /**
-   * Held apart from `error` on purpose: a save clears `error`, and an
-   * unresolved plan-read failure must not be erased by the first toggle.
-   */
-  const [entitlementError, setEntitlementError] =
-    useState<SettingsFailure | null>(null);
-
-  /**
    * The configuration the SERVER last confirmed, which is what the next PATCH
    * body is built from. A per-model save sends the whole array, so rebasing on
    * render-time state would let a second toggle started mid-flight send the
@@ -160,10 +117,6 @@ function ModelPolicyCard({
   const latestReviewedRef = useRef<ReadonlySet<string>>(new Set());
 
   const saving = savingMaster || savingModelId !== null || savingReviewAll;
-  const entitlementResolved = entitled !== null || entitlementError !== null;
-  const requiredPlanName = lowestPlanNameWithCapability(
-    MODEL_POLICY_CAPABILITY,
-  );
 
   useEffect(() => {
     let cancelled = false;
@@ -207,36 +160,12 @@ function ModelPolicyCard({
     };
   }, [client, errorCopy, loadAttempt]);
 
-  useEffect(() => {
-    if (freeAccess) {
-      return;
-    }
-    let cancelled = false;
-    void (async (): Promise<void> => {
-      try {
-        const summary = await getOrgBillingSummary(client, orgId);
-        if (!cancelled) {
-          setEntitled(summary.capabilities.includes(MODEL_POLICY_CAPABILITY));
-        }
-      } catch (err) {
-        // Leaves `entitled` null — unknown, not "entitled". The PATCH route
-        // capability-gates server-side either way, so this only decides what
-        // the card is allowed to CLAIM, never what the org actually gets.
-        if (!cancelled) setEntitlementError(errorCopy.loadFailure(err));
-      }
-    })();
-    return (): void => {
-      cancelled = true;
-    };
-  }, [client, orgId, freeAccess, errorCopy, loadAttempt]);
-
   /**
    * Retry runs every load again. Clearing the errors puts the card back on
    * its placeholder until the reads settle.
    */
   const retryLoad = (): void => {
     setLoadError(null);
-    setEntitlementError(null);
     setLoadAttempt((attempt) => attempt + 1);
   };
 
@@ -270,7 +199,6 @@ function ModelPolicyCard({
     setError(
       errorCopy.actionFailure(err, {
         action: 'update the model policy',
-        known: [ORGANIZATION_LAPSED_ERROR],
       }),
     );
   };
@@ -373,42 +301,11 @@ function ModelPolicyCard({
     }
   };
 
-  /**
-   * Enforcement is ON but the capability is gone: a plan lapsed under a policy
-   * that is still refusing models for every member right now.
-   *
-   * The runtime keeps enforcing here on purpose (a compliance boundary is not a
-   * cost control), so a painted door in this state would be a trap: the org
-   * would have a live policy, an allowlist that blocks every model shipped
-   * after its last save, and no control anywhere to undo either one. So the
-   * REAL controls render, in the one direction the server still accepts, which
-   * `modelPolicyTightens` in `lib/teams/team-service.ts` defines: turn the
-   * master switch off, unblock a model, review more models. Anything that would
-   * point the policy at MORE than it already covers is locked rather than left
-   * to fail on save.
-   *
-   * Strictly `=== false`. An unresolved plan read leaves `entitled` null, and
-   * unknown is not "downgraded".
-   */
-  const relaxOnly = enforcing === true && entitled === false;
-  const showList = enforcing === true && (entitled === true || relaxOnly);
+  const showList = enforcing === true;
 
-  /**
-   * Turning enforcement back ON is a tightening, so a relax-only card never
-   * sends it. The switch is checked whenever `relaxOnly` holds, so this only
-   * guards against the state changing under an in-flight click.
-   */
   const handleMasterChange = (next: boolean): void => {
-    if (relaxOnly && next) {
-      return;
-    }
     void saveMaster(next);
   };
-
-  const upgradeText = requiredPlanName
-    ? `Upgrade to ${requiredPlanName}`
-    : 'Upgrade';
-  const billingHref = organizationBillingPath(orgId);
 
   return (
     <section
@@ -436,9 +333,7 @@ function ModelPolicyCard({
           ) : null}
         </div>
       </div>
-      <div
-        className={`${SETTINGS_CARD_GROUP_CLASS} flex flex-col ${entitlementResolved && enforcing !== null && catalogReady && entitled !== true && !relaxOnly ? 'gap-0' : 'gap-4'}`}
-      >
+      <div className={`${SETTINGS_CARD_GROUP_CLASS} flex flex-col gap-4`}>
         <Stack gap="item" className="empty:hidden">
           <ErrorBanner
             errorSource="team-model-policy-request"
@@ -453,25 +348,15 @@ function ModelPolicyCard({
             details={loadError?.details}
             onRetry={retryLoad}
           />
-          {/* Its own banner: a save clears `error` and must not take an
-              unresolved plan-read failure with it. */}
-          <ErrorBanner
-            errorSource="team-model-policy-entitlement"
-            className=""
-            // One load banner: both share the same copy and Retry.
-            error={loadError === null ? entitlementError?.copy : null}
-            details={loadError === null ? entitlementError?.details : undefined}
-            onRetry={retryLoad}
-          />
         </Stack>
         <div>
-          {!entitlementResolved || enforcing === null || !catalogReady ? (
+          {enforcing === null || !catalogReady ? (
             <div data-testid="model-policy-pending">
               <DelayedLoadingPlaceholder>
                 <ModelPolicySkeleton />
               </DelayedLoadingPlaceholder>
             </div>
-          ) : entitled === true || relaxOnly ? (
+          ) : (
             <Stack gap="item">
               <div>
                 <SettingsRowsRow
@@ -488,72 +373,7 @@ function ModelPolicyCard({
                   }
                 />
               </div>
-              {relaxOnly ? (
-                <Notice
-                  intent="attention"
-                  icon={<Lock size={14} />}
-                  data-testid="model-policy-relax-only-note"
-                >
-                  Your plan no longer includes a model policy, but the one you
-                  set is still in force for your members, and models released
-                  since your last save are blocked too. From here you can turn
-                  enforcement off or allow models it blocks. To block a model
-                  again, or to turn enforcement back on later, you&apos;ll need
-                  the capability back.{' '}
-                  <SettingsLink
-                    href={billingHref}
-                    data-testid="model-policy-relax-only-upgrade"
-                    className="underline fg-accent"
-                  >
-                    {upgradeText}
-                  </SettingsLink>
-                </Notice>
-              ) : null}
             </Stack>
-          ) : (
-            /*
-             * Painted door, for an org with no capability AND no live policy
-             * (enforcement off, or a plan read that never resolved). The switch
-             * stays VISIBLE so the capability is discoverable, but the model
-             * list never renders: showing an uneditable list of models would
-             * read as a policy this org has, and it has none. An org that IS
-             * still enforcing gets the relax-only controls above instead, since
-             * for it the policy is real and it needs a way out.
-             */
-            <Tooltip
-              label={
-                <span className="block max-w-64 whitespace-normal">
-                  Your plan doesn&apos;t include a model policy, so members may
-                  use any model.
-                </span>
-              }
-              link={{
-                href: billingHref,
-                text: upgradeText,
-                external: false,
-              }}
-            >
-              <span
-                className="mt-4 flex cursor-not-allowed items-start gap-3 opacity-60"
-                data-testid="model-policy-upgrade-cta"
-              >
-                <Lock
-                  size={14}
-                  aria-hidden="true"
-                  className="mt-0.5 fg-secondary/70"
-                />
-                <span className="min-w-0">
-                  <span className="block text-s font-medium fg-primary">
-                    Enforce member model access policy
-                  </span>
-                  <span className="block text-xs fg-secondary">
-                    {requiredPlanName
-                      ? `Available on ${requiredPlanName}.`
-                      : 'Not included in your plan.'}
-                  </span>
-                </span>
-              </span>
-            </Tooltip>
           )}
 
           {showList ? (
@@ -593,19 +413,6 @@ function ModelPolicyCard({
                     }
                     pendingReview={pendingReviewSet.has(model.id)}
                     busy={saving}
-                    /*
-                     * Only an ALLOWED row locks in relax-only mode: switching
-                     * it off would add a blocked id, which the server refuses
-                     * without the capability. Blocked and unreviewed rows stay
-                     * live, because switching those on is a relaxation.
-                     */
-                    locked={
-                      relaxOnly &&
-                      !blocked.has(model.id) &&
-                      !pendingReviewSet.has(model.id)
-                    }
-                    upgradeHref={billingHref}
-                    upgradeText={upgradeText}
                     onChange={(allow) => void saveModel(model.id, allow)}
                   />
                 ))}
@@ -674,9 +481,8 @@ function ModelPolicyCard({
                         unless you block it.
                       </p>
                       <p>
-                        {relaxOnly
-                          ? 'New models that ship later stay blocked until you review them too. Your plan no longer lets you block a model, though, so only do this if every model in the catalog is fine for your members.'
-                          : 'You can still block any model afterwards, and new models that ship later stay blocked until you review them too.'}
+                        You can still block any model afterwards, and new models
+                        that ship later stay blocked until you review them too.
                       </p>
                     </div>
                   }
@@ -730,9 +536,6 @@ function ModelPolicySkeleton(): JSX.Element {
             allowed
             pendingReview={false}
             busy={false}
-            locked={false}
-            upgradeHref=""
-            upgradeText=""
             onChange={noop}
           />
         ))}
@@ -749,15 +552,6 @@ interface ModelPolicyRowProps {
   pendingReview: boolean;
   /** True while ANY save on the card is in flight, not just this row's. */
   busy: boolean;
-  /**
-   * Whether flipping this row would tighten a policy the org no longer holds
-   * the capability for. Locked rows are inert rather than merely doomed to
-   * fail on save.
-   */
-  locked: boolean;
-  /** Where a locked row sends an admin to get the capability back. */
-  upgradeHref: string;
-  upgradeText: string;
   onChange: (allow: boolean) => void;
 }
 
@@ -766,19 +560,15 @@ function ModelPolicyRow({
   allowed,
   pendingReview,
   busy,
-  locked,
-  upgradeHref,
-  upgradeText,
   onChange,
 }: ModelPolicyRowProps): JSX.Element {
   const toggle = (
     <ToggleSwitch
       checked={allowed}
-      unavailable={locked}
       label={`Allow ${model.label}${
         pendingReview ? ' (new; blocked until reviewed)' : ''
-      }${locked ? ' (locked by your plan)' : ''}`}
-      disabled={locked ? undefined : busy}
+      }`}
+      disabled={busy}
       dataTestId={`model-policy-toggle-${model.id}`}
       onChange={onChange}
     />
@@ -807,32 +597,7 @@ function ModelPolicyRow({
         ) : null}
         <p className="truncate text-xs fg-secondary/80">{model.id}</p>
       </div>
-      {locked ? (
-        <Tooltip
-          label={
-            <span className="block max-w-64 whitespace-normal">
-              Your plan no longer lets you block models. You can still allow
-              ones this policy blocks today.
-            </span>
-          }
-          link={{ href: upgradeHref, text: upgradeText, external: false }}
-        >
-          {/*
-           * The lock glyph shares the tooltip's hover target with the switch,
-           * and `aria-disabled` keeps that target focusable: a natively
-           * disabled button leaves the tab order and fires no hover events, so
-           * the explanation would be unreachable. The always-visible note above
-           * the list carries the same reason for keyboard users, since the
-           * tooltip's link is portalled and cannot be tabbed to.
-           */}
-          <span className="flex shrink-0 items-center gap-2">
-            <Lock size={12} aria-hidden="true" className="fg-secondary/70" />
-            {toggle}
-          </span>
-        </Tooltip>
-      ) : (
-        toggle
-      )}
+      {toggle}
     </li>
   );
 }

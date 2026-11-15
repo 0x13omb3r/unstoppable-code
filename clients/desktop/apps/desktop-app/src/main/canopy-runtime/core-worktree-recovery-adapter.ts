@@ -4,6 +4,13 @@ import { LOCAL_DESKTOP_AUTHORITY_ID } from './desktop-runtime-identity';
 import { validateId } from '../lib/validation';
 import { assertWritableScope } from '../lib/read-only-scope';
 
+// A cold-status read cannot revoke a confirmed action.
+async function refreshRecoveryJournals(): Promise<void> {
+  await (await import('./desktop-w5-recovery'))
+    .getDesktopW5RecoveryController()
+    .refreshJournals();
+}
+
 /** Core archive policy over the existing Electron-owned journal and worker evidence readers. */
 export function createCoreWorktreeRecoveryAdapter(): DesktopDomainAdapter {
   return {
@@ -11,11 +18,12 @@ export function createCoreWorktreeRecoveryAdapter(): DesktopDomainAdapter {
       'core.worktree.recovery.resolve': async (params, context) => {
         if (
           context.caller.authorityId !== LOCAL_DESKTOP_AUTHORITY_ID ||
-          context.caller.interfaceKind !== 'desktop'
+          context.caller.principalId !== 'local-desktop-user' ||
+          !['desktop', 'portal'].includes(context.caller.interfaceKind)
         )
           throw new CanopyOperationError({
             kind: 'permission_denied',
-            message: 'Archive resolution requires a local user.',
+            message: 'Archive resolution requires a user review.',
             retry: { kind: 'never' },
           });
         validateId(params.workspaceId, 'workspaceId');
@@ -23,28 +31,25 @@ export function createCoreWorktreeRecoveryAdapter(): DesktopDomainAdapter {
         const result = await (
           await import('../lib/worktree-archive-resolution')
         ).resolveWorktreeArchive(params);
-        await (await import('./desktop-w5-recovery'))
-          .getDesktopW5RecoveryController()
-          .refreshJournals();
+        await refreshRecoveryJournals().catch(() => undefined);
         return result;
       },
       'core.worktree.recovery.finish': async (params, context) => {
         if (
           context.caller.authorityId !== LOCAL_DESKTOP_AUTHORITY_ID ||
-          context.caller.interfaceKind !== 'desktop'
+          context.caller.principalId !== 'local-desktop-user' ||
+          !['desktop', 'portal'].includes(context.caller.interfaceKind)
         )
           throw new CanopyOperationError({
             kind: 'permission_denied',
-            message: 'Archive Finish requires the local desktop user.',
+            message: 'Archive Finish requires a user review.',
             retry: { kind: 'never' },
           });
         const result = await (
           await import('../lib/worktree-recovery-finish')
         ).finishWorktreeRecovery(params);
         // Re-enumerate the cold aggregate, retaining unrelated log/file/journal incidents.
-        await (await import('./desktop-w5-recovery'))
-          .getDesktopW5RecoveryController()
-          .refreshJournals();
+        await refreshRecoveryJournals().catch(() => undefined);
         return result;
       },
     },

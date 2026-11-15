@@ -13,7 +13,7 @@ import { foldTranscriptTodoState } from '@canopy/agent-transcript';
 import type { DelegationChildRow } from '@canopy/agent-transcript';
 import { isUserTurnBoundary } from '@canopy/agent-transcript/lib/turn-boundary';
 import { createHash, randomUUID } from 'node:crypto';
-import { createReadStream } from 'node:fs';
+import { createReadStream, readSync } from 'node:fs';
 import {
   mkdir,
   open,
@@ -2096,9 +2096,50 @@ export type TranscriptActiveProjectionSource = (
  * order: its index consumes those as two separate bodies. Logical anchoring
  * belongs to the explicit transcript read projection, not this search input.
  */
+export interface PinnedCommittedTranscript {
+  fd: number;
+  size: number;
+  count: number;
+  digest: string;
+}
+
+/** Read-only thread reader. The host owns this descriptor until the thread exits. */
+export async function* readPinnedCommittedTranscript(
+  input: PinnedCommittedTranscript,
+  deadline: number,
+): AsyncGenerator<PersistedChatMessage> {
+  let count = 0;
+  let committedDigest = EMPTY_COMMITTED_DIGEST;
+  async function* chunks(): AsyncGenerator<Buffer> {
+    for (let offset = 0; offset < input.size; ) {
+      if (Date.now() >= deadline)
+        throw new Error('Chat learning deadline exceeded');
+      const bytes = Buffer.allocUnsafe(
+        Math.min(64 * 1024, input.size - offset),
+      );
+      const read = readSync(input.fd, bytes, 0, bytes.length, offset);
+      if (!read) throw new Error('Chat learning transcript truncated');
+      offset += read;
+      yield await Promise.resolve(bytes.subarray(0, read));
+    }
+  }
+  for await (const row of linesFromChunks(chunks())) {
+    if (++count > input.count)
+      throw new Error('Chat learning transcript count mismatch');
+    committedDigest = extendCommittedDigest(
+      committedDigest,
+      digest(row.message),
+    );
+    yield row.message;
+  }
+  if (count !== input.count || committedDigest !== input.digest)
+    throw new Error('Chat learning transcript digest mismatch');
+}
+
 export class CapturedTranscriptPreview {
   private readonly controller = new AbortController();
   private closePromise?: Promise<void>;
+  private threadConsumption?: Promise<unknown>;
   private consumed = false;
   private complete = false;
   private readonly authority: TranscriptDescriptor;
@@ -2260,6 +2301,51 @@ export class CapturedTranscriptPreview {
     this.complete = true;
   }
 
+  /** Off-main consumers may borrow only an idle, fully committed bounded prefix.
+   * The callback must stop its thread before settling; close/deletion abort it.
+   * No row is read, parsed, cloned or rendered by this host method.
+   */
+  public async consumeCommittedInThread<T>(
+    consume: (
+      input: PinnedCommittedTranscript,
+      signal: AbortSignal,
+    ) => Promise<T>,
+    limits: { bytes: number; rows: number },
+  ): Promise<T> {
+    if (
+      this.consumed ||
+      this.controller.signal.aborted ||
+      this.authority.hasActiveSidecar ||
+      this.active ||
+      this.projectedActive?.length ||
+      this.committed.size !== this.authority.committedByteLength ||
+      this.committed.size > limits.bytes ||
+      this.authority.committedMessageCount > limits.rows ||
+      !this.authority.committedDigest
+    )
+      throw new Error('Chat learning requires a bounded committed transcript');
+    this.consumed = true;
+    const committedDigest = this.authority.committedDigest;
+    const consumption = Promise.resolve().then(() =>
+      consume(
+        {
+          fd: this.committed.handle.fd,
+          size: this.committed.size,
+          count: this.authority.committedMessageCount,
+          digest: committedDigest,
+        },
+        this.controller.signal,
+      ),
+    );
+    this.threadConsumption = consumption;
+    const value = await consumption;
+    await assertCapturedPreviewFileUnchanged(this.committed, true);
+    if (this.controller.signal.aborted)
+      throw new Error('Transcript preview aborted');
+    this.complete = true;
+    return value;
+  }
+
   public assertComplete(): void {
     if (!this.complete || this.controller.signal.aborted)
       throw new ChatTranscriptIntegrityError(
@@ -2271,6 +2357,9 @@ export class CapturedTranscriptPreview {
     if (!this.closePromise) {
       this.controller.abort();
       this.closePromise = (async (): Promise<void> => {
+        // Abort requests teardown; the borrower releases the FD only once its
+        // thread has stopped. Never close/reuse it while a read can remain.
+        await this.threadConsumption?.catch(() => undefined);
         const outcomes = await Promise.allSettled([
           this.committed.handle.close(),
           ...(this.active ? [this.active.handle.close()] : []),
@@ -7762,6 +7851,33 @@ export class TranscriptStreamStore {
       );
     } finally {
       if (!transferred) await committedHandle.close();
+    }
+  }
+
+  /** Warm, committed-only handle capture. Never loads/rebuilds an index or
+   * reads active rows on the host; the thread verifies the canonical digest.
+   */
+  public async captureCommittedPreview(
+    chatId: string,
+    canonical: TranscriptDescriptor,
+  ): Promise<CapturedTranscriptPreview> {
+    if (
+      canonical.hasActiveSidecar ||
+      this.projectedActive(chatId)?.messages.length ||
+      !canonical.committedDigest ||
+      canonical.committedByteLength > 16 * 1024 * 1024 ||
+      canonical.committedMessageCount > 20_000
+    )
+      throw new Error('Chat learning requires a bounded committed transcript');
+    const handle = await open(this.path(chatId, 'jsonl'), 'r');
+    try {
+      const file = await capturedPreviewFile(handle);
+      if (file.size !== canonical.committedByteLength)
+        throw new Error('Chat learning committed length mismatch');
+      return new CapturedTranscriptPreview(canonical, file);
+    } catch (error) {
+      await handle.close();
+      throw error;
     }
   }
 

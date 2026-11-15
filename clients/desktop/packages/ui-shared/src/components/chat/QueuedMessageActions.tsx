@@ -24,9 +24,9 @@ export const QUEUED_MESSAGE_RETRY_BLOCKED_TOOLTIPS: Readonly<
   >
 > = {
   insufficient_credits: {
-    title: 'Add credits first',
+    title: 'Buy AI Credits first',
     description:
-      'Your queued message is saved. Try again sends it once your account has AI credits.',
+      'Your queued message is saved. Try again sends it once your account has AI Credits.',
   },
 };
 

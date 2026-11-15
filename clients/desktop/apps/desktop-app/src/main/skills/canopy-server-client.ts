@@ -216,6 +216,8 @@ export async function createSharedSkill(
 export async function updateSharedSkill(
   request: UpdateSharedSkillRequest,
   credentialContext?: CanopyCloudCredentialContext,
+  /** Runs just before the PUT, after any reads; throwing sends nothing. */
+  beforeWrite?: () => void,
 ): Promise<SharedSkillDetail> {
   assertShareScopeTarget(request, 'a skill');
   let rawSkill = request.rawSkill;
@@ -244,6 +246,7 @@ export async function updateSharedSkill(
     );
   }
   assertCheckedSource(rawSkill, request.expectedSourceSha256);
+  beforeWrite?.();
   return requestCanopyCloudJson<SharedSkillDetail>(
     `${API_PREFIX}/skills/${encodeURIComponent(request.skillId)}`,
     {
@@ -282,11 +285,13 @@ export async function updateSharedSkill(
 
 export async function deleteSharedSkill(
   request: DeleteSharedSkillRequest,
+  credentialContext?: CanopyCloudCredentialContext,
 ): Promise<void> {
-  if (skillResourceContextEnabled()) await getSharedSkill(request.skillId);
+  if (skillResourceContextEnabled())
+    await getSharedSkill(request.skillId, credentialContext);
   await requestCanopyCloudNoContent(
     `${API_PREFIX}/skills/${encodeURIComponent(request.skillId)}`,
-    { method: 'DELETE' },
+    { method: 'DELETE', ...(credentialContext ? { credentialContext } : {}) },
   );
 }
 

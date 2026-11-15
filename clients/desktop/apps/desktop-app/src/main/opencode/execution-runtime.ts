@@ -22,6 +22,7 @@ import {
 
 export interface OpenCodeExecutionRuntime extends ManagedOpenCodeRuntime {
   rawModelId: string;
+  supportsVision: boolean;
   supportedThinkingLevels: readonly ThinkingLevel[];
   inferenceRoute?: OpenCodeInferenceRoute;
   accountScope: 'native' | 'ai_credits';
@@ -114,6 +115,7 @@ export async function openOpenCodeExecutionRuntime(input: {
         close,
         inferenceRoute: prepared.route,
         rawModelId: prepared.rawModelId,
+        supportsVision: lease.route.model.supportsVision,
         supportedThinkingLevels: [],
         accountScope: 'ai_credits',
         inferenceFunding: lease.funding,
@@ -136,6 +138,7 @@ export async function openOpenCodeExecutionRuntime(input: {
       ...runtime,
       close,
       rawModelId: nativeModel,
+      supportsVision: model.supportsVision === true,
       supportedThinkingLevels: model.supportedThinkingLevels ?? [],
       accountScope: 'native',
     };

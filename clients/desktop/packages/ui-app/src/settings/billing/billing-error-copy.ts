@@ -15,23 +15,9 @@ import { useOptionalSettingsHost } from '../host/settings-host';
 
 /**
  * Local copy for the billing failures a viewer can act on. Billing routes
- * answer with a status and, for a few refusals, a structured `code`; the
- * route's `{ error }` text is never shown. Codes come first so a coded 409
- * wins over any bare-status case a call site appends.
+ * answer with a status; the route's `{ error }` text is never shown.
  */
 export const BILLING_KNOWN_ERRORS: readonly KnownSettingsError[] = [
-  {
-    serverCode: 'subscription_billing_stopped',
-    copy: 'Billing is stopped for this plan. Contact support to resume it.',
-  },
-  {
-    serverCode: 'subscription_complimentary',
-    copy: "This plan is complimentary, so it can't be changed here. Contact support to change it.",
-  },
-  {
-    serverCode: 'subscription_free_access',
-    copy: "You don't need a plan right now. Every app feature is free.",
-  },
   { status: 402, copy: BILLING_CARD_DECLINED_ERROR },
 ];
 

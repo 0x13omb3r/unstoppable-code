@@ -158,21 +158,6 @@ function cloudFailure(
   if (error.code === 'unsupported-capability')
     return definite('unavailable', GENERIC_MESSAGE.unavailable);
 
-  // Only the server's explicit `reason` identifies a billing lapse. The
-  // shipped `telemetry_scope_prohibited` code is also sent for organization
-  // data-sharing policy refusals, so it never implies a plan problem.
-  if (error.serverReason === 'org_teams_lapsed')
-    return definite(
-      'organization-plan',
-      serverMessage ?? GENERIC_MESSAGE['organization-plan'],
-      {
-        reason: 'org_teams_lapsed',
-        ...(error.serverOrganizationId !== undefined
-          ? { organizationId: error.serverOrganizationId }
-          : {}),
-      },
-    );
-
   // A viewer role can read shared resources but not publish them; the
   // dialog explains the role rather than the audience.
   if (error.serverReason === 'publisher_role_required')

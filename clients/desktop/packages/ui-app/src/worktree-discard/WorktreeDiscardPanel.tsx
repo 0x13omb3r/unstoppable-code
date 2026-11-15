@@ -75,6 +75,9 @@ export function WorktreeDiscardPanel({
         recovery={view.recovery}
         busy={view.busy}
         error={view.error}
+        unconfirmedAction={view.unconfirmedAction}
+        outcome={view.outcome}
+        canResolve={client.capabilities.worktreeRecoveryResolution === true}
         onAction={(action) => {
           void recover(action).then((result) => {
             if (result && active.current === client)

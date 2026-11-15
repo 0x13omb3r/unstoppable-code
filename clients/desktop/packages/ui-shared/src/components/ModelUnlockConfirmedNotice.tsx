@@ -2,7 +2,7 @@
 
 import type { JSX } from 'react';
 import { aiCreditsArrivalTitle } from './aiCreditsArrival';
-import { MODEL_LIBRARY_UNLOCK_COPY } from './modelLibraryLock';
+import { MODEL_LIBRARY_UNLOCK_COPY } from './creditsPromptCopy';
 import { Notice } from './Notice';
 
 export interface ModelUnlockConfirmedNoticeProps {

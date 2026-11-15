@@ -1,3 +1,4 @@
+import { DialogActionFooter } from '@canopy/ui-shared/components';
 import type { JSX } from 'react';
 import { Button, DialogModal } from '@canopy/ui-shared/components';
 
@@ -94,7 +95,7 @@ export function LinkSharingConfirmDialog({
           {copy.body}
         </p>
       </div>
-      <div className="flex justify-end gap-2 border-t px-6 py-3">
+      <DialogActionFooter>
         <Button
           type="button"
           variant="secondary"
@@ -116,7 +117,7 @@ export function LinkSharingConfirmDialog({
         >
           {busy ? copy.busyLabel : copy.confirmLabel}
         </Button>
-      </div>
+      </DialogActionFooter>
     </DialogModal>
   );
 }

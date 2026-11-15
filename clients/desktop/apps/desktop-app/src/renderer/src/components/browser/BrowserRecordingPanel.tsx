@@ -5,7 +5,7 @@ import { ChatIcon, TrashIcon } from '@canopy/ui-shared/icons';
 import { useBrowserStore } from '@/stores/browserStore';
 import { stageBrowserRecording } from '@/lib/browserChatStaging';
 import { Button, Tooltip } from '@canopy/ui-shared';
-import { Surface, StatusLabel } from '@canopy/ui-shared/components';
+import { CodeBlock, Surface, StatusLabel } from '@canopy/ui-shared/components';
 
 interface BrowserRecordingPanelProps {
   browserId: string;
@@ -96,9 +96,9 @@ export function BrowserRecordingPanel({
           <div className="flex flex-col gap-2">
             {script.length > 0 && (
               <>
-                <pre className="overflow-auto rounded border bg-muted/30 p-2 font-mono text-2xs">
+                <CodeBlock variant="tint" size="2xs" wrap="none">
                   <code>{script}</code>
-                </pre>
+                </CodeBlock>
                 {!isRecording && (
                   <Button
                     variant="secondary"

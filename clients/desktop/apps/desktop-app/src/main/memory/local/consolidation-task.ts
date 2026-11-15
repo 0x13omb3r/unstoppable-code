@@ -1,3 +1,7 @@
+import { inspectMemoryLinks } from '@canopy/memory-consolidation/link-health';
+import type { MemoryConsolidationMeasurement } from '@canopy/protocol/local-memory/metrics';
+import { measureMemoryConsolidation } from '@canopy/memory-consolidation/metrics';
+import { readConsolidationState } from './consolidation-state';
 import {
   memoryEditRevision,
   recordMemoryEdit,
@@ -5,7 +9,7 @@ import {
 } from './edit-coordination';
 import { createHash } from 'node:crypto';
 import type { Dirent } from 'node:fs';
-import { access, readFile, readdir, rename, stat } from 'node:fs/promises';
+import { access, readdir, rename, stat } from 'node:fs/promises';
 import { basename, dirname, join } from 'node:path';
 import {
   type AgentModelConfig,
@@ -81,6 +85,8 @@ import {
   assertMemoryScopeLockHeld,
   ensureOwnerOnlyMemoryDir,
   isMemoryMarkdownFileName,
+  readMemoryFileBytes,
+  readMemoryText,
 } from './memory-files';
 import {
   LOCAL_MEMORY_READ_ONLY_MESSAGE,
@@ -144,17 +150,8 @@ export interface RunConsolidationOptions {
 export type RunConsolidationResult = MemoryConsolidationResult;
 
 async function readTextOrEmpty(filePath: string): Promise<string> {
-  try {
-    return await readFile(filePath, 'utf8');
-  } catch (error) {
-    // Only a missing file means "empty". Any other failure (EACCES, EIO, …)
-    // must abort consolidation before MEMORY.md is overwritten or unread
-    // inbox notes are archived based on silently-truncated input.
-    if (isNodeError(error, 'ENOENT')) {
-      return '';
-    }
-    throw error;
-  }
+  // An unreadable or non-text file must abort before repair or archival.
+  return (await readMemoryText(filePath)) ?? '';
 }
 
 function usageStatsFor(
@@ -166,6 +163,8 @@ function usageStatsFor(
   return stats
     ? {
         usageCount: stats.usageCount,
+        citationCount: stats.citationCount,
+        usageSignalCount: stats.usageSignalCount,
         lastUsedAt: stats.lastUsedAt,
         createdAt: stats.createdAt,
       }
@@ -541,16 +540,25 @@ async function readImportFiles(
 
 function hashInput(input: {
   memoryMd: string;
-  topicFiles: ConsolidationInputFile[];
+  topicFiles: ReadonlyArray<{ filename: string; content: string }>;
   inboxFiles: ConsolidationInputFile[];
   importFiles: ConsolidationInputFile[];
   importHashMaterials: ConsolidationImportInputBatch['hashMaterials'];
+  unresolvedLinks?: readonly { source: string; target: string }[];
 }): string {
   const hash = createHash('sha256');
   for (const part of memoryConsolidationInputHashParts({
     memoryMd: input.memoryMd,
-    files: [...input.topicFiles, ...input.inboxFiles, ...input.importFiles],
+    files: [
+      ...input.topicFiles.map((topic) => ({
+        fileKey: `topics/${topic.filename}`,
+        content: topic.content,
+      })),
+      ...input.inboxFiles,
+      ...input.importFiles,
+    ],
     imports: input.importHashMaterials,
+    unresolvedLinks: input.unresolvedLinks,
   })) {
     hash.update(part);
   }
@@ -604,6 +612,19 @@ export async function collectConsolidationInput(
   options: { consumable?: ReadonlyMap<string, LocalMemorySyncedNote> } = {},
 ): Promise<ConsolidationInput> {
   const memoryMd = await readTextOrEmpty(join(scopeDir, 'MEMORY.md'));
+  const complete = await readLocalMemoryState(scopeDir);
+  const state = await readConsolidationState(scopeDir);
+  const health = inspectMemoryLinks({
+    memoryMd,
+    topicFiles: complete.topicFiles,
+  });
+  const linkHealth = {
+    ...health,
+    unresolvedLinks: [
+      ...health.unresolvedLinks,
+      ...(state?.unresolvedLinks ?? []),
+    ],
+  };
   const { trackingSince, entries: usage } = await readUsage(scopeDir);
   const pending = consumablePending(
     await listPendingSources(scopeDir),
@@ -627,10 +648,15 @@ export async function collectConsolidationInput(
     inboxFiles.length === 0 &&
     importFiles.length === 0 &&
     imports.omitted.fileCount === 0 &&
-    indexWithinLimits
+    indexWithinLimits &&
+    linkHealth.unresolvedLinks.length === 0 &&
+    linkHealth.orphanTopics.length === 0 &&
+    (linkHealth.pendingRepairCount ?? 0) === 0
   ) {
     return {
       memoryMd,
+      allTopicFiles: complete.topicFiles,
+      linkHealth,
       topicFiles: [],
       inboxFiles,
       importFiles,
@@ -638,10 +664,11 @@ export async function collectConsolidationInput(
       omittedImportFiles: imports.omitted,
       inputHash: hashInput({
         memoryMd,
-        topicFiles: [],
+        topicFiles: complete.topicFiles,
         inboxFiles,
         importFiles,
         importHashMaterials: imports.hashMaterials,
+        unresolvedLinks: state?.unresolvedLinks,
       }),
       indexWithinLimits,
       usageTrackingSince: trackingSince,
@@ -652,6 +679,8 @@ export async function collectConsolidationInput(
   const topicFiles = topics.files;
   return {
     memoryMd,
+    allTopicFiles: complete.topicFiles,
+    linkHealth,
     topicFiles,
     inboxFiles,
     importFiles,
@@ -660,10 +689,11 @@ export async function collectConsolidationInput(
     omittedImportFiles: imports.omitted,
     inputHash: hashInput({
       memoryMd,
-      topicFiles,
+      topicFiles: complete.topicFiles,
       inboxFiles,
       importFiles,
       importHashMaterials: imports.hashMaterials,
+      unresolvedLinks: state?.unresolvedLinks,
     }),
     indexWithinLimits,
     usageTrackingSince: trackingSince,
@@ -1254,13 +1284,11 @@ async function pinnedInputCurrent(
   if (note.contentHash !== null && note.contentHash !== read.contentHash) {
     return false;
   }
-  const content = await readFile(join(scopeDir, fileKey), 'utf8').catch(
-    (error: unknown) => {
-      if (isNodeError(error, 'ENOENT')) return null;
-      throw error;
-    },
+  const bytes = await readMemoryFileBytes(join(scopeDir, fileKey));
+  return (
+    bytes !== null &&
+    createHash('sha256').update(bytes).digest('hex') === read.contentHash
   );
-  return content !== null && sha256Hex(content) === read.contentHash;
 }
 
 /**
@@ -1367,6 +1395,7 @@ async function runConsolidation(
       throw new Error(LOCAL_MEMORY_SYNCED_SECRET_MESSAGE);
     }
     const outcome = await consolidation.commit({
+      consolidation: plan.consolidation,
       changes,
       consumedNoteIds: consumed,
       prunedTopicPaths: plan.writesDocuments
@@ -1384,9 +1413,7 @@ async function runConsolidation(
     await deleteStaleUsageRows(options.scopeDir, usage.entries.keys());
     return true;
   };
-  const apply = async (
-    plan: MemoryConsolidationApplyPlan,
-  ): Promise<boolean> => {
+  const apply: MemoryConsolidationPorts['apply'] = async (plan) => {
     if (synced !== null) return commitSynced(synced, plan);
     const applied = await withMemoryWriteLock(options.scopeDir, async () => {
       if ((await memoryEditRevision(options.scopeDir)) !== editRevision) {
@@ -1426,7 +1453,16 @@ async function runConsolidation(
           throw error;
         }
       }
-      return true;
+      // Final prune revalidation may keep a newly used or edited topic. Read
+      // the effective documents before releasing the scope's write lock so
+      // measurements describe that result rather than the original prune plan.
+      const committed = await readLocalMemoryState(options.scopeDir);
+      return {
+        tree: {
+          memoryMd: committed.memoryMd ?? '',
+          topicFiles: committed.topicFiles,
+        },
+      };
     });
     if (applied) {
       // Usage-row cleanup runs after the transactional apply: a failure here
@@ -1444,7 +1480,7 @@ async function runConsolidation(
           synced.shouldContinue() &&
           (options.shouldContinue === undefined ||
             (await options.shouldContinue()));
-  return runMemoryConsolidation(input, {
+  const result = await runMemoryConsolidation(input, {
     model: consolidationModel(options),
     ...(shouldContinue ? { shouldContinue } : {}),
     listScopeTopics: () => readScopeTopicInventory(options.scopeDir),
@@ -1464,10 +1500,21 @@ async function runConsolidation(
     },
     now: () => options.now ?? new Date(),
   });
+  if (result.metrics !== undefined) return result;
+  const before = {
+    memoryMd: priorState.memoryMd ?? '',
+    topicFiles: priorState.topicFiles,
+  };
+  return {
+    ...result,
+    metrics: measureMemoryConsolidation(before, before, 0),
+    linkHealth: input.linkHealth,
+  };
 }
 
 /** What a merge consolidation would write, from {@link previewMemoryMerge}. */
 export interface MemoryMergePreviewResult {
+  consolidation?: MemoryConsolidationMeasurement;
   output: ConsolidationOutput | null;
   /** Inbox and import file keys the output consumed. */
   consumedFileKeys: string[];
@@ -1519,6 +1566,14 @@ export async function previewMemoryMerge(
   }
   return {
     output: applied.output,
+    ...(result.metrics
+      ? {
+          consolidation: {
+            result: result.status,
+            metrics: result.metrics,
+          },
+        }
+      : {}),
     consumedFileKeys: [
       ...applied.consumedInboxFiles,
       ...applied.consumedImportFiles,

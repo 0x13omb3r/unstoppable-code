@@ -8,6 +8,7 @@ import {
 } from '@canopy/desktop-shared/lib/cursor-capabilities';
 import { materializeSelectedCapabilityRoot } from '@canopy/desktop-shared/node/cursor/capability-root';
 import { openCodeCapabilityDigest } from '@canopy/desktop-shared/node/opencode/capability-snapshot';
+import { prepareOpenCodeCommandHooks } from '@canopy/desktop-shared/node/opencode/command-hooks';
 import { openCodeMcpCallMatchesSnapshot } from '@canopy/desktop-shared/node/opencode/mcp-snapshot';
 import { resolveOpenCodeMcpSnapshotTool } from '@canopy/desktop-shared/node/opencode/mcp-tool-identity';
 import type {
@@ -114,6 +115,11 @@ export async function prepareOpenCodePipelineCapabilities(
     currentApproval();
     const projection =
       resolved.cursorCapabilities ?? emptyCursorCapabilityProjection();
+    const selectedHooks = await prepareOpenCodeCommandHooks(
+      resolved.sdkPlugins.map((plugin) => plugin.path),
+      join(profile, 'selected-hook-plugins'),
+      signal,
+    );
     const capabilityRoot = join(profile, 'selected-capabilities');
     const prepared = await materializeSelectedCapabilityRoot(
       capabilityRoot,
@@ -247,11 +253,21 @@ export async function prepareOpenCodePipelineCapabilities(
     signal.throwIfAborted();
     currentApproval();
     return {
-      capabilityRoots: [capabilityRoot],
+      commandHooks: selectedHooks.hooks,
+      hookApproval: {
+        check: (check, display) =>
+          request.permissionPreset === 'dangerous_all' &&
+          !signal.aborted &&
+          !disposed
+            ? currentApproval().check(check, display)
+            : Promise.resolve({ decision: 'deny' }),
+      },
+      capabilityRoots: [capabilityRoot, ...selectedHooks.capabilityRoots],
       capabilityContext: {
         selections: request.pluginSelections,
         skills: prepared.skillIds,
         commands: prepared.commandIds,
+        commandHooks: selectedHooks.hooks,
       },
       mcpServers,
       mcpSnapshot,
@@ -275,6 +291,7 @@ export async function prepareOpenCodePipelineCapabilities(
           ),
         ),
       warnings: [
+        ...selectedHooks.warnings,
         ...[
           ...resolved.warnings,
           ...resolved.cursorNotices,

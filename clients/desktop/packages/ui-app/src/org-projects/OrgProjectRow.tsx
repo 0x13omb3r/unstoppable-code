@@ -6,6 +6,7 @@
 // The row is frameless: the list around it owns borders and dividers.
 // ---------------------------------------------------------------------------
 
+import { ProjectCatalogRow } from '@canopy/ui-shared/components';
 import {
   useId,
   type JSX,
@@ -127,17 +128,11 @@ export function OrgProjectRow({
     if (!disabled) onActivate?.();
   };
   return (
-    <div
+    <ProjectCatalogRow
+      columns={Boolean(columns)}
+      activatable={activatable}
       data-testid={`${testIdPrefix}-row-${project.id}`}
       aria-busy={busy}
-      className={joinClasses(
-        columns
-          ? 'col-span-full grid grid-cols-subgrid items-center py-2'
-          : 'flex items-center gap-3 py-2',
-        activatable
-          ? 'focus-ring cursor-pointer rounded-sm hover:bg-subtle'
-          : '',
-      )}
       {...(activatable
         ? {
             role: 'button',
@@ -229,6 +224,6 @@ export function OrgProjectRow({
           {actions}
         </div>
       )}
-    </div>
+    </ProjectCatalogRow>
   );
 }

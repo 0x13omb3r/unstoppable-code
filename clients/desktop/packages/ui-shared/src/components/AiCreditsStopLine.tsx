@@ -1,5 +1,5 @@
 import type { JSX } from 'react';
-import { AI_CREDITS_STOP_COPY } from './aiCreditsPurchaseCopy';
+import { AI_CREDITS_STOP_COPY } from './creditsPromptCopy';
 
 export interface AiCreditsStopLineProps {
   readonly dataTestId?: string;

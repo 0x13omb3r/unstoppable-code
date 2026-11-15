@@ -1,3 +1,4 @@
+import { Surface } from '@canopy/ui-shared/components';
 import { useCallback, useEffect, useId, useState, type JSX } from 'react';
 import type { BrowserTransfer } from '@canopy/desktop-shared/types';
 import { Button, ProgressBar } from '@canopy/ui-shared';
@@ -87,10 +88,11 @@ export function BrowserTransferRow({
     .join(' • ');
 
   return (
-    <li
+    <Surface
+      as="li"
+      variant="transfer-row"
       data-testid={`browser-transfer-row-${transfer.id}`}
       aria-label={`${name}, ${status}`}
-      className="flex flex-col gap-1.5 border-b px-2 py-2"
     >
       <div className="flex min-w-0 items-center gap-2">
         <span
@@ -174,7 +176,7 @@ export function BrowserTransferRow({
         className=""
         error={error}
       />
-    </li>
+    </Surface>
   );
 }
 

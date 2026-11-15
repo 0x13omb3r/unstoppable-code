@@ -28,6 +28,7 @@ import {
   ChoiceField,
   SettingsSelect,
   Surface,
+  ResizeRailIndicator,
 } from '@canopy/ui-shared/components';
 import {
   THINKING_LEVELS as CANONICAL_THINKING_LEVELS,
@@ -181,7 +182,7 @@ function PanelResizeHandle({
       role="separator"
       aria-orientation="vertical"
       aria-label="Resize chat panel"
-      className="absolute inset-y-0 right-0 z-10 w-2 cursor-col-resize hover:bg-muted"
+      className="absolute inset-y-0 right-0 z-10 group flex w-2 cursor-col-resize justify-center"
       onPointerDown={(event): void => {
         event.currentTarget.setPointerCapture(event.pointerId);
         event.preventDefault();
@@ -191,7 +192,9 @@ function PanelResizeHandle({
           resizeTo(event.clientX);
         }
       }}
-    />
+    >
+      <ResizeRailIndicator active={false} />
+    </div>
   );
 }
 
@@ -472,7 +475,7 @@ export function ComposerStatusLabPage(): JSX.Element {
       ),
     );
     pendingWidthRef.current = next;
-    if (panelRef.current) panelRef.current.style.maxWidth = `${next}px`;
+    if (panelRef.current) panelRef.current.style.width = `${next}px`;
     if (widthFrameRef.current !== null) return;
     widthFrameRef.current = window.requestAnimationFrame((): void => {
       widthFrameRef.current = null;
@@ -753,11 +756,13 @@ export function ComposerStatusLabPage(): JSX.Element {
               padding="compact"
               className="relative flex min-h-0 flex-1 justify-center"
             >
-              <section
+              <Surface
+                as="section"
+                variant="inset"
                 ref={panelRef}
                 data-testid="panel-content-chat"
-                className="relative flex min-h-0 w-full flex-col overflow-hidden rounded-lg bg-base"
-                style={{ maxWidth: panelWidth }}
+                className="relative flex min-h-0 max-w-full flex-col overflow-hidden"
+                paneWidth={panelWidth}
               >
                 <PanelResizeHandle panelRef={panelRef} onResize={resizePanel} />
                 <div className="flex h-9 shrink-0 items-center gap-2 px-3 text-xs fg-secondary">
@@ -981,7 +986,7 @@ export function ComposerStatusLabPage(): JSX.Element {
                         })}
                   />
                 </div>
-              </section>
+              </Surface>
             </Surface>
           </>
         )}

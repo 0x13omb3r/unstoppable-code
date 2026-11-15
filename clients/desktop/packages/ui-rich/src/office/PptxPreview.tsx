@@ -21,6 +21,7 @@ import type {
   PptxTextBody,
 } from './pptx-parse';
 import { Surface } from '@canopy/ui-shared/components';
+import { OfficeDocumentRegion } from './OfficeDocumentSurface';
 
 const EMU_PER_POINT = 12_700;
 const SAFE_IMAGE_SRC =
@@ -89,14 +90,19 @@ export function PptxPreview({
     <div className="flex min-h-0 flex-1 flex-col" data-testid="pptx-preview">
       <OfficePreviewBanner text={copy.banner} />
       {slideCount > slides.length && (
-        <div
+        <Surface
+          variant="section"
+          boundary="bottom"
+          padding="compact-toolbar"
           role="status"
-          className="shrink-0 border-b px-3 py-1.5 text-xs fg-secondary"
+          className="shrink-0"
           data-testid="pptx-truncation-banner"
         >
-          Showing the first {slides.length.toLocaleString('en-US')} of{' '}
-          {slideCount.toLocaleString('en-US')} slides.
-        </div>
+          <span className="text-xs fg-secondary">
+            Showing the first {slides.length.toLocaleString('en-US')} of{' '}
+            {slideCount.toLocaleString('en-US')} slides.
+          </span>
+        </Surface>
       )}
       <Surface
         variant="well"
@@ -188,8 +194,9 @@ function SlideSection({
           </Surface>
         )}
       </div>
-      <div
-        className="relative w-full overflow-hidden border"
+      <OfficeDocumentRegion
+        kind="document-edge"
+        className="relative w-full overflow-hidden"
         data-testid="pptx-slide-canvas"
         data-selection-surface={slideSelectionSurface(slide.background)}
         style={{
@@ -204,7 +211,7 @@ function SlideSection({
         {slide.elements.map((element, index) => (
           <SlideElement key={index} element={element} geometry={geometry} />
         ))}
-      </div>
+      </OfficeDocumentRegion>
       {slide.elementsTruncated && (
         <p className="text-xs fg-secondary" data-testid="pptx-slide-truncated">
           Some content on this slide is not shown.
@@ -358,9 +365,9 @@ function ContentPlaceholder({
   readonly label: string;
 }): JSX.Element {
   return (
-    <div
+    <OfficeDocumentRegion
       data-testid="pptx-unsupported"
-      className="border border-dashed border-line-base"
+      kind="unsupported-shape"
       style={{
         ...boxStyle(box, geometry),
         display: 'flex',
@@ -374,7 +381,7 @@ function ContentPlaceholder({
       }}
     >
       {label}
-    </div>
+    </OfficeDocumentRegion>
   );
 }
 
@@ -519,10 +526,10 @@ function TableCell({
   readonly geometry: SlideGeometry;
 }): JSX.Element {
   return (
-    <div
+    <OfficeDocumentRegion
       role="cell"
       data-testid="pptx-table-cell"
-      className="border border-line-base"
+      kind="document-edge"
       style={{
         gridRow: `${row + 1} / span ${cell.rowSpan}`,
         gridColumn: `${column + 1} / span ${cell.colSpan}`,
@@ -533,6 +540,6 @@ function TableCell({
       }}
     >
       {cell.text && <TextBody body={cell.text} geometry={geometry} />}
-    </div>
+    </OfficeDocumentRegion>
   );
 }

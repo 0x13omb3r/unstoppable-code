@@ -10,6 +10,7 @@ import {
   PlanReviewStatusBadge,
   PlanStatusNote,
   SettingsSelect,
+  Surface,
 } from '@canopy/ui-shared/components';
 import type { TrackedPlanData } from '@canopy/desktop-shared/types';
 import { PipelineIcon } from '@canopy/ui-shared/icons';
@@ -230,7 +231,7 @@ export function PlanViewHeader({
   // Dialogs open in the document hosting this header, so a header inside a
   // popped-out panel window opens them in that window.
   const [ownerDocument, setOwnerDocument] = useState<Document | undefined>();
-  const rowRef = useCallback((node: HTMLDivElement | null): void => {
+  const rowRef = useCallback((node: HTMLElement | null): void => {
     if (node) {
       setOwnerDocument(node.ownerDocument);
     }
@@ -264,99 +265,111 @@ export function PlanViewHeader({
 
   return (
     <>
-      <div
+      <Surface
+        variant="section"
+        boundary="bottom"
+        dragRegion={false}
+        padding="section-default"
         ref={rowRef}
-        className={
-          responsive
-            ? 'electron-no-drag flex flex-wrap items-center gap-x-3 gap-y-2 border-b px-4 py-2'
-            : 'electron-no-drag flex items-center gap-3 border-b px-4 py-2'
-        }
       >
-        {leading}
-        <PlanReviewStatusBadge
-          status={implementation.status}
-          data-testid={`${testIdPrefix}-status-badge`}
-        />
-        {notes.map((note) => (
-          <PlanStatusNote
-            key={`${note.target.kind}-${note.target.kind === 'run' ? note.target.executionId : note.target.chatId}-${note.text ?? ''}`}
-            text={note.text}
-            className="shrink-0"
-            data-testid={`${testIdPrefix}-status-note${note.text ? '-outcome' : ''}`}
-            link={{
-              label: note.linkLabel,
-              onSelect: (): void => openNoteTarget(note.target),
-              'data-testid': `${testIdPrefix}-status-note-${note.target.kind}${note.text ? '-outcome' : ''}`,
-            }}
-          />
-        ))}
-        <span
-          className={
-            responsive
-              ? 'min-w-0 max-w-fit grow basis-24 truncate text-xs fg-secondary'
-              : 'shrink-0 text-xs fg-secondary'
-          }
-        >
-          {getPlanSourceLabel(plan.source)} • Revision {reviewedRevisionNumber}
-        </span>
-
-        <RevisionSelect
-          plan={plan}
-          viewedRevision={viewedRevision}
-          onChange={onViewedRevisionChange}
-          testId={`${testIdPrefix}-revision-select`}
-        />
-
-        {!readOnly && actions.linkedExecutions.length > 0 && (
-          <LinkedExecutionsMenu
-            executions={actions.linkedExecutions}
-            open={actions.executionsOpen}
-            onOpenChange={setExecutionsOpen}
-            onOpenExecution={openExecution}
-            testId={`${testIdPrefix}-executions`}
-          />
-        )}
-
-        {/* In a responsive header the actions wrap in reverse, so they keep
-            the upper line of their group when they no longer fit. */}
         <div
           className={
             responsive
-              ? 'flex min-w-0 grow flex-wrap-reverse items-center justify-end gap-2'
-              : 'flex flex-1 items-center justify-end gap-2'
+              ? 'flex flex-wrap items-center gap-x-3 gap-y-2'
+              : 'flex items-center gap-3'
           }
         >
-          {!readOnly && (
-            <PlanActionControls
-              showExplore={false}
-              dataTestIdPrefix={testIdPrefix}
-              planContent={plan.content}
-              {...planExecuteAvailability(plan, implementation)}
-              executeEmphasis={implementation.status.executeEmphasis}
-              primaryAction={
-                canOpen ? implementation.status.primaryAction : 'execute'
-              }
-              openVenue={openTarget?.kind === 'run' ? 'pipeline' : 'chat'}
-              onOpen={
-                openTarget ? (): void => openNoteTarget(openTarget) : undefined
-              }
-              onExplore={(): void => {}}
-              onImplement={actions.implement}
-              onPipeline={actions.openPipelineModal}
-              onShare={actions.shareEnabled ? actions.requestShare : undefined}
-              shareLabel={shareButtonLabel(plan, actions.sharing)}
-              shareBusy={actions.sharing}
-              shareDisabled={viewedRevision !== null}
-              shareTitle={
-                viewedRevision !== null
-                  ? 'Switch to Latest to share this plan.'
-                  : undefined
-              }
+          {leading}
+          <PlanReviewStatusBadge
+            status={implementation.status}
+            data-testid={`${testIdPrefix}-status-badge`}
+          />
+          {notes.map((note) => (
+            <PlanStatusNote
+              key={`${note.target.kind}-${note.target.kind === 'run' ? note.target.executionId : note.target.chatId}-${note.text ?? ''}`}
+              text={note.text}
+              className="shrink-0"
+              data-testid={`${testIdPrefix}-status-note${note.text ? '-outcome' : ''}`}
+              link={{
+                label: note.linkLabel,
+                onSelect: (): void => openNoteTarget(note.target),
+                'data-testid': `${testIdPrefix}-status-note-${note.target.kind}${note.text ? '-outcome' : ''}`,
+              }}
+            />
+          ))}
+          <span
+            className={
+              responsive
+                ? 'min-w-0 max-w-fit grow basis-24 truncate text-xs fg-secondary'
+                : 'shrink-0 text-xs fg-secondary'
+            }
+          >
+            {getPlanSourceLabel(plan.source)} • Revision{' '}
+            {reviewedRevisionNumber}
+          </span>
+
+          <RevisionSelect
+            plan={plan}
+            viewedRevision={viewedRevision}
+            onChange={onViewedRevisionChange}
+            testId={`${testIdPrefix}-revision-select`}
+          />
+
+          {!readOnly && actions.linkedExecutions.length > 0 && (
+            <LinkedExecutionsMenu
+              executions={actions.linkedExecutions}
+              open={actions.executionsOpen}
+              onOpenChange={setExecutionsOpen}
+              onOpenExecution={openExecution}
+              testId={`${testIdPrefix}-executions`}
             />
           )}
+
+          {/* In a responsive header the actions wrap in reverse, so they keep
+            the upper line of their group when they no longer fit. */}
+          <div
+            className={
+              responsive
+                ? 'flex min-w-0 grow flex-wrap-reverse items-center justify-end gap-2'
+                : 'flex flex-1 items-center justify-end gap-2'
+            }
+          >
+            {!readOnly && (
+              <PlanActionControls
+                showExplore={false}
+                dataTestIdPrefix={testIdPrefix}
+                planContent={plan.content}
+                {...planExecuteAvailability(plan, implementation)}
+                executeEmphasis={implementation.status.executeEmphasis}
+                primaryAction={
+                  canOpen ? implementation.status.primaryAction : 'execute'
+                }
+                openVenue={openTarget?.kind === 'run' ? 'pipeline' : 'chat'}
+                onOpen={
+                  openTarget
+                    ? (): void => openNoteTarget(openTarget)
+                    : undefined
+                }
+                onExplore={(): void => {}}
+                onImplement={actions.implement}
+                onPipeline={actions.openPipelineModal}
+                onShare={
+                  actions.shareEnabled ? actions.requestShare : undefined
+                }
+                shareLabel={shareButtonLabel(plan, actions.sharing)}
+                shareBusy={actions.sharing}
+                shareDisabled={viewedRevision !== null}
+                shareTitle={
+                  viewedRevision !== null
+                    ? 'Switch to Latest to share this plan.'
+                    : undefined
+                }
+              />
+            )}
+          </div>
+          {trailing}
         </div>
-        {trailing}
-      </div>
+      </Surface>
 
       {!readOnly && (
         <PlanFollowUpDialogs

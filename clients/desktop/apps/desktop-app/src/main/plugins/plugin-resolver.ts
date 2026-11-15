@@ -140,7 +140,8 @@ import type {
   PluginManifest,
 } from '@canopy/execution-engine/types/plugins';
 import { createGeneratedSkillName } from './codex-plugin-compat';
-import { scanPluginMods } from './plugin-scanner';
+import { scanPluginMods, resolveHooks } from './plugin-scanner';
+import { opencodeSupportsCommandHook } from '@canopy/plugin-interop/opencode-support';
 import {
   installPlugin,
   loadMarketplaces,
@@ -1596,6 +1597,20 @@ export async function resolvePlugins(
           // Cursor, Copilot and OpenCode read the user's home folders every
           // turn, through the same projection.
           options?.inheritedCursorCapabilities,
+          purpose === 'opencode-session'
+            ? new Set(
+                resolvedPlugins
+                  .filter(
+                    (plugin) =>
+                      plugin.provider === 'claude' &&
+                      resolveHooks(
+                        plugin.pluginPath,
+                        loadPluginManifest(plugin.pluginPath, plugin.provider),
+                      ).some(opencodeSupportsCommandHook),
+                  )
+                  .map((plugin) => plugin.pluginPath),
+              )
+            : undefined,
         )
       : emptyCursorCapabilityProjection();
 
@@ -4006,6 +4021,7 @@ export function buildCursorCapabilityProjection(
   cursorNotices: string[],
   warnings: string[],
   inherited?: InheritedCursorCapabilities,
+  additionalPluginMembers?: ReadonlySet<string>,
 ): CursorCapabilityProjection {
   const sources: CursorInvocationSource[] = [];
   const skills: {
@@ -4088,6 +4104,7 @@ export function buildCursorCapabilityProjection(
     }
     if (
       !pluginsWithMcpServers.has(plugin.pluginPath) &&
+      !additionalPluginMembers?.has(plugin.pluginPath) &&
       members.length === 0 &&
       memberWarnings.length === 0
     ) {

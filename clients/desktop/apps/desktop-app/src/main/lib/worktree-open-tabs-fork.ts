@@ -14,6 +14,8 @@ import {
 import { forkCodexThreadByIdViaOneShot } from '../codex/fork-thread';
 import { settlePersistedForkMessages } from './persisted-chat-settle';
 import { withWorktreeRelocationInstruction } from '@canopy/desktop-shared/lib/pending-system-instructions';
+import { withChatAddressChangedInstruction } from '@canopy/desktop-shared/lib/chat-address-prompt';
+import { agentChatAddress } from './agent-chat-address';
 import { panelLayoutPersistenceStore } from '../panels/persistence';
 import { readChatTabsFile } from './chat-tabs-reader';
 import { getChatStateService } from '../services/chat-state-service';
@@ -409,6 +411,17 @@ async function forkOpenWorktreeTabsLocked(
           sourceTab.selectedRepoId,
         ),
         { sourceBranch: await sourceBranch },
+      );
+    }
+    if (sourceTab.kind !== 'file') {
+      cloned.pendingSystemInstructions = withChatAddressChangedInstruction(
+        cloned.pendingSystemInstructions,
+        agentChatAddress(request.projectId, request.destinationWorktreeId, id),
+        agentChatAddress(
+          request.projectId,
+          request.sourceWorktreeId,
+          sourceTab.id,
+        ),
       );
     }
     idMap.set(sourceTab.id, id);

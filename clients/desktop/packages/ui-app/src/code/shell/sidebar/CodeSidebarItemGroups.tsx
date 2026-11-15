@@ -1,6 +1,10 @@
 'use client';
 
 import {
+  SidebarGroupDropSurface,
+  SidebarGroupStrip,
+} from '@canopy/ui-shared/components';
+import {
   useLayoutEffect,
   useRef,
   useState,
@@ -311,11 +315,7 @@ function GroupDragPreview({
       inert
       data-testid="sidebar-item-group-drag-preview"
     >
-      <span
-        aria-hidden="true"
-        className="absolute left-1 inset-y-2 w-0.5 rounded-full"
-        style={{ backgroundColor: sidebarItemGroupColor(group.color) }}
-      />
+      <SidebarGroupStrip color={sidebarItemGroupColor(group.color)} preview />
       <SidebarItemGroupHeader
         readOnly
         // A hidden label still shows as a count rather than vanishing.
@@ -1116,9 +1116,8 @@ export function CodeSidebarItemGroups({
           const color = sidebarItemGroupColor(block.group.color);
           const highlighted = dropGroupId === block.id;
           return (
-            <div
+            <SidebarGroupDropSurface
               key={block.id}
-              className="relative rounded-md"
               data-sidebar-group-block={block.id}
               data-drop-target={highlighted || undefined}
               style={
@@ -1156,7 +1155,7 @@ export function CodeSidebarItemGroups({
                 />
               )}
               {block.units.length > 0 && edgeZones(block)}
-            </div>
+            </SidebarGroupDropSurface>
           );
         })}
         {blocks.every((block) => block.units[0]?.pinned === true) &&

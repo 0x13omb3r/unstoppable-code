@@ -318,8 +318,11 @@ export function WatcherManagementModal({
       >
         <div className="p-2">
           {add && (
-            <div
-              className="flex flex-col border-b border-line-tertiary px-3 py-3 gap-2"
+            <Surface
+              variant="section"
+              boundary="muted-bottom"
+              padding="compact"
+              gap="inline"
               data-testid="watcher-management-add-section"
             >
               <Stack gap="tight">
@@ -378,7 +381,7 @@ export function WatcherManagementModal({
                   />
                 </div>
               </Stack>
-            </div>
+            </Surface>
           )}
           <div className="flex min-h-0 flex-col">
             {watchers.length === 0 ? (

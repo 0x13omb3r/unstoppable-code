@@ -44,6 +44,11 @@ export type PreferencesGenerationStamp =
   | 'stopped';
 
 export interface PreferencesRepositoryHooks<T> {
+  /** Host durability prerequisites, before folder or generation bookkeeping. */
+  beforeSave?(
+    change: PreferencesChange<T>,
+    document: PreferencesDocument,
+  ): Promise<void>;
   /** Recovery failed and latched; after the latch and load error are set. */
   onRecoveryLatched?(details: PreferencesLoadError): void;
   /** Recovery restored last-good over the primary; before the load error is set. */
@@ -707,6 +712,7 @@ export function createPreferencesRepository<T extends object>(
       migrationTimestamp: () => migrationTimestampFor(document),
     });
     const change = { previous: existing, next };
+    await hooks.beforeSave?.(change, document);
     await document.ensureFolder();
     const generation = await nextPreferencesGeneration(
       document,

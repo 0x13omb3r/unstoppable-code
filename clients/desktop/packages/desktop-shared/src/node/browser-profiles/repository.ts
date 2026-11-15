@@ -534,6 +534,7 @@ export class BrowserProfileRepository {
       catalog: Catalog,
       task: { slot: BrowserTaskSlot | null },
     ) => T | Promise<T>,
+    validateReplay?: (catalog: Catalog) => Promise<void>,
   ): Promise<T> {
     this.operationPath(id);
     const serialized = JSON.stringify(payload);
@@ -572,6 +573,7 @@ export class BrowserProfileRepository {
             'This profile operation has expired. Refresh state before issuing a new request.',
           );
         }
+        if (validateReplay) await validateReplay(catalog);
         return structuredClone(previous.result) as T;
       }
       const expectedRevision = catalog.revision;
@@ -1083,6 +1085,9 @@ export class BrowserProfileRepository {
         task.slot.legacyOwnershipResolved = true;
         task.slot.metadataRevision += 1;
         return record;
+      },
+      async (catalog) => {
+        if (!(await this.readTask(scope, catalog))) invalidMetadata();
       },
     );
   }

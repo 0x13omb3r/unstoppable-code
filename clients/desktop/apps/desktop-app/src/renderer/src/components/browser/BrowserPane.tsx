@@ -1,3 +1,4 @@
+import { Surface } from '@canopy/ui-shared/components';
 import { Button } from '@canopy/ui-shared';
 import { LoadingSpinner } from '@/components/shared/loading';
 import {
@@ -980,7 +981,8 @@ export function BrowserPane({
       />
       <BrowserDownloadNotices browserId={browserId} />
       <div className="flex min-h-0 flex-1">
-        <div
+        <Surface
+          variant="pane"
           ref={contentRef}
           data-testid="browser-page-area"
           // Where a live native view can show. The notification corner lifts
@@ -997,7 +999,8 @@ export function BrowserPane({
               ? 'true'
               : 'false',
           }}
-          className={`${POSTHOG_REPLAY_BLOCK_CLASS} relative min-h-0 min-w-0 flex-1 overflow-hidden bg-base`}
+          replay="block"
+          className="relative min-h-0 min-w-0 flex-1 overflow-hidden"
         >
           {showInitialLoading ? (
             <div
@@ -1064,7 +1067,7 @@ export function BrowserPane({
               draggable={false}
             />
           )}
-        </div>
+        </Surface>
         {inspectorOpen && (
           <div
             className={`${POSTHOG_REPLAY_BLOCK_CLASS} flex min-h-0 shrink-0 flex-col`}

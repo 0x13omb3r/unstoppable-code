@@ -1,83 +1,56 @@
 'use client';
 
-import { Badge } from '@canopy/ui-shared/components/Badge';
 import {
   useCallback,
   useEffect,
-  useRef,
   useState,
   type JSX,
   type ReactNode,
-  type RefObject,
 } from 'react';
 import {
   BillingHistoryTable as SharedBillingHistoryTable,
   BusyLabel,
   Button,
   CreditLedgerTable as SharedCreditLedgerTable,
+  emptyCreditPoolCopy,
   EmptyState,
   ErrorBanner,
-  Fact,
-  FactList,
-  Heading,
-  Stack,
 } from '@canopy/ui-shared/components';
-import {
-  formatCardLabel,
-  formatCredits,
-  formatExpiry,
-  formatMonthDay,
-  formatUsd,
-} from '@canopy/ui-shared/lib';
+import { formatCardLabel, formatExpiry } from '@canopy/ui-shared/lib';
 import type { AiCreditsLedgerEntry } from '@canopy/protocol';
 import type { SettingsPaymentOwner } from '@canopy/protocol/billing';
-import {
-  lowestPlanNameWithCapability,
-  planDisplayNameFromKey,
-} from '@canopy/protocol/settings/billing-plan-catalog';
-import {
-  isCancellationLapsed,
-  type BillingSummary,
-  type ChargeHistoryItem,
-  type CreditsSummary,
-  type InvoicePage,
-  type PaymentMethodSummary,
+import type {
+  ChargeHistoryItem,
+  CreditsSummary,
+  InvoicePage,
+  PaymentMethodSummary,
 } from '@canopy/protocol/settings/billing';
 import type { OrganizationDetail } from '@canopy/protocol/settings/organization';
 import { formatPlanDate } from '@canopy/protocol/settings/plan-display';
-import {
-  SETTINGS_CARD_CLASS,
-  SETTINGS_CARD_GROUP_CLASS,
-  SettingsCard,
-} from '@canopy/ui-shared/components/settings/SettingsCard';
+import { SettingsCard } from '@canopy/ui-shared/components/settings/SettingsCard';
 import {
   BillingCardBodySkeleton,
   BillingTransactionsSkeleton,
 } from './billing-card-body-skeleton';
-import { CreditsUsedThisPeriod } from './credits-used-this-period';
 import { InvoicesSection, INVOICES_PAGE_LIMIT } from './invoices-section';
-import { trialBadgeLabel } from './trial-badge-label';
-import { AutoTopUpSummary } from './auto-top-up-summary';
+import { WalletAutoTopUp } from './auto-top-up-summary';
+import { BalanceSurface } from '../../credits/BalanceSurface';
 import {
   useBillingSettingsSlots,
   type BillingSettingsIntentTarget,
 } from './billing-settings-slots';
 import { SettingsCreditPoolSubscription } from './settings-credit-pool-subscription';
-import { ENTRY_ORG_PLAN_KEY } from './org-plan-ladder';
 import {
   PaymentArea,
   PaymentAreaCta,
   PaymentAreaNotice,
-  billingSummaryNeedsPaymentMethod,
   paymentCaptureAvailable,
-  subscriptionRecoveryIntent,
   usePaymentAreaMode,
 } from './PaymentArea';
 import {
   useSettingsBrand,
   useSettingsClient,
   useSettingsPrivacy,
-  useSettingsSearchParams,
   useSettingsWorkspaceContext,
 } from '../host';
 import { useSettingsLoadFailure } from '../errors';
@@ -96,14 +69,6 @@ interface TeamBillingSectionProps {
   detail: OrganizationDetail;
   /** Invalidate page and persistent navigation after a successful mutation. */
   onBillingChanged?: () => void;
-  /**
-   * Server-resolved free app access (CAN-3926). There is no subscription to
-   * show, so the "Subscription plan" card (level and trial pills, seat math,
-   * next charge, upgrade CTAs, and the subscription menu) is omitted and the
-   * AI credit pool leads the page. Payment method and receipts stay in the
-   * billing-history card, which loads on its own.
-   */
-  freeAccess?: boolean;
 }
 
 /** Normalized default-card shape shared by the summary + confirm responses. */
@@ -115,25 +80,18 @@ interface CardDisplay {
 }
 
 /**
- * Org Billing subtab, rendered as three sibling first-level cards rather than
- * one card holding three: "Subscription plan" (level + trial pills, seat math,
- * next-billing date, and an OWNER "Get Business" upgrade CTA that charges
- * immediately), "AI credit pool", and "Billing history", which still hosts the
- * saved payment method as a genuine subcard. Each carries the icon + title +
- * subtitle shell its peers on the other Settings subtabs use, so nothing here
- * sits a level below an equivalent card on, say, Policies.
+ * Org "AI Credits" subtab, rendered as two sibling first-level cards: "AI
+ * credit pool" and "Billing history", which hosts the saved payment method as
+ * a genuine subcard. Each carries the icon + title + subtitle shell its peers
+ * on the other Settings subtabs use.
  *
  * OWNER can add or replace the payment method; ADMIN sees a read-only summary.
  * The billing-history card (and its payment method) is hidden when empty — no
  * Stripe key, no card, no charges.
- *
- * With free access on (CAN-3926) the subtab is "AI Credits": the plan card is
- * omitted, so the AI credit pool comes first and billing history follows.
  */
 export function TeamBillingSection({
   detail,
   onBillingChanged,
-  freeAccess = false,
 }: TeamBillingSectionProps): JSX.Element {
   const orgId = detail.id;
   const isOwner = detail.viewerRole === 'OWNER';
@@ -145,27 +103,17 @@ export function TeamBillingSection({
   const paymentsAvailable = paymentCaptureAvailable(paymentMode);
   const brandName = useSettingsBrand().displayName;
   const viewerId = useSettingsWorkspaceContext().accountKey;
-  // `/checkout?plan=<key>` forwards the pricing-page intent here as
-  // `?plan=<key>`, so the upgrade CTA can open its confirm dialog on arrival
-  // instead of leaving the viewer to re-find the button.
-  const queryPlanKey = useSettingsSearchParams().get('plan');
   // The one-shot top-up or payment modal intent this page was opened with,
   // read by the host's intent controller once the summary has loaded.
   const [intentTarget, setIntentTarget] =
     useState<BillingSettingsIntentTarget | null>(null);
-  const intentPlanKey =
-    intentTarget?.kind === 'subscription' && intentTarget.plan !== undefined
-      ? intentTarget.plan
-      : queryPlanKey;
   const owner = useOrganizationOwner(orgId);
 
-  const [summary, setSummary] = useState<BillingSummary | null>(null);
   const [card, setCard] = useState<CardDisplay | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<SettingsFailure | null>(null);
   const [creditsReloadSignal, setCreditsReloadSignal] = useState(0);
   const [historyReloadSignal, setHistoryReloadSignal] = useState(0);
-  const planCardRef = useRef<HTMLElement | null>(null);
   const loadError = useSettingsLoadFailure('billing:organization-summary');
 
   const loadSummary = useCallback(
@@ -176,7 +124,6 @@ export function TeamBillingSection({
       setError(null);
       try {
         const next = await getOrgBillingSummary(client, orgId);
-        setSummary(next);
         setCard(next.paymentMethod);
       } catch (err) {
         setError(loadError(err));
@@ -195,61 +142,36 @@ export function TeamBillingSection({
 
   const handleCardSaved = (next: PaymentMethodSummary): void => {
     // Optimistically show the freshly saved card, then reload the full summary
-    // so plan/coverage details stay consistent with the new payment method.
+    // so it stays consistent with the new payment method.
     setCard(next);
     onBillingChanged?.();
     void loadSummary();
   };
 
   const handleCardRemoved = (): void => {
-    // Optimistically clear the card, then reload so plan/coverage details stay
-    // consistent with the removed payment method.
+    // Optimistically clear the card, then reload so it stays consistent with
+    // the removed payment method.
     setCard(null);
     onBillingChanged?.();
     void loadSummary();
   };
 
-  const handleSubscriptionChanged = async (): Promise<void> => {
-    onBillingChanged?.();
-    await loadSummary();
-  };
-
-  /** "Check again" and browser return: re-read plan, card, pool and history. */
+  /** "Check again" and browser return: re-read card, pool and history. */
   const refreshAuthoritative = useCallback((): void => {
     void loadSummary({ silent: true });
     setCreditsReloadSignal((current) => current + 1);
     setHistoryReloadSignal((current) => current + 1);
   }, [loadSummary]);
 
-  // A subscription intent without a plan opens the update-card modal when the
-  // plan needs a working card; otherwise the plan card is brought into view
-  // and nothing opens. A payment-method intent opens the card modal.
-  const subscriptionNeedsCard =
-    intentTarget?.kind === 'subscription' &&
-    intentTarget.plan === undefined &&
-    summary !== null &&
-    billingSummaryNeedsPaymentMethod(summary);
+  // A payment-method intent opens the owner's card modal. A retired
+  // subscription intent (sent by shipped builds) opens nothing.
   const openCardRequestId =
-    isOwner &&
-    (intentTarget?.kind === 'payment-method' || subscriptionNeedsCard)
+    isOwner && intentTarget?.kind === 'payment-method'
       ? intentTarget.requestId
       : null;
-  const focusPlanCard =
-    intentTarget?.kind === 'subscription' && !subscriptionNeedsCard;
-  useEffect(() => {
-    if (!focusPlanCard) return;
-    const planCard = planCardRef.current;
-    if (planCard !== null && typeof planCard.scrollIntoView === 'function') {
-      planCard.scrollIntoView({ block: 'center' });
-    }
-  }, [focusPlanCard]);
 
-  // A plain stack, not a card: since Billing became a subtab of its own, an
-  // outer card around these three only wrapped a heading ("Billing") that the
-  // subtab already says, and pushed every real card down a level into
-  // `border`-on-`bg-card` subcards that read as secondary to the peers on every
-  // other settings subtab. The three below are now first-level cards with the
-  // same icon + title + subtitle shell those peers use, so `gap-6` here matches
+  // A plain stack, not a card: the cards below are first-level cards with the
+  // same icon + title + subtitle shell their peers use, so `gap-6` here matches
   // the spacing the settings container gives sibling cards elsewhere.
   return (
     <PaymentArea
@@ -279,25 +201,11 @@ export function TeamBillingSection({
           onRetry={() => void loadSummary()}
         />
 
-        {freeAccess ? null : (
-          <PlanCard
-            summary={summary}
-            loading={loading}
-            orgId={orgId}
-            isOwner={isOwner}
-            paymentsAvailable={paymentsAvailable}
-            intentPlanKey={intentPlanKey}
-            onSubscribed={handleCardSaved}
-            onSubscriptionChanged={handleSubscriptionChanged}
-            cardRef={planCardRef}
-          />
-        )}
         <AiCreditPoolCard
           orgId={orgId}
           owner={owner}
           isOwner={isOwner}
           brandName={brandName}
-          freeAccess={freeAccess}
           intentTarget={intentTarget}
           reloadSignal={creditsReloadSignal}
         />
@@ -328,363 +236,6 @@ function useOrganizationOwner(orgId: string): SettingsPaymentOwner {
   return owner;
 }
 
-interface PlanCardProps {
-  summary: BillingSummary | null;
-  loading: boolean;
-  orgId: string;
-  isOwner: boolean;
-  /** Card capture is possible (inline Stripe, or the web handoff). */
-  paymentsAvailable: boolean;
-  /** `?plan=<key>` upgrade intent forwarded by `/checkout`, when present. */
-  intentPlanKey: string | null;
-  /** Refresh the summary after a successful immediate-charge subscribe. */
-  onSubscribed: (summary: PaymentMethodSummary) => void;
-  /**
-   * Re-fetch the summary after a cancel / resume. Distinct from `onSubscribed`,
-   * which also carries a freshly saved card to show optimistically — a
-   * cancellation touches no payment method.
-   */
-  onSubscriptionChanged: () => void | Promise<void>;
-  /** Brought into view by a subscription intent. */
-  cardRef: RefObject<HTMLElement | null>;
-}
-
-/**
- * The org plan card, aligned with the individual billing page: a "Subscription
- * plan" heading with the plan name as a level pill next to the trial pill, the
- * seats / due / next-billing detail grid, and — top-right, for an OWNER who is
- * not yet an active paid subscriber — a primary "Get Business" upgrade CTA that
- * charges immediately (Part A `subscribeAndCharge`).
- */
-function PlanCard({
-  summary,
-  loading,
-  orgId,
-  isOwner,
-  paymentsAvailable,
-  intentPlanKey,
-  onSubscribed,
-  onSubscriptionChanged,
-  cardRef,
-}: PlanCardProps): JSX.Element {
-  const slots = useBillingSettingsSlots();
-  if (summary === null) {
-    return (
-      <section
-        ref={cardRef}
-        className={SETTINGS_CARD_CLASS}
-        data-testid="team-billing-plan-card"
-      >
-        <div className={SETTINGS_CARD_GROUP_CLASS}>
-          <div className="flex items-start gap-3">
-            <Stack gap="tight" className="min-w-0 flex-1">
-              <Heading level={2} variant="section">
-                Subscription plan
-              </Heading>
-              {loading ? (
-                <BillingCardBodySkeleton body="plan" />
-              ) : (
-                <p className="text-s fg-secondary">
-                  No plan details available.
-                </p>
-              )}
-            </Stack>
-          </div>
-        </div>
-      </section>
-    );
-  }
-
-  const planName = summary.plan?.displayName ?? 'Free';
-  const trialActive = summary.trial?.active ?? false;
-  // Matches the subscribe CTA's label (the entry org tier) so the trial nudge
-  // points at the exact button the user needs to click.
-  const upgradePlanName =
-    planDisplayNameFromKey(ENTRY_ORG_PLAN_KEY) ?? 'Business';
-  // The org's trial ran out and nothing replaced it (CAN-2311). Distinct from a
-  // plain Free org in the copy only — the `Free` pill above is unchanged — but
-  // the distinction is the whole point: "Free" describes the tier, while this
-  // says the team's features are GONE and names what brings them back. Requires
-  // `plan === null`, so an org that subscribed after its trial reads as a normal
-  // paid plan rather than being told its trial ended.
-  // Holds the FORMATTED end date rather than a boolean, so the copy below has
-  // the value in hand without a re-narrowing dance inside the template.
-  const trialEndedOn =
-    !trialActive &&
-    summary.plan === null &&
-    summary.trialEndedAt !== null &&
-    summary.trialEndedAt !== undefined
-      ? formatPlanDate(summary.trialEndedAt)
-      : null;
-  // Named from the capability, not a hardcoded tier, so a catalog change that
-  // moves `teams` to a different plan updates this copy for free.
-  const restorePlanName =
-    lowestPlanNameWithCapability('teams') ?? upgradePlanName;
-  // The lapse sentence, phrased for the reason the org ACTUALLY lost coverage.
-  //
-  // `trialEndedOn` alone cannot decide this: `trialEndedAt` is set for any org
-  // past its trial window, and `LIVE_STATUSES` excludes `CANCELED`, so an org
-  // that trialed in January, subscribed, paid for eleven months and cancelled
-  // in December satisfies every condition above. Driving the copy off the date
-  // told that customer their TRIAL ended and pointed them at a plan they
-  // already bought. Same false-copy bug `lapseReason` was introduced to kill on
-  // the server side; this card just was not reading the field.
-  // Driven off `lapseReason` DIRECTLY, not gated behind `trialEndedOn`.
-  //
-  // Gating on the date made the `payment_failed` branch dead code, on the one
-  // page that can fix it. `trialEndedOn` requires `summary.plan === null`, but
-  // `billing-summary-service`'s `LIVE_STATUSES` INCLUDES `PAST_DUE` — so a
-  // declined-card org still resolves a live subscription and a named plan,
-  // leaving `trialEndedOn` null and short-circuiting the whole switch. Meanwhile
-  // `lapseReason` is `'payment_failed'` precisely because
-  // `ORG_LIVE_SUBSCRIPTION_STATUSES` EXCLUDES `PAST_DUE`. The two status sets
-  // disagree on `PAST_DUE` by design, so the date can never be the gate for a
-  // past-due org. `team-page` also suppresses its own lapsed notice on this tab
-  // on the grounds that this card renders the lapse — which was false for
-  // exactly this case, leaving a past-due owner with no explanation anywhere.
-  //
-  // `trialEndedOn` is still what supplies the DATE, so it stays required inside
-  // the `trial_ended` branch only.
-  const lapseSentence = ((): string | null => {
-    if (summary.lapseReason === null || summary.lapseReason === undefined) {
-      return null;
-    }
-    switch (summary.lapseReason) {
-      case 'payment_failed':
-        // No plan name: the remedy is a working card, not a purchase.
-        return "Your last payment failed. Your team's features are paused until the payment method is updated.";
-      case 'subscription_ended':
-        return `Your subscription has ended. Your team's features are paused until you subscribe to ${restorePlanName}.`;
-      case 'trial_ended':
-        // Only this branch needs the date, and only this branch requires the
-        // org to have no live plan.
-        return trialEndedOn === null
-          ? `Your team's features are paused until you subscribe to ${restorePlanName}.`
-          : `Your trial ended on ${trialEndedOn}. Your team's features are paused until you subscribe to ${restorePlanName}.`;
-      default:
-        // Reason unresolved: stay cause-free rather than inventing one.
-        return `Your team's features are paused until you subscribe to ${restorePlanName}.`;
-    }
-  })();
-  const seatCount = summary.seatCount;
-  const pendingCancellation = summary.pendingCancellation ?? null;
-  // A quoted end date that has already elapsed must never render as a future
-  // promise. The server cancels a lapsed row immediately now, but a flagged
-  // TRIALING row past its trial end (or an ACTIVE row still waiting on the
-  // hourly renewal sweep) can still reach this card.
-  const pendingCancellationLapsed =
-    pendingCancellation !== null &&
-    isCancellationLapsed(pendingCancellation.effectiveAt);
-  const perSeat =
-    seatCount && seatCount > 0 && summary.nextBillingAmountUsd !== null
-      ? summary.nextBillingAmountUsd / seatCount
-      : null;
-  // An admin-granted complimentary plan is an ordinary ACTIVE row priced at
-  // $0. Rendering its "N seats × $0.00 / Next charge $0.00" reads like a
-  // billing bug, so the price rows collapse to a single "Complimentary" line
-  // and the next billing date (there is never a charge) is hidden.
-  const complimentary = summary.complimentary === true;
-  // What a host without inline checkout may recover on the web, if anything.
-  const recovery = subscriptionRecoveryIntent(summary, ENTRY_ORG_PLAN_KEY);
-
-  return (
-    <section
-      ref={cardRef}
-      className={SETTINGS_CARD_CLASS}
-      data-testid="team-billing-plan-card"
-    >
-      <div className={SETTINGS_CARD_GROUP_CLASS}>
-        <div className="flex items-start gap-3">
-          <div className="flex min-w-0 flex-1 items-stretch justify-between gap-3">
-            <Stack gap="item" className="min-w-0">
-              <Stack gap="group">
-                <Stack gap="tight">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <Heading level={2} variant="section">
-                      Subscription plan
-                    </Heading>
-                    <Badge data-testid="team-billing-plan-pill">
-                      {planName}
-                    </Badge>
-                    {trialActive && summary.trial ? (
-                      <Badge
-                        tone="warning"
-                        data-testid="team-billing-trial-chip"
-                      >
-                        {trialBadgeLabel(summary.trial.endsAt)}
-                      </Badge>
-                    ) : null}
-                  </div>
-
-                  {lapseSentence !== null ? (
-                    <p
-                      className="text-s fg-secondary"
-                      data-testid="team-billing-trial-ended-notice"
-                    >
-                      {lapseSentence}
-                    </p>
-                  ) : (
-                    <p className="text-s fg-secondary">
-                      {trialActive &&
-                      summary.paymentMethod === null &&
-                      isOwner &&
-                      paymentsAvailable
-                        ? `You're on a free trial — nothing's due yet. Upgrade to ${upgradePlanName} to lock in your team's access.`
-                        : "Your team's plan, seats, and next payment."}
-                    </p>
-                  )}
-                </Stack>
-
-                <FactList
-                  layout="stacked"
-                  columns={2}
-                  size="s"
-                  rowGap="2"
-                  columnGap="2"
-                  labelTone="secondary"
-                >
-                  {complimentary ? (
-                    <>
-                      {seatCount !== null && seatCount > 0 ? (
-                        <Fact label="Seats" dataTestId="team-billing-seats">
-                          {seatCount} seat{seatCount === 1 ? '' : 's'}
-                        </Fact>
-                      ) : null}
-                      <Fact
-                        label="Price"
-                        dataTestId="team-billing-complimentary"
-                      >
-                        Complimentary
-                      </Fact>
-                    </>
-                  ) : null}
-                  {!complimentary && seatCount !== null && perSeat !== null ? (
-                    <Fact label="Seats">
-                      {seatCount} seat{seatCount === 1 ? '' : 's'} ×{' '}
-                      {formatUsd(perSeat)}
-                    </Fact>
-                  ) : null}
-                  {!complimentary && summary.nextBillingAmountUsd !== null ? (
-                    <Fact label={trialActive ? 'Monthly cost' : 'Next charge'}>
-                      {formatUsd(summary.nextBillingAmountUsd)}
-                    </Fact>
-                  ) : null}
-                  {/* A pending cancellation REPLACES the next-billing row: there is
-                  no next charge, and a silently-canceling plan that still
-                  advertises a billing date is the single most common
-                  cancellation support ticket. During a trial the countdown pill
-                  conveys the timing, so the plain "Next billing date" is hidden
-                  and the amount above reads as the monthly cost. */}
-                  {pendingCancellation !== null ? (
-                    <Fact
-                      label={
-                        pendingCancellationLapsed ? 'Status' : 'Cancels on'
-                      }
-                      valueTone="secondary"
-                      dataTestId="team-billing-cancels-on"
-                    >
-                      {pendingCancellationLapsed
-                        ? 'Canceling'
-                        : formatPlanDate(pendingCancellation.effectiveAt)}
-                    </Fact>
-                  ) : !trialActive &&
-                    !complimentary &&
-                    summary.nextBillingDate !== null ? (
-                    <Fact label="Next billing date">
-                      {formatPlanDate(summary.nextBillingDate)}
-                    </Fact>
-                  ) : null}
-                </FactList>
-              </Stack>
-
-              {pendingCancellation !== null ? (
-                <p
-                  className="text-xs fg-secondary"
-                  data-testid="team-billing-pending-cancel-notice"
-                >
-                  {pendingCancellationLapsed
-                    ? 'Your plan is ending. Access will end shortly.'
-                    : `Your plan stays active until ${formatPlanDate(
-                        pendingCancellation.effectiveAt,
-                      )}. You can resume any time before then.`}
-                </p>
-              ) : null}
-
-              {summary.coverageNotes.length > 0 ? (
-                <ul className="flex flex-col gap-1">
-                  {summary.coverageNotes.map((note, index) => (
-                    <li key={index} className="text-xs fg-secondary">
-                      {note}
-                    </li>
-                  ))}
-                </ul>
-              ) : null}
-            </Stack>
-
-            {/* The menu pins to the TOP of this column and the CTA to the bottom
-              (`mt-auto`), so they sit at opposite corners instead of side by
-              side. A filled button with a bare "…" glued to its right reads as a
-              split button, promising the menu holds variants of that button — it
-              holds Cancel subscription. Diagonal separation kills that reading
-              without spending a divider or a full-width footer row on it. */}
-            <div className="flex shrink-0 flex-col items-end gap-3">
-              {/* Owner-gated to match the subscribe CTA rather than the page's
-                broader OWNER/ADMIN view gate — canceling team billing stops
-                funding every member's seat, so it is an owner action. */}
-              {isOwner && slots !== null ? (
-                <slots.SubscriptionActionsMenu
-                  scope="org"
-                  orgId={orgId}
-                  summary={summary}
-                  onChanged={onSubscriptionChanged}
-                />
-              ) : null}
-
-              {/* At most one of these renders — the two predicates are
-                complements. `mt-auto` drops whichever one it is to the bottom of
-                the card even when the menu above is absent. */}
-              <div className="mt-auto" data-testid="team-billing-plan-action">
-                {isOwner ? (
-                  <PaymentAreaCta
-                    action="subscription"
-                    offered={recovery !== null}
-                    plan={recovery?.plan}
-                    testId="team-billing-manage-billing-on-web"
-                    inline={
-                      slots !== null ? (
-                        <>
-                          {slots.publishableKey ? (
-                            <slots.OrganizationPlanSubscribeCta
-                              summary={summary}
-                              organizationId={orgId}
-                              onSubscribed={onSubscribed}
-                              intentPlanKey={intentPlanKey}
-                            />
-                          ) : null}
-                          {/* The paid-subscriber half of the CTA split. Not
-                            gated on the Stripe key: this path captures no
-                            card, only the org's existing payment method,
-                            which the quote reports on. */}
-                          <slots.OrganizationPlanUpgradeCta
-                            summary={summary}
-                            organizationId={orgId}
-                            intentPlanKey={intentPlanKey}
-                            onChanged={onSubscriptionChanged}
-                          />
-                        </>
-                      ) : null
-                    }
-                  />
-                ) : null}
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-    </section>
-  );
-}
-
 interface PaymentMethodSubcardProps {
   orgId: string;
   isOwner: boolean;
@@ -711,8 +262,7 @@ function cardLabel(card: CardDisplay): string {
  * block alongside the USD charge history, mirroring the individual page's
  * `SavedCardSection`). OWNER can add a card (primary CTA) or Edit / Delete the
  * card on file via the icon affordances; Add/Edit open the shared themed capture
- * modal (bare card save — no `planKey`, so it never converts a trial), and
- * Delete confirms first. Non-owners (and environments without a Stripe
+ * modal, and Delete confirms first. Non-owners (and environments without a Stripe
  * publishable key) see the card read-only.
  */
 function PaymentMethodSubcard({
@@ -807,8 +357,8 @@ interface BillingHistoryCardProps {
  * subcard, then the USD transactions table under a "Transactions" subheader. The
  * whole card is hidden unless it has real value — a card on file, at least one
  * charge, or an error. A configured Stripe key alone does NOT force it to show,
- * so an org that has never billed (trial, no card, no charges) shows nothing
- * here; the first card is added via the plan CTA or the credit top-up flow.
+ * so an org that has never billed (no card, no charges) shows nothing
+ * here; the first card is added via the credit top-up flow.
  */
 function BillingHistoryCard({
   orgId,
@@ -882,9 +432,9 @@ function BillingHistoryCard({
   const showTransactions = charges.length > 0;
   // Only show this card when it carries real value: a card on file, at least one
   // charge, or an error. A configured Stripe key alone is NOT enough — an org
-  // that has never billed (trial, no card, no charges) shows nothing here rather
-  // than an empty "Add card" shell, since the first card is captured via the
-  // plan CTA or the credit top-up flow. While the first charge page is still
+  // that has never billed (no card, no charges) shows nothing here rather
+  // than an empty "Add card" shell, since the first card is captured by the
+  // credit top-up flow. While the first charge page is still
   // loading we can't yet know it's empty, so the card simply stays hidden until
   // content is confirmed instead of flashing a placeholder.
   // A card intent shows the card even when it is otherwise empty, so the modal
@@ -970,17 +520,15 @@ function BillingHistoryCard({
 /* -------------------------------------------------------------------------- */
 
 /**
- * The pool's subtitle with free access on. A turn spends the member's own
- * wallet first and then the pool of the organization that owns the work
- * (CAN-3463); there is no seat quota in between.
+ * The pool's subtitle. A turn spends the member's own wallet first and then
+ * the pool of the organization that owns the work (CAN-3463).
  */
-const FREE_ACCESS_POOL_SUBTITLE =
-  "Shared credits for this organization's work, used after a member's own credits run out.";
+const POOL_SUBTITLE =
+  "Shared AI Credits for this organization's work, used after a member's own run out.";
 
 /**
- * The org "AI credit pool" card. Self-loads the org {@link CreditsSummary} plus
- * the first ledger page, then renders the pool balance, per-seat allotment math,
- * the credit ledger, and (for OWNER) a manual "Buy credits" button. Both OWNER
+ * The org "AI Credits pool" card. Self-loads the org {@link CreditsSummary} plus
+ * the first ledger page, then renders the pool balance, the credit ledger, and (for OWNER) a manual "Buy AI Credits" button. Both OWNER
  * and ADMIN see the shared {@link AutoTopUpControls}: OWNER can manage it, ADMIN
  * sees it read-only (`canManage=false` → disabled toggle, no "Adjust limit", no
  * top-up). MEMBER never reaches this tab.
@@ -990,7 +538,6 @@ function AiCreditPoolCard({
   owner,
   isOwner,
   brandName,
-  freeAccess,
   intentTarget,
   reloadSignal,
 }: {
@@ -998,8 +545,6 @@ function AiCreditPoolCard({
   owner: SettingsPaymentOwner;
   isOwner: boolean;
   brandName: string;
-  /** Free access has no seats or plan quota, so the subtitle names neither. */
-  freeAccess: boolean;
   /** The page's top-up or automatic top-up intent, once read. */
   intentTarget: BillingSettingsIntentTarget | null;
   /** Bumped by "Check again" and browser return: reload silently. */
@@ -1049,7 +594,7 @@ function AiCreditPoolCard({
   }, [load, reloadSignal]);
 
   // The credit top-up grant lands asynchronously on the Stripe webhook, so the
-  // immediate refetch after "Buy credits" usually races (and loses to) the
+  // immediate refetch after "Buy AI Credits" usually races (and loses to) the
   // webhook. Subscribe to `credit.pool` signals so the pool updates live the
   // moment the webhook grants the credits; a signal (or a post-error reconnect)
   // triggers a silent refetch of the authoritative balance + ledger. When the
@@ -1090,17 +635,12 @@ function AiCreditPoolCard({
   const neverFunded =
     summary !== null && summary.balanceCredits === 0 && entries.length === 0;
 
-  const renderCard = (
-    topUpButton: ReactNode,
-    topUpDialog: ReactNode,
-  ): JSX.Element => (
+  // The purchase control; the card shows it only to a viewer who funds the
+  // pool.
+  const renderCard = (purchase: ReactNode): JSX.Element => (
     <SettingsCard
-      title="AI credit pool"
-      subtitle={
-        freeAccess
-          ? FREE_ACCESS_POOL_SUBTITLE
-          : 'Shared credits your team draws on after a member uses up the AI quota included with their seat.'
-      }
+      title="AI Credits pool"
+      subtitle={POOL_SUBTITLE}
       testId="team-billing-ai-credits"
     >
       <>
@@ -1113,42 +653,32 @@ function AiCreditPoolCard({
           details={error?.details}
           onRetry={() => void load()}
         />
-        {topUpDialog}
 
         {loading ? (
-          <BillingCardBodySkeleton body="credits" />
+          <BillingCardBodySkeleton />
         ) : summary === null ? (
-          <p className="text-s fg-secondary">No AI credit details available.</p>
-        ) : neverFunded ? (
-          <EmptyState
-            title="No AI credits yet"
-            subtitle={`Buy credits to let your team use ${brandName}'s AI features.`}
-            action={topUpButton ?? undefined}
-          />
+          <p className="text-s fg-secondary">
+            No AI Credits details available.
+          </p>
         ) : (
-          <>
-            <div className="flex items-start justify-between gap-3">
-              <div className="min-w-0">
-                <p className="text-lg font-semibold fg-primary">
-                  {`${formatCredits(summary.balanceCredits)} credits`}
-                </p>
-              </div>
-              {topUpButton}
-            </div>
-
-            <CreditsUsedThisPeriod
-              summary={summary}
-              testId="team-billing-ai-credits-used"
-            />
-
-            {slots !== null ? (
-              <slots.AutoTopUpControls
+          <BalanceSurface
+            density="card"
+            summary={summary}
+            owner={{ kind: 'organization', canFund: isOwner }}
+            purchase={purchase}
+            testIdPrefix="team-"
+            empty={
+              neverFunded
+                ? {
+                    title: emptyCreditPoolCopy(brandName).title,
+                    subtitle: emptyCreditPoolCopy(brandName).message,
+                  }
+                : undefined
+            }
+            autoTopUp={
+              <WalletAutoTopUp
                 owner={owner}
-                settings={summary.autoTopUp}
-                monthlySpentUsd={summary.monthlySpentUsd}
-                monthlyResetAt={formatMonthDay(summary.monthlyResetAt, {
-                  timeZone: 'UTC',
-                })}
+                summary={summary}
                 canManage={isOwner}
                 onSaved={reloadAfterAutoTopUp}
                 brandName={brandName}
@@ -1160,32 +690,13 @@ function AiCreditPoolCard({
                     : null
                 }
               />
-            ) : paymentMode.kind === 'handoff' ? (
-              <AutoTopUpSummary
-                settings={summary.autoTopUp}
-                monthlySpentUsd={summary.monthlySpentUsd}
-                monthlyResetAt={formatMonthDay(summary.monthlyResetAt, {
-                  timeZone: 'UTC',
-                })}
-                brandName={brandName}
-                orgVariant
-                testIdPrefix="team-"
-                action={
-                  isOwner ? (
-                    <PaymentAreaCta
-                      action="auto-top-up"
-                      testId="team-billing-manage-auto-top-up"
-                    />
-                  ) : null
-                }
-              />
-            ) : null}
-
+            }
+          >
             <div className="mt-4" data-testid="team-billing-ai-credits-ledger">
-              <p className="text-s font-medium fg-primary">Credit activity</p>
+              <p className="text-s font-medium fg-primary">Activity</p>
               {entries.length === 0 ? (
                 <EmptyState
-                  title="No credit activity yet."
+                  title="No activity yet."
                   subtitle="Purchases and usage appear here once the pool is active."
                 />
               ) : (
@@ -1197,7 +708,7 @@ function AiCreditPoolCard({
                 </div>
               )}
             </div>
-          </>
+          </BalanceSurface>
         )}
       </>
     </SettingsCard>
@@ -1208,22 +719,19 @@ function AiCreditPoolCard({
       <>
         {creditPoolSubscription}
         {renderCard(
-          isOwner ? (
-            <PaymentAreaCta
-              action="top-up"
-              testId="team-billing-buy-credits-handoff"
-            />
-          ) : null,
-          null,
+          <PaymentAreaCta
+            action="top-up"
+            testId="team-billing-buy-credits-handoff"
+          />,
         )}
       </>
     );
   }
-  if (slots === null) return renderCard(null, null);
+  if (slots === null) return renderCard(null);
 
   // The trigger moves between the empty state and the balance row, and the
-  // card swaps to its skeleton on a full reload, so the checkout itself is
-  // rendered at a position none of that moves.
+  // card swaps to its skeleton on a full reload. The checkout is the purchase
+  // provider's sheet, which none of that moves.
   return (
     <>
       {creditPoolSubscription}
@@ -1240,9 +748,7 @@ function AiCreditPoolCard({
         }
         refreshSignal={checkoutRefreshSignal}
       >
-        {({ trigger, dialog }) =>
-          renderCard(isOwner ? trigger : null, isOwner ? dialog : null)
-        }
+        {({ trigger }) => renderCard(trigger)}
       </slots.CreditsTopUp>
     </>
   );

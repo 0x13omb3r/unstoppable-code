@@ -3,6 +3,10 @@ import type {
   CanopyJsonRpcId,
   CanopyRetryDirective,
 } from '@canopy/protocol/canopy-core';
+import {
+  CLOUD_SESSION_WAKE_HEADER,
+  CLOUD_SESSION_WAKE_HEADER_VALUE,
+} from '@canopy/protocol/cloud-session';
 import { CanopyTransportError } from '@canopy/core-transport';
 import { connectCanopyHttp } from '@canopy/core-transport/http';
 import type { CanopyFramedConnection } from '@canopy/core-transport/types';
@@ -21,6 +25,11 @@ import { logMainProcessWarn } from '../lib/main-process-logging';
  * that token instead. The web core checks the key on every request, so
  * revoking it ends the connection. Neither credential reaches the renderer,
  * and nothing the renderer sends becomes a header or a credential.
+ *
+ * The same-origin wake proof is a header too, and main sets it in one place
+ * only: `connectWebCoreForFilesWake`, the connection of main's own Files
+ * wake (CAN-6724), on its one waking `worker.filesystem.directory.list`.
+ * Every other connection, the renderer relay's included, never carries it.
  */
 
 export const WEB_CORE_CONNECTIONS_PATH = '/api/cloud/core/connections';
@@ -135,13 +144,54 @@ export function createWebCoreBindingProvider(
   return ({ signal }) => connectWebCore(options, signal);
 }
 
+const WAKING_LIST = 'worker.filesystem.directory.list';
+
+/** Whether a posted body is a `directory.list` request that asks to wake. */
+function isWakingList(body: unknown): boolean {
+  if (typeof body !== 'string') return false;
+  let message: unknown;
+  try {
+    message = JSON.parse(body);
+  } catch {
+    return false;
+  }
+  return (
+    isRecord(message) &&
+    message.method === WAKING_LIST &&
+    'id' in message &&
+    isRecord(message.params) &&
+    message.params.wake === true
+  );
+}
+
 /**
  * Opens one authenticated web core connection: the relay's sessions and
  * main's own requests, such as attachment uploads (CAN-5988), share it.
+ * It never carries the wake proof.
  */
-export async function connectWebCore(
+export function connectWebCore(
   options: WebCoreBindingOptions,
   signal: AbortSignal,
+): Promise<RelayBindingConnection> {
+  return openWebCore(options, signal, false);
+}
+
+/**
+ * The connection of main's Files wake (CAN-6724), and the only one that
+ * carries the same-origin wake proof: on a `directory.list` that asks to
+ * wake, never on any other request.
+ */
+export function connectWebCoreForFilesWake(
+  options: WebCoreBindingOptions,
+  signal: AbortSignal,
+): Promise<RelayBindingConnection> {
+  return openWebCore(options, signal, true);
+}
+
+async function openWebCore(
+  options: WebCoreBindingOptions,
+  signal: AbortSignal,
+  wakeProof: boolean,
 ): Promise<RelayBindingConnection> {
   if (!options.isEnabled()) throw new CanopyTransportError(DISABLED);
   // Watch for sign-out, an account switch or a new key from before the
@@ -201,6 +251,9 @@ export async function connectWebCore(
     const headers = new Headers(init.headers);
     headers.set('authorization', `Bearer ${credential}`);
     if (method !== 'GET') headers.set('origin', origin);
+    headers.delete(CLOUD_SESSION_WAKE_HEADER);
+    if (wakeProof && !isOpen && method === 'POST' && isWakingList(init.body))
+      headers.set(CLOUD_SESSION_WAKE_HEADER, CLOUD_SESSION_WAKE_HEADER_VALUE);
     const response = await send(new URL(path, origin), {
       ...init,
       method,

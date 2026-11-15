@@ -7,7 +7,6 @@ export * from './sharedByYouAudiences';
 export * from './sharedByYouScopedLink';
 export { resourceContextRefusalMessage } from './share-refusal-copy';
 export * from './share-errors';
-export * from './share-destination-access';
 export * from './useShareTargetSearch';
 export * from './useShareAudience';
 export * from './ShareCheckbox';

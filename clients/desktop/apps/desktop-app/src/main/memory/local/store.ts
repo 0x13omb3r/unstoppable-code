@@ -7,7 +7,6 @@ import {
   type BoundaryClip,
 } from '@canopy/memory-consolidation/boundary-truncation';
 import { fitMemoryIndex } from '@canopy/memory-consolidation/memory-index';
-import { redactMemoryContent } from '@canopy/memory-consolidation/redaction';
 import {
   clipMemoryReadContent,
   MEMORY_SEARCH_MAX_ARCHIVED_HITS,
@@ -26,12 +25,8 @@ import {
   isNodeError,
   writeNewMemoryFile,
 } from './memory-files';
-import {
-  memoryNoteCreatedMs,
-  memoryNoteFileName,
-  memoryNoteIdAt,
-  withMemoryNoteId,
-} from './note-identity';
+import { prepareInboxNote, type PreparedInboxNote } from './prepared-note';
+import { memoryNoteCreatedMs } from './note-identity';
 import {
   LocalMemoryReplicaUnavailableError,
   localMemoryReplicaHooks,
@@ -44,8 +39,6 @@ import type { ResolvedLocalMemoryScope } from './scope-resolver';
 const DEFAULT_RECENT_MAX_NOTES = 5;
 const DEFAULT_RECENT_MAX_CHARS_PER_NOTE = 1_000;
 const ARCHIVE_READ_BATCH_SIZE = 16;
-const MAX_SOURCE_FIELD_CHARS = 500;
-const MAX_NOTE_TEXT_CHARS = 2_000;
 
 function clampInteger(
   value: number | undefined,
@@ -54,18 +47,6 @@ function clampInteger(
 ): number {
   if (typeof value !== 'number' || !Number.isFinite(value)) return fallback;
   return Math.min(maximum, Math.max(0, Math.floor(value)));
-}
-
-function normalizeSource(source: MemorySource): MemorySource {
-  const normalized: MemorySource = {
-    provider: normalizeText(source.provider).slice(0, MAX_SOURCE_FIELD_CHARS),
-    chatId: normalizeText(source.chatId).slice(0, MAX_SOURCE_FIELD_CHARS),
-  };
-  const sessionId = normalizeText(source.sessionId ?? '').slice(
-    0,
-    MAX_SOURCE_FIELD_CHARS,
-  );
-  return sessionId ? { ...normalized, sessionId } : normalized;
 }
 
 function yamlString(value: string): string {
@@ -317,54 +298,21 @@ const MAX_SCOPE_MOVES = 2;
 export async function saveInboxNote(
   resolveTarget: () => InboxNoteTarget,
   note: InboxNoteInput,
+  maySave?: () => boolean | Promise<boolean>,
 ): Promise<string> {
-  // Normalize BEFORE redacting: normalization strips NUL and other control
-  // bytes, so redacting first would let an obfuscated key like
-  // `api\0_key=...` slip past the redaction regexes and be reconstituted
-  // into a well-formed secret assignment afterwards. Both the persisted
-  // body and the filename slug derive from this single normalized-then-
-  // redacted value.
-  const redactedText = redactMemoryContent(normalizeText(note.text)).slice(
-    0,
-    MAX_NOTE_TEXT_CHARS,
-  );
-  if (!redactedText) return '';
-  const redactedSource = normalizeSource({
-    provider: redactMemoryContent(normalizeText(note.source.provider)),
-    chatId: redactMemoryContent(normalizeText(note.source.chatId)),
-    ...(note.source.sessionId !== undefined
-      ? { sessionId: redactMemoryContent(normalizeText(note.source.sessionId)) }
-      : {}),
-  });
-  const createdMs = Date.now();
-  const noteId = memoryNoteIdAt(createdMs);
-  const created = new Date(createdMs).toISOString();
-  const sourceLines = [
-    'source:',
-    `  provider: ${yamlString(redactedSource.provider)}`,
-    `  chatId: ${yamlString(redactedSource.chatId)}`,
-    ...(redactedSource.sessionId
-      ? [`  sessionId: ${yamlString(redactedSource.sessionId)}`]
-      : []),
-  ];
-  // The ID and the sync fields go in after redaction, which must never
-  // rewrite them.
-  const redactedContent = withMemoryNoteId(
-    redactMemoryContent(
-      [
-        '---',
-        ...sourceLines,
-        `created: ${yamlString(created)}`,
-        `modified: ${yamlString(created)}`,
-        'type: inbox',
-        '---',
-        '',
-        redactedText,
-        '',
-      ].join('\n'),
-    ),
-    noteId,
-  );
+  const prepared = prepareInboxNote(note);
+  return prepared
+    ? savePreparedInboxNote(resolveTarget, prepared, maySave)
+    : '';
+}
+
+/** Already rendered by the trusted learning thread, with the same canonical save writer. */
+export async function savePreparedInboxNote(
+  resolveTarget: () => InboxNoteTarget,
+  note: PreparedInboxNote,
+  maySave?: () => boolean | Promise<boolean>,
+): Promise<string> {
+  const { noteId, content: redactedContent, filename } = note;
   let target = resolveTarget();
   for (let move = 0; move < MAX_SCOPE_MOVES; move += 1) {
     const { dir } = target;
@@ -382,9 +330,11 @@ export async function saveInboxNote(
           const current = resolveTarget();
           if (current.dir !== dir) return { moved: current };
           await ensureOwnerOnlyMemoryDir(dir, join(dir, 'inbox'));
+          if (maySave && !(await maySave()))
+            return { moved: null, fileKey: '' };
           const fileKey = await writeNewInboxNote(
             dir,
-            memoryNoteFileName(createdMs, redactedText, noteId),
+            filename,
             fileContent,
             noteId,
             replicaFields !== null,

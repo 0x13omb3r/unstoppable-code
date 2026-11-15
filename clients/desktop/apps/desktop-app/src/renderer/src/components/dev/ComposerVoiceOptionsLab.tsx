@@ -150,18 +150,23 @@ function Waveform({ density }: { density: 'regular' | 'fine' }): JSX.Element {
         const rest = 2 / maxHeight;
         const scale = speaking ? Math.max(rest, level) : rest;
         return (
-          <span
+          <svg
             // Slots are positional: each shows whatever sample scrolled in.
             key={index}
-            className={`shrink-0 rounded-full bg-current transition-transform duration-100 motion-reduce:transition-none ${
+            className={`shrink-0 transition-transform duration-100 motion-reduce:transition-none ${
               speaking ? 'fg-secondary' : 'fg-quaternary'
             }`}
-            style={{
-              width: barWidth,
-              height: maxHeight,
-              transform: `scaleY(${scale})`,
-            }}
-          />
+            width={barWidth}
+            height={maxHeight}
+            style={{ transform: `scaleY(${scale})` }}
+          >
+            <rect
+              width={barWidth}
+              height={maxHeight}
+              rx={barWidth / 2}
+              fill="currentColor"
+            />
+          </svg>
         );
       })}
     </div>
@@ -177,11 +182,14 @@ function MiniMeter(): JSX.Element {
       className="flex h-8 w-6 shrink-0 items-center justify-center gap-0.5"
     >
       {levels.map((level, index) => (
-        <span
+        <svg
           key={index}
-          className="h-4 w-0.5 rounded-full bg-current fg-secondary transition-transform duration-100 motion-reduce:transition-none"
+          className="h-4 w-0.5 fg-secondary transition-transform duration-100 motion-reduce:transition-none"
+          viewBox="0 0 2 16"
           style={{ transform: `scaleY(${Math.max(0.25, level)})` }}
-        />
+        >
+          <rect width="2" height="16" rx="1" fill="currentColor" />
+        </svg>
       ))}
     </span>
   );

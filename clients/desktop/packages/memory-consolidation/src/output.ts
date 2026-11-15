@@ -7,14 +7,13 @@ import {
   MAX_TOPIC_OUTPUT_FILES,
 } from './limits';
 import { isMemoryIndexWithinLimits } from './memory-index';
-import { lineReferencesFileKey } from './pruning';
 import { redactMemoryContent } from './redaction';
 import { utf8ByteLength } from './text';
 import { topicIdentity, type ScopeTopicInventory } from './topic-identity';
 import {
-  findTopicReferences,
+  escapeMemoryReferenceText,
   normalizeOutputTopicFilename,
-  type MarkdownReferenceSpan,
+  referencedTopicFileKeys,
 } from './topic-reference';
 
 export interface GeneratedConsolidationOutput {
@@ -284,87 +283,6 @@ export function normalizeAndValidateOutput(
   };
 }
 
-function canonicalReferenceSource(
-  source: string,
-  span: MarkdownReferenceSpan,
-  matchStart: number,
-  encodedPath: string,
-  canonicalPath: string,
-): string {
-  let rendered = '';
-  let pathIndex = 0;
-  let skipped = decodeURIComponent(encodedPath).startsWith('./') ? 2 : 0;
-  for (let index = 0; index < encodedPath.length; ) {
-    const end = encodedPath[index] === '%' ? index + 3 : index + 1;
-    const character = decodeURIComponent(encodedPath.slice(index, end));
-    if (skipped > 0) {
-      skipped -= 1;
-      index = end;
-      continue;
-    }
-    const raw = source.slice(
-      span.offsets[matchStart + index],
-      span.offsets[matchStart + end],
-    );
-    const canonical = canonicalPath[pathIndex];
-    rendered +=
-      character === canonical &&
-      (raw.startsWith('\\') || raw.startsWith('&') || character === '_')
-        ? raw
-        : canonical;
-    pathIndex += 1;
-    index = end;
-  }
-  return rendered;
-}
-
-export function resolveOutputIndexReferences(
-  output: ConsolidationOutput,
-  existingNames: readonly string[],
-  diagnostics: string[],
-): string {
-  const filenames = new Map(
-    existingNames.map((filename) => [topicIdentity(filename), filename]),
-  );
-  for (const topic of output.topicFiles ?? [])
-    filenames.set(topicIdentity(topic.filename), topic.filename);
-  const source = output.memoryMd;
-  const replacements: Array<{ start: number; end: number; text: string }> = [];
-  for (const reference of findTopicReferences(source)) {
-    const { span, index, encodedPath } = reference;
-    const canonical =
-      reference.filename === null
-        ? undefined
-        : filenames.get(topicIdentity(reference.filename));
-    const start = span.offsets[index];
-    if (canonical === undefined) {
-      const line = source.slice(0, start).split('\n').length;
-      diagnostics.push(
-        `memoryMd line ${line}: topic reference does not resolve`,
-      );
-      continue;
-    }
-    replacements.push({
-      start,
-      end: span.offsets[index + encodedPath.length],
-      text: canonicalReferenceSource(
-        source,
-        span,
-        index,
-        encodedPath,
-        `topics/${canonical}`,
-      ),
-    });
-  }
-  let resolved = source;
-  for (const replacement of replacements.reverse())
-    resolved =
-      resolved.slice(0, replacement.start) +
-      replacement.text +
-      resolved.slice(replacement.end);
-  return resolved;
-}
-
 export function preservePartialConsolidationSources(
   input: ConsolidationInput,
   output: ConsolidationOutput,
@@ -377,8 +295,9 @@ export function preservePartialConsolidationSources(
   let memoryMd = input.memoryMd;
   for (const topic of topicFiles) {
     const fileKey = `topics/${topic.filename}`;
-    if (lineReferencesFileKey(memoryMd, fileKey)) continue;
-    const candidate = `${memoryMd}${memoryMd.endsWith('\n') || memoryMd.length === 0 ? '' : '\n'}- ${fileKey}\n`;
+    if (referencedTopicFileKeys(memoryMd).includes(fileKey.toLowerCase()))
+      continue;
+    const candidate = `${memoryMd}${memoryMd.endsWith('\n') || memoryMd.length === 0 ? '' : '\n'}- ${escapeMemoryReferenceText(fileKey)}\n`;
     if (isMemoryIndexWithinLimits(candidate)) memoryMd = candidate;
   }
   return { memoryMd, topicFiles };

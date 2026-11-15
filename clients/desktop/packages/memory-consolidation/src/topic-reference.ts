@@ -47,6 +47,8 @@ export interface MarkdownReferenceSpan {
   offsets: number[];
   end: number;
   destination: boolean;
+  /** Code and raw HTML preserve literal path characters without Markdown escapes. */
+  literal: boolean;
 }
 
 export function markdownReferenceSpans(
@@ -57,6 +59,47 @@ export function markdownReferenceSpans(
       .document()
       .write(preprocess()(source, 'utf8', true)),
   );
+  // Definition/reference identifiers are Markdown mechanics, not file paths.
+  // Rewriting them can disconnect a valid reference link from its definition.
+  let identifierRanges: Int32Array | undefined;
+  const markIdentifier = (start: number, end: number): void => {
+    identifierRanges ??= new Int32Array(source.length + 1);
+    identifierRanges[start] += 1;
+    identifierRanges[end] -= 1;
+  };
+  const links: Array<{
+    label?: { start: number; end: number };
+    inline: boolean;
+  }> = [];
+  for (const [event, token] of events) {
+    if (event === 'enter') {
+      if (token.type === 'link' || token.type === 'image')
+        links.push({ inline: false });
+      const link = links[links.length - 1];
+      if (token.type === 'resource' && link) link.inline = true;
+      if (token.type === 'labelText' && link && link.label === undefined)
+        link.label = { start: token.start.offset, end: token.end.offset };
+      if (
+        token.type === 'referenceString' ||
+        token.type === 'definitionLabelString'
+      )
+        markIdentifier(token.start.offset, token.end.offset);
+    } else if (token.type === 'link' || token.type === 'image') {
+      const link = links.pop();
+      if (link && !link.inline && link.label)
+        markIdentifier(link.label.start, link.label.end);
+    }
+  }
+  let identifierCounts: Uint32Array | undefined;
+  if (identifierRanges !== undefined) {
+    identifierCounts = new Uint32Array(source.length + 1);
+    let depth = 0;
+    for (let index = 0; index < source.length; index += 1) {
+      depth += identifierRanges[index];
+      identifierCounts[index + 1] =
+        identifierCounts[index] + (depth > 0 ? 1 : 0);
+    }
+  }
   const spans: MarkdownReferenceSpan[] = [];
   let destination = false;
   for (const [event, token] of events) {
@@ -70,6 +113,12 @@ export function markdownReferenceSpans(
     if (event !== 'enter') continue;
     const escaped =
       token.type === 'characterEscape' || token.type === 'characterReference';
+    const literal = [
+      'codeTextData',
+      'codeFlowValue',
+      'htmlFlowData',
+      'htmlTextData',
+    ].includes(token.type);
     if (
       !escaped &&
       ![
@@ -83,13 +132,20 @@ export function markdownReferenceSpans(
       continue;
     const start = token.start.offset;
     const end = token.end.offset;
+    if (
+      identifierCounts !== undefined &&
+      identifierCounts[end] - identifierCounts[start] === end - start
+    )
+      continue;
     const raw = source.slice(start, end);
     const text = escaped ? decodeString(raw) : raw;
     const previous = spans[spans.length - 1];
     const span =
-      previous?.end === start && previous.destination === destination
+      previous?.end === start &&
+      previous.destination === destination &&
+      previous.literal === literal
         ? previous
-        : { text: '', offsets: [start], end: start, destination };
+        : { text: '', offsets: [start], end: start, destination, literal };
     if (span !== previous) spans.push(span);
     span.text += text;
     // Decoded escapes span several source characters; keep replacements on original token boundaries.
@@ -100,6 +156,11 @@ export function markdownReferenceSpans(
     span.end = end;
   }
   return spans;
+}
+
+/** Canonical paths stay readable as ordinary Markdown, including emphasis markers. */
+export function escapeMemoryReferenceText(path: string): string {
+  return path.replace(/_/g, '\\_');
 }
 
 const TOPIC_REFERENCE_CANDIDATE =
@@ -118,32 +179,79 @@ export interface TopicReference {
    * `../topics/x.md`, a nested path, or an invalid name).
    */
   filename: string | null;
+  /** Safe final basename for alias lookup; may contain decoded spaces. */
+  aliasFilename: string | null;
 }
 
 /** Every topic reference candidate in `source`, resolvable or not. */
-export function findTopicReferences(source: string): TopicReference[] {
+export function findTopicReferences(
+  source: string,
+  sourceFileKey = 'MEMORY.md',
+): TopicReference[] {
   const references: TopicReference[] = [];
   for (const span of markdownReferenceSpans(source)) {
-    for (const match of Array.from(
-      span.text.matchAll(TOPIC_REFERENCE_CANDIDATE),
-    )) {
-      const reference = match[0];
-      const trailingPunctuation = span.destination
-        ? ''
-        : (reference.match(/[.,;:!?]+$/)?.[0] ?? '');
-      const target = reference.slice(
-        0,
-        reference.length - trailingPunctuation.length,
-      );
+    // Markdown supplies the whole destination, including literal spaces in
+    // angle brackets. Whitespace delimits only references found in bare text.
+    const candidates =
+      span.destination &&
+      /^(?:(?:\.{1,2}(?:\/|%2f))+)?topics(?:\/|%2f)/i.test(span.text)
+        ? [{ text: span.text, index: 0, relative: false }]
+        : span.destination
+          ? []
+          : Array.from(span.text.matchAll(TOPIC_REFERENCE_CANDIDATE)).map(
+              (match) => ({
+                text: match[0],
+                index: match.index,
+                relative: false,
+              }),
+            );
+    // Topic documents also use sibling Markdown destinations. Bare prose is
+    // still parsed as scope-relative file keys, matching injection usage.
+    if (
+      sourceFileKey.startsWith('topics/') &&
+      span.destination &&
+      candidates.length === 0 &&
+      /^(?:\.{1,2}\/)*[A-Za-z0-9._% -]+\.md(?:[?#].*)?$/i.test(span.text)
+    ) {
+      candidates.push({ text: span.text, index: 0, relative: true });
+    }
+    for (const match of candidates) {
+      const reference = match.text;
+      // An unanchored punctuation-run regex followed by `$` retries at every
+      // character on a long run ending in a letter. Scan the suffix once.
+      let targetEnd = reference.length;
+      if (!span.destination) {
+        while (
+          targetEnd > 0 &&
+          '.,;:!?'.includes(reference.charAt(targetEnd - 1))
+        )
+          targetEnd -= 1;
+      }
+      const target = reference.slice(0, targetEnd);
       const suffixIndex = target.search(/[?#]/);
       const encodedPath =
         suffixIndex === -1 ? target : target.slice(0, suffixIndex);
       let path: string;
       try {
         path = decodeURIComponent(encodedPath).replace(/^\.\//, '');
+        if (match.relative && /^\.\.\/MEMORY\.md$/i.test(path)) continue;
+        if (match.relative) path = `topics/${path}`;
+        else if (
+          sourceFileKey.startsWith('topics/') &&
+          path.startsWith('../topics/')
+        )
+          path = path.slice(3);
       } catch {
         path = '';
       }
+      const basename = path.toLowerCase().startsWith('topics/')
+        ? path.slice('topics/'.length)
+        : '';
+      const aliasFilename =
+        /^[A-Za-z0-9][A-Za-z0-9 ._-]*\.md$/i.test(basename) &&
+        !/\.md$/i.test(basename.slice(0, -3))
+          ? basename.replace(/\.md$/i, '.md')
+          : null;
       const normalized = normalizeOutputTopicFilename(
         path.toLowerCase().startsWith('topics/')
           ? path.slice('topics/'.length)
@@ -153,6 +261,7 @@ export function findTopicReferences(source: string): TopicReference[] {
         span,
         index: match.index,
         encodedPath,
+        aliasFilename,
         filename:
           normalized !== null &&
           memoryFileIdentity(path) === topicFileKeyIdentity(normalized)

@@ -20,6 +20,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <wchar.h>
 
 #include <node_api.h>
 
@@ -89,6 +90,37 @@ static napi_value handle_count(napi_env env, napi_callback_info info) {
     return NULL;
   }
   return make_number(env, count);
+}
+
+// Opens DELETE access without setting a disposition. A mapped image can deny
+// replacement after exit; this probes sharing without waiting for image teardown.
+static napi_value delete_access(napi_env env, napi_callback_info info) {
+  size_t argc = 1, length = 0, copied = 0;
+  napi_value arg;
+  if (napi_get_cb_info(env, info, &argc, &arg, NULL, NULL) != napi_ok ||
+      argc != 1 || napi_get_value_string_utf16(env, arg, NULL, 0, &length) != napi_ok ||
+      !length || length > 32767) {
+    napi_throw_error(env, NULL, "probe: invalid file path");
+    return NULL;
+  }
+  WCHAR *path = calloc(length + 1, sizeof *path);
+  if (!path) {
+    napi_throw_error(env, NULL, "probe: file path allocation failed");
+    return NULL;
+  }
+  if (napi_get_value_string_utf16(env, arg, (char16_t *)path, length + 1, &copied) != napi_ok ||
+      copied != length || wcslen(path) != length) {
+    free(path);
+    napi_throw_error(env, NULL, "probe: invalid file path");
+    return NULL;
+  }
+  HANDLE file = CreateFileW(path, DELETE,
+      FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+      NULL, OPEN_EXISTING, FILE_FLAG_OPEN_REPARSE_POINT, NULL);
+  DWORD error = file == INVALID_HANDLE_VALUE ? GetLastError() : ERROR_SUCCESS;
+  if (file != INVALID_HANDLE_VALUE) CloseHandle(file);
+  free(path);
+  return make_number(env, error);
 }
 
 // jobInfo() -> { inJob, limitFlags, activeProcesses, totalProcesses,
@@ -215,6 +247,7 @@ NAPI_MODULE_INIT() {
   napi_property_descriptor methods[] = {
       {"jobInfo", NULL, job_info, NULL, NULL, NULL, napi_enumerable, NULL},
       {"handleCount", NULL, handle_count, NULL, NULL, NULL, napi_enumerable, NULL},
+      {"deleteAccess", NULL, delete_access, NULL, NULL, NULL, napi_enumerable, NULL},
       {"inspect", NULL, inspect, NULL, NULL, NULL, napi_enumerable, NULL},
       {"terminate", NULL, terminate, NULL, NULL, NULL, napi_enumerable, NULL},
   };

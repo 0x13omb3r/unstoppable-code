@@ -216,3 +216,18 @@ export function ColorSwatchPicker({
     </div>
   );
 }
+
+/** Inline preview for a color typed into a field. */
+export function ColorSwatchPreview({
+  color,
+}: {
+  readonly color: string;
+}): JSX.Element {
+  return (
+    <span
+      aria-hidden="true"
+      className="size-3.5 rounded-full border"
+      style={{ backgroundColor: color || 'var(--bg-tertiary)' }}
+    />
+  );
+}

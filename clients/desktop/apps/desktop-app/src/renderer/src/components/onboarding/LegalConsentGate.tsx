@@ -93,8 +93,10 @@ export function LegalConsentGate({
 
   return (
     // The window's whole content in place of the shell, not a layer over it.
-    <div
-      className="flex h-screen w-full flex-col items-center justify-center overflow-hidden bg-base fg-primary animate-fade-in"
+    <Surface
+      variant="startup-pane"
+      extent="viewport"
+      className="flex w-full flex-col items-center justify-center overflow-hidden"
       data-testid="legal-consent-gate"
     >
       {/* Keep the window draggable behind the centered content. */}
@@ -172,6 +174,6 @@ export function LegalConsentGate({
           </Button>
         </div>
       </div>
-    </div>
+    </Surface>
   );
 }

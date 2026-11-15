@@ -1,8 +1,33 @@
 import {
+  createPreferencesRepository,
+  type PreferencesDocument,
+  type PreferencesRepository,
+} from '@canopy/core-runtime/node/preferences';
+import {
+  USAGE_DATA_KEYS,
+  type UsageDataPreferences,
+  type PreferencesSavePatch,
+} from '@canopy/desktop-shared/types';
+import { normalizeUsageData } from '@canopy/desktop-shared/node/preferences/field-normalizers';
+import {
+  withUsageDataConsentJournal,
+  recordUsageDataRevocations,
+  type ConsentJournal,
+} from '../../lib/usage-data-consent-document';
+import {
   CLIENT_FEATURE_FLAGS,
   getDefaultFeatureFlagSnapshot,
 } from '@canopy/protocol/feature-flags';
-import { mkdir, mkdtemp, rm, stat, utimes, writeFile } from 'node:fs/promises';
+import {
+  readFile,
+  access,
+  mkdir,
+  mkdtemp,
+  rm,
+  stat,
+  utimes,
+  writeFile,
+} from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { sweepStartupCrashDumps } from '../crash-dump-sweep';
@@ -240,6 +265,8 @@ describe('PostHog main gating by usage-data policy', () => {
     mockShutdown.mockReset().mockResolvedValue(undefined);
     getInstallLaunch.mockClear();
     Object.assign(globalThis, {
+      __CANOPY_MAIN_BYTECODE_CHUNK_ID__: undefined,
+      __CANOPY_MAIN_FALLBACK_CHUNK_ID__: undefined,
       __CANOPY_POSTHOG_ENABLED__: true,
       __CANOPY_POSTHOG_PROJECT_KEY__: 'phc_test',
       __CANOPY_POSTHOG_HOST__: 'http://127.0.0.1:18763',
@@ -273,6 +300,392 @@ describe('PostHog main gating by usage-data policy', () => {
       getInstallLaunch,
     );
   }
+
+  it('CAN-6760: tags only main bytecode and fallback frames before privacy filtering', async () => {
+    Object.assign(globalThis, {
+      __CANOPY_MAIN_BYTECODE_CHUNK_ID__: '11111111-1111-4111-8111-111111111111',
+      __CANOPY_MAIN_FALLBACK_CHUNK_ID__: '22222222-2222-4222-8222-222222222222',
+    });
+    await start({ events: false, errors: true, launchEvents: false });
+    const frame = (
+      filename: string,
+    ): { filename: string; lineno: number; colno: number } => ({
+      filename,
+      lineno: 1,
+      colno: 85,
+    });
+    const sent = latestMainBeforeSend()({
+      event: '$exception',
+      properties: {
+        $exception_list: [
+          {
+            type: 'Error',
+            value: 'test',
+            stacktrace: {
+              frames: [
+                {
+                  ...frame(
+                    '/Applications/App.app/Contents/Resources/app.asar/out/main/index.jsc',
+                  ),
+                  chunk_id: 'sdk-miskeyed-loader',
+                },
+                frame('C:\\Apps\\app.asar\\out\\main\\_index.js'),
+                frame('out/main/index.jsc'),
+                frame('out/main/_index.js'),
+                frame('file:///Users/PrivateCustomer/out/worker/index.jsc'),
+                frame('file:///Users/PrivateCustomer/_index.js'),
+                frame('https://evil.example/out/main/index.jsc'),
+                frame('/app/out/main/utility-worker.js'),
+              ],
+            },
+          },
+        ],
+      },
+    });
+    expect(sent).toMatchObject({
+      properties: {
+        $exception_list: [
+          {
+            stacktrace: {
+              frames: [
+                {
+                  chunk_id: '11111111-1111-4111-8111-111111111111',
+                  lineno: 1,
+                  colno: 85,
+                },
+                { chunk_id: '22222222-2222-4222-8222-222222222222' },
+                { chunk_id: '11111111-1111-4111-8111-111111111111' },
+                { chunk_id: '22222222-2222-4222-8222-222222222222' },
+                {},
+                {},
+                {},
+                {},
+              ],
+            },
+          },
+        ],
+      },
+    });
+    const encoded = JSON.stringify(sent);
+    expect(encoded.match(/chunk_id/g)).toHaveLength(4);
+    expect(encoded).not.toContain('/Users/PrivateCustomer');
+    Reflect.deleteProperty(globalThis, '__CANOPY_MAIN_BYTECODE_CHUNK_ID__');
+    Reflect.deleteProperty(globalThis, '__CANOPY_MAIN_FALLBACK_CHUNK_ID__');
+  });
+
+  async function exerciseFailedToggle(
+    open: () => PreferencesRepository<{ usageData: UsageDataPreferences }>,
+    failWrites: (fail: boolean) => void,
+  ): Promise<void> {
+    const dom = new JSDOM('<div id="root"></div>');
+    Object.assign(globalThis, {
+      window: dom.window,
+      document: dom.window.document,
+      Element: dom.window.Element,
+    });
+    const { createUsageDataPolicy } =
+      await import('../../lib/usage-data-policy');
+    const policy = createUsageDataPolicy({ prohibitions: new Map() });
+    policy.setWorkspaceContext({ kind: 'personal' });
+    const saves: Array<{ usageData?: Partial<UsageDataPreferences> }> = [];
+    let settled = Promise.resolve();
+    let loaded = Promise.resolve();
+    Object.assign(dom.window, {
+      api: {
+        loadPreferences: () => {
+          const result = open().read('persisted');
+          loaded = result.then(() => undefined);
+          return result;
+        },
+        onPreferencesChanged: (): (() => void) => (): void => undefined,
+        observability: {
+          getUsageDataPolicy: () =>
+            Promise.resolve(policy.getUsageDataPolicySnapshot()),
+          onUsageDataPolicyChanged: (): (() => void) => (): void => undefined,
+        },
+        savePreferences: (patch: PreferencesSavePatch) => {
+          saves.push(patch);
+          const result = open().update((latest) => ({
+            usageData: { ...latest.usageData, ...patch.usageData },
+          }));
+          settled = result.then(
+            () => undefined,
+            () => undefined,
+          );
+          return result;
+        },
+      },
+    });
+    const { createElement } = await import('react');
+    const { flushSync } = await import('react-dom');
+    const { createRoot } = await import('react-dom/client');
+    const { UsageDataSection } =
+      await import('../../../renderer/src/components/settings/UsageDataSection');
+    const container = document.getElementById('root');
+    if (!container) throw new Error('Missing usage-data fixture root');
+    const root = createRoot(container);
+    const toggle = (key: string): HTMLButtonElement => {
+      const element = container.querySelector(
+        `[data-testid="usage-data-toggle-${key}"]`,
+      );
+      if (!(element instanceof dom.window.HTMLButtonElement))
+        throw new Error('Missing usage-data switch');
+      return element;
+    };
+    try {
+      flushSync(() => {
+        root.render(createElement(UsageDataSection));
+      });
+      await loaded;
+      flushSync(() => {
+        root.render(createElement(UsageDataSection));
+      });
+      expect(toggle('productAnalytics').disabled).toBe(false);
+      flushSync(() => {
+        toggle('productAnalytics').click();
+      });
+      await settled;
+      flushSync(() => {
+        root.render(createElement(UsageDataSection));
+      });
+      // A failed opt-out is still the user's choice, even though the save rejected.
+      expect(toggle('productAnalytics').getAttribute('aria-checked')).toBe(
+        'false',
+      );
+      expect(saves[0]).toEqual({ usageData: { productAnalytics: false } });
+      expect((await open().read('persisted')).usageData.productAnalytics).toBe(
+        false,
+      );
+      failWrites(false);
+      flushSync(() => {
+        toggle('errorReports').click();
+      });
+      await settled;
+      flushSync(() => {
+        root.render(createElement(UsageDataSection));
+      });
+      expect(saves[1]).toEqual({ usageData: { errorReports: false } });
+      expect(toggle('productAnalytics').getAttribute('aria-checked')).toBe(
+        'false',
+      );
+      // A fresh repository represents exit/relaunch, with only disk carried over.
+      const relaunched = await open().read('persisted');
+      expect(relaunched.usageData.productAnalytics).toBe(false);
+      expect(relaunched.usageData.errorReports).toBe(false);
+      flushSync(() => {
+        toggle('productAnalytics').click();
+      });
+      await settled;
+      flushSync(() => {
+        root.render(createElement(UsageDataSection));
+      });
+      expect(saves[2]).toEqual({ usageData: { productAnalytics: true } });
+      expect((await open().read('persisted')).usageData.productAnalytics).toBe(
+        true,
+      );
+      expect((await open().read('persisted')).usageData.errorReports).toBe(
+        false,
+      );
+    } finally {
+      flushSync(() => {
+        root.unmount();
+      });
+      const { disposeClientAppErrorHandler } =
+        await import('@canopy/desktop-instrumentation/client');
+      disposeClientAppErrorHandler();
+      // Drain React's scheduled host callback while its DOM is still present.
+      await new Promise<void>((resolve) => setImmediate(resolve));
+      dom.window.close();
+      Reflect.deleteProperty(globalThis, 'window');
+      Reflect.deleteProperty(globalThis, 'document');
+      Reflect.deleteProperty(globalThis, 'Element');
+    }
+  }
+
+  it.each([
+    ['primary', null],
+    ['generation', null],
+    ['folder', null],
+    ['generation', 'missing'],
+    ['generation', 'corrupt'],
+    ['generation', 'different-toggle'],
+  ] as const)(
+    'keeps analytics, exceptions and native marking denied across failed %s save and relaunch (%s primary)',
+    async (failedSlot, damage) => {
+      const directory = await mkdtemp(join(tmpdir(), 'consent-relaunch-'));
+      const primary = join(directory, 'primary.json');
+      const journal = join(directory, 'denied.json');
+      let failPrimary = false;
+      const slotPath = (slot: string): string =>
+        slot === 'primary' ? primary : join(directory, slot + '.json');
+      const payload = (allowed: boolean): string =>
+        JSON.stringify({
+          version: 1,
+          generation: 0,
+          preferences: {
+            usageData: Object.fromEntries(
+              USAGE_DATA_KEYS.map((key) => [key, allowed]),
+            ),
+          },
+        });
+      const journalPort: ConsentJournal = {
+        read: async () => {
+          const denied: unknown = JSON.parse(await readFile(journal, 'utf8'));
+          if (!Array.isArray(denied)) throw new Error('Invalid deny journal');
+          return USAGE_DATA_KEYS.filter((key) => denied.includes(key));
+        },
+        write: async (denied): Promise<void> => {
+          await writeFile(journal, JSON.stringify(denied));
+        },
+        deny: (): void => undefined,
+      };
+      const openDocument = (): PreferencesDocument =>
+        withUsageDataConsentJournal(
+          {
+            key: primary,
+            readText: (slot) => readFile(slotPath(slot), 'utf8'),
+            exists: async (slot) =>
+              access(slotPath(slot)).then(
+                () => true,
+                () => false,
+              ),
+            install: async (slot, text): Promise<void> => {
+              if (failPrimary && slot === failedSlot)
+                throw new Error('Injected ' + slot + ' write failure');
+              await writeFile(slotPath(slot), text);
+            },
+            ensureFolder: (): Promise<void> => {
+              if (failPrimary && failedSlot === 'folder')
+                throw new Error('Injected folder failure');
+              return Promise.resolve();
+            },
+            slotPath,
+            backupLocation: () => primary + '.backup',
+            installBackup: (): Promise<void> => Promise.resolve(),
+            pruneBackups: (): Promise<void> => Promise.resolve(),
+          },
+          journalPort,
+        );
+      const open = (): PreferencesRepository<{
+        usageData: UsageDataPreferences;
+      }> =>
+        createPreferencesRepository({
+          document: openDocument,
+          codec: {
+            defaults: { usageData: normalizeUsageData(undefined) },
+            normalize: (value) => ({
+              usageData: normalizeUsageData(value.usageData),
+            }),
+            project: (value) => value,
+            inspect: () => null,
+            merge: (value, patch) => ({ ...value, ...patch }),
+          },
+          log: { error: jest.fn() },
+          hooks: {
+            beforeSave: async ({ next }) => {
+              await recordUsageDataRevocations(journalPort, next.usageData);
+            },
+          },
+        });
+      try {
+        await writeFile(primary, payload(true));
+        await writeFile(join(directory, 'lastGood.json'), payload(true));
+        await writeFile(journal, '[]');
+        failPrimary = true;
+        if (damage === 'different-toggle') {
+          await exerciseFailedToggle(open, (fail) => {
+            failPrimary = fail;
+          });
+          return;
+        }
+        await expect(
+          open().update(() => ({
+            usageData: normalizeUsageData(
+              Object.fromEntries(USAGE_DATA_KEYS.map((key) => [key, false])),
+            ),
+          })),
+        ).rejects.toThrow('Injected');
+        // Discard the writer. The only state carried into this launch is disk.
+        const relaunched = openDocument();
+        expect(
+          (await open().read('persisted')).usageData.productAnalytics,
+        ).toBe(false);
+        for (const slot of ['primary', 'lastGood'] as const) {
+          const stored: unknown = JSON.parse(await relaunched.readText(slot));
+          if (
+            !stored ||
+            typeof stored !== 'object' ||
+            !('preferences' in stored) ||
+            !stored.preferences ||
+            typeof stored.preferences !== 'object' ||
+            !('usageData' in stored.preferences)
+          )
+            throw new Error('Missing persisted consent');
+          const usage = normalizeUsageData(stored.preferences.usageData);
+          await start({
+            events: usage.productAnalytics,
+            errors: usage.errorReports,
+            launchEvents: usage.productAnalytics,
+          });
+          mockCapture.mockClear();
+          mockCaptureException.mockClear();
+          main.succeedDesktopOperation('canopy.chat_turn');
+          main.captureDesktopInstrumentationError(
+            new Error('should stay local'),
+          );
+          let marked = false;
+          const annotation = main.createMainCrashAnnotation(
+            () => (usage.errorReports ? 'allow' : 'deny'),
+            (eligible): void => {
+              marked = eligible;
+            },
+          );
+          annotation.start();
+          expect(annotation.readPolicy()).toBe('deny');
+          expect(marked).toBe(false);
+          expect(mockCapture).not.toHaveBeenCalled();
+          expect(mockCaptureException).not.toHaveBeenCalled();
+        }
+        failPrimary = false;
+        if (damage !== null) {
+          if (damage === 'missing') await rm(primary);
+          else await writeFile(primary, '{');
+          const recovering = open();
+          const restored = await recovering.read('persisted');
+          expect(recovering.isRecoveryLatched()).toBe(false);
+          expect(restored.usageData.productAnalytics).toBe(false);
+          expect(restored.usageData.errorReports).toBe(false);
+        }
+        await open().update(() => ({
+          usageData: normalizeUsageData(
+            Object.fromEntries(USAGE_DATA_KEYS.map((key) => [key, false])),
+          ),
+        }));
+        await open().update(() => ({
+          usageData: normalizeUsageData(undefined),
+        }));
+        const recovered = await open().read('persisted');
+        expect(recovered.usageData.productAnalytics).toBe(true);
+        expect(recovered.usageData.errorReports).toBe(true);
+        await start({ events: true, errors: true, launchEvents: true });
+        main.captureDesktopInstrumentationError(new Error('opt-in restored'));
+        expect(mockCaptureException).toHaveBeenCalled();
+        expect(mockCapture).toHaveBeenCalled();
+        let optedInMarked = false;
+        const optedInAnnotation = main.createMainCrashAnnotation(
+          () => (recovered.usageData.errorReports ? 'allow' : 'deny'),
+          (eligible) => {
+            optedInMarked = eligible;
+          },
+        );
+        optedInAnnotation.start();
+        expect(optedInAnnotation.readPolicy()).toBe('allow');
+        expect(optedInMarked).toBe(true);
+      } finally {
+        await rm(directory, { recursive: true, force: true });
+      }
+    },
+  );
 
   it('CAN-6693: keeps private-safe handled frames valid for PostHog symbolication', async () => {
     await start({ events: false, errors: true, launchEvents: false });

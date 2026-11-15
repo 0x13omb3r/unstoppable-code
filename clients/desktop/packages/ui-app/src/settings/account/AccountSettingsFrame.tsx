@@ -16,12 +16,10 @@ import { AccountPageHeader } from './account-page-header';
  * notice about the page renders below the header.
  */
 export function AccountSettingsFrame({
-  freeAccess,
   children,
   before,
   after,
 }: {
-  freeAccess: boolean;
   children: ReactNode;
   before?: ReactNode;
   after?: ReactNode;
@@ -29,7 +27,7 @@ export function AccountSettingsFrame({
   return (
     <SettingsPageColumn as="main">
       {before}
-      <AccountPageHeader freeAccess={freeAccess} />
+      <AccountPageHeader />
       <div
         className="flex w-full flex-1 flex-col gap-10"
         data-testid="account-settings-body"

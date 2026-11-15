@@ -21,7 +21,6 @@ import {
   useAiCreditsWalletKey,
   useStableAiCreditsScope,
 } from '@/lib/aiCreditsScope';
-import { lapsedOrgNames as lapsedOrgNamesFrom } from '@canopy/desktop-shared/lib/org-billing-state-parsing';
 import {
   AI_CREDITS_CHECK_AGAIN_LABEL,
   AI_CREDITS_HANDOFF_COPY,
@@ -29,15 +28,14 @@ import {
   LoadingSpinner,
   type AiCreditsCheckFeedbackKind,
 } from '@canopy/ui-shared';
+import { resolveCreditsCoverage } from '@canopy/app-state/billing/credits';
 import {
   getAiCreditsConnectContext,
   invalidateSharedAiCreditsRead,
-  openBillingPage,
   readSharedAiCreditsAvailability,
   type BillingDestination,
   type BillingPageOpenResult,
   type OpenBillingPageOptions,
-  resolveAiCreditsCoverage,
 } from '@/lib/openBillingPage';
 import { announceAiCreditsChanged } from '@/lib/aiCreditsChanged';
 import {
@@ -54,14 +52,9 @@ import {
   type ChatBannerTarget,
 } from '@/stores/aiCreditsBannerStore';
 import {
-  beginAiCreditsHandoff,
-  claimAiCreditsHandoffOpening,
-  completeAiCreditsHandoff,
-  expireAiCreditsHandoffs,
-  isAiCreditsHandoffCurrent,
-  releaseAiCreditsHandoffOpening,
+  aiCreditsCoverageProbe,
+  aiCreditsPurchaseStore,
   selectAiCreditsHandoff,
-  setAiCreditsHandoffFeedback,
   useAiCreditsHandoffStore,
 } from '@/stores/aiCreditsHandoffStore';
 
@@ -82,24 +75,6 @@ import {
  * `onCovered` is the ONLY behavioral seam, which is why case C reuses this
  * verbatim: C flips `billing.onChange('ai-credits')` where A/B commit a model.
  */
-
-/**
- * Shared post-purchase reprobe throttle (§5). Adopted in shape from
- * `OrgLapsedBanner`.
- *
- * MODULE-level, not per instance. Pickers mount concurrently (worktree chat,
- * cowork, the Home composer, a popped-out composer), and a per-instance
- * throttle would fire one full probe chain PER mounted picker on a single
- * alt-tab. Entries remain owner-scope keyed so one chat never throttles or
- * joins another owner's probe.
- */
-const REPROBE_MIN_INTERVAL_MS = 60_000;
-const MAX_REPROBE_SCOPES = 256;
-const lastReprobeAtByScope = new Map<string, number>();
-const reprobeInFlightByScope = new Map<
-  string,
-  Promise<NativeAiCreditsAvailability | null>
->();
 
 /**
  * Read availability without ever throwing.
@@ -132,42 +107,21 @@ function readAvailabilitySafely(
  * must not get a silent no-op. The automatic focus/visibilitychange path does
  * NOT force, so ordinary window switching costs nothing.
  */
-async function probeCreditsAvailability(
+function probeCreditsAvailability(
   force: boolean,
   scope: AiCreditsScopeRequest | undefined,
   key: string,
 ): Promise<NativeAiCreditsAvailability | null> {
-  // Only join a probe that asked about the SAME owner; another chat's answer
-  // would name another organization's pool (CAN-3463).
-  const existing = reprobeInFlightByScope.get(key);
-  if (existing) return existing;
-  const now = Date.now();
-  const lastReprobeAt = lastReprobeAtByScope.get(key) ?? 0;
-  if (!force && now - lastReprobeAt < REPROBE_MIN_INTERVAL_MS) {
-    return null;
-  }
-  lastReprobeAtByScope.delete(key);
-  lastReprobeAtByScope.set(key, now);
-  if (lastReprobeAtByScope.size > MAX_REPROBE_SCOPES) {
-    const oldest = lastReprobeAtByScope.keys().next().value;
-    if (oldest !== undefined) lastReprobeAtByScope.delete(oldest);
-  }
-  // Through `readAvailabilitySafely` so a SYNCHRONOUS bridge throw (absent
-  // `window.api` on an older build or an unstubbed test surface) is contained
-  // here. `checkCoverage` wraps this in `try/finally`, not `try/catch`, so a
-  // throw would otherwise escape both the focus listener's `void
-  // checkCoverage(false)` and the Check-again click as an unhandled rejection.
-  // FRESH, always. This is the post-purchase re-probe: its entire job is to
-  // notice that the answer just changed, so serving it the episode's retained
-  // answer would defeat it exactly when it matters — the user comes back from
-  // checkout and we tell them what we already believed before they paid.
-  const probe = readAvailabilitySafely({ fresh: true, scope }).finally(() => {
-    if (reprobeInFlightByScope.get(key) === probe) {
-      reprobeInFlightByScope.delete(key);
-    }
-  });
-  reprobeInFlightByScope.set(key, probe);
-  return probe;
+  // The renderer-wide throttle of the shared purchase state: only a probe
+  // that asked about the SAME owner is joined; another chat's answer would
+  // name another organization's pool (CAN-3463).
+  //
+  // Through `readAvailabilitySafely` so a SYNCHRONOUS bridge throw is
+  // contained here. FRESH, always: this is the post-purchase re-probe, whose
+  // entire job is to notice that the answer just changed.
+  return aiCreditsCoverageProbe.probe(force, key, () =>
+    readAvailabilitySafely({ fresh: true, scope }),
+  );
 }
 
 /**
@@ -233,7 +187,7 @@ export interface GetAiCreditsCtaProps {
   readonly onCovered: () => boolean | void | Promise<boolean | void>;
   /**
    * Optional compact-surface escape hatch (case C). A picker footer cannot
-   * explain guest, contact-admin, lapsed, or inconclusive account state, so it
+   * explain guest, contact-admin, or inconclusive account state, so it
    * asks its parent to open the full recovery modal for those branches.
    */
   readonly onNeedsRecovery?: () => void;
@@ -531,7 +485,7 @@ export function GetAiCreditsCta({
     const opening = openingLatchRef.current;
     openingLatchRef.current = null;
     if (opening !== null) {
-      releaseAiCreditsHandoffOpening(opening.walletKey, opening.token);
+      aiCreditsPurchaseStore.releaseOpening(opening.walletKey, opening.token);
     }
   }, []);
   const ensureArrivalHandoff = useCallback((): void => {
@@ -588,7 +542,7 @@ export function GetAiCreditsCta({
         setLocalCheckFeedback(feedback);
         return;
       }
-      setAiCreditsHandoffFeedback(
+      aiCreditsPurchaseStore.setFeedback(
         session.walletKey,
         session.id,
         session.accountGeneration,
@@ -798,7 +752,7 @@ export function GetAiCreditsCta({
       if (native === null || native.inconclusive === true) {
         return 'unknown';
       }
-      if (!resolveAiCreditsCoverage(native).canSpendCredits) {
+      if (!resolveCreditsCoverage(native).canSpendCredits) {
         return 'uncovered';
       }
       // Covered without a browser return: nothing arrived from a hand-off.
@@ -848,7 +802,7 @@ export function GetAiCreditsCta({
       // Store mode reads for the retained record, which a sibling may have
       // ended or which may have expired while the machine slept.
       const storeBacked = walletKeyRef.current !== null;
-      if (storeBacked) expireAiCreditsHandoffs();
+      if (storeBacked) aiCreditsPurchaseStore.expire();
       const session = storeBacked ? currentHandoffSession() : null;
       if (storeBacked && session === null) return;
       if (
@@ -871,7 +825,7 @@ export function GetAiCreditsCta({
         scopeKeyRef.current === requestScopeKey &&
         operationRef.current === operation &&
         (session === null ||
-          isAiCreditsHandoffCurrent(
+          aiCreditsPurchaseStore.isCurrent(
             session.walletKey,
             session.id,
             session.accountGeneration,
@@ -905,12 +859,12 @@ export function GetAiCreditsCta({
           return;
         }
         availabilityRef.current = native;
-        if (resolveAiCreditsCoverage(native).canSpendCredits) {
+        if (resolveCreditsCoverage(native).canSpendCredits) {
           if (session !== null) {
             // Claimed once for the record: the arrival is recorded for the
             // chat that started it, whichever chat found the credits, and
             // before the announcement so its account recheck reconciles it.
-            const completed = completeAiCreditsHandoff(
+            const completed = aiCreditsPurchaseStore.complete(
               session.walletKey,
               session.id,
               session.accountGeneration,
@@ -983,7 +937,7 @@ export function GetAiCreditsCta({
     const scope = scopeRef.current;
     const sessionCurrent = (): boolean =>
       session === null ||
-      isAiCreditsHandoffCurrent(
+      aiCreditsPurchaseStore.isCurrent(
         session.walletKey,
         session.id,
         session.accountGeneration,
@@ -1001,11 +955,11 @@ export function GetAiCreditsCta({
         const native = await resolveAvailabilityForHandoff();
         // Validate BEFORE opening: the open is a visible side effect.
         result = isCurrent()
-          ? await openBillingPage(
-              native,
+          ? await aiCreditsPurchaseStore.openHandoff({
+              availability: native,
               scope,
-              billingOpenOptions(billingDestinationRef.current),
-            )
+              options: billingOpenOptions(billingDestinationRef.current),
+            })
           : 'stale';
       } catch {
         result = 'failed';
@@ -1230,7 +1184,7 @@ export function GetAiCreditsCta({
         openingLatch = opening.token;
       } else {
         clearArrivalHandoff();
-        openingLatch = claimAiCreditsHandoffOpening(storeWalletKey);
+        openingLatch = aiCreditsPurchaseStore.claimOpening(storeWalletKey);
       }
       if (openingLatch === null) {
         clearArrivalHandoff();
@@ -1253,7 +1207,7 @@ export function GetAiCreditsCta({
       const scope = scopeRef.current;
       const releaseLatch = (): void => {
         if (storeWalletKey !== null && openingLatch !== null) {
-          releaseAiCreditsHandoffOpening(storeWalletKey, openingLatch);
+          aiCreditsPurchaseStore.releaseOpening(storeWalletKey, openingLatch);
           if (openingLatchRef.current?.token === openingLatch) {
             openingLatchRef.current = null;
           }
@@ -1287,11 +1241,11 @@ export function GetAiCreditsCta({
       arrivalHandoff?.markExternalOpen();
       let result: BillingPageOpenResult;
       try {
-        result = await openBillingPage(
-          native,
+        result = await aiCreditsPurchaseStore.openHandoff({
+          availability: native,
           scope,
-          billingOpenOptions(billingDestinationRef.current),
-        );
+          options: billingOpenOptions(billingDestinationRef.current),
+        });
       } catch {
         result = 'failed';
       } finally {
@@ -1318,7 +1272,7 @@ export function GetAiCreditsCta({
         // Ownership of the arrival handle moves to the store, which keeps
         // it across chat switches and unmounts.
         arrivalHandoffRef.current = null;
-        const record = beginAiCreditsHandoff({
+        const record = aiCreditsPurchaseStore.begin({
           walletKey: storeWalletKey,
           originChatKey: originChatKeyRef.current,
           originScopeKey: requestScopeKey,
@@ -1423,7 +1377,7 @@ export function GetAiCreditsCta({
     clearArrivalHandoff();
     const storeWalletKey = walletKeyRef.current;
     if (storeWalletKey !== null) {
-      const token = claimAiCreditsHandoffOpening(storeWalletKey);
+      const token = aiCreditsPurchaseStore.claimOpening(storeWalletKey);
       if (token === null) {
         setBusy(false);
         return;
@@ -1561,13 +1515,7 @@ export function GetAiCreditsCta({
       }
       availabilityRef.current = native;
 
-      const orgBillingStates = account?.orgBillingStates ?? [];
-      const ownerOrganizationId = native?.ownerOrganization?.id;
-      const lapsed = lapsedOrgNamesFrom(
-        orgBillingStates,
-        ownerOrganizationId ? [ownerOrganizationId] : [],
-      );
-      const coverage = resolveAiCreditsCoverage(native, lapsed);
+      const coverage = resolveCreditsCoverage(native);
       if (coverage.canSpendCredits) {
         setBusy(false);
         announceAiCreditsChanged();
@@ -1578,8 +1526,7 @@ export function GetAiCreditsCta({
         native === null ||
         native.inconclusive === true ||
         !isConnectedNonGuest(account) ||
-        coverage.showContactAdmin ||
-        coverage.lapsedOrgNames.length > 0
+        coverage.showContactAdmin
       ) {
         setBusy(false);
         onNeedsRecovery();

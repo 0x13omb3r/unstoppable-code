@@ -1,5 +1,6 @@
 'use client';
 
+import { SidebarModeToggleFrame } from '@canopy/ui-shared/components';
 import type { JSX } from 'react';
 import type { CanopyCapabilities } from '@canopy/app-core';
 import { useSidebarActivityModeStore } from '@canopy/app-state';
@@ -39,9 +40,7 @@ export function SidebarActivityModeToggle({
     return null;
   // The pressed surface sits on a wrapper: the button owns its own ink.
   return (
-    <span
-      className={`inline-flex rounded-md ${active ? 'bg-subtle' : ''} ${className ?? ''}`}
-    >
+    <SidebarModeToggleFrame active={active} className={className}>
       <TitlebarIconButton
         icon={BellIcon}
         aria-label="Activity"
@@ -55,6 +54,6 @@ export function SidebarActivityModeToggle({
           )
         }
       />
-    </span>
+    </SidebarModeToggleFrame>
   );
 }

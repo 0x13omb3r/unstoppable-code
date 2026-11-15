@@ -186,7 +186,11 @@ import {
 import {
   prepareWorkspaceBrowserRetirement,
   commitTaskBrowserRetirement,
+  retireRemovedBrowserTask,
 } from '../../browser/browser-profile-lifecycle';
+import { setBrowserService } from '../../browser/browser-service-registry';
+import { BrowserRetirementTimeoutError } from '../browser-retirement-deadline';
+import { cleanupPersistedWorktreeData } from '../worktree-data-cleanup';
 import { commitArchivedContainer } from '../archived-containers';
 import { workspaceRootPayloadDigest } from '../archived-container-git';
 import {
@@ -195,6 +199,7 @@ import {
   getW5DestructiveLifecycleDir,
   getWorkspaceDir,
   getWorktreeDataDir,
+  getWorktreeBrowserStateFilePath,
 } from '../paths';
 import { applyWorkspaceIndexRemoval } from '../workspace-record-decision-port';
 import { recordWorkspaceCrudTelemetry } from '../desktop-telemetry';
@@ -330,6 +335,78 @@ afterEach(async () => {
   else process.env.CANOPY_DATA_DIR = originalDataDir;
   rmSync(dir, { recursive: true, force: true });
   jest.restoreAllMocks();
+});
+
+describe('removed worktree browser data', () => {
+  describe.each([
+    ['malformed', '{broken'],
+    [
+      'invalid-record',
+      '{"version":1,"records":[{"kind":"upload","id":"retain"}]}',
+    ],
+  ])('%s transfer catalog', (_label, bytes) => {
+    it.each(['retired', 'retirement failed', 'retirement timed out'])(
+      'cleans browser state when %s',
+      async (retirement) => {
+        const { BrowserService } =
+          await import('../../browser/browser-service');
+        const service = new BrowserService({ getWindow: (): null => null });
+        const scope = { projectId: 'a', worktreeId: 'one' };
+        const folder = join(getWorktreeDataDir('a', 'one'), 'browser-files');
+        const statePath = getWorktreeBrowserStateFilePath('a', 'one');
+        mkdirSync(join(folder, 'uploads/staged'), { recursive: true });
+        writeFileSync(join(folder, 'uploads/staged/file.txt'), 'staged');
+        writeFileSync(join(folder, 'files.json'), bytes);
+        writeFileSync(
+          statePath,
+          JSON.stringify({
+            version: 2,
+            browsers: [],
+            browserOrder: [],
+            activeBrowserId: null,
+          }),
+        );
+        const retirementError = new Error('Profile retirement refused');
+        if (retirement !== 'retired')
+          jest
+            .mocked(retireRemovedBrowserTask)
+            .mockRejectedValueOnce(
+              retirement === 'retirement timed out'
+                ? new BrowserRetirementTimeoutError()
+                : retirementError,
+            );
+        const remove = fsPromises.rm;
+        let removedByBrowserStep = false;
+        jest.spyOn(fsPromises, 'rm').mockImplementation(async (...args) => {
+          if (args[0] === statePath) {
+            expect(existsSync(folder)).toBe(false);
+            await remove(...args);
+            removedByBrowserStep = true;
+          } else await remove(...args);
+        });
+        setBrowserService(service);
+        try {
+          await expect(service.taskFiles.bind(scope)).rejects.toThrow();
+          const warnings = await cleanupPersistedWorktreeData('a', 'one');
+          expect(removedByBrowserStep).toBe(true);
+          expect(existsSync(statePath)).toBe(false);
+          expect(existsSync(folder)).toBe(false);
+          expect(
+            warnings.filter((warning) => warning.includes('browser tab state')),
+          ).toEqual(
+            retirement === 'retirement failed'
+              ? [
+                  'Failed to remove browser tab state for this worktree: Profile retirement refused',
+                ]
+              : [],
+          );
+        } finally {
+          setBrowserService(null);
+          await service.shutdown();
+        }
+      },
+    );
+  });
 });
 
 function chatProjectRequest(
@@ -2211,7 +2288,17 @@ describe('CAN-6478 lifecycle retention', () => {
           return actualPort.applyWorkspaceIndexRemoval(...args);
         });
       }
-      const deletion = deleteWorkspace({ workspaceId: 'a', source: 'portal' });
+      const { describePendingArchiveRecoveries } =
+        await import('../archive-recovery-project-deletion');
+      const discardPendingRecovery =
+        shape === 'effect-free'
+          ? await describePendingArchiveRecoveries('a')
+          : undefined;
+      const deletion = deleteWorkspace({
+        workspaceId: 'a',
+        source: 'portal',
+        discardPendingRecovery,
+      });
       if (shape === 'effects' || shape === 'conflicted') {
         await expect(deletion).rejects.toMatchObject({
           name: 'ArchiveRecoveryRefusedError',
@@ -2354,7 +2441,7 @@ describe('CAN-6478 lifecycle retention', () => {
     'moved',
     'changed-ref',
   ] as const)(
-    'explicit project deletion cancels only proven effect-free resolution: %s',
+    'confirmed project deletion cancels only proven effect-free resolution: %s',
     async (shape) => {
       const cancelled = await cancelledResolutionForOne('project-delete', true);
       const { archiveRecoveryStore } = await import('../archive-recovery-refs');
@@ -2377,7 +2464,16 @@ describe('CAN-6478 lifecycle retention', () => {
           'refs/app/archived-containers/a/one/__single_repo__',
         ]);
       }
-      const deletion = deleteWorkspace({ workspaceId: 'a', source: 'portal' });
+      const { describePendingArchiveRecoveries } =
+        await import('../archive-recovery-project-deletion');
+      const discardPendingRecovery = await describePendingArchiveRecoveries(
+        'a',
+      ).catch(() => undefined);
+      const deletion = deleteWorkspace({
+        workspaceId: 'a',
+        source: 'portal',
+        discardPendingRecovery,
+      });
       if (shape === 'moved' || shape === 'changed-ref') {
         await expect(deletion).rejects.toMatchObject({
           name: 'ArchiveRecoveryRefusedError',
@@ -2397,6 +2493,213 @@ describe('CAN-6478 lifecycle retention', () => {
     },
   );
 
+  it.each(['effect-free', 'unresumable'] as const)(
+    'refuses %s pending recovery whose same-slot row discard remains fenced',
+    async (shape) => {
+      const original = await cancelledResolutionForOne(undefined, true);
+      const { archiveRecoveryStore } = await import('../archive-recovery-refs');
+      const { describeProjectDeletionDiscard } =
+        await import('../project-deletion-discard');
+      const { describeWorktreeDiscard } = await import('../worktree-discard');
+      const store = archiveRecoveryStore();
+      let receipt = await store.restartCancelled(original);
+      if (shape === 'unresumable') {
+        receipt = await store.publishRetention(receipt);
+        receipt = await store.resetStaging(receipt);
+      }
+      execFileSync('git', [
+        '-C',
+        repo,
+        'worktree',
+        'remove',
+        '--force',
+        join(root, 'a/worktrees/one'),
+      ]);
+      for (const copy of shape === 'unresumable' ? receipt.copies : []) {
+        const record = journalSchema.parse(JSON.parse(copy.contents));
+        record.steps.push({ phase: 'checkout-removal', state: 'done' });
+        writeFileSync(
+          join(getW5DestructiveLifecycleDir(), copy.name),
+          JSON.stringify(record),
+        );
+      }
+      expect((await describeWorktreeDiscard('a', 'one')).status).toBe(
+        'discardable',
+      );
+      await expect(
+        deleteWorkspace({ workspaceId: 'a', source: 'portal' }),
+      ).rejects.toThrow(receipt.operationId);
+      await expect(
+        describeProjectDeletionDiscard('a', { retainedArchives: true }),
+      ).resolves.toMatchObject({ status: 'refused', items: [] });
+      expect(await store.read('a', receipt.operationId)).toEqual(receipt);
+      expect(existsSync(store.payloadPath(receipt))).toBe(
+        shape === 'unresumable',
+      );
+      expect(existsSync(store.stagingPath(receipt))).toBe(
+        shape === 'effect-free',
+      );
+      expect(indexIds()).toContain('a');
+    },
+  );
+
+  it('requires a fresh explicit confirmation before cancelling an effect-free resolution', async () => {
+    const original = await cancelledResolutionForOne('project-delete', true);
+    const { archiveRecoveryStore } = await import('../archive-recovery-refs');
+    const store = archiveRecoveryStore();
+    const receipt = await store.restartCancelled(original);
+    const { describeProjectDeletionDiscard } =
+      await import('../project-deletion-discard');
+    const described = await describeProjectDeletionDiscard('a');
+    expect(described.pendingRecovery).toHaveLength(1);
+    await expect(
+      deleteWorkspace({ workspaceId: 'a', source: 'portal' }),
+    ).rejects.toThrow(receipt.operationId);
+    expect(await store.read('a', receipt.operationId)).toEqual(receipt);
+    await store.publishRetention(receipt);
+    await expect(
+      deleteWorkspace({
+        workspaceId: 'a',
+        source: 'portal',
+        discardPendingRecovery: described.pendingRecovery,
+      }),
+    ).rejects.toThrow();
+    expect(
+      (await store.read('a', receipt.operationId))?.cancelled,
+    ).toBeUndefined();
+    const fresh = await describeProjectDeletionDiscard('a');
+    await expect(
+      deleteWorkspace({
+        workspaceId: 'a',
+        source: 'portal',
+        discardPendingRecovery: fresh.pendingRecovery,
+      }),
+    ).resolves.toMatchObject({ removed: 'code' });
+  });
+
+  it.each(['before', 'after'] as const)(
+    'confirmed unresumable hold is discarded only after canonical removal: %s',
+    async (timing) => {
+      const original = await cancelledResolutionForOne('project-delete', true);
+      const { archiveRecoveryStore } = await import('../archive-recovery-refs');
+      const store = archiveRecoveryStore();
+      let receipt = await store.restartCancelled(original);
+      receipt = await store.publishRetention(receipt);
+      receipt = await store.resetStaging(receipt);
+      // Lost source copies make withdrawal impossible, but the exact owned payload remains.
+      for (const copy of receipt.copies)
+        rmSync(join(getW5DestructiveLifecycleDir(), copy.name));
+      const { describePendingArchiveRecoveries } =
+        await import('../archive-recovery-project-deletion');
+      const discardPendingRecovery =
+        await describePendingArchiveRecoveries('a');
+      expect(discardPendingRecovery).toHaveLength(1);
+      await expect(
+        deleteWorkspace({ workspaceId: 'a', source: 'portal' }),
+      ).rejects.toThrow(receipt.operationId);
+      expect(existsSync(store.payloadPath(receipt))).toBe(true);
+      const originalRemove = decisions.getMockImplementation();
+      if (!originalRemove) throw new Error('Missing removal port');
+      decisions.mockImplementation(async (...args) => {
+        expect(existsSync(store.payloadPath(receipt))).toBe(true);
+        if (timing === 'before') throw new Error('before canonical removal');
+        return originalRemove(...args);
+      });
+      try {
+        const deletion = deleteWorkspace({
+          workspaceId: 'a',
+          source: 'portal',
+          discardPendingRecovery,
+        });
+        if (timing === 'before')
+          await expect(deletion).rejects.toThrow('before canonical removal');
+        else await expect(deletion).resolves.toMatchObject({ removed: 'code' });
+      } finally {
+        decisions.mockImplementation(originalRemove);
+      }
+      expect(indexIds().includes('a')).toBe(timing === 'before');
+      expect(existsSync(store.payloadPath(receipt))).toBe(timing === 'before');
+      expect((await store.read('a', receipt.operationId))?.retention).toBe(
+        timing === 'before' ? undefined : 'deleted',
+      );
+      if (timing === 'before') {
+        const { describeProjectDeletionDiscard } =
+          await import('../project-deletion-discard');
+        const retry = await describeProjectDeletionDiscard('a', {
+          retainedArchives: true,
+        });
+        expect(retry.status).toBe('discardable');
+        expect(retry.pendingRecovery).toHaveLength(1);
+        expect(retry.interruptedDeletion?.operationId).toEqual(
+          expect.any(String),
+        );
+        await expect(
+          deleteWorkspace({
+            workspaceId: 'a',
+            source: 'portal',
+            discardPendingRecovery: retry.pendingRecovery,
+            supersedeInterruptedDeletion:
+              retry.interruptedDeletion?.operationId,
+          }),
+        ).resolves.toMatchObject({ removed: 'code' });
+        expect(indexIds()).not.toContain('a');
+        expect(existsSync(store.payloadPath(receipt))).toBe(false);
+      }
+    },
+  );
+
+  it('replays confirmed pending-recovery cleanup after losing its tombstone acknowledgement', async () => {
+    const original = await cancelledResolutionForOne('project-delete', true);
+    const { archiveRecoveryStore } = await import('../archive-recovery-refs');
+    const { ArchiveRecoveryStore } =
+      await import('@canopy/desktop-shared/node/archive-recovery-store');
+    const store = archiveRecoveryStore();
+    let receipt = await store.restartCancelled(original);
+    receipt = await store.publishRetention(receipt);
+    receipt = await store.resetStaging(receipt);
+    for (const copy of receipt.copies)
+      rmSync(join(getW5DestructiveLifecycleDir(), copy.name));
+    const { describePendingArchiveRecoveries } =
+      await import('../archive-recovery-project-deletion');
+    const discardPendingRecovery = await describePendingArchiveRecoveries('a');
+    const fault = jest.spyOn(ArchiveRecoveryStore.prototype, 'deletePayload');
+    const remove = fault.getMockImplementation();
+    if (!remove) throw new Error('Missing payload deletion');
+    fault.mockImplementationOnce(async function (
+      this: ArchiveRecoveryStore,
+      selected,
+    ) {
+      await remove.call(this, selected);
+      throw new Error('lost pending discard acknowledgement');
+    });
+    try {
+      await expect(
+        deleteWorkspace({
+          workspaceId: 'a',
+          source: 'portal',
+          discardPendingRecovery,
+        }),
+      ).resolves.toMatchObject({ removed: 'code' });
+    } finally {
+      fault.mockRestore();
+    }
+    expect(indexIds()).not.toContain('a');
+    expect((await store.read('a', receipt.operationId))?.retention).toBe(
+      'deleted',
+    );
+    const parent = await readDestructiveRecovery('a');
+    if (!parent) throw new Error('Missing pending-recovery parent');
+    const { settleWorkspaceArchiveRecoveryCleanup } =
+      await import('../workspace-deletion');
+    await settleWorkspaceArchiveRecoveryCleanup(parent);
+    await settleWorkspaceArchiveRecoveryCleanup(parent);
+    expect(
+      (await readDestructiveRecovery('a'))?.archiveRecoveryCleanup?.every(
+        (member) => member.done,
+      ),
+    ).toBe(true);
+  });
+
   it('project deletion stops on lost cancellation acknowledgement and retries the durable cancellation', async () => {
     const cancelled = await cancelledResolutionForOne('project-delete', true);
     const { archiveRecoveryStore } = await import('../archive-recovery-refs');
@@ -2414,10 +2717,14 @@ describe('CAN-6478 lifecycle retention', () => {
       await cancel.call(this, selected);
       throw new Error('lost cancellation acknowledgement');
     });
+    const { describePendingArchiveRecoveries } =
+      await import('../archive-recovery-project-deletion');
+    const discardPendingRecovery = await describePendingArchiveRecoveries('a');
     try {
       const deletion = deleteWorkspace({
         workspaceId: 'a',
         source: 'portal',
+        discardPendingRecovery,
         idempotencyKey: 'q26-cancellation-retry',
       });
       await expect(deletion).rejects.toMatchObject({

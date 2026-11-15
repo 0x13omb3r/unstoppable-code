@@ -398,11 +398,26 @@ export function ChatContent({
     </StaleTranscriptCatchUpControls>
   );
 
+  // A queued edit that wasn't saved keeps the chat out of its empty state, so
+  // its card stays where the person can copy or restore it (CAN-6799).
+  const transcriptChatId = transcript?.id;
+  const hasUnsavedQueuedEdit = useChatStore(
+    (s) =>
+      recoveryScope !== null &&
+      transcriptChatId !== undefined &&
+      s.unsavedQueuedEdits.some(
+        (edit) =>
+          edit.worktreeKey ===
+            `${recoveryScope.projectId}/${recoveryScope.worktreeId}` &&
+          edit.chatId === transcriptChatId,
+      ),
+  );
   const showsTranscript = !(
     !transcript ||
     (transcript.transcriptLoaded !== false &&
       transcript.messages.length === 0 &&
       transcript.queuedMessages.length === 0 &&
+      !hasUnsavedQueuedEdit &&
       !scheduledMessages.some(
         (scheduled) => scheduled.scheduleKind === 'one_time',
       ))

@@ -1,5 +1,6 @@
 'use client';
 
+import { Surface } from '@canopy/ui-shared/components';
 import { useEffect, useMemo, useState, type FormEvent, type JSX } from 'react';
 import {
   Elements,
@@ -266,7 +267,14 @@ function PaymentForm({
         <PaymentElement onChange={handleElementChange} />
         <ErrorBanner errorSource="payment-form" error={error} className="" />
       </div>
-      <div className="flex shrink-0 items-center gap-2 border-t px-6 py-4">
+      <Surface
+        variant="section"
+        boundary="top"
+        gap="inline"
+        direction="row"
+        padding="form-footer"
+        className="shrink-0 items-center"
+      >
         <Button
           type="submit"
           variant="primary"
@@ -285,7 +293,7 @@ function PaymentForm({
         >
           Cancel
         </Button>
-      </div>
+      </Surface>
     </form>
   );
 }

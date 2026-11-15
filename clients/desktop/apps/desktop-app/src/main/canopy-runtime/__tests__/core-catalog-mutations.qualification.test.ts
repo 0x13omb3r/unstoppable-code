@@ -492,7 +492,11 @@ describe('desktop catalog mutations (CAN-4123)', () => {
     if (host.publishPluginPackage === undefined)
       throw new Error('no publishPluginPackage');
     const publish = host.publishPluginPackage.bind(host);
-    const pkg = { analysisId: 'analysis-p', selectedOptionalResourceIds: [] };
+    const pkg = {
+      analysisId: 'analysis-p',
+      selectedOptionalResourceIds: [],
+      keepInStep: false,
+    };
     const target = {
       entryId: 'plugin:local/tool',
       marketplaceId: 'local',

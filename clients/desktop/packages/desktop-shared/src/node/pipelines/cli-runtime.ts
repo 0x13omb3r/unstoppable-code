@@ -1054,21 +1054,17 @@ export function createCliExecutionRuntime(
       runOpenCodePrompt: async (
         request,
       ): Promise<OpenCodePromptRunnerResult> => {
-        if (!args.opencodeHost)
-          return {
-            status: 'failure',
-            transcript: '',
-            failure: {
-              version: 1,
-              provider: 'opencode',
-              agent_harness: 'opencode',
-              had_agent_activity: false,
-              message: 'OpenCode requires a connected desktop execution host.',
-            },
-          };
         const { runOpenCodePipelinePrompt } =
           await import('./opencode-prompt-runner');
-        return runOpenCodePipelinePrompt(request, args.opencodeHost);
+        const { createCliOpenCodeHost } = await import('../opencode/cli-host');
+        return runOpenCodePipelinePrompt(
+          request,
+          args.opencodeHost ??
+            createCliOpenCodeHost(request, {
+              getMcpBroker: getCliCodexRuntimeService,
+              getHttpProxy: getCliHttpMcpProxyService,
+            }),
+        );
       },
     },
     resolvePipelineTarget,
@@ -1078,23 +1074,28 @@ export function createCliExecutionRuntime(
     ): Promise<ModelHarnessInvocation> {
       const runtimeModel = model ?? '';
       const source = model ? getModelSource(model) : 'claude-managed';
-      if (model && (source === 'ai-gateway' || isGatewayOnlyModel(model))) {
-        throw new Error(
-          `Model "${model}" requires AI Credits routing, which is unsupported by the CLI runtime.`,
-        );
-      }
       const harness =
         options?.harness ??
         (model
           ? (getExecutionHarnessForModel(model) ??
             (isOllamaModel(model) ? DEFAULT_OLLAMA_HARNESS : undefined))
           : 'claude');
+      if (
+        model &&
+        (source === 'ai-gateway' || isGatewayOnlyModel(model)) &&
+        harness !== 'opencode'
+      ) {
+        throw new Error(
+          `Model "${model}" requires AI Credits routing, which is unsupported by the CLI runtime.`,
+        );
+      }
       if (source === 'opencode-managed' || harness === 'opencode') {
         return Promise.resolve({
-          source: 'opencode-managed',
+          source: source ?? 'opencode-managed',
           harness: 'opencode',
           runtimeModel,
-          aiCreditsRouted: false,
+          aiCreditsRouted:
+            source === 'ai-gateway' || isGatewayOnlyModel(runtimeModel),
         });
       }
       if (source === 'antigravity-managed' || harness === 'antigravity')

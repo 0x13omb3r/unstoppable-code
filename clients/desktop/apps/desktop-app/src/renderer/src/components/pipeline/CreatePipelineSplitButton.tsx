@@ -1,3 +1,7 @@
+import {
+  SplitActionDivider,
+  WorkflowCreateCluster,
+} from '@canopy/ui-shared/components';
 import { type JSX, useId, useRef, useState } from 'react';
 import { FloatingMenu } from '@canopy/ui-shared';
 import {
@@ -38,9 +42,8 @@ export function CreatePipelineSplitButton({
   const menuId = useId();
 
   return (
-    <div
+    <WorkflowCreateCluster
       ref={clusterRef}
-      className="inline-flex h-7 items-stretch rounded-full bg-accent fg-emphasis"
       data-testid={`${testIdPrefix}-split`}
     >
       <button
@@ -56,10 +59,7 @@ export function CreatePipelineSplitButton({
       >
         New workflow
       </button>
-      <span
-        aria-hidden="true"
-        className="h-4 w-px self-center bg-current opacity-30"
-      />
+      <SplitActionDivider />
       <button
         ref={chevronRef}
         type="button"
@@ -105,6 +105,6 @@ export function CreatePipelineSplitButton({
           />
         </ActionMenuRowStyle>
       </FloatingMenu>
-    </div>
+    </WorkflowCreateCluster>
   );
 }

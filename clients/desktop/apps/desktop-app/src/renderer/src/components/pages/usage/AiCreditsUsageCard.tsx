@@ -6,17 +6,15 @@ import {
 import { resolveAiCreditsFundingSource } from '@canopy/desktop-shared/lib/ai-credits-funding';
 import { resolveCreditsBillingPath } from '@canopy/protocol/billing';
 import {
-  Button,
   ProviderUsageAccountRow,
   UsageGroup,
-  UsageRow,
   UsageRowList,
 } from '@canopy/ui-shared';
+import { BalanceSurface } from '@canopy/ui-app/credits';
 import { CLIENT_FEATURE_FLAGS } from '@canopy/protocol/feature-flags';
 import { useObservabilityStore } from '@/stores/observabilityStore';
 import { useAccountProxyStatus } from '@/stores/accountProxyStore';
 import { useAiCreditsUsage } from '@/hooks/useAiCreditsUsage';
-import { useSubscriptionStatus } from '@/hooks/useSubscriptionStatus';
 import { useIsGuestCredential } from '@/hooks/useIsGuestCredential';
 import { openSettingsPathOrWeb } from '@/lib/navigation/settings-destinations';
 import { useWorkspaceContextStore } from '@/stores/workspaceContextStore';
@@ -27,8 +25,8 @@ import { UsageErrorNotice, resolveUsageErrorInfo } from './UsageErrorNotice';
 
 /**
  * Usage group for native Canopy AI Credits. Self-contained: it reads its own
- * data via {@link useAiCreditsUsage} (source-agnostic native balance) plus
- * {@link useSubscriptionStatus} (native plan), and self-hides (returns an empty
+ * data via {@link useAiCreditsUsage} (source-agnostic native balance), and
+ * self-hides (returns an empty
  * fragment) unless a native balance resolved for the connected cloud account —
  * except that a failed lookup for a connected account renders an inline
  * {@link UsageErrorNotice} instead of vanishing.
@@ -37,10 +35,6 @@ import { UsageErrorNotice, resolveUsageErrorInfo } from './UsageErrorNotice';
  */
 export function AiCreditsUsageCard(): JSX.Element {
   const { state, routingMode, refreshing, refresh } = useAiCreditsUsage();
-  const { status, freeAccess } = useSubscriptionStatus();
-  // Free app access has no plan to name, so the chip is omitted outright
-  // rather than relying on the hook clearing `status` (CAN-3926).
-  const planStatus = freeAccess ? null : status;
   const usage = useObservabilityStore((s) => s.usage);
   const accountProxy = useAccountProxyStatus();
   const isGuest = useIsGuestCredential();
@@ -138,35 +132,18 @@ export function AiCreditsUsageCard(): JSX.Element {
 
   return (
     <UsageGroup
-      // The heading names the brand and its plan, as a provider group names
-      // the provider and its plan.
+      // The heading names the brand. There are no plans, so it names none.
       title={brandText.appName}
-      // `status` is non-null exactly when entitlements have resolved, and a
-      // genuinely free account resolves to the label `Free`, so the plan only
-      // shows once it is actually known. Under free app access `planStatus`
-      // is null, so no plan is named. Not gated on the billing feature flag:
-      // `status` derives only from resolved entitlements.
-      plan={planStatus?.label}
-      planTestId="usage-card-ai-credits-plan-chip"
       testId="usage-card-ai-credits"
     >
       <UsageRowList>
         {balanceDetail ? (
-          <UsageRow
-            title="AI Credits"
+          <BalanceSurface
+            density="row"
+            frame="list"
             detail={balanceDetail}
-            trailing={
-              openManageCredits ? (
-                <Button
-                  variant="secondary"
-                  size="compact"
-                  onClick={openManageCredits}
-                  data-testid="usage-card-ai-credits-manage"
-                >
-                  Manage
-                </Button>
-              ) : null
-            }
+            onManage={openManageCredits}
+            manageTestId="usage-card-ai-credits-manage"
           />
         ) : null}
         {accountEmail ? (

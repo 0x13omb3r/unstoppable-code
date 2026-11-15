@@ -79,6 +79,7 @@ import {
   SidebarSelectionToolbar,
   DropdownMenuItem,
   DropdownMenuItemIcon,
+  DropdownMenuLinkItem,
   DropdownMenuDivider,
   SearchField,
   SIDEBAR_LIST_ICON_CLASSNAME,
@@ -1783,25 +1784,24 @@ function MoreMenuAnchorRow({
   href,
   icon,
   label,
-  className,
+  touch,
   onClick,
 }: {
   readonly testId: string;
   readonly href: string;
   readonly icon: ReactNode;
   readonly label: string;
-  readonly className: string;
+  readonly touch: boolean;
   readonly onClick: (event: ReactMouseEvent<HTMLAnchorElement>) => void;
 }): JSX.Element {
   const rowStyle = useDropdownMenuRowStyle();
-  const textClassName = rowStyle.textStyle === 'small' ? 'text-xs' : 'text-s';
   return (
-    <a
+    <DropdownMenuLinkItem
       role="menuitem"
       data-testid={testId}
       href={href}
       onClick={onClick}
-      className={`canopy-dropdown-menu-item outline-none flex h-8 w-full items-center gap-2 rounded-md px-2 text-left ${textClassName} font-normal fg-primary transition-colors hover:bg-subtle focus-visible:bg-subtle ${className}`}
+      touchTarget={touch}
     >
       <DropdownMenuItemIcon
         tone={rowStyle.iconTone === 'tertiary' ? 'tertiary' : undefined}
@@ -1809,7 +1809,7 @@ function MoreMenuAnchorRow({
         {icon}
       </DropdownMenuItemIcon>
       {label}
-    </a>
+    </DropdownMenuLinkItem>
   );
 }
 
@@ -1832,7 +1832,6 @@ function MoreMenu({
   // The 44px floor for touch on the anchor variant; the button variant takes
   // it through `DropdownMenuItem`'s `touchTarget`. `h-8` stays: it does not
   // override a CSS minimum height, so the row grows with its content centered.
-  const touchItemClassName = touch ? 'min-h-11' : '';
   return (
     <SidebarMoreControl
       open={open}
@@ -1864,7 +1863,7 @@ function MoreMenu({
               href={href}
               icon={item.icon}
               label={item.label}
-              className={touchItemClassName}
+              touch={touch}
               onClick={(event): void => {
                 action.onSelect?.();
                 routeAnchorClick(event, href, onNavigateHref);

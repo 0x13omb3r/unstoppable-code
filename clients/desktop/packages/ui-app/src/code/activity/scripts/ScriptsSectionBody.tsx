@@ -1,5 +1,6 @@
 'use client';
 
+import { CompletedRunSurface } from '@canopy/ui-shared/components';
 import { useEffect, useState, type JSX, type ReactNode } from 'react';
 import {
   Stack,
@@ -945,13 +946,10 @@ export function ScriptsSectionBody({
                 ? 'fg-secondary'
                 : 'fg-success-strong';
             return (
-              <div
+              <CompletedRunSurface
                 key={`completed-${run.label}-${run.startedAt}`}
-                className={`flex flex-col gap-2 rounded-lg border p-2.5 text-xs ${
-                  failed
-                    ? 'border-fg-destructive-strong/20 bg-fg-destructive-strong/[0.06]'
-                    : 'bg-fg-primary/[0.015]'
-                }`}
+                tone={failed ? 'failed' : 'neutral'}
+                stack
               >
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2">
@@ -989,7 +987,7 @@ export function ScriptsSectionBody({
                     </Button>
                   </div>
                 )}
-              </div>
+              </CompletedRunSurface>
             );
           })}
         </Disclosure>

@@ -1,5 +1,6 @@
 'use client';
 
+import { ComposerPanel } from '@canopy/ui-shared/components';
 import { useSuggestionsClaimApi } from '../suggestions/SuggestionsProvider';
 
 import {
@@ -319,13 +320,9 @@ function ChatComposerContent({
       : undefined;
 
   return (
-    <div
+    <ComposerPanel
       ref={hintRootRef}
-      className={
-        chrome === 'shell'
-          ? 'p-2 flex flex-col gap-1'
-          : 'border-t p-2 flex flex-col gap-1'
-      }
+      shell={chrome === 'shell'}
       data-testid="chat-composer"
     >
       {/* The composer's tip, as every host draws it. This plain box has no
@@ -387,6 +384,6 @@ function ChatComposerContent({
           }
         />
       </div>
-    </div>
+    </ComposerPanel>
   );
 }

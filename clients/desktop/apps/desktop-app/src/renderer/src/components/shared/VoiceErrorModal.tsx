@@ -1,3 +1,4 @@
+import { Surface } from '@canopy/ui-shared/components';
 import type { JSX } from 'react';
 import { DialogModal } from './DialogModal';
 import { Button } from './Button';
@@ -26,12 +27,9 @@ export function VoiceErrorModal({
         <ol className="flex flex-col gap-2 text-s fg-primary">
           {guidance.steps.map((step, index) => (
             <li key={index} className="flex gap-3">
-              <span
-                className="mt-px flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-secondary text-xs font-semibold fg-primary"
-                aria-hidden
-              >
+              <Surface as="span" variant="guidance-step" aria-hidden>
                 {index + 1}
-              </span>
+              </Surface>
               <span className="leading-5">{step}</span>
             </li>
           ))}

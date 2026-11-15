@@ -192,6 +192,9 @@ export function createCoreArchiveAdapter(
     queries: {
       'core.archive.container.list': async (params, context) => {
         ownAuthority(context);
+        // Revision 2 is the web core's (CAN-6792); desktop names every task.
+        if (params.revision !== undefined)
+          throw notServed('revision', 'This desktop lists revision 1 only.');
         const workspaceId = validWorkspaceId(params.workspaceId);
         const [containers, workspaceName] = await Promise.all([
           host.list(workspaceId),

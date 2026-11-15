@@ -13,6 +13,7 @@ import type {
   TerminalRunningChangedEvent,
 } from '@canopy/protocol/terminal';
 import type { ManagedDelegationLifetimeChangedEvent } from '@canopy/protocol/delegation';
+import type { ClaudeModSurfacePushEvent } from '@canopy/protocol/extension-ui';
 
 /**
  * Canonical streaming contract for the shared UI.
@@ -121,6 +122,12 @@ export interface ScriptActionsChangedEvent extends DomainEventBase {
 }
 
 /**
+ * A Claude Mod's toast, status line or log line for one chat (site group M1),
+ * never persisted. Hosts send it only while `capabilities.claudeModSurface`.
+ */
+export type ClaudeModSurfaceEvent = ClaudeModSurfacePushEvent & DomainEventBase;
+
+/**
  * The paired computer's Orchestrator questions changed: one arrived, was
  * answered elsewhere or was withdrawn (CAN-5985). Re-query `appAdvisor.chats`.
  * Subscribing also tells the computer this client shows Orchestrator
@@ -159,6 +166,7 @@ export interface DomainEventMap {
   'org-projects.setup-progress': OrgProjectSetupProgressEvent;
   'delegation.lifetimeChanged': DelegationLifetimeChangedEvent;
   'scriptActions.changed': ScriptActionsChangedEvent;
+  'claudeMods.surface': ClaudeModSurfaceEvent;
   'appAdvisor.changed': AppAdvisorChangedEvent;
   'worktree.activityChanged': WorktreeActivityChangedEvent;
 }

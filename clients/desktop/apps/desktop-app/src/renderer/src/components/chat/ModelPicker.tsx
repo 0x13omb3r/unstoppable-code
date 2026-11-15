@@ -86,8 +86,7 @@ import {
   MODEL_PICKER_AUTO_REASONS,
   managedOpenCodeAutoUnavailableReason,
   MODEL_PICKER_ROW_CUE_COPY,
-  modelLibraryUnlockHint,
-  modelLibraryUnlockLabel,
+  modelLibraryRowLock,
   pickerChromeMenuHeightPx,
   FloatingMenu,
   DropdownMenuItem,
@@ -101,6 +100,7 @@ import {
   type ModelPickerMenuProps,
   type ModelPickerSelectionContext,
   type ModelPickerSelectionDisposition,
+  type ModelRowLock,
   CompactToggleIndicator,
   preferredGatewayTabId,
 } from '@canopy/ui-shared';
@@ -382,28 +382,23 @@ type ModelPickerProps = RequiredModelPickerProps | OptionalModelPickerProps;
 const WORKSPACE_DEFAULT_LABEL = 'Project default';
 
 /**
- * CAN-4028 — the lock hint for a recovery that is a model-library lock, or
- * `undefined` for every other recovery.
+ * CAN-4028 — the shared row lock for a recovery that is a model-library lock,
+ * or `undefined` for every other recovery.
  *
  * Library locks are the one deliberate exception to "a recoverable row is
  * indistinguishable from an available one" (see `modelPickerRowGate`). The
  * other recoveries depend on account state the user may fix in passing; this
  * one is a standing property of the account, so the row says so up front and
- * names the remedy with the hint every platform shares.
+ * names the remedy every platform shares (`modelLibraryRowLock`).
  */
-function libraryLockCopy(
-  recovery: ModelRecovery,
-): { readonly hint: string; readonly label?: string } | undefined {
-  const access =
+function libraryRowLock(recovery: ModelRecovery): ModelRowLock | undefined {
+  return modelLibraryRowLock(
     recovery.kind === 'needs-purchase'
       ? 'needs_purchase'
       : recovery.kind === 'needs-account'
         ? (recovery.access ?? 'needs_sign_in')
-        : undefined;
-  const hint = modelLibraryUnlockHint(access);
-  if (hint === undefined) return undefined;
-  const label = modelLibraryUnlockLabel(access);
-  return label === undefined ? { hint } : { hint, label };
+        : undefined,
+  );
 }
 
 /** The library recovery a lock for `access` names. */
@@ -1537,7 +1532,7 @@ function ConcreteModelPicker(
       return MODEL_PICKER_ROW_CUE_COPY.needsBillingSourceHint(
         getProviderLabel(gate.recovery.provider),
       );
-    return libraryLockCopy(gate.recovery)?.hint;
+    return libraryRowLock(gate.recovery)?.hint;
   }, [currentModel, rowById]);
   // A native model can have two billing routes without changing its source
   // identity. Hosted picks use the canonical model, never a Cursor default.
@@ -1895,17 +1890,17 @@ function ConcreteModelPicker(
           ? { disabled: false, available: true }
           : { disabled: false };
       const { recovery } = gate;
-      const copy =
-        libraryLockCopy(recovery) ??
+      const lock =
+        libraryRowLock(recovery) ??
         (cue?.kind === 'library-lock'
-          ? libraryLockCopy(libraryRecoveryFor(cue.access))
+          ? libraryRowLock(libraryRecoveryFor(cue.access))
           : undefined);
-      if (copy !== undefined)
+      if (lock !== undefined)
         return {
           disabled: false,
           locked: {
-            ...copy,
-            onUnlock: recover(recovery),
+            lock,
+            onActivate: recover(recovery),
             // A lock the gate did not draw keeps the row where it was.
             ...(cue?.kind === 'library-lock' ? { keepsOrder: true } : {}),
           },
@@ -1914,27 +1909,33 @@ function ConcreteModelPicker(
         return {
           disabled: false,
           locked: {
-            hint: MODEL_PICKER_ROW_CUE_COPY.needsProviderSignInHint(
-              cue.providerLabel,
-            ),
-            label: MODEL_PICKER_ROW_CUE_COPY.needsProviderSignIn,
-            onUnlock: recover(recovery),
+            lock: {
+              hint: MODEL_PICKER_ROW_CUE_COPY.needsProviderSignInHint(
+                cue.providerLabel,
+              ),
+              label: MODEL_PICKER_ROW_CUE_COPY.needsProviderSignIn,
+            },
+            onActivate: recover(recovery),
             keepsOrder: true,
           },
         };
       // CAN-6444 — a built-in model this account can't bill (its harness is
       // signed out and AI Credits can't pay) looked runnable until it was
-      // picked. It now shows the lock, with no label repeated on every row,
-      // and sinks below the models that can run; a click still opens the same
-      // recovery.
+      // picked. It is now locked: the short `Sign in` cue in the trailing slot
+      // (no lock icon, per the picker cue rule), its full hint in the
+      // details, and it sinks below the models that can run; a click still
+      // opens the same recovery.
       if (recovery.kind === 'needs-billing-source')
         return {
           disabled: false,
           locked: {
-            hint: MODEL_PICKER_ROW_CUE_COPY.needsBillingSourceHint(
-              getProviderLabel(recovery.provider),
-            ),
-            onUnlock: recover(recovery),
+            lock: {
+              hint: MODEL_PICKER_ROW_CUE_COPY.needsBillingSourceHint(
+                getProviderLabel(recovery.provider),
+              ),
+              label: MODEL_PICKER_ROW_CUE_COPY.needsProviderSignIn,
+            },
+            onActivate: recover(recovery),
           },
         };
       return { disabled: false };
@@ -3268,11 +3269,14 @@ function ConcreteModelPicker(
                                   // not the remedy here, so it opens the purchase
                                   // recovery instead, as a billing-mode switch: the
                                   // unlock applies AI Credits billing to this chat,
-                                  // not a different model.
+                                  // not a different model. The same library lock
+                                  // the rows read decides it.
                                   if (
                                     nextBilling === 'ai-credits' &&
-                                    !isGuest &&
-                                    libraryAccess === 'needs_purchase' &&
+                                    resolveModelLibraryLock(
+                                      isGuest,
+                                      libraryAccess,
+                                    ) === 'needs_purchase' &&
                                     currentModel !== undefined &&
                                     !isGuestAllowedSelection(currentModel)
                                   ) {
@@ -3575,7 +3579,7 @@ function ConcreteModelPicker(
           id: listed.model,
           label: getModelDisplayName(listed.model),
           unavailableReason: state.unavailableReason,
-          description: 'locked' in state ? state.locked?.hint : undefined,
+          description: 'locked' in state ? state.locked?.lock.hint : undefined,
         };
       })}
       onAgentChange={(next): void => {

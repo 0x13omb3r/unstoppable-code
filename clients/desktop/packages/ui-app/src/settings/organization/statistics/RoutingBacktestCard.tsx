@@ -65,7 +65,10 @@ import {
   unavailableMessage,
   type RoutingBacktestCopy,
 } from './routing-backtest-display';
-import { Surface } from '@canopy/ui-shared/components';
+import {
+  AI_CREDITS_PURCHASE_LABEL,
+  Surface,
+} from '@canopy/ui-shared/components';
 
 // The charts pull in recharts; load them only once a result renders, so the
 // pages that mount this card (Public profile, Statistics) stay chart-free
@@ -364,7 +367,7 @@ function RoutingBacktestStart({
             className="text-s font-medium fg-accent hover:underline"
             data-testid="routing-backtest-add-credits"
           >
-            Add AI Credits
+            {AI_CREDITS_PURCHASE_LABEL}
           </SettingsLink>
         ) : (
           <Button
@@ -559,7 +562,7 @@ function RoutingBacktestConfirmDialog({
                   href={billingHref}
                   className="fg-accent hover:underline"
                 >
-                  Add AI Credits
+                  {AI_CREDITS_PURCHASE_LABEL}
                 </SettingsLink>
               </>
             ) : null}

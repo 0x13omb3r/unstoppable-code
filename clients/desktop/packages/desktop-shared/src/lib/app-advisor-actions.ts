@@ -9781,7 +9781,7 @@ export const APP_ADVISOR_ACTION_CATALOG: readonly AppAdvisorActionCatalogEntry[]
         ),
         field(
           'kind',
-          "'chat' | 'file-diff' | 'terminal' | 'activity-section' | 'browser' | 'file-explorer' | 'activity-card' | 'usage' | 'automations' | 'plan' | 'plan-diagram' | 'subagents' | 'ledger' | 'cost' | 'session-breakdown' | 'chat-visuals'",
+          "'chat' | 'file-diff' | 'terminal' | 'activity-section' | 'browser' | 'file-explorer' | 'activity-card' | 'usage' | 'automations' | 'plan' | 'plan-diagram' | 'subagents' | 'ledger' | 'cost' | 'session-breakdown' | 'chat-visuals' | 'mod-pane'",
           true,
           'Panel kind for the new tab.',
         ),
@@ -9801,7 +9801,13 @@ export const APP_ADVISOR_ACTION_CATALOG: readonly AppAdvisorActionCatalogEntry[]
           'chatId',
           'string',
           false,
-          "Required when kind is 'session-breakdown'; a chat of the selected worktree or Work Entry (an open or archived chat id).",
+          "Required when kind is 'session-breakdown' (a chat of the selected worktree or Work Entry: an open or archived chat id) or 'mod-pane' (the chat whose Claude Mod opened the pane).",
+        ),
+        field(
+          'paneId',
+          'string',
+          false,
+          "Required when kind is 'mod-pane'; the id the chat's Mod opened the pane with.",
         ),
         field(
           'fileTabId',
@@ -9869,6 +9875,12 @@ export const APP_ADVISOR_ACTION_CATALOG: readonly AppAdvisorActionCatalogEntry[]
           kind: 'session-breakdown',
           chatId: 'chat-123',
         },
+        {
+          type: 'panel.add_tab',
+          kind: 'mod-pane',
+          chatId: 'chat-123',
+          paneId: 'turn-stats',
+        },
       ],
       keywords: [
         'panel',
@@ -9904,6 +9916,7 @@ export const APP_ADVISOR_ACTION_CATALOG: readonly AppAdvisorActionCatalogEntry[]
         "The 'cost' panel, titled Cost, shows the observed cost of the selected worktree or Work Entry by chat and pipeline run; a worktree has at most one. The 'session-breakdown' panel shows one chat's cost, context and activity and requires chatId; an open breakdown for that chat is revealed where it is instead of being added again.",
         "Usage tabs require variant: 'all', 'active-chat', 'codex', 'claude', 'cursor', or 'copilot'. The 'cursor' and 'copilot' variants require their harness rollouts to be enabled.",
         "Automations tabs require variant: 'full', 'upcoming', 'overview', or 'completed'.",
+        "A 'mod-pane' tab shows one pane a Claude Mod has open in a chat of the selected worktree and requires chatId and paneId. A Mod's panes open as tabs on their own, and the current UI state's panels list each pane tab with its chatId and paneId; this reveals one, or, given a paneId the chat's Mod still has open, opens it again after the person closed its tab. It fails when the chat has no open pane with that id.",
         "Plan tabs require planId. A plan's panel that is already open is revealed where it is instead of being added again; the result reports its panelId.",
         'An open Subagents panel is revealed where it is instead of being added again; subagent chats open from their subagents, not as blank tabs.',
       ],

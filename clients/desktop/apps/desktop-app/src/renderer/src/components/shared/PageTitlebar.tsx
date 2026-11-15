@@ -1,3 +1,4 @@
+import { PageTitlebarSurface } from '@canopy/ui-shared/components';
 import { type JSX, type ReactNode, useEffect } from 'react';
 import { useSidebarStore } from '@/stores/sidebarStore';
 import { CollapsedTitlebarToggle } from '../sidebar/CollapsedTitlebarToggle';
@@ -10,22 +11,6 @@ import { CollapsedTitlebarToggle } from '../sidebar/CollapsedTitlebarToggle';
  * same 9px below it. `content` sizes to the page's own header row.
  */
 export type PageTitlebarHeight = 'bar' | 'breadcrumb' | 'content';
-
-const HEIGHT_CLASS_NAMES: Record<PageTitlebarHeight, string> = {
-  bar: 'h-10',
-  breadcrumb: 'h-11.5',
-  content: '',
-};
-
-/**
- * A pinned bar's chrome: the opaque fill that keeps cards from showing
- * through the drag region, and the worktree header's bottom hairline (one
- * physical pixel, `--border-hairline` in `--line-base`) drawn by a
- * pseudo-element rather than a border so it never changes the content box.
- * Its opacity carries the fade.
- */
-const PINNED_CLASS_NAME =
-  "sticky top-0 bg-base after:pointer-events-none after:absolute after:inset-x-0 after:bottom-0 after:h-[var(--border-hairline)] after:bg-[var(--line-base)] after:transition-opacity after:duration-150 after:content-['']";
 
 export interface PageTitlebarProps {
   /** The page's own top-bar content, placed to the right of the toggle. */
@@ -84,23 +69,18 @@ export function PageTitlebar({
     return unregisterTitlebarHost;
   }, [registerTitlebarHost, unregisterTitlebarHost]);
 
-  const classes = [
-    'flex shrink-0 items-stretch',
-    dragRegion ? 'electron-drag' : '',
-    HEIGHT_CLASS_NAMES[height],
-    divider ? 'border-b' : '',
-    pinned
-      ? `${PINNED_CLASS_NAME} ${scrolled ? 'after:opacity-100' : 'after:opacity-0'}`
-      : '',
-    className ?? '',
-  ]
-    .filter(Boolean)
-    .join(' ');
-
   return (
-    <div className={classes} data-testid={testId}>
+    <PageTitlebarSurface
+      pinned={pinned}
+      scrolled={scrolled}
+      divider={divider}
+      height={height}
+      dragRegion={dragRegion}
+      className={className}
+      testId={testId}
+    >
       <CollapsedTitlebarToggle />
       <div className="flex min-w-0 flex-1 flex-col">{children}</div>
-    </div>
+    </PageTitlebarSurface>
   );
 }

@@ -43,6 +43,9 @@ import {
   extractIpcErrorName,
 } from '@canopy/protocol/app-errors/ipc-rejection';
 import {
+  WorktreeRecoveryListResultSchema,
+  WorktreeRecoveryResolveResultSchema,
+  WorktreeRecoveryFinishResultSchema,
   CORE_SHARED_MULTI_REPO_INSTRUCTIONS,
   CORE_SHARED_MULTI_REPO_QUERIES,
 } from '@canopy/protocol/canopy-core';
@@ -50,6 +53,10 @@ import {
   COWORK_HOME_WORKTREE_ID,
   STANDALONE_CHAT_PROJECT_ID,
 } from '@canopy/protocol/chat-targets';
+import type {
+  ClaudeModSurfacePushEvent,
+  ClaudeModSurfaceUpdate,
+} from '@canopy/protocol/extension-ui';
 import type { FeedbackReportClient } from '@canopy/protocol/feedback-report';
 import type {
   PreparedSharedMultiRepo,
@@ -180,6 +187,40 @@ type SubscribeHandlers = {
     filter?: SubscriptionFilter,
   ) => Unsubscribe;
 };
+
+const SURFACE_UPDATE_KINDS: Readonly<
+  Record<ClaudeModSurfaceUpdate['kind'], true>
+> = {
+  toast: true,
+  status: true,
+  log: true,
+  panes: true,
+  tree: true,
+  scroll: true,
+  focus: true,
+  ended: true,
+  'composer-request': true,
+  'composer-withdraw': true,
+  'composer-activity': true,
+};
+
+/**
+ * A Mod surface update from this desktop's main process, which validated its
+ * trees before sending (`claude-mod-surface-bridge`). Not the Portal relay's
+ * parser: that one reads a CLI tree, so it would strip an already validated
+ * tree's layout and controls, and it drops the composer requests the relay
+ * never carries.
+ */
+const isClaudeModSurfacePushEvent = reply<ClaudeModSurfacePushEvent>(
+  (value) =>
+    isRecord(value) &&
+    typeof value.projectId === 'string' &&
+    typeof value.worktreeId === 'string' &&
+    typeof value.chatId === 'string' &&
+    isRecord(value.push) &&
+    typeof value.push.kind === 'string' &&
+    Object.prototype.hasOwnProperty.call(SURFACE_UPDATE_KINDS, value.push.kind),
+);
 
 const isProjectsFile = reply<WireProjectsFile>(
   (value) =>
@@ -1399,8 +1440,18 @@ class PortableIpcCanopyClient implements CanopyClient {
         await this.invalidateSessionSnapshot();
       },
       'workspace.delete': async (args) => {
+        if (
+          args.discardPendingRecovery !== undefined &&
+          this.capabilities.worktreeRecoveryResolution !== true
+        )
+          throw new Error(
+            "This desktop can't discard pending archive recovery.",
+          );
         const item = await this.loadWorkspace(args.workspaceId);
         // CAN-5337: the interrupted deletion the person confirmed superseding.
+        const pendingRecovery = args.discardPendingRecovery
+          ? { discardPendingRecovery: args.discardPendingRecovery }
+          : {};
         const superseded =
           args.supersedeInterruptedDeletion !== undefined
             ? {
@@ -1411,12 +1462,14 @@ class PortableIpcCanopyClient implements CanopyClient {
           await channels.invokeVoid(C.projectDelete, {
             projectId: args.workspaceId,
             ...superseded,
+            ...pendingRecovery,
           });
         } else {
           // Multi-repo and cowork workspaces share the workspace deletion path.
           await channels.invokeVoid(C.workspaceDelete, {
             workspaceId: args.workspaceId,
             ...superseded,
+            ...pendingRecovery,
           });
         }
         await this.invalidateSessionSnapshot();
@@ -1432,6 +1485,51 @@ class PortableIpcCanopyClient implements CanopyClient {
           anyReply<CommandMap['lifecycleJournal.quarantine']['result']>(),
           args,
         ),
+      'worktree.recovery.list': async (args) => {
+        if (this.capabilities.worktreeRecoveryResolution !== true)
+          throw new UnsupportedOperationError(
+            'worktree.recovery.list',
+            'Archive recovery is unavailable on this target.',
+          );
+        return channels.invoke(
+          C.worktreeRecoveryList,
+          reply<CommandMap['worktree.recovery.list']['result']>(
+            (value) =>
+              WorktreeRecoveryListResultSchema.safeParse(value).success,
+          ),
+          args,
+        );
+      },
+      'worktree.recovery.resolve': async (args) => {
+        if (this.capabilities.worktreeRecoveryResolution !== true)
+          throw new UnsupportedOperationError(
+            'worktree.recovery.resolve',
+            'Archive recovery is unavailable on this target.',
+          );
+        return channels.invoke(
+          C.worktreeRecoveryResolve,
+          reply<CommandMap['worktree.recovery.resolve']['result']>(
+            (value) =>
+              WorktreeRecoveryResolveResultSchema.safeParse(value).success,
+          ),
+          args,
+        );
+      },
+      'worktree.recovery.finish': async (args) => {
+        if (this.capabilities.worktreeRecoveryResolution !== true)
+          throw new UnsupportedOperationError(
+            'worktree.recovery.finish',
+            'Archive recovery is unavailable on this target.',
+          );
+        return channels.invoke(
+          C.worktreeRecoveryFinish,
+          reply<CommandMap['worktree.recovery.finish']['result']>(
+            (value) =>
+              WorktreeRecoveryFinishResultSchema.safeParse(value).success,
+          ),
+          args,
+        );
+      },
       'worktree.discard.describe': (args) =>
         channels.invoke(
           C.worktreeDiscardDescribe,
@@ -1985,6 +2083,12 @@ class PortableIpcCanopyClient implements CanopyClient {
           anyReply<CommandMap['onboardingTips.update']['result']>(),
           update,
         ),
+      'claudeMods.surfaceCommand': (args) =>
+        channels.invoke(
+          C.claudeModSurfaceCommand,
+          anyReply<CommandMap['claudeMods.surfaceCommand']['result']>(),
+          args,
+        ),
       'claudeMods.update': (args) =>
         channels.invoke(
           C.claudeModsUpdate,
@@ -2010,6 +2114,23 @@ class PortableIpcCanopyClient implements CanopyClient {
     const channels = this.channels;
     return {
       ...terminal.subscriptions,
+      'claudeMods.surface': (handler, filter) =>
+        channels.listen(
+          C.claudeModSurfacePush,
+          isClaudeModSurfacePushEvent,
+          (event) => {
+            if (
+              (filter?.projectId !== undefined &&
+                filter.projectId !== event.projectId) ||
+              (filter?.worktreeId !== undefined &&
+                filter.worktreeId !== event.worktreeId) ||
+              (filter?.chatLocalId !== undefined &&
+                filter.chatLocalId !== event.chatId)
+            )
+              return;
+            handler({ ...event, occurredAt: this.now() });
+          },
+        ),
       'delegation.lifetimeChanged': (handler, filter) =>
         channels.listen(
           C.managedDelegationLifetimeChanged,

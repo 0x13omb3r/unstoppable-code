@@ -1,3 +1,4 @@
+import { SidebarRowBox } from '@canopy/ui-shared/components';
 import type {
   HTMLAttributes,
   JSX,
@@ -50,13 +51,6 @@ export function SidebarRowFrame({
   ...attributes
 }: SidebarRowFrameProps): JSX.Element {
   const interactive = onClick !== undefined;
-  const paddingClass =
-    density === 'touch'
-      ? 'min-h-11 px-3 py-2'
-      : density === 'compact'
-        ? 'min-h-7 px-2 py-1'
-        : 'min-h-8 px-2 py-1.5';
-
   const handleKeyDown = (event: KeyboardEvent<HTMLDivElement>): void => {
     onKeyDown?.(event);
     if (
@@ -79,14 +73,13 @@ export function SidebarRowFrame({
     if (event.key === 'Enter' || event.key === ' ') event.stopPropagation();
   };
 
-  const chromeClassName =
-    variant === 'chrome'
-      ? `group items-center gap-2 rounded-row ${paddingClass} ${selected ? 'bg-muted fg-primary' : 'hover:bg-subtle'}${interactive ? ' focus-ring cursor-pointer' : ''}`
-      : '';
-
   return (
-    <div
+    <SidebarRowBox
       ref={elementRef}
+      chrome={variant === 'chrome'}
+      selected={selected}
+      interactive={interactive}
+      density={density}
       {...attributes}
       role={role}
       tabIndex={tabIndex ?? (interactive ? 0 : undefined)}
@@ -98,7 +91,7 @@ export function SidebarRowFrame({
       // Lets a row inside find its own frame (the worktree row's focus card).
       data-sidebar-row-frame=""
       data-sidebar-variant={variant}
-      className={`flex w-full min-w-0${chromeClassName ? ` ${chromeClassName}` : ''}${className ? ` ${className}` : ''}`}
+      className={className}
     >
       {dragHandle && (
         <span
@@ -128,6 +121,6 @@ export function SidebarRowFrame({
           {trailing}
         </div>
       )}
-    </div>
+    </SidebarRowBox>
   );
 }

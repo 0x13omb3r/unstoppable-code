@@ -21,6 +21,15 @@ export const ProjectDeletionDiscardDescriptionSchema: z.ZodType<ProjectDeletionD
         }),
       )
       .max(500),
+    pendingRecovery: z
+      .array(
+        z.object({
+          operationId: z.string().uuid(),
+          confirmation: z.string().regex(/^[a-f0-9]{64}$/),
+        }),
+      )
+      .max(500)
+      .optional(),
     interruptedDeletion: z
       .object({ operationId: z.string().uuid() })
       .optional(),

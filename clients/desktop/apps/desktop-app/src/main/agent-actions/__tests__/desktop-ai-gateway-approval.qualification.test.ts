@@ -16,9 +16,6 @@ const mockWrite = jest.fn(() => Promise.resolve({ ok: true }));
 jest.mock('../../feature-flags', (): unknown => ({
   getFeatureFlagService: (): object => ({ isEnabled: (): boolean => true }),
 }));
-jest.mock('../../services/hosted-settings-feature-flag', (): unknown => ({
-  isHostedSettingsEnabled: (): boolean => true,
-}));
 jest.mock('../../lib/canopy-cloud-account-store', (): unknown => ({
   readCanopyCloudAccountWithStatus: (): Promise<unknown> =>
     Promise.resolve({

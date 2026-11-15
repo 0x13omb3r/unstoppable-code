@@ -1,3 +1,4 @@
+import { Surface } from '@canopy/ui-shared/components';
 import { focusPipelineAssistantComposer } from '@/lib/pipelineAssistantEvents';
 import {
   type JSX,
@@ -496,9 +497,11 @@ export function PipelineEditorBody({
                   <ResizeRailIndicator active={isResizing} />
                 </div>
 
-                <div
-                  className="border-l overflow-auto shrink-0"
-                  style={{ width: detailPanelWidth }}
+                <Surface
+                  variant="section"
+                  boundary="left"
+                  className="overflow-auto shrink-0"
+                  paneWidth={detailPanelWidth}
                 >
                   {editor.selection.type === 'step' && (
                     <StepDetailPanel
@@ -537,7 +540,7 @@ export function PipelineEditorBody({
                       readonly={editor.readonly}
                     />
                   )}
-                </div>
+                </Surface>
               </>
             )}
           </>
@@ -559,9 +562,11 @@ export function PipelineEditorBody({
             <ResizeRailIndicator active={isResizingSettings} />
           </div>
 
-          <div
-            className="border-l shrink-0"
-            style={{ width: settingsPanelWidth }}
+          <Surface
+            variant="section"
+            boundary="left"
+            className="shrink-0"
+            paneWidth={settingsPanelWidth}
           >
             <PipelineSettingsPanel
               pipeline={editor.pipeline}
@@ -579,7 +584,7 @@ export function PipelineEditorBody({
               returnToMarketplace={returnToMarketplace}
               onRelatedNavigate={session.relatedNavigate}
             />
-          </div>
+          </Surface>
         </>
       )}
     </div>

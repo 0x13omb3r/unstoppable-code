@@ -4,6 +4,7 @@ export {
   type MemoryPanelProps,
 } from './MemoryPanel';
 export type { MemoryPanelScope } from './memory-model';
+export { LearnFromChatsSetting } from './LearnFromChatsSetting';
 export type { MemorySyncPanelUiState } from './MemorySyncPanelParts';
 export {
   MemorySyncSettings,

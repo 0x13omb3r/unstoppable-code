@@ -13,6 +13,7 @@ import type {
   PipelineHostActions,
 } from '../executor/types';
 import {
+  deriveHostPathOutputs,
   fromPortableHostResult,
   hostPathsOf,
   hostRequestEnvelope,
@@ -74,13 +75,18 @@ interface WaitingCall {
   close(): void;
 }
 
-function extrasOf(values: WorkerPipelineHostStepValues | null): {
+interface SettlementExtras {
   readonly pathOutputs: Readonly<Record<string, string>>;
   readonly errorMessage?: string;
   readonly invalidChatSend?: PipelineChatSendRecord;
-} {
+}
+
+function extrasOf(
+  values: WorkerPipelineHostStepValues | null,
+  derivedPathOutputs: Readonly<Record<string, string>> = {},
+): SettlementExtras {
   return {
-    pathOutputs: values?.pathOutputs ?? {},
+    pathOutputs: values?.pathOutputs ?? derivedPathOutputs,
     ...(values?.errorMessage !== undefined && {
       errorMessage: values.errorMessage,
     }),
@@ -88,10 +94,38 @@ function extrasOf(values: WorkerPipelineHostStepValues | null): {
   };
 }
 
+/** Where a host step writes the files its owner returns, and which action it is. */
+interface HostStepFiles {
+  readonly action: string;
+  /** The step's host folder, or null when the host has no executions folder. */
+  readonly dir: string | null;
+}
+
+/**
+ * The settlement's extras. An owner that sent no host values can't name
+ * host paths (the cloud, CAN-6780): this host derives them from the files
+ * the result carries.
+ */
+async function extrasFor(
+  settlement: Extract<PipelineHostStepSettlement, { kind: 'settled' }>,
+  files: HostStepFiles,
+): Promise<SettlementExtras> {
+  if (settlement.values !== null) return extrasOf(settlement.values);
+  return extrasOf(
+    null,
+    await deriveHostPathOutputs(
+      files.action,
+      settlement.result.files,
+      files.dir,
+    ),
+  );
+}
+
 /** The finalizer's answer for a settlement that came at the deadline. */
-function finalizedResult(
+async function finalizedResult(
   settlement: PipelineHostStepSettlement,
-): PipelineHostActionResult | undefined {
+  files: HostStepFiles,
+): Promise<PipelineHostActionResult | undefined> {
   if (
     settlement.kind !== 'settled' ||
     settlement.values?.timeout !== 'finalized'
@@ -100,7 +134,7 @@ function finalizedResult(
   try {
     return fromPortableHostResult(
       settlement.result,
-      extrasOf(settlement.values),
+      await extrasFor(settlement, files),
     );
   } catch {
     return undefined;
@@ -133,7 +167,10 @@ export function createDaemonHostStepPort(
       if (waiting.has(requestId))
         return Promise.resolve(UNPORTABLE_HOST_RESULT);
       let resolveFinalized: (
-        result: PipelineHostActionResult | undefined,
+        result:
+          | PipelineHostActionResult
+          | undefined
+          | Promise<PipelineHostActionResult | undefined>,
       ) => void = () => undefined;
       const finalized = new Promise<PipelineHostActionResult | undefined>(
         (resolve) => {
@@ -141,6 +178,11 @@ export function createDaemonHostStepPort(
         },
       );
       controls?.registerTimeoutFinalizer(() => finalized);
+      // The step's host folder, where files its owner returns are kept.
+      const files: HostStepFiles = {
+        action: request.action,
+        dir: controls?.artifactsDir ?? null,
+      };
       return new Promise<PipelineHostActionResult>((resolve, reject) => {
         let done = false;
         let atDeadline = false;
@@ -157,7 +199,7 @@ export function createDaemonHostStepPort(
             if (done) return;
             if (atDeadline) {
               finish();
-              resolveFinalized(finalizedResult(settlement));
+              resolveFinalized(finalizedResult(settlement, files));
               return;
             }
             if (settlement.kind === 'unavailable') {
@@ -173,18 +215,24 @@ export function createDaemonHostStepPort(
             }
             finish();
             resolveFinalized(undefined);
-            try {
-              resolve(
-                fromPortableHostResult(
-                  settlement.result,
-                  extrasOf(settlement.values),
-                ),
-              );
-            } catch (error) {
-              reject(
-                error instanceof Error ? error : new Error(WITHDRAWN_MESSAGE),
-              );
-            }
+            void extrasFor(settlement, files).then(
+              (extras) => {
+                try {
+                  resolve(fromPortableHostResult(settlement.result, extras));
+                } catch (error) {
+                  reject(
+                    error instanceof Error
+                      ? error
+                      : new Error(WITHDRAWN_MESSAGE),
+                  );
+                }
+              },
+              (error: unknown) => {
+                reject(
+                  error instanceof Error ? error : new Error(WITHDRAWN_MESSAGE),
+                );
+              },
+            );
           },
           close(): void {
             if (done) return;
@@ -205,7 +253,7 @@ export function createDaemonHostStepPort(
             if (held) {
               const settled = held;
               finish();
-              resolveFinalized(finalizedResult(settled));
+              resolveFinalized(finalizedResult(settled, files));
               return;
             }
             atDeadline = true;

@@ -5,7 +5,10 @@ import { appendCloudSidebarRows } from '../append-cloud-sidebar-rows';
 import { batchActionAvailability } from '@canopy/ui-app/code/shell/sidebar-selection-menu-items';
 import { cloudSidebarRowCapabilities } from '../cloud-sidebar-capabilities';
 import { routeSidebarReorder } from '../route-sidebar-reorder';
-import { shouldPrefetchWorktreeChat } from '../cloud-sidebar-intent';
+import {
+  shouldPrefetchWorktreeChat,
+  sidebarRowPrefetchTarget,
+} from '../cloud-sidebar-intent';
 import { openCoworkWorkEntryFromSidebar } from '@/lib/openCoworkWorkEntryFromSidebar';
 import { useStandaloneChatStore } from '@/stores/standaloneChatStore';
 
@@ -162,6 +165,24 @@ describe('cloud projects in the shared desktop sidebar (CAN-6099)', () => {
     expect(
       shouldPrefetchWorktreeChat('local-a', 'wt-1', snapshotCloudRows),
     ).toBe(true);
+  });
+
+  it('hovering a web core task reads it ahead through the web core alone, never the local chat store (CAN-6774)', () => {
+    const snapshotCloudRows = new Set(['legacy-ws/legacy-wt']);
+    expect(
+      sidebarRowPrefetchTarget('web-core:p1', 'web-core:t1', snapshotCloudRows),
+    ).toEqual({
+      kind: 'cloudTask',
+      projectId: 'web-core:p1',
+      worktreeId: 'web-core:t1',
+    });
+    // A cloud row the web core does not name reads nothing ahead.
+    expect(
+      sidebarRowPrefetchTarget('legacy-ws', 'legacy-wt', snapshotCloudRows),
+    ).toBeNull();
+    expect(
+      sidebarRowPrefetchTarget('local-a', 'wt-1', snapshotCloudRows),
+    ).toEqual({ kind: 'worktree', projectId: 'local-a', worktreeId: 'wt-1' });
   });
 
   it('a project drop reaches only its own authority (CAN-6099)', () => {

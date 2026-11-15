@@ -29,6 +29,7 @@ import type {
 } from '@canopy/execution-engine/types/observability';
 import { isPostHogSessionState } from '../posthog-session';
 import { sanitizePostHogEvent } from '../posthog-privacy';
+import { tagMainExceptionFrames } from './main-sourcemaps';
 import {
   getDesktopInstrumentationConfig,
   getPostHogInstrumentationReadiness,
@@ -205,9 +206,13 @@ function isPostHogErrorEvent(event: string): boolean {
   );
 }
 
-/** Operations and `$set` also need the LaunchDarkly capture flag. */
+/** Product operations, memory counts and `$set` need the capture flag. */
 function isPostHogFlagGatedProductEvent(event: string): boolean {
-  return isDesktopPostHogOperationEvent(event) || event === '$set';
+  return (
+    isDesktopPostHogOperationEvent(event) ||
+    event === 'memory:local_turn_end' ||
+    event === '$set'
+  );
 }
 
 /** Each category's epoch, stamped at capture and checked at delivery. */
@@ -730,7 +735,12 @@ async function initializePostHogMainClient(
               },
             };
           }
-          return sanitizePostHogEvent(outgoing, { exceptionBuild: config });
+          return sanitizePostHogEvent(
+            outgoing?.event === '$exception'
+              ? tagMainExceptionFrames(outgoing)
+              : outgoing,
+            { exceptionBuild: config },
+          );
         } catch {
           return null;
         }

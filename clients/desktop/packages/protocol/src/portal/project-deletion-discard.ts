@@ -24,7 +24,18 @@ export interface ProjectDeletionInterruptedDeletion {
   operationId: string;
 }
 
+export interface ProjectDeletionPendingRecovery {
+  operationId: string;
+  confirmation: string;
+}
+
 export interface ProjectDeletionDiscardDescription {
+  /**
+   * A separately confirmed resolution fence. Deletion rechecks the entire
+   * project after adoption and may expose another refusal without discarding
+   * retained material before canonical removal.
+   */
+  pendingRecovery?: ProjectDeletionPendingRecovery[];
   version: 1;
   workspaceId: string;
   /**

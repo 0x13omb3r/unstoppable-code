@@ -253,6 +253,7 @@ export const PANEL_KIND_ROUTES = Object.freeze({
   cost: 'app://panel/cost',
   'session-breakdown': 'app://panel/session-breakdown',
   'new-tab': 'app://panel/new-tab',
+  'mod-pane': 'app://panel/mod-pane',
 } as const satisfies Record<PanelKind, RouteLiteral | null>);
 
 // ---------------------------------------------------------------------------

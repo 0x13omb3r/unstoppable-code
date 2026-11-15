@@ -6,6 +6,7 @@ import {
   CoworkFolderMissingError,
 } from '../lib/cowork-folder-guard';
 import { randomUUID } from 'node:crypto';
+import { logMainProcessWarn } from '../lib/main-process-logging';
 import { isDeepStrictEqual } from 'node:util';
 import {
   parseChatCreationAction,
@@ -150,6 +151,7 @@ export async function dispatchAgentChatCreation(
     if (error instanceof CoworkFolderMissingError)
       throw new AgentChatSendError(error.code, error.message, error);
     if (error instanceof AgentChatSendError) throw error;
+    logMainProcessWarn('[agent-create] Creation failed unexpectedly:', error);
     // Entry, chat and send are separate durable commits. Do not suggest retrying
     // a send whose acknowledgement may have been lost.
     throw new AgentChatSendError(
@@ -251,7 +253,8 @@ async function create(
     );
   // A seed's model gets the same checks as an explicit one.
   const requestedModel = actionModel ?? newChatSeed?.model;
-  const taskId =
+  // A code task's ID is its new worktree's, known once that is created.
+  let taskId =
     'taskId' in action
       ? action.taskId
       : trusted.kind === 'pipeline' && context.plannedTaskId !== undefined
@@ -285,13 +288,44 @@ async function create(
   let selection: CreationModelSelection | undefined;
   let projectId: string;
   let codeProject = false;
+  let codeTask = false;
+  let workspaceKind: 'single-repo' | 'multi-repo' = 'single-repo';
+  const createTaskAction =
+    action.type === 'projects.create_task' ? action : undefined;
+  const projectCreation =
+    action.type === 'projects.create_task' ||
+    action.type === 'projects.create_task_chat'
+      ? action
+      : undefined;
+  const thinkingLevel = projectCreation?.thinkingLevel;
+  // A created task's title names the task; a task chat's names the chat.
+  const chatTitle =
+    action.type === 'projects.create_task_chat'
+      ? action.title?.trim() || undefined
+      : undefined;
   if (projectAction) {
     const project = await requireAuthorizedProject(action.projectId, caller);
-    if (action.type === 'projects.create_task' && project.type !== 'cowork')
+    codeTask = createTaskAction !== undefined && project.type !== 'cowork';
+    // Only a root project agent creates a code task: a pipeline has its own
+    // create-worktree step, and App Advisor's legacy standalone-chat creation
+    // is Cowork-only.
+    if (codeTask && trusted.kind !== 'project_root')
       throw new AgentChatSendError(
         'unsupported_action',
-        'Code tasks must be created through the existing worktree-creation workflow.',
+        'Code tasks are created with projects.create_task from a project chat.',
       );
+    if (
+      createTaskAction &&
+      !codeTask &&
+      (createTaskAction.branchName ??
+        createTaskAction.baseBranch ??
+        createTaskAction.baseTaskId) !== undefined
+    )
+      throw new AgentChatSendError(
+        'validation_failed',
+        'branchName, baseBranch and baseTaskId apply only to code projects.',
+      );
+    if (project.config?.type === 'multi-repo') workspaceKind = 'multi-repo';
     if (project.readiness !== 'ready')
       throw new AgentChatSendError(
         'target_not_ready',
@@ -299,10 +333,14 @@ async function create(
       );
     projectId = project.projectId;
     codeProject = project.type !== 'cowork';
+    const knownTaskId =
+      action.type === 'projects.create_task_chat'
+        ? action.taskId
+        : createTaskAction?.baseTaskId;
     if (
-      action.type === 'projects.create_task_chat' &&
+      knownTaskId !== undefined &&
       !(await listDiscoverableTaskIds(projectId, project.type)).includes(
-        action.taskId,
+        knownTaskId,
       )
     )
       throw new AgentChatSendError('not_found', 'The task is not available.');
@@ -389,6 +427,8 @@ async function create(
   if (
     !taskCreated &&
     !selection &&
+    thinkingLevel === undefined &&
+    chatTitle === undefined &&
     !replayedTab &&
     !newChatSeed &&
     context.newChat !== true &&
@@ -558,6 +598,62 @@ async function create(
               }
             : {}),
         };
+        if (chatTitle !== undefined) seed = { ...seed, title: chatTitle };
+        if (thinkingLevel !== undefined) {
+          // Checked against the model the new chat stores, before any write.
+          const { assertCreationThinkingLevel } =
+            await import('./creation-model');
+          await assertCreationThinkingLevel(
+            thinkingLevel,
+            requestedModel ?? seed.model,
+            { projectId, taskId },
+          );
+          seed = {
+            ...seed,
+            modelConfig: mergeAgentModelConfig(seed.modelConfig, {
+              thinkingLevel,
+            }),
+          };
+        }
+        // A code task's worktree must exist before its first message is
+        // admitted against the new worktree's root, as chat.create did.
+        if (codeTask && createTaskAction) {
+          if (action.initialMessage !== undefined)
+            await context.startPrecheck?.(projectId);
+          // CAN-5830 D9: an agent creates a worktree only while a person can
+          // see the calling chat's work, as chat.create's new worktree did.
+          const { agentChatInterfacePresent, AGENT_CHAT_INTERFACE_TEXTS } =
+            await import('../canopy-tools/agent-chat-interface');
+          if (
+            !source ||
+            !agentChatInterfacePresent({
+              projectId: source.projectId,
+              worktreeId: source.worktreeId,
+              chatId: source.chatId,
+              action: {
+                type: 'worktree.create',
+                workspaceId: projectId,
+                select: false,
+              },
+            })
+          )
+            throw new AgentChatSendError(
+              'target_not_ready',
+              AGENT_CHAT_INTERFACE_TEXTS.needsWindow,
+            );
+          const { createAgentTaskWorktree } =
+            await import('./creation-worktree');
+          taskId = await createAgentTaskWorktree({
+            projectId,
+            workspaceKind,
+            branchName: createTaskAction.branchName,
+            baseBranch: createTaskAction.baseBranch,
+            baseTaskId: createTaskAction.baseTaskId,
+          });
+          // A worktree has no title of its own; the founding chat carries it.
+          const title = createTaskAction.title?.trim();
+          if (title) seed = { ...seed, title };
+        }
         // CAN-5479: a granted approval mode resolves as the native send's
         // did, with no agent admission, which the native send never had.
         const granted =
@@ -574,6 +670,7 @@ async function create(
             ? await context.startAdmission?.(
                 { workspaceId: projectId, worktreeId: taskId },
                 action.initialMessage !== undefined,
+                codeTask,
               )
             : undefined;
         if (granted !== undefined) seed = { ...seed, approvalMode: granted };
@@ -592,7 +689,13 @@ async function create(
               'authorization_conflict',
               'An agent-originated run cannot start a chat with other approvals.',
             );
-          seed = { ...seed, approvalMode: started.approvalMode };
+          seed = {
+            ...seed,
+            approvalMode: started.approvalMode,
+            ...(started.selectedRepoId
+              ? { selectedRepoId: started.selectedRepoId }
+              : {}),
+          };
         }
       } else if (newChatSeed) {
         // D11: bot creation has no start admission to take approvals from;
@@ -611,7 +714,7 @@ async function create(
       }
       // Advisor resolves its own defaults at its first send, just like
       // advisor-chat.create_entry. Do not stamp project defaults on bots.
-      if (taskCreated) {
+      if (taskCreated && !codeTask) {
         const title = 'title' in action ? action.title?.trim() : undefined;
         const created = await createWorkEntry(projectId, {
           id: taskId,
@@ -622,7 +725,8 @@ async function create(
         if (allocatedEntry) allocatedEntryCreatedAt = created.entry.createdAt;
       }
       // A created task's founding tab shares its id; the pipeline host journal relies on this (host-create-entry.ts).
-      const tabId = taskCreated ? taskId : (fixedTabId ?? randomUUID());
+      const tabId =
+        taskCreated && !codeTask ? taskId : (fixedTabId ?? randomUUID());
       const createTab = { type: 'chat.create_tab' as const, tabId, ...seed };
       const dispatchCommand = dispatchCreationCommand;
       if (starterTabId !== undefined) {
@@ -718,9 +822,12 @@ async function create(
             taskId,
             chatId,
             text: action.initialMessage,
-            // A pipeline's first message waits for a code task's setup.
-            ...(trusted.kind === 'pipeline' && codeProject
+            // A pipeline's, or a new worktree's, first message waits for setup.
+            ...((trusted.kind === 'pipeline' && codeProject) || codeTask
               ? { queueForSetup: true }
+              : {}),
+            ...(projectCreation?.watchers
+              ? { watchers: projectCreation.watchers }
               : {}),
           }
         : {
@@ -737,7 +844,14 @@ async function create(
       try {
         const accepted = await dispatchAgentChatSend(
           sendAction,
-          nativeGrant?.approvalMode !== undefined ? unadmitted : context,
+          nativeGrant?.approvalMode !== undefined
+            ? unadmitted
+            : // A worktree in the caller's own project is admitted as a started
+              // chat, against the caller's carried root; one elsewhere takes
+              // the ordinary send admission, which its start admission matched.
+              codeTask && source?.projectId === projectId
+              ? { ...context, startedChat: true }
+              : context,
         );
         return {
           address,

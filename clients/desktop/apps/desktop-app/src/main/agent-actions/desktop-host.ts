@@ -132,22 +132,10 @@ export const DESKTOP_AGENT_ACTION_HOST = defineAgentActionHost({
         'chat-service:listTerminalDrivenChatIds',
       ],
     },
-    startChat: {
-      via: 'retained',
-      uses: [
-        'chat-service:reserveWorktreeChatForSend',
-        'renderer:worktree.create',
-        'chat-service:isWorktreeChatMessageCommitted',
-        'core.chat.message.send',
-      ],
-    },
+    startChat: { via: 'retained', uses: ['refused: chat.create is retired'] },
     postMessage: {
-      via: 'dispatcher',
-      uses: [
-        'core.chat.list',
-        'chat-service:isWorktreeChatMessageCommitted',
-        'core.chat.message.send',
-      ],
+      via: 'retained',
+      uses: ['refused: chat.send_message is retired'],
     },
     listModels: {
       via: 'retained',
@@ -156,7 +144,10 @@ export const DESKTOP_AGENT_ACTION_HOST = defineAgentActionHost({
         'work-owner:resolveAiCreditsScopeOwner',
       ],
     },
-    callerDepth: { via: 'retained', uses: ['process-local lineage'] },
+    callerDepth: {
+      via: 'retained',
+      uses: ['constant 0: no desktop depth cap'],
+    },
     unmessageableChatIds: {
       via: 'retained',
       uses: ['chat-service:listTerminalDrivenChatIds'],

@@ -1,3 +1,4 @@
+import { PendingAttachmentSpinner } from '@canopy/ui-shared/components';
 import type { JSX } from 'react';
 import { Button } from '@canopy/ui-shared/components';
 import { CloseIcon } from '@canopy/ui-shared/icons';
@@ -37,10 +38,7 @@ export function PendingAttachmentRow({
         >
           <div className="flex items-center gap-2 py-0.5 pl-2.5 pr-0.5 text-xs">
             {attachment.state === 'uploading' ? (
-              <span
-                className="h-3 w-3 animate-spin rounded-full border-2 border-fg-secondary border-t-transparent"
-                aria-label="Uploading"
-              />
+              <PendingAttachmentSpinner />
             ) : null}
             <span className="flex min-w-0 flex-col text-pretty">
               <span className="truncate">{attachment.filename}</span>

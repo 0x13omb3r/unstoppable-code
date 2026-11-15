@@ -1,6 +1,8 @@
 /** @jest-environment jsdom */
 import '../../../cloud-chats/__tests__/jsdom-globals';
-import { act } from 'react';
+// eslint-disable-next-line no-restricted-imports
+import { AsyncLocalStorage } from 'node:async_hooks';
+import { act as reactAct } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import type { CanopyCapabilities } from '@canopy/app-core';
 import type { PersistedChatMessage } from '@canopy/desktop-shared/types';
@@ -16,9 +18,14 @@ import {
 } from '@/client/ipc-canopy-client';
 import { cloudCoworkStore } from '@/cloud-chats/cloud-cowork-store';
 import { discardDeletedCloudTask } from '@/cloud-chats/cloud-task-deletion';
-import { isCloudChatDeleted } from '@/stores/chat/web-core/task-deletions';
+import {
+  isCloudChatDeleted,
+  isCloudTaskDeleted,
+} from '@/stores/chat/web-core/task-deletions';
+import { useCloudArchivedTasksStore } from '@/cloud-chats/cloud-archived-tasks';
 import { resetWebCoreServedOperations } from '@/lib/web-core-served-operations';
 import { createRelayCoreCoworkInvoker } from '@/cloud-chats/relay-invoker';
+import { CloudChatFileTargetContext } from '@/cloud-chats/cloud-chat-file-target';
 import {
   createCloudSidebarTask,
   retryCloudTask,
@@ -36,7 +43,10 @@ import { webCoreScopeCapabilities } from '@/lib/web-core-scope-capabilities';
 import { clearWebCoreModelCatalog } from '@/stores/chat/web-core/model-catalog';
 import { refreshChatScopeRevisioned } from '@/stores/chat/slices/revisioned';
 import { closeWebCoreChatBackend } from '@/stores/chat/web-core';
+import { resetWebCoreSendBinding } from '@/stores/chat/web-core/send-binding';
+import { resetCloudSendOrder } from '@/stores/chat/web-core/send-order';
 import { trackSelectionSave } from '@/stores/chat/web-core/selection-saves';
+import { useCloudSandboxStateStore } from '@/stores/chat/web-core/sandbox-states';
 import { useWebCoreStartingTurnStore } from '@/stores/chat/web-core/starting-turns';
 import { liveReplyKey } from '@/stores/chat/web-core/live-replies';
 import {
@@ -44,6 +54,8 @@ import {
   presentedCloudStop,
 } from '@/stores/chat/cloud-stop';
 import { ACTIVITY_SECTIONS } from '@/components/activity/activity-sections';
+import { COWORK_ARCHIVE_SWEEP_CONCURRENCY } from '@/components/pages/cowork-archive-sweep';
+import { CLOUD_FILES_WAKE_RETRY_MAX_MS } from '@/components/activity/cloud-files-wake';
 import {
   CHAT_TAB_SETTINGS_PATCH_KEYS,
   initClaudeModels,
@@ -53,6 +65,16 @@ import {
   WINDOW_TAB_SETTINGS,
 } from '@/stores/chat/web-core/translate';
 import { useChatStore, type ChatTab } from '@/stores/chatStore';
+import { importChatAttachments } from '@/lib/chatAttachments';
+import { HomeSurface } from '../../home/HomeSurface';
+import { useHomeComposerStore } from '@/stores/homeComposerStore';
+import { useProjectsStore } from '@/stores/projectsStore';
+import { useWorkspaceContextStore } from '@/stores/workspaceContextStore';
+import { REPEAT_TASK_HISTORY_STORAGE_KEY } from '@/lib/repeat-task-automation/history';
+import { maybeOfferRepeatTaskAutomation } from '@/lib/repeat-task-automation/offer';
+import { snapshotHomeTask } from '@/lib/repeat-task-automation/draft';
+import { useRepeatTaskOfferStore } from '@/lib/repeat-task-automation/offerStore';
+import { LOADING_PLACEHOLDER_DELAY_MS } from '@canopy/ui-shared/lib';
 import { ChatMessageList } from '@/components/chat/ChatMessageList';
 import { persistedMessageToPortalMessage } from '@canopy/desktop-shared/portal/persisted-chat-projection';
 import { useExperimentalFeaturesStore } from '@/stores/experimentalFeaturesStore';
@@ -67,11 +89,17 @@ import { ChatQuestionPlayground } from '../ChatQuestionPlayground';
 import { useCurrentUiStateStore } from '@/stores/currentUiStateStore';
 import { MessageImages } from '../../chat/MessageImages';
 import { useChatEventSubscriptions } from '@/hooks/useChatEventSubscriptions';
+import {
+  endChatIntent,
+  noteChatIntent,
+  useChatPrefetch,
+} from '@/stores/chat/chat-prefetch';
 import { INSERT_CHAT_TEXT_EVENT } from '@/lib/editorSelectionContext';
 import { DISCARD_CHAT_DRAFT_EVENT } from '@/lib/chatDrafts';
 import { serializeEditorValue } from '@canopy/ui-rich/editor';
 import { Editor, Transforms } from 'slate';
 import { cloudAttachmentPath } from '@/cloud-chats/cloud-chat-attachments';
+import { CLOUD_ATTACHMENT_THUMBNAIL_MAX_BYTES } from '@/cloud-chats/cloud-attachment-thumbnails';
 import { CLOUD_ATTACHMENT_MAX_BYTES } from '@canopy/protocol/cloud-attachments';
 
 declare global {
@@ -180,6 +208,9 @@ function uploadReply(_target: unknown, file: unknown): unknown {
 /** Files picked from this computer's disk, by the path main knows them by. */
 const diskPaths = new WeakMap<object, string>();
 
+/** Main's Files wake, which takes a cloud chat's ids by design (CAN-6724). */
+const CLOUD_WAKE_FILES = 'api.cloudChats.wakeFiles';
+
 // Every preload bridge records its calls.
 function recordingBridge(path: string): unknown {
   const call = (...args: unknown[]): unknown => {
@@ -193,6 +224,7 @@ function recordingBridge(path: string): unknown {
           : undefined) ?? ''
       );
     }
+    if (path === CLOUD_WAKE_FILES) return wakeFilesAnswer();
     if (path === 'api.cloudChats.uploadAttachment')
       // As main answers the web core's not_found for a chat it doesn't hold.
       return uncreated(Reflect.get(Object(args[0]), 'worktreeId'))
@@ -204,9 +236,7 @@ function recordingBridge(path: string): unknown {
               reason: 'rejected',
               message: 'Attachment storage is full.',
             })
-          : (uploadGate ?? Promise.resolve()).then(() =>
-              uploadReply(args[0], args[1]),
-            );
+          : held(uploadGate).then(() => uploadReply(args[0], args[1]));
     return reply(REPLIES[path], path in REPLIES);
   };
   return new Proxy(call, {
@@ -247,6 +277,103 @@ let snapshotReads = 0;
 const chatUpdates: unknown[] = [];
 /** The catalog model's thinking levels; null for a model that declares none. */
 let cloudModelLevels: string[] | null = ['low', 'medium', 'high'];
+
+/**
+ * The hosted model catalog, as `GET /api/cloud/models` sends it and the web
+ * core answers it at revision 2 (CAN-6093): Core's provider is the model's
+ * vendor, never a harness. Two vendors, and a model the account's library
+ * keeps locked (CAN-6753).
+ */
+interface FakeCloudModel {
+  readonly id: string;
+  readonly label: string;
+  readonly provider: string;
+  readonly family: string;
+  readonly familyLabel: string;
+  readonly harness: 'claude' | 'codex';
+  readonly contextWindow?: number;
+  readonly thinkingLevels?: string[];
+  readonly fastModeSupported?: boolean;
+  readonly libraryEligibility: 'available' | 'locked';
+}
+
+function cloudCatalogModels(): FakeCloudModel[] {
+  return [
+    {
+      id: 'cloud-model',
+      label: 'Cloud model',
+      provider: 'anthropic',
+      family: 'family-a',
+      familyLabel: 'Family A',
+      harness: 'claude',
+      contextWindow: 200_000,
+      ...(cloudModelLevels === null
+        ? {}
+        : { thinkingLevels: cloudModelLevels }),
+      fastModeSupported: true,
+      libraryEligibility: 'available',
+    },
+    {
+      id: 'second-model',
+      label: 'Second model',
+      provider: 'anthropic',
+      family: 'family-a',
+      familyLabel: 'Family A',
+      harness: 'claude',
+      contextWindow: 200_000,
+      libraryEligibility: 'available',
+    },
+    {
+      id: 'vendor-b-model',
+      label: 'Vendor B model',
+      provider: 'openai',
+      family: 'family-b',
+      familyLabel: 'Family B',
+      harness: 'codex',
+      contextWindow: 400_000,
+      libraryEligibility: 'available',
+    },
+    {
+      id: 'locked-model',
+      label: 'Locked model',
+      provider: 'anthropic',
+      family: 'family-a',
+      familyLabel: 'Family A',
+      harness: 'claude',
+      libraryEligibility: 'locked',
+    },
+  ];
+}
+
+/** The hosted catalog's models as the web core lists them as entries. */
+function cloudCatalogModelEntries(): Record<string, unknown>[] {
+  return cloudCatalogModels().map((model) => ({
+    entryId: `model:${model.id}`,
+    kind: 'model',
+    name: model.label,
+    description: '',
+    source: 'remote',
+    content: {
+      kind: 'model',
+      providerId: model.provider,
+      modelName: model.id,
+      contextWindow: model.contextWindow ?? null,
+      capabilities: [],
+      harness: model.harness,
+      ...(model.thinkingLevels === undefined
+        ? {}
+        : { thinkingLevels: model.thinkingLevels }),
+      ...(model.fastModeSupported === undefined
+        ? {}
+        : { fastMode: model.fastModeSupported }),
+    },
+    availability:
+      model.libraryEligibility === 'locked' ? 'disabled' : 'available',
+    revision: 0,
+    createdAt: CREATED_AT,
+    updatedAt: CREATED_AT,
+  }));
+}
 /** The chat ids the web core minted tabs under, as `core.chat.create` took them. */
 const createdChatIds: string[] = [];
 /** The catalog entries the chat has saved, as `core.catalog.selection.get` reads them. */
@@ -264,6 +391,26 @@ const coreRequestLog: { method: string; params: Record<string, unknown> }[] =
   [];
 /** Set to make the web core refuse every message send, with an error. */
 let sendRefusal: string | null = null;
+/** The account the stub web core serves this window's connection as (CAN-6828). */
+let servedPrincipal = 'u-1';
+/** Whether the stub advertises the send revision that binds a send to its account. */
+let advertisesSendBinding = false;
+/**
+ * The core.chat.events revision the web core advertises to `describe`
+ * (CAN-6841): 3 carries sandbox.changed; null advertises none.
+ */
+let advertisedEventsRevision: number | null = 3;
+/** The opened chat's sandbox state each task snapshot reports (CAN-6841). */
+let snapshotSandbox: 'asleep' | 'waking' | 'ready' | undefined;
+/** How the stub answers the relay's describe: as usual, failed, or naming no account. */
+let describeReply: 'described' | 'failed' | 'noPrincipal' | 'emptyPrincipal' =
+  'described';
+/** A message send the web core refuses, by its text (CAN-6828). */
+let refusedSendText: string | null = null;
+/** A message send whose outcome the web core can't tell, by its text (CAN-6828). */
+let unknownOutcomeSendText: string | null = null;
+/** Holds each send receipt read's reply until released (CAN-6828). */
+let receiptGate: Promise<void> | null = null;
 /** Holds each message send's reply until released. */
 let sendGate: Promise<void> | null = null;
 /** Set to make the web core answer a turn cancel as for a turn it no longer knows. */
@@ -292,6 +439,16 @@ let sendsNameMessage = false;
 const cancelledPrompts: Record<string, unknown>[] = [];
 /** Prompts whose turns Core started, in the transcript in order. */
 const startedPrompts: Record<string, unknown>[] = [];
+/**
+ * The chats' uploaded attachments `worker.artifact.download.read` serves, by
+ * artifact id: each one's whole size and its bytes from the start.
+ */
+const attachmentBytes = new Map<
+  string,
+  { readonly sizeBytes: number; readonly head: Uint8Array }
+>();
+/** Each `worker.artifact.download.read` the web core received. */
+const artifactReads: Record<string, unknown>[] = [];
 /** Holds each turn cancel reply until released. */
 let cancelGate: Promise<void> | null = null;
 /** Set to hold each turn cancel until the case answers it from `heldCancels`. */
@@ -361,12 +518,20 @@ let asleepAs: { cloudCode: string; wakeAllowed: boolean } = {
 };
 /** The task's own chat's running turn, as its snapshot reports it. */
 let runningTurn: string | null = null;
+/**
+ * Main's answer to a Files wake (CAN-6724). Refused unless a case says
+ * otherwise, so a case about something else never wakes the sandbox.
+ */
+let wakeFilesAnswer: () => Promise<unknown> = () =>
+  Promise.resolve({ ok: false, reason: 'refused' });
 /** The paths `worker.filesystem.entry.delete` removed from the sandbox. */
 const deletedPaths = new Set<string>();
 /** Set while the web core's folder listings still show what a delete removed. */
 let listingLags = false;
 /** Holds each folder listing's reply until released. */
 let listingGate: Promise<void> | null = null;
+/** The sandbox's docs/ folder is empty, as a new folder is (CAN-6756). */
+let docsEmpty = false;
 
 /** A sandbox read refused as the web core refuses one while the sandbox sleeps. */
 function sandboxSleeping(namespace: string): Promise<unknown> {
@@ -549,15 +714,45 @@ function deleteTaskElsewhere(
 
 /** The model the snapshot names for the task's own chat. */
 let snapshotModel: string | undefined = 'cloud-model';
+/**
+ * The harness the snapshot's settings name for the task's own chat
+ * (CAN-6761); undefined serves no settings, as a web core from before it.
+ */
+let snapshotHarness: 'claude' | 'codex' | null | undefined;
+/**
+ * The harness chat-2's own snapshot names (CAN-6761). Only a snapshot read
+ * for that chat carries it, as the web core opens only the chat it reads.
+ */
+let secondaryHarness: 'claude' | 'codex' | undefined;
 /** The snapshot's revision, which a change made since moves past. */
 let snapshotRevision = 1;
 /** Holds each transcript page reply until released. */
 let pageGate: Promise<void> | null = null;
 /**
+ * Each chat's transcript rows by chat id, as the web core's page serves them
+ * through main's relay, which reads it at revision 2 when the web core
+ * advertises it (CAN-6755); a chat not listed has none.
+ */
+let transcripts: Record<string, unknown[]> = {};
+/**
  * Holds each task snapshot reply until released. The snapshot is read as the
  * request arrives, so a held reply lands stale.
  */
 let snapshotGate: Promise<void> | null = null;
+/**
+ * Holds one task's snapshot replies until a test settles them: served, or
+ * refused as a web core that can't read the task answers (CAN-6754).
+ */
+const snapshotHolds = new Map<string, Promise<'serve' | 'refuse'>>();
+/** Holds one task's `core.chat.list` replies until a test releases them (CAN-6774). */
+const listHolds = new Map<string, Promise<void>>();
+/** Holds one task's transcript page replies until a test releases them (CAN-6774). */
+const pageHolds = new Map<string, Promise<void>>();
+/**
+ * How many revisions behind the task's feed head a chat list reads, as one
+ * the web core answered before a change the snapshot then covered (CAN-6774).
+ */
+let listRevisionLag = 0;
 /** Holds the catalog snapshot read until a test releases it. */
 let catalogGate: Promise<void> | null = null;
 /** Set to make the web core refuse a model change, as its handler does: with an error. */
@@ -629,8 +824,50 @@ Object.defineProperty(window, 'canopyCore', {
         Promise.resolve({ ok: true, value });
       const heldSnapshot = (value: unknown): Promise<unknown> => {
         const read = ok(value);
-        return snapshotGate === null ? read : snapshotGate.then(() => read);
+        const gated = held(snapshotGate).then(() => read);
+        const hold = snapshotHolds.get(task);
+        if (hold === undefined) return gated;
+        return Promise.race([
+          hold,
+          caseEnded.then((): 'serve' => 'serve'),
+        ]).then((outcome) =>
+          outcome === 'serve'
+            ? gated
+            : {
+                ok: false,
+                error: {
+                  kind: 'unavailable',
+                  message: 'The web core could not read this task.',
+                  retry: { kind: 'never' },
+                },
+              },
+        );
       };
+      if (request.kind === 'describe') {
+        if (describeReply === 'failed')
+          return Promise.resolve({
+            ok: false,
+            error: {
+              kind: 'unavailable',
+              message: 'The renderer relay connection closed.',
+              retry: { kind: 'never' },
+            },
+          });
+        return ok({
+          principalId:
+            describeReply === 'noPrincipal'
+              ? null
+              : describeReply === 'emptyPrincipal'
+                ? ''
+                : servedPrincipal,
+          schemaRevisions: {
+            ...(advertisesSendBinding ? { 'core.chat.message.send': 3 } : {}),
+            ...(advertisedEventsRevision === null
+              ? {}
+              : { 'core.chat.events': advertisedEventsRevision }),
+          },
+        });
+      }
       if (request.kind === 'openStream') {
         streamCount += 1;
         const subscriptionId = `s${streamCount}`;
@@ -839,11 +1076,17 @@ Object.defineProperty(window, 'canopyCore', {
                 [newTask]: { status: 'idle', queuedMessageIds: [] },
               },
               queue: [],
+              ...(snapshotSandbox === undefined
+                ? {}
+                : { sandbox: { state: snapshotSandbox } }),
             });
           return heldSnapshot({
             workspaceId: 'ws-1',
             worktreeId: task,
             revision: snapshotRevision,
+            ...(snapshotSandbox === undefined
+              ? {}
+              : { sandbox: { state: snapshotSandbox } }),
             eventsCursor: { daemonEpoch: 'e1', sequence: snapshotRevision },
             tabs: {
               activeTabId: task,
@@ -856,6 +1099,22 @@ Object.defineProperty(window, 'canopyCore', {
                   ...(snapshotModel === undefined
                     ? {}
                     : { modelId: snapshotModel }),
+                  ...(snapshotHarness === undefined
+                    ? {}
+                    : {
+                        settings: {
+                          model: snapshotModel ?? null,
+                          providerId: null,
+                          executionHarness: snapshotHarness,
+                          modelSelectionMode: 'manual',
+                          thinkingLevel: null,
+                          speed: null,
+                          planMode: false,
+                          approvalMode: null,
+                          interfaceMode: null,
+                          customTitle: null,
+                        },
+                      }),
                 },
                 ...(removedChats.has('chat-2')
                   ? []
@@ -865,6 +1124,23 @@ Object.defineProperty(window, 'canopyCore', {
                         title: 'Notes',
                         kind: 'chat',
                         createdAt: CREATED_AT,
+                        ...(request.params?.chatId === 'chat-2' &&
+                        secondaryHarness !== undefined
+                          ? {
+                              settings: {
+                                model: null,
+                                providerId: null,
+                                executionHarness: secondaryHarness,
+                                modelSelectionMode: 'manual',
+                                thinkingLevel: null,
+                                speed: null,
+                                planMode: false,
+                                approvalMode: null,
+                                interfaceMode: null,
+                                customTitle: null,
+                              },
+                            }
+                          : {}),
                       },
                     ]),
               ],
@@ -909,58 +1185,55 @@ Object.defineProperty(window, 'canopyCore', {
                   ],
           });
         case 'core.chat.transcript.page': {
+          const scope = request.params?.scope;
+          const chatId =
+            typeof scope === 'object' &&
+            scope !== null &&
+            'chatId' in scope &&
+            typeof scope.chatId === 'string'
+              ? scope.chatId
+              : task;
+          const messages = transcripts[chatId] ?? [];
           const page = ok({
-            messages: [...startedPrompts, ...cancelledPrompts],
-            totalMessages: startedPrompts.length + cancelledPrompts.length,
-            transcriptRevision: 1,
+            // A chat's seeded rows, then the prompts a send started or a
+            // Stop cancelled (CAN-6755, CAN-6733).
+            messages: [...messages, ...startedPrompts, ...cancelledPrompts],
+            totalMessages:
+              messages.length + startedPrompts.length + cancelledPrompts.length,
+            transcriptRevision: Math.max(1, messages.length),
           });
-          return (pageGate ?? Promise.resolve()).then(() => page);
+          return held(pageGate)
+            .then(() => held(pageHolds.get(task) ?? null))
+            .then(() => page);
         }
         case 'core.catalog.snapshot.get': {
+          const kinds = request.params?.kinds;
+          const wantsModels =
+            !Array.isArray(kinds) ||
+            kinds.length === 0 ||
+            kinds.includes('model');
           const snapshot = ok({
             revision: 1,
             generatedAt: CREATED_AT,
+            // Revision 2 also answers the hosted model catalog (CAN-6093).
+            ...(request.params?.revision !== undefined && wantsModels
+              ? {
+                  cloudModels: {
+                    models: cloudCatalogModels(),
+                    modelHarnesses: Object.fromEntries(
+                      cloudCatalogModels().map((model): [string, string] => [
+                        model.id,
+                        model.harness,
+                      ]),
+                    ),
+                    defaultModelId: 'cloud-model',
+                    defaultModelBlocked: false,
+                    modelLibrary: 'unlocked',
+                  },
+                }
+              : {}),
             entries: [
-              {
-                entryId: 'model:cloud-model',
-                kind: 'model',
-                name: 'Cloud model',
-                description: '',
-                source: 'remote',
-                content: {
-                  kind: 'model',
-                  providerId: 'claude',
-                  modelName: 'cloud-model',
-                  contextWindow: 200_000,
-                  capabilities: [],
-                  ...(cloudModelLevels === null
-                    ? {}
-                    : { thinkingLevels: cloudModelLevels }),
-                  fastMode: true,
-                },
-                availability: 'available',
-                revision: 0,
-                createdAt: CREATED_AT,
-                updatedAt: CREATED_AT,
-              },
-              {
-                entryId: 'model:second-model',
-                kind: 'model',
-                name: 'Second model',
-                description: '',
-                source: 'remote',
-                content: {
-                  kind: 'model',
-                  providerId: 'claude',
-                  modelName: 'second-model',
-                  contextWindow: 200_000,
-                  capabilities: [],
-                },
-                availability: 'available',
-                revision: 0,
-                createdAt: CREATED_AT,
-                updatedAt: CREATED_AT,
-              },
+              ...cloudCatalogModelEntries(),
               {
                 entryId: 'skill:curated/review',
                 kind: 'skill',
@@ -1019,7 +1292,7 @@ Object.defineProperty(window, 'canopyCore', {
               })),
             ],
           });
-          return (catalogGate ?? Promise.resolve()).then(() => snapshot);
+          return held(catalogGate).then(() => snapshot);
         }
         case 'core.catalog.selection.get':
           if (uncreated(Reflect.get(Object(request.params?.scope), 'chatId')))
@@ -1058,7 +1331,7 @@ Object.defineProperty(window, 'canopyCore', {
           if (loseCreateReply) {
             loseCreateReply = false;
             createdTasks.add(tabId);
-            return (createGate ?? Promise.resolve()).then(() => ({
+            return held(createGate).then(() => ({
               ok: false,
               error: {
                 kind: 'unavailable',
@@ -1067,7 +1340,7 @@ Object.defineProperty(window, 'canopyCore', {
               },
             }));
           }
-          return (createGate ?? Promise.resolve()).then(() => {
+          return held(createGate).then(() => {
             const refusal = createRefusal;
             createRefusal = null;
             if (refusal !== null)
@@ -1096,7 +1369,7 @@ Object.defineProperty(window, 'canopyCore', {
             'type' in action &&
             action.type === 'chat.set_model'
           )
-            return (updateGate ?? Promise.resolve()).then(() => ({
+            return held(updateGate).then(() => ({
               ok: false,
               error: {
                 kind: 'permission_denied',
@@ -1104,7 +1377,7 @@ Object.defineProperty(window, 'canopyCore', {
                 retry: { kind: 'never' },
               },
             }));
-          return (updateGate ?? Promise.resolve()).then(() => {
+          return held(updateGate).then(() => {
             savedSelection =
               appliedSelection(request.params?.action) ?? savedSelection;
             // As the web core applies it: a model change or a rename appends
@@ -1123,7 +1396,35 @@ Object.defineProperty(window, 'canopyCore', {
         }
         case 'core.chat.message.send': {
           const refusal = sendRefusal;
-          if (sendOutcomeUnknown)
+          // A send pressed under another account (CAN-6828).
+          const bound = request.params?.expectedPrincipalId;
+          if (bound !== undefined && bound !== servedPrincipal)
+            return held(sendGate).then(() => ({
+              ok: false,
+              error: {
+                kind: 'failed_precondition',
+                code: 'core.chat.message.accountChanged',
+                message: 'This message was sent from another account.',
+                retry: { kind: 'never' },
+              },
+            }));
+          if (
+            refusedSendText !== null &&
+            request.params?.text === refusedSendText
+          )
+            return held(sendGate).then(() => ({
+              ok: false,
+              error: {
+                kind: 'failed_precondition',
+                message: 'The web core refused this message.',
+                retry: { kind: 'never' },
+              },
+            }));
+          if (
+            sendOutcomeUnknown ||
+            (unknownOutcomeSendText !== null &&
+              request.params?.text === unknownOutcomeSendText)
+          )
             return Promise.resolve({
               ok: false,
               error: {
@@ -1133,7 +1434,7 @@ Object.defineProperty(window, 'canopyCore', {
               },
             });
           if (refusal !== null)
-            return (sendGate ?? Promise.resolve()).then(() => ({
+            return held(sendGate).then(() => ({
               ok: false,
               error: {
                 kind: 'failed_precondition',
@@ -1160,7 +1461,7 @@ Object.defineProperty(window, 'canopyCore', {
                 messageId,
               },
             };
-            return (sendGate ?? Promise.resolve()).then(() => queued);
+            return held(sendGate).then(() => queued);
           }
           if (sendsKeepRunning) runningTurn = 'turn-1';
           const accepted = {
@@ -1173,7 +1474,7 @@ Object.defineProperty(window, 'canopyCore', {
               ...(sendsNameMessage ? { messageId: 'turn-1-u' } : {}),
             },
           };
-          return (sendGate ?? Promise.resolve()).then(() => accepted);
+          return held(sendGate).then(() => accepted);
         }
         // A turn the web core accepts a cancel for keeps running until it
         // ends; one it no longer knows has ended.
@@ -1183,7 +1484,7 @@ Object.defineProperty(window, 'canopyCore', {
               heldCancels.push(resolve);
             });
           if (!cancelTurnGone)
-            return (cancelGate ?? Promise.resolve()).then(() => ({
+            return held(cancelGate).then(() => ({
               ok: true,
               value: {},
             }));
@@ -1214,14 +1515,14 @@ Object.defineProperty(window, 'canopyCore', {
           });
         }
         case 'core.chat.send.receipt':
-          return Promise.resolve({
+          return held(receiptGate).then(() => ({
             ok: false,
             error: {
               kind: 'unavailable',
               message: 'The web core did not answer in time.',
               retry: { kind: 'same_request' },
             },
-          });
+          }));
         case 'worker.filesystem.roots.list':
           return ok({
             roots: [
@@ -1250,7 +1551,9 @@ Object.defineProperty(window, 'canopyCore', {
           });
           const entries = (
             request.params?.relativePath === 'docs'
-              ? [entry('docs/brief.md', 'file')]
+              ? docsEmpty
+                ? []
+                : [entry('docs/brief.md', 'file')]
               : [entry('docs', 'directory'), entry('brief.md', 'file')]
           ).filter(
             (each) =>
@@ -1258,7 +1561,7 @@ Object.defineProperty(window, 'canopyCore', {
               typeof each.relativePath !== 'string' ||
               !deletedPaths.has(each.relativePath),
           );
-          return (listingGate ?? Promise.resolve()).then(() => ({
+          return held(listingGate).then(() => ({
             ok: true,
             value: { entries },
           }));
@@ -1271,6 +1574,26 @@ Object.defineProperty(window, 'canopyCore', {
             deleted: true,
             deletedEntryCount: 1,
             disposition: request.params?.disposition,
+          });
+        }
+        case 'worker.artifact.download.read': {
+          const params = request.params ?? {};
+          artifactReads.push(params);
+          const artifactId = params.artifactId;
+          const offset = typeof params.offset === 'number' ? params.offset : 0;
+          const length = typeof params.length === 'number' ? params.length : 0;
+          const held =
+            typeof artifactId === 'string'
+              ? attachmentBytes.get(artifactId)
+              : undefined;
+          if (held === undefined) return Promise.resolve(chatNotFound);
+          const range = held.head.subarray(offset, offset + length);
+          const end = offset + range.byteLength;
+          return ok({
+            sizeBytes: held.sizeBytes,
+            offset,
+            data: btoa(String.fromCharCode(...range)),
+            nextOffset: end < held.sizeBytes ? end : null,
           });
         }
         case 'worker.filesystem.file.read':
@@ -1328,6 +1651,24 @@ Object.defineProperty(window, 'canopyCore', {
             nextCursor: null,
           });
         }
+        // In place, as the web core restores an archived task (CAN-6511):
+        // its listing shows it again.
+        case 'core.archive.container.restore': {
+          const archiveId =
+            typeof request.params?.archiveId === 'string'
+              ? request.params.archiveId
+              : '';
+          const [, chatId = ''] = archiveId.split(':');
+          deletedTasks.delete(chatId);
+          return ok({
+            operation: {
+              operationId: `restore-${chatId}`,
+              kind: 'core.archive.container.restore',
+              status: 'completed',
+            },
+            restoredScope: { workspaceId: 'ws-1', chatId },
+          });
+        }
         case 'core.chat.list':
           if (typeof newTask === 'string' && createdTasks.has(newTask))
             return ok({
@@ -1344,33 +1685,39 @@ Object.defineProperty(window, 'canopyCore', {
               ],
               nextCursor: null,
             });
-          return ok({
-            items: [
-              {
-                chatId: task,
-                title: 'Brief',
-                state: 'idle',
-                workspaceId: 'ws-1',
-                worktreeId: task,
-                revision: 1,
-                createdAt: CREATED_AT,
-              },
-              ...(removedChats.has('chat-2')
-                ? []
-                : [
-                    {
-                      chatId: 'chat-2',
-                      title: 'Notes',
-                      state: 'idle',
-                      workspaceId: 'ws-1',
-                      worktreeId: task,
-                      revision: 1,
-                      createdAt: CREATED_AT,
-                    },
-                  ]),
-            ],
-            nextCursor: null,
-          });
+          {
+            // The task's feed head, read before the chats, as the web core
+            // names it on every item (CAN-6774).
+            const listed = ok({
+              items: [
+                {
+                  chatId: task,
+                  title: 'Brief',
+                  state: 'idle',
+                  workspaceId: 'ws-1',
+                  worktreeId: task,
+                  revision: snapshotRevision - listRevisionLag,
+                  createdAt: CREATED_AT,
+                },
+                ...(removedChats.has('chat-2')
+                  ? []
+                  : [
+                      {
+                        chatId: 'chat-2',
+                        title: 'Notes',
+                        state: 'idle',
+                        workspaceId: 'ws-1',
+                        worktreeId: task,
+                        revision: snapshotRevision - listRevisionLag,
+                        createdAt: CREATED_AT,
+                      },
+                    ]),
+              ],
+              nextCursor: null,
+            });
+            const held = listHolds.get(task);
+            return held === undefined ? listed : held.then(() => listed);
+          }
         default:
           return Promise.resolve({
             ok: false,
@@ -1384,6 +1731,123 @@ Object.defineProperty(window, 'canopyCore', {
     },
   },
 });
+
+/**
+ * CAN-6793: Jest abandons a case it times out, but the case's body keeps
+ * running into later cases, and the stub requests its gates held stay held.
+ * Each case runs under its own id. Once it ends, its body never resumes from
+ * `act` (so neither from `settle`), and every request it held is let go and
+ * drained before the next case starts.
+ */
+const caseScope = new AsyncLocalStorage<number>();
+let liveCase: number | null = null;
+let caseCount = 0;
+let caseEnded: Promise<void> = Promise.resolve();
+let endCase = (): void => undefined;
+const NEVER = new Promise<never>(() => undefined);
+
+/** True in hooks and in the case that is running; false in an ended one. */
+function caseIsLive(): boolean {
+  const id = caseScope.getStore();
+  return id === undefined || id === liveCase;
+}
+
+/**
+ * What a case may take before Jest times it out. The default 5 s isn't enough
+ * for this page's renders on a loaded CI runner. A case that runs out still
+ * fails alone: it no longer takes later cases with it.
+ */
+const CASE_TIMEOUT_MS = 20_000;
+
+function it(
+  name: string,
+  body: () => Promise<void> | void,
+  timeout = CASE_TIMEOUT_MS,
+): void {
+  globalThis.it(
+    name,
+    async () => {
+      caseCount += 1;
+      const id = caseCount;
+      liveCase = id;
+      await caseScope.run(id, body);
+    },
+    timeout,
+  );
+}
+
+let actsInFlight = 0;
+
+/**
+ * React's act, which an ended case's body never gets past. React keeps one
+ * act queue, so `afterEach` waits out an act the ended case left running
+ * before it starts its own: overlapping acts leave that queue unflushed for
+ * every later case.
+ */
+declare const syncActOnly: unique symbol;
+/** As React's own act types it: a sync callback's act returns nothing. */
+type SyncActResult = void | { readonly [syncActOnly]: never };
+function act(callback: () => SyncActResult): void;
+function act<T>(callback: () => T | Promise<T>): Promise<T>;
+function act<T>(callback: () => T | Promise<T>): Promise<T> | void {
+  if (!caseIsLive()) return NEVER;
+  actsInFlight += 1;
+  let pending: Promise<T>;
+  try {
+    pending = reactAct(callback);
+  } catch (error) {
+    actsInFlight -= 1;
+    throw error;
+  }
+  // A case Jest timed out while this act was pending doesn't resume from
+  // it: the act's result never reaches the ended case's body.
+  return Promise.resolve(pending).then(
+    (value): T | Promise<never> => {
+      actsInFlight -= 1;
+      return caseIsLive() ? value : NEVER;
+    },
+    (error: unknown): Promise<never> => {
+      actsInFlight -= 1;
+      if (!caseIsLive()) return NEVER;
+      throw error;
+    },
+  );
+}
+
+/** This file's real setTimeout, which a case's fake timers don't replace. */
+const realSetTimeout = globalThis.setTimeout;
+
+/** Waits up to 5 s, on real time, for acts the ended case left running. */
+async function actsSettled(): Promise<void> {
+  for (let i = 0; i < 500 && actsInFlight > 0; i += 1)
+    await new Promise((resolve) => realSetTimeout(resolve, 10));
+}
+
+const caseCleanups: (() => Promise<void> | void)[] = [];
+
+/**
+ * Cleanup for the next case's sake. `afterEach` runs it, because Jest runs
+ * that even for a case it timed out, whose own `finally` never runs.
+ */
+function onCaseEnd(cleanup: () => Promise<void> | void): void {
+  caseCleanups.push(cleanup);
+}
+
+function restoreSpy(
+  target: object,
+  property: string,
+  slot: 'value' | 'get',
+): void {
+  const descriptor = Object.getOwnPropertyDescriptor(target, property);
+  const fn: unknown =
+    descriptor === undefined ? undefined : Reflect.get(descriptor, slot);
+  if (jest.isMockFunction(fn)) fn.mockRestore();
+}
+
+/** A stub request held on `gate` until the case releases it or ends. */
+function held(gate: Promise<unknown> | null): Promise<unknown> {
+  return gate === null ? Promise.resolve() : Promise.race([gate, caseEnded]);
+}
 
 let container: HTMLDivElement;
 let root: Root;
@@ -1417,6 +1881,9 @@ function connectCloud(): void {
 }
 
 beforeEach(() => {
+  caseEnded = new Promise<void>((resolve) => {
+    endCase = resolve;
+  });
   calls.length = 0;
   chatUpdates.length = 0;
   createdChatIds.length = 0;
@@ -1430,6 +1897,16 @@ beforeEach(() => {
   createGate = null;
   createRefusal = null;
   sendRefusal = null;
+  servedPrincipal = 'u-1';
+  advertisesSendBinding = false;
+  advertisedEventsRevision = 3;
+  snapshotSandbox = undefined;
+  describeReply = 'described';
+  resetWebCoreSendBinding();
+  resetCloudSendOrder();
+  refusedSendText = null;
+  unknownOutcomeSendText = null;
+  receiptGate = null;
   sendGate = null;
   cancelTurnGone = false;
   sendsKeepRunning = false;
@@ -1450,9 +1927,16 @@ beforeEach(() => {
     creditsEligible: undefined,
   });
   snapshotModel = 'cloud-model';
+  snapshotHarness = undefined;
+  secondaryHarness = undefined;
   snapshotRevision = 1;
   pageGate = null;
+  transcripts = {};
   snapshotGate = null;
+  snapshotHolds.clear();
+  listHolds.clear();
+  pageHolds.clear();
+  listRevisionLag = 0;
   setModelRefusal = null;
   cloudModelLevels = ['low', 'medium', 'high'];
   openedStreams.clear();
@@ -1461,16 +1945,21 @@ beforeEach(() => {
   sandboxAsleep = false;
   asleepAs = { cloudCode: 'SANDBOX_NOT_READY', wakeAllowed: true };
   runningTurn = null;
+  wakeFilesAnswer = (): Promise<unknown> =>
+    Promise.resolve({ ok: false, reason: 'refused' });
   queuedSends.length = 0;
   startingSend = null;
   sendsNameMessage = false;
   cancelledPrompts.length = 0;
   startedPrompts.length = 0;
+  attachmentBytes.clear();
+  artifactReads.length = 0;
   deletedPaths.clear();
   uploadedAttachments.length = 0;
   servesAttachmentList = false;
   listingLags = false;
   listingGate = null;
+  docsEmpty = false;
   // Each case reads the catalog its own stub serves, and starts the web core
   // backend afresh, as a reconnect does: the stub's revisions restart.
   clearWebCoreModelCatalog();
@@ -1491,14 +1980,71 @@ beforeEach(() => {
   });
 });
 
-afterEach(() => {
-  jest.useRealTimers();
-  act(() => root.unmount());
-  container.remove();
-});
+afterEach(async () => {
+  // The case is over: its body stops, and what it held is let go and drained
+  // here, so the next case starts from settled state.
+  liveCase = null;
+  await actsSettled();
+  endCase();
+  for (const answer of heldCancels.splice(0)) answer(refusedCancel);
+  // A case's cleanup runs on the clock the case left installed, as its own
+  // finally did, so a fake-timer case's drains still drain. A cleanup that
+  // throws doesn't stop the rest, nor the teardown below; the case still
+  // fails with its error.
+  let failure: Error | undefined;
+  try {
+    for (const cleanup of caseCleanups.splice(0).reverse()) {
+      try {
+        await cleanup();
+      } catch (error) {
+        failure ??= error instanceof Error ? error : new Error(String(error));
+      }
+    }
+  } finally {
+    jest.useRealTimers();
+    // A case cut off mid-way never reached its own restores of the spies the
+    // cases put on the composer's file input and on window.event.
+    restoreSpy(HTMLInputElement.prototype, 'click', 'value');
+    restoreSpy(window, 'event', 'get');
+    globalThis.IS_REACT_ACT_ENVIRONMENT = true;
+    act(() => root.unmount());
+    container.remove();
+    await settle();
+  }
+  if (failure !== undefined) throw failure;
+}, CASE_TIMEOUT_MS);
 
 async function settle(): Promise<void> {
   for (let i = 0; i < 60; i += 1) {
+    await act(() => new Promise((resolve) => setTimeout(resolve, 0)));
+  }
+}
+
+/**
+ * Reconnects the cloud so the relay describes the connection again, with the
+ * revisions and reply the case has set since `beforeEach` connected it.
+ */
+async function describeConnectionAgain(): Promise<void> {
+  act(() => {
+    cloudCoworkStore.getState().disconnect('offline');
+  });
+  act(() => {
+    connectCloud();
+  });
+  await settle();
+}
+
+/**
+ * Settles until `ready` holds: it stops as soon as the case's own state is
+ * there, and on a loaded machine keeps settling for up to `withinMs` rather
+ * than giving up after a fixed number of ticks (CAN-6793).
+ */
+async function settleUntil(
+  ready: () => boolean,
+  withinMs = 3_000,
+): Promise<void> {
+  const deadline = Date.now() + withinMs;
+  for (let i = 0; !ready() && (i < 60 || Date.now() < deadline); i += 1) {
     await act(() => new Promise((resolve) => setTimeout(resolve, 0)));
   }
 }
@@ -1509,7 +2055,16 @@ function ChatEventSubscriptions(): null {
   return null;
 }
 
-function renderPage(options?: { readonly followsEvents?: boolean }): void {
+/** The window's sidebar hover prefetch, as the app mounts it. */
+function ChatPrefetch(): null {
+  useChatPrefetch();
+  return null;
+}
+
+function renderPage(options?: {
+  readonly followsEvents?: boolean;
+  readonly prefetches?: boolean;
+}): void {
   const client = createDesktopCanopyClient(
     createDesktopCapabilities('darwin', {}, {}),
   );
@@ -1518,6 +2073,7 @@ function renderPage(options?: { readonly followsEvents?: boolean }): void {
       <CanopyClientProvider client={client}>
         <DesktopCostCurrencyProvider>
           {options?.followsEvents === true ? <ChatEventSubscriptions /> : null}
+          {options?.prefetches === true ? <ChatPrefetch /> : null}
           <DesktopTerminalRuntime />
           <StandaloneChatPage />
         </DesktopCostCurrencyProvider>
@@ -1540,6 +2096,7 @@ function callsCarryingWebCoreIds(): readonly string[] {
         .filter(
           (call) =>
             call.path !== CLOUD_UPLOAD &&
+            call.path !== CLOUD_WAKE_FILES &&
             JSON.stringify(call.args).includes('web-core:'),
         )
         .map((call) => call.path),
@@ -1669,7 +2226,8 @@ describe('a cloud task in the cowork page (CAN-6175 R2)', () => {
       [],
     );
     // Composer controls the web core refuses are hidden, and the task's own
-    // chat can't be closed, which would archive the task.
+    // chat can't be closed, which would archive the task. A chat with no
+    // answer meter shows no usage meter, never a zero one (CAN-6755).
     expect(shown('approval-mode-picker')).toBe(false);
     expect(shown('usage-indicator')).toBe(false);
     expect(shown('panel-tab-panel-chat-web-core:wt-1')).toBe(true);
@@ -1753,6 +2311,120 @@ describe('a cloud task in the cowork page (CAN-6175 R2)', () => {
       unsent,
     );
     expect(callsCarryingWebCoreIds()).toEqual([]);
+  });
+
+  it('shows no usage meter for a cloud chat whose answers carry no meter (CAN-6755)', async () => {
+    transcripts['wt-1'] = [
+      {
+        id: 'plain-u1',
+        role: 'user',
+        blocks: [{ type: 'text', text: 'Draft the brief' }],
+        timestamp: 1,
+      },
+      {
+        id: 'plain-a1',
+        role: 'assistant',
+        blocks: [{ type: 'text', text: 'Drafted.' }],
+        timestamp: 2,
+      },
+    ];
+    // Earlier cases leave the task's chats in the store: going offline drops
+    // them, so this one reads its transcript afresh.
+    act(() => {
+      cloudCoworkStore.getState().disconnect('offline');
+    });
+    connectCloud();
+    try {
+      renderPage({ followsEvents: true });
+      act(() => {
+        openCoworkWorkEntryFromSidebar('web-core:ws-1', 'web-core:wt-1');
+      });
+      await settle();
+
+      // The store holds the chat's answer, and no usage for it.
+      const tab = useChatStore
+        .getState()
+        .worktreeChats[
+          'web-core:ws-1/web-core:wt-1'
+        ]?.tabs.find((each) => each.id === 'web-core:wt-1');
+      expect(tab?.messages.map((message) => message.id)).toEqual([
+        'plain-u1',
+        'plain-a1',
+      ]);
+      expect(tab?.usage).toBeUndefined();
+      expect(shown('usage-indicator')).toBe(false);
+    } finally {
+      // Later cases open the task with an empty transcript.
+      act(() => {
+        cloudCoworkStore.getState().disconnect('offline');
+      });
+    }
+  });
+
+  it("shows a cloud chat's context in its composer meter from its answers' meters, and never USD (CAN-6755)", async () => {
+    transcripts['wt-1'] = [
+      {
+        id: 'metered-u1',
+        role: 'user',
+        blocks: [{ type: 'text', text: 'Draft the brief' }],
+        timestamp: 1,
+      },
+      {
+        id: 'metered-a1',
+        role: 'assistant',
+        blocks: [{ type: 'text', text: 'Drafted.' }],
+        timestamp: 2,
+        meter: {
+          model: { id: 'cloud-model', contextWindow: 200_000 },
+          usage: {
+            inputTokens: 20_000,
+            outputTokens: 1_000,
+            contextTokens: 50_000,
+          },
+          costUsd: '0.42',
+          sourceKey: 'turn-1',
+        },
+      },
+    ];
+    // Earlier cases leave the task's chats in the store: going offline drops
+    // them, so this one reads its transcript afresh.
+    act(() => {
+      cloudCoworkStore.getState().disconnect('offline');
+    });
+    connectCloud();
+    try {
+      renderPage({ followsEvents: true });
+      act(() => {
+        openCoworkWorkEntryFromSidebar('web-core:ws-1', 'web-core:wt-1');
+      });
+      await settle();
+
+      expect(shown('usage-indicator')).toBe(true);
+      act(() => {
+        container
+          .querySelector<HTMLElement>('[data-testid="usage-indicator"]')
+          ?.click();
+      });
+      await settle();
+      // The popover opens in the window's document, outside the page.
+      expect(
+        document.querySelector('[data-testid="usage-indicator-context"]')
+          ?.textContent,
+      ).toContain('50.0k / 200.0k');
+      // Every cloud turn bills to AI Credits, so the meter shows no USD, as
+      // the web's cloud composer hides it (CAN-5028).
+      expect(document.body.textContent).not.toContain('$0.42');
+      // The meter asks this computer nothing about a cloud chat.
+      expect(callsCarryingWebCoreIds()).toEqual([]);
+      expect(
+        calls.filter((call) => call.path === 'api.chat.getContextUsage'),
+      ).toEqual([]);
+    } finally {
+      // Later cases open the task with an empty transcript.
+      act(() => {
+        cloudCoworkStore.getState().disconnect('offline');
+      });
+    }
   });
 
   it("attaches files to a cloud task's chat through main's upload (R6)", async () => {
@@ -1955,6 +2627,45 @@ describe('a cloud task in the cowork page (CAN-6175 R2)', () => {
     );
   });
 
+  it("saves a sent cloud attachment through its chat's own web core read when the transcript names the chat (CAN-6771)", () => {
+    const target = {
+      key: 'web-core:chat-1',
+      workspaceId: 'ws-1',
+      worktreeId: 'wt-1',
+    };
+    act(() => {
+      root.render(
+        <CloudChatFileTargetContext.Provider value={target}>
+          <MessageImages
+            attachments={[
+              {
+                kind: 'file',
+                absolutePath: cloudAttachmentPath('att-1', 'brief.md'),
+              },
+            ]}
+          />
+        </CloudChatFileTargetContext.Provider>,
+      );
+    });
+    const [tile] = Array.from(
+      container.querySelectorAll('[data-testid="message-file-attachment"]'),
+    );
+    expect(tile?.getAttribute('aria-label')).toBe('Open file');
+    act(() => {
+      tile?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+    expect(
+      calls
+        .filter((call) => call.path === 'api.cloudChats.downloadFile')
+        .map((call) => call.args),
+    ).toEqual([
+      [target, { kind: 'attachment', id: 'att-1', filename: 'brief.md' }],
+    ]);
+    expect(calls.some((call) => call.path === 'api.openExternalFile')).toBe(
+      false,
+    );
+  });
+
   it("offers an empty cloud chat the cowork starters without reading this computer's MCP servers", async () => {
     useFeatureFlagsStore.setState({
       isEnabled: (key) =>
@@ -1975,6 +2686,79 @@ describe('a cloud task in the cowork page (CAN-6175 R2)', () => {
       calls.filter((call) => call.path.startsWith('mcpServers.listDetected')),
     ).toEqual([]);
     expect(callsCarryingWebCoreIds()).toEqual([]);
+  });
+
+  it("keeps a queued edit that wasn't saved in an otherwise empty cloud chat, to copy, restore or dismiss (CAN-6799)", async () => {
+    renderPage();
+    act(() => {
+      openCoworkWorkEntryFromSidebar('web-core:ws-1', 'web-core:wt-1');
+    });
+    await settle();
+    const worktreeKey = 'web-core:ws-1/web-core:wt-1';
+    const chatId =
+      useChatStore.getState().worktreeChats[worktreeKey]?.activeTabId ?? '';
+    expect(chatId).not.toBe('');
+    expect(shown('queued-message-unsaved-edit')).toBe(false);
+    const keep = (text: string): void => {
+      act(() => {
+        useChatStore.getState().keepUnsavedQueuedEdit({
+          worktreeKey,
+          chatId,
+          id: 'entry-1',
+          text,
+        });
+      });
+    };
+    const click = (testId: string): void => {
+      act(() => {
+        container
+          .querySelector<HTMLElement>(`[data-testid="${testId}"]`)
+          ?.click();
+      });
+    };
+
+    // Another client's Stop cancelled the chat's only queued message
+    // while it was being edited: the chat has nothing else in it.
+    keep('Edited prompt');
+    await settle();
+    expect(shown('queued-message-unsaved-edit')).toBe(true);
+
+    const writeText = jest.fn<Promise<void>, [string]>(() => Promise.resolve());
+    Object.defineProperty(navigator, 'clipboard', {
+      configurable: true,
+      value: { writeText },
+    });
+    onCaseEnd(() => {
+      Reflect.deleteProperty(navigator, 'clipboard');
+    });
+    try {
+      click('queued-message-unsaved-edit-copy');
+      await settle();
+      expect(writeText).toHaveBeenCalledWith('Edited prompt');
+    } finally {
+      Reflect.deleteProperty(navigator, 'clipboard');
+    }
+
+    // Restore hands the text to this chat's composer, and the card goes.
+    click('queued-message-unsaved-edit-restore');
+    await settle();
+    const editable = container.querySelector<HTMLElement>(
+      '[data-chat-composer-root] [contenteditable="true"]',
+    );
+    if (editable === null) throw new Error('No composer.');
+    expect(
+      serializeEditorValue(composerEditorOf(editable).children).text,
+    ).toContain('Edited prompt');
+    expect(shown('queued-message-unsaved-edit')).toBe(false);
+
+    // A cleared edit is kept as empty text, never as the message's old text.
+    keep('');
+    await settle();
+    expect(shown('queued-message-unsaved-edit')).toBe(true);
+    click('queued-message-unsaved-edit-dismiss');
+    await settle();
+    expect(shown('queued-message-unsaved-edit')).toBe(false);
+    expect(useChatStore.getState().unsavedQueuedEdits).toEqual([]);
   });
 
   it("picks a cloud chat's skills from its web core catalog and saves them there", async () => {
@@ -2143,6 +2927,73 @@ describe('a cloud task in the cowork page (CAN-6175 R2)', () => {
     );
   });
 
+  it("shows a cloud chat's model with its mark and lists the hosted catalog by vendor, as the web does (CAN-6753)", async () => {
+    renderPage();
+    act(() => {
+      openCoworkWorkEntryFromSidebar('web-core:ws-1', 'web-core:wt-1');
+    });
+    await settle();
+    act(() => {
+      useChatStore.getState().switchTab('web-core:wt-1', {
+        projectId: 'web-core:ws-1',
+        worktreeId: 'web-core:wt-1',
+      });
+    });
+    await settle();
+    // The chip draws the model's mark, never the letter fallback a provider
+    // the picker can't name gets.
+    const triggers = Array.from(
+      container.querySelectorAll<HTMLElement>(
+        '[data-testid="portal-chat-model-picker"]',
+      ),
+    );
+    expect(triggers.length).toBeGreaterThan(0);
+    expect(
+      triggers.map(
+        (trigger) =>
+          trigger
+            .querySelector(
+              '[data-testid="portal-chat-model-picker-provider-icon"]',
+            )
+            ?.getAttribute('data-provider') ?? null,
+      ),
+    ).toEqual(triggers.map(() => 'claude'));
+    expect(
+      triggers.some(
+        (trigger) =>
+          trigger.querySelector('[data-generic-provider-icon]') !== null,
+      ),
+    ).toBe(false);
+    // Its rows sit under their vendors, never one "Other models" section,
+    // and a model the library keeps locked stays out of the list.
+    act(() => {
+      triggers[0]?.click();
+    });
+    await settle();
+    const menu = document.querySelector(
+      '[data-testid="portal-chat-model-menu"]',
+    );
+    expect(menu).not.toBeNull();
+    const sections = Array.from(
+      menu?.querySelectorAll('[role="group"][aria-label]') ?? [],
+      (group) => group.getAttribute('aria-label'),
+    );
+    expect(sections).toEqual(expect.arrayContaining(['Anthropic', 'OpenAI']));
+    expect(sections).not.toContain('Other models');
+    expect(menu?.textContent ?? '').not.toContain('Locked model');
+    // The catalog is read at revision 2, the hosted catalog the web reads.
+    expect(
+      coreRequestLog.some(
+        (request) =>
+          request.method === 'core.catalog.snapshot.get' &&
+          request.params.revision === 2,
+      ),
+    ).toBe(true);
+    act(() => {
+      document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
+    });
+  });
+
   it('keeps a cloud model pick shown while a snapshot refresh lands during the change (CAN-6328)', async () => {
     renderPage();
     act(() => {
@@ -2195,6 +3046,353 @@ describe('a cloud task in the cowork page (CAN-6175 R2)', () => {
       }),
     );
     expect(shownModel()).toBe('second-model');
+  });
+
+  it("holds a cloud chat to the harness its first answer names on its events, with no snapshot read, as the web's picker does after each turn (CAN-6777)", async () => {
+    // Earlier cases leave the task's chats in the store: going offline drops
+    // them, so this one opens the task afresh and follows its events.
+    act(() => {
+      cloudCoworkStore.getState().disconnect('offline');
+    });
+    connectCloud();
+    try {
+      // The snapshot names no harness yet: nothing has answered.
+      renderPage({ followsEvents: true });
+      act(() => {
+        openCoworkWorkEntryFromSidebar('web-core:ws-1', 'web-core:wt-1');
+      });
+      await settle();
+      const target = {
+        projectId: 'web-core:ws-1',
+        worktreeId: 'web-core:wt-1',
+        chatId: 'web-core:wt-1',
+      };
+      act(() => {
+        useChatStore.getState().switchTab(target.chatId, target);
+      });
+      await settle();
+      const readsBefore = snapshotReads;
+      // The first answer commits: its batch names the answering model's harness.
+      snapshotRevision += 1;
+      pushFrame('core.chat.events', (params) => worktreeOf(params) === 'wt-1', {
+        kind: 'item',
+        cursor: { daemonEpoch: 'e1', sequence: snapshotRevision },
+        item: {
+          schemaVersion: 1,
+          eventId: `harness-${snapshotRevision}`,
+          occurredAt: CREATED_AT,
+          projectId: 'ws-1',
+          worktreeId: 'wt-1',
+          baseRevision: snapshotRevision - 1,
+          revision: snapshotRevision,
+          changes: [
+            {
+              type: 'tab.metadata_patched',
+              tabId: 'wt-1',
+              patch: { executionHarness: 'claude' },
+            },
+          ],
+        },
+      });
+      await settle();
+      const doc = container.ownerDocument;
+      const trigger = doc.querySelector<HTMLElement>(
+        '[data-testid="portal-chat-model-picker"]',
+      );
+      expect(trigger).not.toBeNull();
+      act(() => {
+        trigger?.dispatchEvent(
+          new MouseEvent('pointerdown', { bubbles: true, button: 0 }),
+        );
+        trigger?.click();
+      });
+      await settle();
+      const all = doc.querySelector<HTMLElement>(
+        '[data-testid="portal-chat-model-harness-tab-all"]',
+      );
+      if (all !== null) {
+        act(() => {
+          all.click();
+        });
+        await settle();
+      }
+      const other = doc.querySelector<HTMLElement>(
+        '[data-testid="portal-chat-model-menu"] [data-model-id="vendor-b-model"]',
+      );
+      // The other harness's model is greyed out, or not listed, as on the web.
+      expect(
+        other !== null &&
+          other.getAttribute('aria-disabled') !== 'true' &&
+          !other.hasAttribute('disabled'),
+      ).toBe(false);
+      if (other !== null) {
+        act(() => {
+          other.click();
+        });
+        await settle();
+      }
+      expect(chatUpdates.map(modelOf)).not.toContain('vendor-b-model');
+      expect(snapshotReads).toBe(readsBefore);
+    } finally {
+      // Later cases open the task with no harness named.
+      act(() => {
+        cloudCoworkStore.getState().disconnect('offline');
+      });
+    }
+  });
+
+  it("keeps a cloud chat to the harness it runs on, as the web's picker does: a model on another harness can't be picked and never reaches the web core (CAN-6761)", async () => {
+    // The chat's answers ran on one harness; the catalog's vendor B model
+    // runs on another.
+    snapshotHarness = 'claude';
+    renderPage();
+    act(() => {
+      openCoworkWorkEntryFromSidebar('web-core:ws-1', 'web-core:wt-1');
+    });
+    await settle();
+    const target = {
+      projectId: 'web-core:ws-1',
+      worktreeId: 'web-core:wt-1',
+      chatId: 'web-core:wt-1',
+    };
+    act(() => {
+      useChatStore.getState().switchTab(target.chatId, target);
+    });
+    await settle();
+    // The window reads the chat's snapshot again, whatever an earlier read
+    // held.
+    act(() => {
+      refreshChatScopeRevisioned(target.projectId, target.worktreeId);
+    });
+    await settle();
+    const doc = container.ownerDocument;
+    const openPicker = async (): Promise<void> => {
+      const trigger = doc.querySelector<HTMLElement>(
+        '[data-testid="portal-chat-model-picker"]',
+      );
+      expect(trigger).not.toBeNull();
+      act(() => {
+        trigger?.dispatchEvent(
+          new MouseEvent('pointerdown', { bubbles: true, button: 0 }),
+        );
+        trigger?.click();
+      });
+      await settle();
+      // Every harness's models, as the All tab lists them.
+      const all = doc.querySelector<HTMLElement>(
+        '[data-testid="portal-chat-model-harness-tab-all"]',
+      );
+      if (all !== null) {
+        act(() => {
+          all.click();
+        });
+        await settle();
+      }
+    };
+    const row = (modelId: string): HTMLElement | null =>
+      doc.querySelector<HTMLElement>(
+        `[data-testid="portal-chat-model-menu"] [data-model-id="${modelId}"]`,
+      );
+    const offered = (modelId: string): boolean => {
+      const element = row(modelId);
+      return (
+        element !== null &&
+        element.getAttribute('aria-disabled') !== 'true' &&
+        !element.hasAttribute('disabled')
+      );
+    };
+    await openPicker();
+    expect(
+      doc.querySelector('[data-testid="portal-chat-model-menu"]'),
+    ).not.toBeNull();
+    expect(offered('cloud-model')).toBe(true);
+    // The other harness's model is greyed out, or not listed, as on the web.
+    expect(offered('vendor-b-model')).toBe(false);
+    const other = row('vendor-b-model');
+    if (other !== null) {
+      expect(doc.body.textContent ?? '').toContain(
+        'can only switch to models that run on it',
+      );
+      act(() => {
+        other.click();
+      });
+      await settle();
+    }
+    expect(chatUpdates.map(modelOf)).not.toContain('vendor-b-model');
+    expect(
+      useChatStore
+        .getState()
+        .worktreeChats[
+          'web-core:ws-1/web-core:wt-1'
+        ]?.tabs.find((tab) => tab.id === target.chatId)?.model,
+    ).toBe('cloud-model');
+  });
+
+  it("offers every catalog model in a cloud chat the web core names no harness for, as the web's picker does (CAN-6761)", async () => {
+    // No answer yet, or a web core from before CAN-6761: nothing to hold to.
+    renderPage();
+    act(() => {
+      openCoworkWorkEntryFromSidebar('web-core:ws-1', 'web-core:wt-1');
+    });
+    await settle();
+    const target = {
+      projectId: 'web-core:ws-1',
+      worktreeId: 'web-core:wt-1',
+      chatId: 'web-core:wt-1',
+    };
+    act(() => {
+      useChatStore.getState().switchTab(target.chatId, target);
+    });
+    await settle();
+    // The window reads the chat again: a snapshot that names no harness
+    // lifts a restriction an earlier read left.
+    act(() => {
+      refreshChatScopeRevisioned(target.projectId, target.worktreeId);
+    });
+    await settle();
+    const doc = container.ownerDocument;
+    const trigger = doc.querySelector<HTMLElement>(
+      '[data-testid="portal-chat-model-picker"]',
+    );
+    act(() => {
+      trigger?.dispatchEvent(
+        new MouseEvent('pointerdown', { bubbles: true, button: 0 }),
+      );
+      trigger?.click();
+    });
+    await settle();
+    const all = doc.querySelector<HTMLElement>(
+      '[data-testid="portal-chat-model-harness-tab-all"]',
+    );
+    if (all !== null) {
+      act(() => {
+        all.click();
+      });
+      await settle();
+    }
+    const other = doc.querySelector<HTMLElement>(
+      '[data-testid="portal-chat-model-menu"] [data-model-id="vendor-b-model"]',
+    );
+    expect(other).not.toBeNull();
+    expect(other?.getAttribute('aria-disabled')).not.toBe('true');
+    act(() => {
+      other?.click();
+    });
+    await settle();
+    expect(chatUpdates.map(modelOf)).toContain('vendor-b-model');
+  });
+
+  it("keeps a reopened secondary cloud chat to the harness its own snapshot names: a model on another harness can't be picked, and a send keeps the chat's model (CAN-6761)", async () => {
+    // The task's snapshot opens the task's chat; chat-2's harness comes only
+    // from chat-2's own snapshot, which opening it reads.
+    secondaryHarness = 'claude';
+    renderPage();
+    act(() => {
+      openCoworkWorkEntryFromSidebar('web-core:ws-1', 'web-core:wt-1');
+    });
+    await settle();
+    const target = {
+      projectId: 'web-core:ws-1',
+      worktreeId: 'web-core:wt-1',
+      chatId: 'web-core:chat-2',
+    };
+    act(() => {
+      useChatStore.getState().switchTab(target.chatId, target);
+    });
+    await settle();
+    // The window reads the task's snapshot again, which names only the
+    // task's chat: chat-2 keeps the harness its own snapshot named.
+    act(() => {
+      refreshChatScopeRevisioned(target.projectId, target.worktreeId);
+    });
+    await settle();
+    const tabModel = (): string | undefined =>
+      useChatStore
+        .getState()
+        .worktreeChats[
+          'web-core:ws-1/web-core:wt-1'
+        ]?.tabs.find((tab) => tab.id === target.chatId)?.model;
+    const modelBefore = tabModel();
+    const doc = container.ownerDocument;
+    const trigger = doc.querySelector<HTMLElement>(
+      '[data-testid="portal-chat-model-picker"]',
+    );
+    expect(trigger).not.toBeNull();
+    act(() => {
+      trigger?.dispatchEvent(
+        new MouseEvent('pointerdown', { bubbles: true, button: 0 }),
+      );
+      trigger?.click();
+    });
+    await settle();
+    const all = doc.querySelector<HTMLElement>(
+      '[data-testid="portal-chat-model-harness-tab-all"]',
+    );
+    if (all !== null) {
+      act(() => {
+        all.click();
+      });
+      await settle();
+    }
+    const row = (modelId: string): HTMLElement | null =>
+      doc.querySelector<HTMLElement>(
+        `[data-testid="portal-chat-model-menu"] [data-model-id="${modelId}"]`,
+      );
+    expect(
+      doc.querySelector('[data-testid="portal-chat-model-menu"]'),
+    ).not.toBeNull();
+    // The other harness's model is greyed out, or not listed, as on the web.
+    const other = row('vendor-b-model');
+    expect(
+      other !== null &&
+        other.getAttribute('aria-disabled') !== 'true' &&
+        !other.hasAttribute('disabled'),
+    ).toBe(false);
+    if (other !== null) {
+      act(() => {
+        other.click();
+      });
+      await settle();
+    }
+    act(() => {
+      doc.dispatchEvent(
+        new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }),
+      );
+    });
+    await settle();
+    // No pick on another harness reaches the web core, so none can revert
+    // on the next send: the chat sends on the model it shows.
+    const editable = container.querySelector<HTMLElement>(
+      '[data-chat-composer-root] [contenteditable="true"]',
+    );
+    expect(editable).not.toBeNull();
+    if (editable !== null) {
+      const editor = composerEditorOf(editable);
+      // Whatever the composer holds is replaced: the send is this text alone.
+      act(() => {
+        Transforms.select(editor, {
+          anchor: Editor.start(editor, []),
+          focus: Editor.end(editor, []),
+        });
+        Editor.insertText(editor, 'For the notes chat');
+      });
+      await settle();
+    }
+    act(() => {
+      container
+        .querySelector<HTMLButtonElement>('button[aria-label="Send message"]')
+        ?.click();
+    });
+    await settle();
+    expect(
+      coreRequestLog.filter(
+        (entry) =>
+          entry.method === 'core.chat.message.send' &&
+          entry.params.text === 'For the notes chat',
+      ),
+    ).toHaveLength(1);
+    expect(chatUpdates.map(modelOf)).not.toContain('vendor-b-model');
+    expect(tabModel()).toBe(modelBefore);
   });
 
   it('keeps a background sync of settings a cloud chat holds in the window off the wire, with no notice (CAN-6646)', async () => {
@@ -2747,6 +3945,169 @@ describe('a cloud task in the cowork page (CAN-6175 R2)', () => {
     };
   }
 
+  it("shows a transcript image this window never uploaded as its picture, read through its chat's web core, and keeps a larger one a file tile (CAN-6824)", async () => {
+    const picture = Uint8Array.from([137, 80, 78, 71, 13, 10, 26, 10, 1, 2]);
+    attachmentBytes.set('attachment:att-web-image', {
+      sizeBytes: picture.byteLength,
+      head: picture,
+    });
+    // Past one read: the head alone is served, as the web core's first range.
+    attachmentBytes.set('attachment:att-large-image', {
+      sizeBytes: CLOUD_ATTACHMENT_THUMBNAIL_MAX_BYTES + 1,
+      head: picture,
+    });
+    // Sent from the web, so this window holds neither file.
+    startedPrompts.push({
+      id: 'web-image-u',
+      role: 'user',
+      blocks: [{ type: 'text', text: 'Here is the diagram' }],
+      timestamp: Date.now(),
+      attachments: [
+        {
+          attachmentId: 'att-web-image',
+          filename: 'diagram.png',
+          mediaType: 'image/png',
+          size: picture.byteLength,
+        },
+        {
+          attachmentId: 'att-large-image',
+          filename: 'poster.png',
+          mediaType: 'image/png',
+          size: CLOUD_ATTACHMENT_THUMBNAIL_MAX_BYTES + 1,
+        },
+      ],
+    });
+    await openTaskChat();
+    await rereadTranscript();
+    const pictures = Array.from(
+      container.querySelectorAll<HTMLImageElement>(
+        '[data-testid="message-image-attachments"] img',
+      ),
+    );
+    expect(pictures.map((image) => [image.alt, image.src])).toEqual([
+      [
+        'diagram.png',
+        `data:image/png;base64,${btoa(String.fromCharCode(...picture))}`,
+      ],
+    ]);
+    expect(
+      Array.from(
+        container.querySelectorAll('[data-testid="message-file-attachment"]'),
+      ).map((tile) => tile.textContent),
+    ).toEqual([expect.stringContaining('poster.png')]);
+    // Each read once, scoped to the chat, one range at most: nothing past
+    // the larger file's first range.
+    expect(artifactReads).toEqual([
+      {
+        artifactId: 'attachment:att-web-image',
+        scope: { chatId: 'wt-1' },
+        offset: 0,
+        length: CLOUD_ATTACHMENT_THUMBNAIL_MAX_BYTES,
+      },
+      {
+        artifactId: 'attachment:att-large-image',
+        scope: { chatId: 'wt-1' },
+        offset: 0,
+        length: CLOUD_ATTACHMENT_THUMBNAIL_MAX_BYTES,
+      },
+    ]);
+    expect(calls.some((call) => call.path === 'api.readFilePreview')).toBe(
+      false,
+    );
+  });
+
+  /** Reads the task's transcript again: the store keeps tabs across cases. */
+  async function rereadTranscript(): Promise<void> {
+    snapshotRevision += 1;
+    act(() => {
+      refreshChatScopeRevisioned('web-core:ws-1', 'web-core:wt-1');
+    });
+    await settle();
+  }
+
+  const PNG = Uint8Array.from([137, 80, 78, 71, 13, 10, 26, 10, 3, 4]);
+
+  function webPrompt(
+    id: string,
+    attachments: readonly { attachmentId: string; filename: string }[],
+  ): Record<string, unknown> {
+    return {
+      id,
+      role: 'user',
+      blocks: [{ type: 'text', text: `prompt ${id}` }],
+      timestamp: Date.now(),
+      attachments: attachments.map((attachment) => ({
+        ...attachment,
+        mediaType: 'image/png',
+        size: PNG.byteLength,
+      })),
+    };
+  }
+
+  const fileTiles = (): string[] =>
+    Array.from(
+      container.querySelectorAll('[data-testid="message-file-attachment"]'),
+    ).map((tile) => tile.textContent ?? '');
+
+  it('keeps an SVG and a picture whose bytes are not its type as file tiles, and reads a failed one once (CAN-6824)', async () => {
+    attachmentBytes.set('attachment:att-svg', {
+      sizeBytes: 12,
+      head: new TextEncoder().encode('<svg></svg>\n'),
+    });
+    // Named a PNG, but its bytes are text.
+    attachmentBytes.set('attachment:att-not-png', {
+      sizeBytes: 5,
+      head: new TextEncoder().encode('hello'),
+    });
+    startedPrompts.push(
+      webPrompt('svg-u', [
+        { attachmentId: 'att-svg', filename: 'logo.svg' },
+        { attachmentId: 'att-not-png', filename: 'fake.png' },
+      ]),
+    );
+    await openTaskChat();
+    await rereadTranscript();
+    expect(
+      container.querySelectorAll(
+        '[data-testid="message-image-attachments"] img',
+      ),
+    ).toHaveLength(0);
+    expect(fileTiles()).toEqual([
+      expect.stringContaining('logo.svg'),
+      expect.stringContaining('fake.png'),
+    ]);
+    // An SVG is never read; the mismatched one is read once, and a re-render
+    // keeps its file tile without reading it again.
+    await rereadTranscript();
+    expect(artifactReads.map((read) => read.artifactId)).toEqual([
+      'attachment:att-not-png',
+    ]);
+  });
+
+  it('reads a picture two messages share once (CAN-6824)', async () => {
+    attachmentBytes.set('attachment:att-shared', {
+      sizeBytes: PNG.byteLength,
+      head: PNG,
+    });
+    const shared = { attachmentId: 'att-shared', filename: 'shared.png' };
+    startedPrompts.push(
+      webPrompt('shared-1-u', [shared]),
+      webPrompt('shared-2-u', [shared]),
+    );
+    await openTaskChat();
+    await rereadTranscript();
+    expect(
+      Array.from(
+        container.querySelectorAll<HTMLImageElement>(
+          '[data-testid="message-image-attachments"] img',
+        ),
+      ).map((image) => image.alt),
+    ).toEqual(['shared.png', 'shared.png']);
+    expect(artifactReads.map((read) => read.artifactId)).toEqual([
+      'attachment:att-shared',
+    ]);
+  });
+
   it("keeps a cloud Stop's retry while its unnamed starting turn reads running, then not, then running (CAN-6592)", async () => {
     const chat = await openTaskChat();
     // Core starts the sent turn and names none yet.
@@ -2762,32 +4123,32 @@ describe('a cloud task in the cowork page (CAN-6175 R2)', () => {
     jest.useFakeTimers({
       doNotFake: ['Date', 'nextTick', 'queueMicrotask', 'setImmediate'],
     });
-    try {
-      await chat.refresh();
-      // The web core takes the cancel, and the turn goes on starting.
-      await chat.stop();
-      await chat.flush();
-      expect(chat.cancels()).toEqual(['turn-1']);
-      expect(chat.shown()).toBe('stopping');
-      // The same starting turn reads queued (not running), then starting again.
-      taskRuntime = {
-        status: 'awaiting_input',
-        queuedMessageIds: ['queued-1'],
-      };
-      await chat.refresh();
-      taskRuntime = { status: 'starting', queuedMessageIds: [] };
-      await chat.refresh();
-      // The retry still opens, and sends the cancel again.
-      await act(() => jest.advanceTimersByTimeAsync(CLOUD_STOP_RETRY_AFTER_MS));
-      await chat.flush();
-      expect(chat.shown()).toBe('retryable');
-      await chat.stop();
-      await chat.flush();
-      expect(chat.cancels()).toEqual(['turn-1', 'turn-1']);
-    } finally {
+    // A failure or timeout below leaves nothing held for the next case.
+    onCaseEnd(async () => {
       await chat.settleTimers();
       await chat.endTurn();
-    }
+    });
+    await chat.refresh();
+    // The web core takes the cancel, and the turn goes on starting.
+    await chat.stop();
+    await chat.flush();
+    expect(chat.cancels()).toEqual(['turn-1']);
+    expect(chat.shown()).toBe('stopping');
+    // The same starting turn reads queued (not running), then starting again.
+    taskRuntime = {
+      status: 'awaiting_input',
+      queuedMessageIds: ['queued-1'],
+    };
+    await chat.refresh();
+    taskRuntime = { status: 'starting', queuedMessageIds: [] };
+    await chat.refresh();
+    // The retry still opens, and sends the cancel again.
+    await act(() => jest.advanceTimersByTimeAsync(CLOUD_STOP_RETRY_AFTER_MS));
+    await chat.flush();
+    expect(chat.shown()).toBe('retryable');
+    await chat.stop();
+    await chat.flush();
+    expect(chat.cancels()).toEqual(['turn-1', 'turn-1']);
   });
 
   it('a cloud Stop pressed again after the retry window sends a new cancel while the first still waits (CAN-6592)', async () => {
@@ -2811,18 +4172,8 @@ describe('a cloud task in the cowork page (CAN-6175 R2)', () => {
     });
     let pressed: Promise<void> = Promise.resolve();
     let retried: Promise<void> = Promise.resolve();
-    try {
-      pressed = chat.press();
-      await chat.flush();
-      expect(chat.cancels()).toEqual(['turn-1']);
-      await act(() => jest.advanceTimersByTimeAsync(CLOUD_STOP_RETRY_AFTER_MS));
-      await chat.flush();
-      expect(chat.shown()).toBe('retryable');
-      // The retry is its own cancel; it doesn't wait on the first.
-      retried = chat.press();
-      await chat.flush();
-      expect(chat.cancels()).toEqual(['turn-1', 'turn-1']);
-    } finally {
+    // A failure or timeout below leaves nothing held for the next case.
+    onCaseEnd(async () => {
       cancelGate = null;
       release();
       await act(() => Promise.allSettled([pressed, retried]));
@@ -2830,7 +4181,17 @@ describe('a cloud task in the cowork page (CAN-6175 R2)', () => {
       jest.useRealTimers();
       await settle();
       await chat.endTurn();
-    }
+    });
+    pressed = chat.press();
+    await chat.flush();
+    expect(chat.cancels()).toEqual(['turn-1']);
+    await act(() => jest.advanceTimersByTimeAsync(CLOUD_STOP_RETRY_AFTER_MS));
+    await chat.flush();
+    expect(chat.shown()).toBe('retryable');
+    // The retry is its own cancel; it doesn't wait on the first.
+    retried = chat.press();
+    await chat.flush();
+    expect(chat.cancels()).toEqual(['turn-1', 'turn-1']);
   });
 
   const TASK_CHAT = {
@@ -2853,30 +4214,30 @@ describe('a cloud task in the cowork page (CAN-6175 R2)', () => {
     holdCancels = true;
     let first: Promise<void> = Promise.resolve();
     let retry: Promise<void> = Promise.resolve();
-    try {
-      first = chat.press();
-      await chat.flush();
-      expect(heldCancels).toHaveLength(1);
-      await act(() => jest.advanceTimersByTimeAsync(CLOUD_STOP_RETRY_AFTER_MS));
-      await chat.flush();
-      expect(chat.shown()).toBe('retryable');
-      retry = chat.press();
-      await chat.flush();
-      expect(heldCancels).toHaveLength(2);
-      // The retry's cancel is accepted; the first attempt's then fails.
-      heldCancels[1]?.(acceptedCancel);
-      await chat.flush();
-      expect(chat.shown()).toBe('stopping');
-      heldCancels[0]?.(refusedCancel);
-      await chat.flush();
-      expect(chat.shown()).toBe('stopping');
-    } finally {
+    // A failure or timeout below leaves nothing held for the next case.
+    onCaseEnd(async () => {
       holdCancels = false;
       for (const answer of heldCancels.splice(0)) answer(acceptedCancel);
       await act(() => Promise.allSettled([first, retry]));
       await chat.settleTimers();
       await chat.endTurn();
-    }
+    });
+    first = chat.press();
+    await chat.flush();
+    expect(heldCancels).toHaveLength(1);
+    await act(() => jest.advanceTimersByTimeAsync(CLOUD_STOP_RETRY_AFTER_MS));
+    await chat.flush();
+    expect(chat.shown()).toBe('retryable');
+    retry = chat.press();
+    await chat.flush();
+    expect(heldCancels).toHaveLength(2);
+    // The retry's cancel is accepted; the first attempt's then fails.
+    heldCancels[1]?.(acceptedCancel);
+    await chat.flush();
+    expect(chat.shown()).toBe('stopping');
+    heldCancels[0]?.(refusedCancel);
+    await chat.flush();
+    expect(chat.shown()).toBe('stopping');
   });
 
   it('a Stop on an ended turn that fails late never marks the next turn (CAN-6592)', async () => {
@@ -2889,31 +4250,31 @@ describe('a cloud task in the cowork page (CAN-6175 R2)', () => {
     jest.useFakeTimers(FAKE_TIMERS);
     holdCancels = true;
     let pressed: Promise<void> = Promise.resolve();
-    try {
-      pressed = chat.press();
-      await chat.flush();
-      expect(heldCancels).toHaveLength(1);
-      // Turn A ends while its cancel is held, and turn B is sent.
-      runningTurn = null;
-      await chat.refresh();
-      const sendingB = useChatStore
-        .getState()
-        .sendMessage('next turn', undefined, TASK_CHAT);
-      await chat.flush();
-      await act(() => sendingB);
-      await chat.flush();
-      expect(chat.shown()).toBeUndefined();
-      // A's cancel fails now: B, which nobody stopped, shows no failure.
-      heldCancels[0]?.(refusedCancel);
-      await chat.flush();
-      expect(chat.shown()).toBeUndefined();
-    } finally {
+    // A failure or timeout below leaves nothing held for the next case.
+    onCaseEnd(async () => {
       holdCancels = false;
       for (const answer of heldCancels.splice(0)) answer(acceptedCancel);
       await act(() => Promise.allSettled([pressed]));
       await chat.settleTimers();
       await chat.endTurn();
-    }
+    });
+    pressed = chat.press();
+    await chat.flush();
+    expect(heldCancels).toHaveLength(1);
+    // Turn A ends while its cancel is held, and turn B is sent.
+    runningTurn = null;
+    await chat.refresh();
+    const sendingB = useChatStore
+      .getState()
+      .sendMessage('next turn', undefined, TASK_CHAT);
+    await chat.flush();
+    await act(() => sendingB);
+    await chat.flush();
+    expect(chat.shown()).toBeUndefined();
+    // A's cancel fails now: B, which nobody stopped, shows no failure.
+    heldCancels[0]?.(refusedCancel);
+    await chat.flush();
+    expect(chat.shown()).toBeUndefined();
   });
 
   it('a message sent while a cloud turn runs waits in the queue, not the transcript, as a reload shows it (CAN-6689)', async () => {
@@ -2944,209 +4305,215 @@ describe('a cloud task in the cowork page (CAN-6175 R2)', () => {
     sendsKeepRunning = true;
     sendsNameMessage = true;
     let release = (): void => undefined;
-    try {
-      await act(() =>
-        useChatStore.getState().sendMessage('five', undefined, TASK_CHAT),
-      );
-      await settle();
-      // Core holds the first turn queued while it starts, and lists it in
-      // the queue, as staging reads it seconds in (13 Nov 2026): the desktop
-      // shows the chat idle. The prompt starting now stays, with its timer.
-      startingSend = { text: 'five', turnId: 'turn-1', messageId: 'turn-1-u' };
-      taskRuntime = { status: 'queued', queuedMessageIds: ['turn-1-u'] };
-      await chat.refresh();
-      await settle();
-      expect(userTexts()).toContain('five');
-      expect(tabOf()?.pendingTurn).toBeDefined();
-      // Core queues the follow-up behind it, and a queue read lands before
-      // the send's receipt names the prompt.
-      sendGate = new Promise<void>((resolve) => {
-        release = resolve;
-      });
-      const sending = useChatStore
-        .getState()
-        .sendMessage('six', undefined, TASK_CHAT);
-      await settle();
-      taskRuntime = {
-        status: 'queued',
-        queuedMessageIds: ['turn-1-u', 'turn-2-u'],
-      };
-      await chat.refresh();
-      await settle();
-      release();
-      sendGate = null;
-      await act(() => sending);
-      await settle();
-      expect(userTexts()).not.toContain('six');
-      expect(userTexts()).toContain('five');
-      // The first turn now runs, with the follow-up queued behind it, and
-      // Core writes its prompt.
-      startingSend = null;
-      startedPrompts.push({
-        id: 'turn-1-u',
-        role: 'user',
-        blocks: [{ type: 'text', text: 'five' }],
-        timestamp: Date.now(),
-      });
-      taskRuntime = null;
-      await chat.refresh();
-      await settle();
-      expect(queuedSends.map((each) => each.text)).toEqual(['six']);
-      // It shows as the queued row only: the transcript, like a reload's,
-      // still ends with the running turn's prompt, so its reply stays under it.
-      expect(tabOf()?.queuedMessages.map((row) => row.text)).toEqual(['six']);
-      expect(userTexts()).not.toContain('six');
-      expect(userTexts()).toContain('five');
-      // Deleted from the queue: the web core keeps the prompt, marked
-      // cancelled, and the desktop shows it labelled Cancelled, as the web
-      // does, live and on the page a reload reads.
-      act(() => {
-        useChatStore.getState().clearQueuedMessage(0, TASK_CHAT);
-      });
-      await settle();
-      expect(cancelledPrompts.map((each) => each.id)).toEqual(['turn-2-u']);
-      snapshotRevision += 1;
-      pushFrame('core.chat.events', (params) => worktreeOf(params) === 'wt-1', {
-        kind: 'item',
-        cursor: { daemonEpoch: 'e1', sequence: snapshotRevision },
-        item: {
-          schemaVersion: 1,
-          eventId: `cancelled-${snapshotRevision}`,
-          occurredAt: CREATED_AT,
-          projectId: 'ws-1',
-          worktreeId: 'wt-1',
-          baseRevision: snapshotRevision - 1,
-          revision: snapshotRevision,
-          changes: [
-            {
-              type: 'message.upserted',
-              chatId: 'wt-1',
-              message: cancelledPrompts[0],
-            },
-            {
-              type: 'runtime.patched',
-              chatId: 'wt-1',
-              runtime: {
-                status: 'streaming',
-                activeTurnId: 'turn-1',
-                queuedMessageIds: [],
-              },
-            },
-          ],
-        },
-      });
-      await settle();
-      await chat.refresh();
-      await settle();
-      expect(tabOf()?.queuedMessages ?? []).toEqual([]);
-      expect(userTexts().indexOf('five')).toBeGreaterThanOrEqual(0);
-      expect(userTexts().indexOf('six')).toBeGreaterThan(
-        userTexts().indexOf('five'),
-      );
-      const six = tabOf()?.messages.find(
-        (message) =>
-          message.role === 'user' &&
-          message.blocks.some(
-            (block) => block.type === 'text' && block.text === 'six',
-          ),
-      );
-      expect(
-        six === undefined
-          ? undefined
-          : persistedMessageToPortalMessage({
-              scope: 'worktree',
-              chatId: TASK_CHAT.chatId,
-              message: six,
-            }).status,
-      ).toBe('cancelled');
-      // And the desktop transcript draws it so: the deleted prompt's bubble
-      // says Cancelled, under its text, and the prompt that ran does not.
-      const list = document.createElement('div');
-      document.body.append(list);
-      const listRoot = createRoot(list);
-      try {
-        act(() => {
-          listRoot.render(
-            <CanopyClientProvider
-              client={createDesktopCanopyClient(
-                createDesktopCapabilities('darwin', {}, {}),
-              )}
-            >
-              <ChatMessageList
-                messages={[...(tabOf()?.messages ?? [])]}
-                queuedMessages={[]}
-                chatId={TASK_CHAT.chatId}
-                targetOverride={TASK_CHAT}
-                onClearQueuedMessage={() => undefined}
-              />
-            </CanopyClientProvider>,
-          );
-        });
-        await settle();
-        const bubbleOf = (text: string): string | undefined =>
-          [
-            ...list.querySelectorAll(
-              '[data-testid="portal-chat-message-content"]',
-            ),
-          ]
-            .map((bubble) => bubble.textContent ?? '')
-            .find((content) => content.startsWith(text));
-        expect(bubbleOf('six')).toBe('sixCancelled');
-        expect(bubbleOf('five')).toBe('five');
-        // A turn stopped once it ran keeps its prompt unmarked: its label
-        // still comes from its recorded end, on the turn, not the bubble.
-        const fiveId = tabOf()?.messages.find(
-          (message) =>
-            message.role === 'user' &&
-            message.blocks.some(
-              (block) => block.type === 'text' && block.text === 'five',
-            ),
-        )?.id;
-        act(() => {
-          useChatStore.setState((state) => {
-            const key = `${TASK_CHAT.projectId}/${TASK_CHAT.worktreeId}`;
-            const worktree = state.worktreeChats[key];
-            if (worktree === undefined || fiveId === undefined) return state;
-            return {
-              worktreeChats: {
-                ...state.worktreeChats,
-                [key]: {
-                  ...worktree,
-                  tabs: worktree.tabs.map((tab) =>
-                    tab.id === TASK_CHAT.chatId
-                      ? {
-                          ...tab,
-                          turnEnds: {
-                            ...tab.turnEnds,
-                            [fiveId]: {
-                              outcome: 'cancelled',
-                              endedAt: Date.now(),
-                            },
-                          },
-                        }
-                      : tab,
-                  ),
-                },
-              },
-            };
-          });
-        });
-        await settle();
-        expect(bubbleOf('five')).toBe('five');
-        expect(bubbleOf('six')).toBe('sixCancelled');
-      } finally {
-        act(() => {
-          listRoot.unmount();
-        });
-        list.remove();
-      }
-    } finally {
+    // A failure or timeout below leaves nothing held for the next case.
+    onCaseEnd(async () => {
       release();
       sendGate = null;
       queuedSends.length = 0;
       startingSend = null;
       taskRuntime = null;
       await chat.endTurn();
+    });
+    await act(() =>
+      useChatStore.getState().sendMessage('five', undefined, TASK_CHAT),
+    );
+    await settle();
+    // Core holds the first turn queued while it starts, and lists it in
+    // the queue, as staging reads it seconds in (13 Nov 2026): the desktop
+    // shows the chat idle. The prompt starting now stays, with its timer.
+    startingSend = { text: 'five', turnId: 'turn-1', messageId: 'turn-1-u' };
+    taskRuntime = { status: 'queued', queuedMessageIds: ['turn-1-u'] };
+    await chat.refresh();
+    await settle();
+    expect(userTexts()).toContain('five');
+    expect(tabOf()?.pendingTurn).toBeDefined();
+    // Core queues the follow-up behind it, and a queue read lands before
+    // the send's receipt names the prompt.
+    sendGate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const sending = useChatStore
+      .getState()
+      .sendMessage('six', undefined, TASK_CHAT);
+    await settle();
+    taskRuntime = {
+      status: 'queued',
+      queuedMessageIds: ['turn-1-u', 'turn-2-u'],
+    };
+    await chat.refresh();
+    await settle();
+    release();
+    sendGate = null;
+    await act(() => sending);
+    await settle();
+    expect(userTexts()).not.toContain('six');
+    expect(userTexts()).toContain('five');
+    // The first turn now runs, with the follow-up queued behind it, and
+    // Core writes its prompt.
+    startingSend = null;
+    startedPrompts.push({
+      id: 'turn-1-u',
+      role: 'user',
+      blocks: [{ type: 'text', text: 'five' }],
+      timestamp: Date.now(),
+    });
+    taskRuntime = null;
+    await chat.refresh();
+    await settle();
+    expect(queuedSends.map((each) => each.text)).toEqual(['six']);
+    // It shows as the queued row only: the transcript, like a reload's,
+    // still ends with the running turn's prompt, so its reply stays under it.
+    expect(tabOf()?.queuedMessages.map((row) => row.text)).toEqual(['six']);
+    expect(userTexts()).not.toContain('six');
+    expect(userTexts()).toContain('five');
+    // Deleted from the queue: the web core keeps the prompt, marked
+    // cancelled, and the desktop shows it labelled Cancelled, as the web
+    // does, live and on the page a reload reads.
+    act(() => {
+      useChatStore.getState().clearQueuedMessage(0, TASK_CHAT);
+    });
+    await settle();
+    expect(cancelledPrompts.map((each) => each.id)).toEqual(['turn-2-u']);
+    snapshotRevision += 1;
+    pushFrame('core.chat.events', (params) => worktreeOf(params) === 'wt-1', {
+      kind: 'item',
+      cursor: { daemonEpoch: 'e1', sequence: snapshotRevision },
+      item: {
+        schemaVersion: 1,
+        eventId: `cancelled-${snapshotRevision}`,
+        occurredAt: CREATED_AT,
+        projectId: 'ws-1',
+        worktreeId: 'wt-1',
+        baseRevision: snapshotRevision - 1,
+        revision: snapshotRevision,
+        changes: [
+          {
+            type: 'message.upserted',
+            chatId: 'wt-1',
+            message: cancelledPrompts[0],
+          },
+          {
+            type: 'runtime.patched',
+            chatId: 'wt-1',
+            runtime: {
+              status: 'streaming',
+              activeTurnId: 'turn-1',
+              queuedMessageIds: [],
+            },
+          },
+        ],
+      },
+    });
+    await settle();
+    await chat.refresh();
+    await settle();
+    expect(tabOf()?.queuedMessages ?? []).toEqual([]);
+    expect(userTexts().indexOf('five')).toBeGreaterThanOrEqual(0);
+    expect(userTexts().indexOf('six')).toBeGreaterThan(
+      userTexts().indexOf('five'),
+    );
+    const six = tabOf()?.messages.find(
+      (message) =>
+        message.role === 'user' &&
+        message.blocks.some(
+          (block) => block.type === 'text' && block.text === 'six',
+        ),
+    );
+    expect(
+      six === undefined
+        ? undefined
+        : persistedMessageToPortalMessage({
+            scope: 'worktree',
+            chatId: TASK_CHAT.chatId,
+            message: six,
+          }).status,
+    ).toBe('cancelled');
+    // And the desktop transcript draws it so: the deleted prompt's bubble
+    // says Cancelled, under its text, and the prompt that ran does not.
+    const list = document.createElement('div');
+    document.body.append(list);
+    const listRoot = createRoot(list);
+    onCaseEnd(() => {
+      act(() => {
+        listRoot.unmount();
+      });
+      list.remove();
+    });
+    try {
+      act(() => {
+        listRoot.render(
+          <CanopyClientProvider
+            client={createDesktopCanopyClient(
+              createDesktopCapabilities('darwin', {}, {}),
+            )}
+          >
+            <ChatMessageList
+              messages={[...(tabOf()?.messages ?? [])]}
+              queuedMessages={[]}
+              chatId={TASK_CHAT.chatId}
+              targetOverride={TASK_CHAT}
+              onClearQueuedMessage={() => undefined}
+            />
+          </CanopyClientProvider>,
+        );
+      });
+      await settle();
+      const bubbleOf = (text: string): string | undefined =>
+        [
+          ...list.querySelectorAll(
+            '[data-testid="portal-chat-message-content"]',
+          ),
+        ]
+          .map((bubble) => bubble.textContent ?? '')
+          .find((content) => content.startsWith(text));
+      expect(bubbleOf('six')).toBe('sixCancelled');
+      expect(bubbleOf('five')).toBe('five');
+      // A turn stopped once it ran keeps its prompt unmarked: its label
+      // still comes from its recorded end, on the turn, not the bubble.
+      const fiveId = tabOf()?.messages.find(
+        (message) =>
+          message.role === 'user' &&
+          message.blocks.some(
+            (block) => block.type === 'text' && block.text === 'five',
+          ),
+      )?.id;
+      act(() => {
+        useChatStore.setState((state) => {
+          const key = `${TASK_CHAT.projectId}/${TASK_CHAT.worktreeId}`;
+          const worktree = state.worktreeChats[key];
+          if (worktree === undefined || fiveId === undefined) return state;
+          return {
+            worktreeChats: {
+              ...state.worktreeChats,
+              [key]: {
+                ...worktree,
+                tabs: worktree.tabs.map((tab) =>
+                  tab.id === TASK_CHAT.chatId
+                    ? {
+                        ...tab,
+                        turnEnds: {
+                          ...tab.turnEnds,
+                          [fiveId]: {
+                            outcome: 'cancelled',
+                            endedAt: Date.now(),
+                          },
+                        },
+                      }
+                    : tab,
+                ),
+              },
+            },
+          };
+        });
+      });
+      await settle();
+      expect(bubbleOf('five')).toBe('five');
+      expect(bubbleOf('six')).toBe('sixCancelled');
+    } finally {
+      act(() => {
+        listRoot.unmount();
+      });
+      list.remove();
     }
     // It drives two sends, a deletion and a transcript render: longer than
     // the default on a loaded CI runner.
@@ -3160,38 +4527,42 @@ describe('a cloud task in the cowork page (CAN-6175 R2)', () => {
     );
     await settle();
     jest.useFakeTimers(FAKE_TIMERS);
-    try {
-      await chat.stop();
-      await chat.flush();
-      expect(chat.cancels()).toEqual(['turn-1']);
-      expect(chat.shown()).toBe('stopping');
-      // A snapshot then names the turn, running: the handoff from starting
-      // to running keeps the retry.
-      runningTurn = 'turn-1';
-      await chat.refresh();
-      await act(() => jest.advanceTimersByTimeAsync(CLOUD_STOP_RETRY_AFTER_MS));
-      await chat.flush();
-      expect(chat.shown()).toBe('retryable');
-    } finally {
+    // A failure or timeout below leaves nothing held for the next case.
+    onCaseEnd(async () => {
       await chat.settleTimers();
       await chat.endTurn();
-    }
+    });
+    await chat.stop();
+    await chat.flush();
+    expect(chat.cancels()).toEqual(['turn-1']);
+    expect(chat.shown()).toBe('stopping');
+    // A snapshot then names the turn, running: the handoff from starting
+    // to running keeps the retry.
+    runningTurn = 'turn-1';
+    await chat.refresh();
+    await act(() => jest.advanceTimersByTimeAsync(CLOUD_STOP_RETRY_AFTER_MS));
+    await chat.flush();
+    expect(chat.shown()).toBe('retryable');
   });
 
-  it('a Stop on a cloud turn that is still starting says it waits for the project to wake, until a runtime runs the turn (CAN-6721)', async () => {
+  it('a Stop on a cloud turn that is still starting reads plain Stopping…, with no wake reason, before and after a runtime runs the turn (CAN-6759)', async () => {
     const chat = await openTaskChat();
+    // A timeout below still ends the turn for the next case.
+    onCaseEnd(() => chat.endTurn());
     const stopControl = (): HTMLButtonElement | null =>
       container.querySelector<HTMLButtonElement>(
         '[data-testid="chat-stop-generation"]',
       );
-    // The reason as text on screen, not only Stop's tooltip and name: the
-    // user may wait half a minute without hovering.
+    // Core ends a starting turn's stop at once, and the web core has not
+    // reported the sandbox asleep or waking here (CAN-6766), so nothing on
+    // screen says the stop waits for the project to wake.
     const shownReason = (): string[] =>
       Array.from(container.querySelectorAll('*'))
         .filter(
           (element) =>
             element.children.length === 0 &&
-            element.textContent === 'Stopping… waiting for the project to wake',
+            element.textContent?.includes('waiting for the project to wake') ===
+              true,
         )
         .map((element) => element.tagName);
     // The send is accepted and its receipt names the turn, but the web core
@@ -3203,16 +4574,17 @@ describe('a cloud task in the cowork page (CAN-6175 R2)', () => {
     try {
       await chat.stop();
       await settle();
-      // The cancel is accepted, and the turn is still starting: Stop says
-      // what it waits for, as busy, until Core ends the turn.
+      // The cancel is accepted, and the turn is still starting: Stop reads
+      // plain Stopping…, busy, until Core ends the turn.
       expect(chat.cancels()).toEqual(['turn-1']);
       expect(chat.shown()).toBe('stopping');
-      expect(stopControl()?.getAttribute('aria-label')).toBe(
-        'Stopping… waiting for the project to wake',
-      );
+      expect(stopControl()?.getAttribute('aria-label')).toBe('Stopping…');
       expect(stopControl()?.getAttribute('aria-busy')).toBe('true');
       expect(stopControl()?.disabled).toBe(true);
-      expect(shownReason()).toHaveLength(1);
+      expect(shownReason()).toEqual([]);
+      expect(
+        container.querySelector('[data-testid="chat-composer-stop-status"]'),
+      ).toBeNull();
       // A runtime then runs the turn: the same Stopping state reads plain
       // Stopping…, as a streaming turn's does.
       runningTurn = 'turn-1';
@@ -3238,6 +4610,105 @@ describe('a cloud task in the cowork page (CAN-6175 R2)', () => {
     expect(
       container.querySelector('button[aria-label="Send message"]'),
     ).not.toBeNull();
+  });
+
+  for (const [_case, eventsRevision, reply] of [
+    ['advertises events below revision 3', 2, 'described'],
+    ['cannot be described', 3, 'failed'],
+  ] as const)
+    it(`reads plain Stopping… on a starting cloud turn when the web core ${_case}, though its snapshot reports the sandbox asleep: nothing would keep that state current, so it stays unknown (CAN-6841)`, async () => {
+      advertisedEventsRevision = eventsRevision;
+      describeReply = reply;
+      snapshotSandbox = 'asleep';
+      await describeConnectionAgain();
+      const chat = await openTaskChat();
+      const stopControl = (): HTMLButtonElement | null =>
+        container.querySelector<HTMLButtonElement>(
+          '[data-testid="chat-stop-generation"]',
+        );
+      await act(() =>
+        useChatStore
+          .getState()
+          .sendMessage('start slowly', undefined, TASK_CHAT),
+      );
+      await settle();
+      onCaseEnd(async () => {
+        await chat.endTurn();
+        useCloudSandboxStateStore.getState().clear();
+      });
+      try {
+        await chat.stop();
+        await settle();
+        // The sandbox reads unknown, never asleep.
+        expect(
+          useCloudSandboxStateStore.getState().byChat[liveReplyKey(TASK_CHAT)],
+        ).toBeUndefined();
+        expect(chat.cancels()).toEqual(['turn-1']);
+        expect(stopControl()?.getAttribute('aria-label')).toBe('Stopping…');
+        expect(
+          container.querySelector('[data-testid="chat-composer-stop-status"]'),
+        ).toBeNull();
+      } finally {
+        await chat.endTurn();
+        useCloudSandboxStateStore.getState().clear();
+      }
+    });
+
+  it('a Stop on a starting cloud turn says it waits for the project to wake only while the web core reports the sandbox asleep or waking, and reads plain Stopping… once it reports ready (CAN-6766)', async () => {
+    const chat = await openTaskChat();
+    // The chat's sandbox as the web core backend publishes it from the
+    // snapshot and sandbox.changed (that publishing is pinned by the desktop
+    // store's equivalence golden).
+    const reportSandbox = (state: 'asleep' | 'waking' | 'ready'): void => {
+      act(() => {
+        useCloudSandboxStateStore
+          .getState()
+          .set(liveReplyKey(TASK_CHAT), state);
+      });
+    };
+    reportSandbox('asleep');
+    const stopControl = (): HTMLButtonElement | null =>
+      container.querySelector<HTMLButtonElement>(
+        '[data-testid="chat-stop-generation"]',
+      );
+    const stopStatus = (): string | null =>
+      container.querySelector('[data-testid="chat-composer-stop-status"]')
+        ?.textContent ?? null;
+    await act(() =>
+      useChatStore.getState().sendMessage('start slowly', undefined, TASK_CHAT),
+    );
+    await settle();
+    // A timeout below still ends the turn and forgets the sandbox's state.
+    onCaseEnd(async () => {
+      await chat.endTurn();
+      useCloudSandboxStateStore.getState().clear();
+    });
+    try {
+      await chat.stop();
+      await settle();
+      // Asleep: the stop waits for the project to wake, and says so in the
+      // button and in the status row under it.
+      expect(chat.cancels()).toEqual(['turn-1']);
+      expect(stopControl()?.getAttribute('aria-label')).toBe(
+        'Stopping… waiting for the project to wake',
+      );
+      expect(stopStatus()).toBe('Stopping… waiting for the project to wake');
+      // Waking reads the same.
+      reportSandbox('waking');
+      await settle();
+      expect(stopStatus()).toBe('Stopping… waiting for the project to wake');
+      // Ready: nothing is waited for, so Stop reads plain Stopping….
+      reportSandbox('ready');
+      await settle();
+      expect(stopControl()?.getAttribute('aria-label')).toBe('Stopping…');
+      expect(stopControl()?.disabled).toBe(true);
+      expect(stopStatus()).toBeNull();
+      expect(chat.cancels()).toEqual(['turn-1']);
+    } finally {
+      await chat.endTurn();
+      useCloudSandboxStateStore.getState().clear();
+    }
+    expect(stopControl()).toBeNull();
   });
 
   it("keeps Stop while a snapshot that names the sent turn waits for the chat's transcript (CAN-6677)", async () => {
@@ -3266,37 +4737,37 @@ describe('a cloud task in the cowork page (CAN-6175 R2)', () => {
     });
     runningTurn = 'turn-1';
     snapshotRevision += 1;
-    try {
-      act(() => {
-        refreshChatScopeRevisioned(TASK_CHAT.projectId, TASK_CHAT.worktreeId);
-      });
-      await settle();
-      // Stop stays, enabled and the same control, while the page loads: the
-      // turn still reads starting, and the store holds no running runtime.
-      expect(stopControl()).toBe(stop);
-      expect(stop?.disabled).toBe(false);
-      expect(stop?.getAttribute('aria-disabled')).not.toBe('true');
-      expect(starting()).toBe(true);
-      expect(heldStatus()).not.toBe('streaming');
-      pageServed();
-      pageGate = null;
-      await settle();
-      // The installed runtime keeps it, and the turn no longer reads
-      // starting while it replies.
-      expect(heldStatus()).toBe('streaming');
-      expect(starting()).toBe(false);
-      expect(stopControl()).toBe(stop);
-      await chat.stop();
-      await settle();
-      expect(chat.cancels()).toEqual(['turn-1']);
-      expect(
-        coreRequests.filter((method) => method === 'core.chat.message.send'),
-      ).toHaveLength(1);
-    } finally {
+    // A failure or timeout below leaves nothing held for the next case.
+    onCaseEnd(async () => {
       pageServed();
       pageGate = null;
       await chat.endTurn();
-    }
+    });
+    act(() => {
+      refreshChatScopeRevisioned(TASK_CHAT.projectId, TASK_CHAT.worktreeId);
+    });
+    await settle();
+    // Stop stays, enabled and the same control, while the page loads: the
+    // turn still reads starting, and the store holds no running runtime.
+    expect(stopControl()).toBe(stop);
+    expect(stop?.disabled).toBe(false);
+    expect(stop?.getAttribute('aria-disabled')).not.toBe('true');
+    expect(starting()).toBe(true);
+    expect(heldStatus()).not.toBe('streaming');
+    pageServed();
+    pageGate = null;
+    await settle();
+    // The installed runtime keeps it, and the turn no longer reads
+    // starting while it replies.
+    expect(heldStatus()).toBe('streaming');
+    expect(starting()).toBe(false);
+    expect(stopControl()).toBe(stop);
+    await chat.stop();
+    await settle();
+    expect(chat.cancels()).toEqual(['turn-1']);
+    expect(
+      coreRequests.filter((method) => method === 'core.chat.message.send'),
+    ).toHaveLength(1);
   });
 
   it("keeps a cloud Stop pressed before the receipt Stopping…, and the composer busy, through a snapshot read before the receipt, until Core reports the turn's end (CAN-6733)", async () => {
@@ -3309,18 +4780,12 @@ describe('a cloud task in the cowork page (CAN-6175 R2)', () => {
       container.querySelector<HTMLButtonElement>(
         'button[aria-label="Send message"]',
       );
-    /**
-     * Stop as the composer shows it once pressed: Stopping…, busy, and not
-     * pressable. While the turn still starts it also says it waits for the
-     * project to wake (CAN-6721).
-     */
+    /** Stop as the composer shows it once pressed: Stopping…, busy, and not pressable. */
     const stopping = (): boolean => {
       const stop = stopControl();
       return (
         stop !== null &&
-        ['Stopping…', 'Stopping… waiting for the project to wake'].includes(
-          stop.getAttribute('aria-label') ?? '',
-        ) &&
+        stop.getAttribute('aria-label') === 'Stopping…' &&
         stop.getAttribute('aria-busy') === 'true' &&
         stop.disabled
       );
@@ -3332,65 +4797,64 @@ describe('a cloud task in the cowork page (CAN-6175 R2)', () => {
     });
     let sending: Promise<void> = Promise.resolve();
     let snapshotServed = (): void => undefined;
-    try {
-      act(() => {
-        sending = useChatStore
-          .getState()
-          .sendMessage('start slowly', undefined, TASK_CHAT);
-      });
-      await settle();
-      const stop = stopControl();
-      expect(stop).not.toBeNull();
-      act(() => {
-        stop?.click();
-      });
-      await settle();
-      expect(stopping()).toBe(true);
-      expect(chat.cancels()).toEqual([]);
-      // A refresh reads the chat idle before the receipt, and the web core
-      // holds that snapshot until after it.
-      snapshotGate = new Promise<void>((resolve) => {
-        snapshotServed = resolve;
-      });
-      await chat.refresh();
-      // The receipt names the turn: one cancel, by its id.
-      release();
-      await act(() => sending);
-      await settle();
-      expect(chat.cancels()).toEqual(['turn-1']);
-      expect(stopping()).toBe(true);
-      // The stale idle snapshot lands. Core hasn't reported the turn's end:
-      // Stop stays the same control, Stopping…, and the composer never
-      // offers Send as if idle, so a follow-up isn't sent as if idle.
-      snapshotGate = null;
-      snapshotServed();
-      await settle();
-      expect(stopControl()).toBe(stop);
-      expect(stopping()).toBe(true);
-      expect(sendControl()).toBeNull();
-      expect(chat.shown()).toBe('stopping');
-      expect(chat.cancels()).toEqual(['turn-1']);
-      expect(
-        coreRequests.filter((method) => method === 'core.chat.message.send'),
-      ).toHaveLength(1);
-      // Core reports the turn's end: a snapshot read after the receipt
-      // finds the chat idle. Only now does Stop go.
-      await chat.refresh();
-      await settle();
-      // The composer repaints from the store a moment later.
-      for (let i = 0; i < 50 && stopControl() !== null; i += 1)
-        await act(() => new Promise((resolve) => setTimeout(resolve, 10)));
-      expect(stopControl()).toBeNull();
-      expect(sendControl()).not.toBeNull();
-    } finally {
-      // A failure above leaves nothing held for the next case.
+    // A failure or timeout below leaves nothing held for the next case.
+    onCaseEnd(async () => {
       release();
       sendGate = null;
       await act(() => sending);
       snapshotServed();
       snapshotGate = null;
       await chat.endTurn();
-    }
+    });
+    act(() => {
+      sending = useChatStore
+        .getState()
+        .sendMessage('start slowly', undefined, TASK_CHAT);
+    });
+    await settle();
+    const stop = stopControl();
+    expect(stop).not.toBeNull();
+    act(() => {
+      stop?.click();
+    });
+    await settle();
+    expect(stopping()).toBe(true);
+    expect(chat.cancels()).toEqual([]);
+    // A refresh reads the chat idle before the receipt, and the web core
+    // holds that snapshot until after it.
+    snapshotGate = new Promise<void>((resolve) => {
+      snapshotServed = resolve;
+    });
+    await chat.refresh();
+    // The receipt names the turn: one cancel, by its id.
+    release();
+    await act(() => sending);
+    await settleUntil(() => chat.cancels().length > 0);
+    expect(chat.cancels()).toEqual(['turn-1']);
+    expect(stopping()).toBe(true);
+    // The stale idle snapshot lands. Core hasn't reported the turn's end:
+    // Stop stays the same control, Stopping…, and the composer never
+    // offers Send as if idle, so a follow-up isn't sent as if idle.
+    snapshotGate = null;
+    snapshotServed();
+    await settle();
+    expect(stopControl()).toBe(stop);
+    expect(stopping()).toBe(true);
+    expect(sendControl()).toBeNull();
+    expect(chat.shown()).toBe('stopping');
+    expect(chat.cancels()).toEqual(['turn-1']);
+    expect(
+      coreRequests.filter((method) => method === 'core.chat.message.send'),
+    ).toHaveLength(1);
+    // Core reports the turn's end: a snapshot read after the receipt
+    // finds the chat idle. Only now does Stop go.
+    await chat.refresh();
+    await settleUntil(() => stopControl() === null);
+    // The composer repaints from the store a moment later.
+    for (let i = 0; i < 50 && stopControl() !== null; i += 1)
+      await act(() => new Promise((resolve) => setTimeout(resolve, 10)));
+    expect(stopControl()).toBeNull();
+    expect(sendControl()).not.toBeNull();
   });
 
   it('a message sent while a stopped cloud turn is still starting goes to the web core queue, not out as if the chat were idle (CAN-6733)', async () => {
@@ -3436,36 +4900,238 @@ describe('a cloud task in the cowork page (CAN-6175 R2)', () => {
     const stoppedPrompt =
       chat.shown() === 'stopping' ? tabNow()?.cloudStop : undefined;
     expect(stoppedPrompt).toBeDefined();
-    try {
-      // A follow-up sent now, below the composer, waits behind the starting
-      // turn as one sent behind a running turn does: the web core queues it.
-      // It never takes the immediate path, which would make it the chat's
-      // sending turn and drop the Stop that is still waiting on the first.
-      sendGate = new Promise<void>((resolve) => {
-        release = resolve;
-      });
-      act(() => {
-        sending = useChatStore
-          .getState()
-          .sendMessage('follow up', undefined, TASK_CHAT, undefined, {
-            userMessageId: 'follow-up-1',
-          });
-      });
-      await settle();
-      expect(sends()).toEqual(['start slowly', 'follow up']);
-      expect(tabNow()?.sendingLease?.userMessageId).not.toBe('follow-up-1');
-      expect(tabNow()?.pendingTurn?.userMessageId).not.toBe('follow-up-1');
-      expect(chat.shown()).toBe('stopping');
-      expect(tabNow()?.cloudStop).toBe(stoppedPrompt);
-      release();
-      await act(() => sending);
-      await settle();
-      expect(chat.cancels()).toEqual(['turn-1']);
-    } finally {
+    // A failure or timeout below leaves nothing held for the next case.
+    onCaseEnd(async () => {
       release();
       sendGate = null;
       await chat.endTurn();
-    }
+    });
+    // A follow-up sent now, below the composer, waits behind the starting
+    // turn as one sent behind a running turn does: the web core queues it.
+    // It never takes the immediate path, which would make it the chat's
+    // sending turn and drop the Stop that is still waiting on the first.
+    sendGate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    act(() => {
+      sending = useChatStore
+        .getState()
+        .sendMessage('follow up', undefined, TASK_CHAT, undefined, {
+          userMessageId: 'follow-up-1',
+        });
+    });
+    await settle();
+    expect(sends()).toEqual(['start slowly', 'follow up']);
+    expect(tabNow()?.sendingLease?.userMessageId).not.toBe('follow-up-1');
+    expect(tabNow()?.pendingTurn?.userMessageId).not.toBe('follow-up-1');
+    expect(chat.shown()).toBe('stopping');
+    expect(tabNow()?.cloudStop).toBe(stoppedPrompt);
+    release();
+    await act(() => sending);
+    await settle();
+    expect(chat.cancels()).toEqual(['turn-1']);
+  });
+
+  it('sends follow-ups typed while a cloud turn runs in the order they were pressed, each after the one before it posted (CAN-6828)', async () => {
+    const chat = await openTaskChat();
+    sendsKeepRunning = true;
+    await act(() =>
+      useChatStore.getState().sendMessage('count slowly', undefined, TASK_CHAT),
+    );
+    await settle();
+    const sends = (): unknown[] =>
+      coreRequestLog
+        .filter((entry) => entry.method === 'core.chat.message.send')
+        .map((entry) => entry.params.text);
+    // The web core holds each send's reply.
+    let release = (): void => undefined;
+    sendGate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    // A failure or timeout below leaves nothing held for the next case.
+    onCaseEnd(async () => {
+      release();
+      sendGate = null;
+      await chat.endTurn();
+    });
+    act(() => {
+      void useChatStore
+        .getState()
+        .sendMessage('first follow-up', undefined, TASK_CHAT);
+    });
+    await settle();
+    act(() => {
+      void useChatStore
+        .getState()
+        .sendMessage('second follow-up', undefined, TASK_CHAT);
+    });
+    await settle();
+    // Both wait behind the running turn; the second goes only once the
+    // first has posted.
+    expect(sends()).toEqual(['count slowly', 'first follow-up']);
+    sendGate = null;
+    release();
+    await settle();
+    expect(sends()).toEqual([
+      'count slowly',
+      'first follow-up',
+      'second follow-up',
+    ]);
+  });
+
+  it('never parks a cloud send in the renderer queue: it goes to the web core under its place, in pressed order (CAN-6828)', async () => {
+    await openTaskChat();
+    const sends = (): unknown[] =>
+      coreRequestLog
+        .filter((entry) => entry.method === 'core.chat.message.send')
+        .map((entry) => entry.params.text);
+    // A tab state that parks a local chat's sends in the renderer's own
+    // queue; the web core never produces it for a cloud chat.
+    act(() => {
+      useChatStore.setState((state) => {
+        const scope = state.worktreeChats['web-core:ws-1/web-core:wt-1'];
+        if (scope === undefined) return state;
+        return {
+          worktreeChats: {
+            ...state.worktreeChats,
+            'web-core:ws-1/web-core:wt-1': {
+              ...scope,
+              tabs: scope.tabs.map((tab) =>
+                tab.id === TASK_CHAT.chatId
+                  ? { ...tab, queuedHookPlaceholder: true, queuedMessages: [] }
+                  : tab,
+              ),
+            },
+          },
+        };
+      });
+    });
+    // The web core holds the first send's reply while the second is pressed.
+    let release = (): void => undefined;
+    sendGate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    let first: Promise<void> = Promise.resolve();
+    let second: Promise<void> = Promise.resolve();
+    onCaseEnd(async () => {
+      sendGate = null;
+      release();
+      await act(() => Promise.allSettled([first, second]));
+    });
+    act(() => {
+      first = useChatStore
+        .getState()
+        .sendMessage('first', undefined, TASK_CHAT);
+    });
+    await settle();
+    act(() => {
+      second = useChatStore
+        .getState()
+        .sendMessage('second', undefined, TASK_CHAT);
+    });
+    await settle();
+    expect(
+      useChatStore
+        .getState()
+        .worktreeChats[
+          'web-core:ws-1/web-core:wt-1'
+        ]?.tabs.find((tab) => tab.id === TASK_CHAT.chatId)?.queuedMessages,
+    ).toEqual([]);
+    // The second waits for the first's place.
+    expect(sends()).toEqual(['first']);
+    sendGate = null;
+    release();
+    await act(() => Promise.allSettled([first, second]));
+    await settle();
+    expect(sends()).toEqual(['first', 'second']);
+  });
+
+  it('stops the send pressed first, not a later one that reached the web core backend before it (CAN-6828)', async () => {
+    const chat = await openTaskChat();
+    sendsKeepRunning = true;
+    // The web core holds each send's reply, so Stop lands before either
+    // receipt names a turn.
+    let release = (): void => undefined;
+    sendGate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    let first: Promise<void> = Promise.resolve();
+    let second: Promise<void> = Promise.resolve();
+    onCaseEnd(async () => {
+      sendGate = null;
+      release();
+      await act(() => Promise.allSettled([first, second]));
+      await chat.endTurn();
+    });
+    // The second takes the queued path straight to the backend, while the
+    // first still prepares on the idle path.
+    act(() => {
+      first = useChatStore
+        .getState()
+        .sendMessage('first', undefined, TASK_CHAT);
+      second = useChatStore
+        .getState()
+        .sendMessage('second', undefined, TASK_CHAT);
+    });
+    await settle();
+    act(() => {
+      void useChatStore.getState().cancelSession(TASK_CHAT);
+    });
+    await settle();
+    sendGate = null;
+    release();
+    await act(() => Promise.allSettled([first, second]));
+    await settle();
+    expect(
+      coreRequestLog
+        .filter((entry) => entry.method === 'core.chat.message.send')
+        .map((entry) => entry.params.text),
+    ).toEqual(['first', 'second']);
+    // The turn the first send started, not the one queued behind it.
+    expect(chat.cancels()).toEqual(['turn-1']);
+  });
+
+  it('holds later sends to a cloud chat while an earlier send whose outcome is unknown checks its receipt (CAN-6828)', async () => {
+    const chat = await openTaskChat();
+    const sends = (): unknown[] =>
+      coreRequestLog
+        .filter((entry) => entry.method === 'core.chat.message.send')
+        .map((entry) => entry.params.text);
+    // The first send's outcome is unknown, and the web core holds the
+    // receipt read that would settle it.
+    unknownOutcomeSendText = 'first';
+    let release = (): void => undefined;
+    receiptGate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    let first: Promise<void> = Promise.resolve();
+    let second: Promise<void> = Promise.resolve();
+    // A failure or timeout below leaves nothing held for the next case.
+    onCaseEnd(async () => {
+      receiptGate = null;
+      release();
+      await act(() => Promise.allSettled([first, second]));
+      await chat.endTurn();
+    });
+    act(() => {
+      first = useChatStore
+        .getState()
+        .sendMessage('first', undefined, TASK_CHAT);
+    });
+    await settle();
+    act(() => {
+      second = useChatStore
+        .getState()
+        .sendMessage('second', undefined, TASK_CHAT);
+    });
+    await settle();
+    // The second waits for the first's receipt: the first may have landed.
+    expect(sends()).toEqual(['first']);
+    receiptGate = null;
+    release();
+    await act(() => Promise.allSettled([first, second]));
+    await settle();
+    expect(sends()).toEqual(['first', 'second']);
   });
 
   it('a cloud Stop reads Stopping… and can be sent again for the same turn only after a while (CAN-6592)', async () => {
@@ -4516,6 +6182,9 @@ describe('a cloud task in the cowork page (CAN-6175 R2)', () => {
     expect(coreRequests).toContain('worker.filesystem.directory.list');
     expect(shown('files-tree-sandbox-sleeping')).toBe(true);
     expect(shown('files-tree-folder-error')).toBe(false);
+    // Said once above the tree: no folder reads as loading or empty.
+    expect(shown('files-tree-folder-loading')).toBe(false);
+    expect(shown('files-tree-folder-empty')).toBe(false);
     expect(container.textContent).not.toContain('brief.md');
 
     // A turn runs in the sandbox, which wakes it. The explorer lists the
@@ -4556,6 +6225,306 @@ describe('a cloud task in the cowork page (CAN-6175 R2)', () => {
     );
     expect(container.textContent).not.toContain('has expired');
     expect(askedToWake()).toBe(false);
+  });
+
+  /** Main's Files wakes, each with the chat it named. */
+  /**
+   * Main's Files wakes of one chat, each with the target it named. The page
+   * may still show an earlier case's chat for a moment on render, so each
+   * case counts only its own chat's wakes.
+   */
+  const filesWakes = (worktreeId: string): readonly unknown[] =>
+    calls
+      .filter(
+        (call) =>
+          call.path === CLOUD_WAKE_FILES &&
+          Reflect.get(Object(call.args[0]), 'worktreeId') === worktreeId,
+      )
+      .map((c) => c.args);
+  const FILES_FAKE_TIMERS: Parameters<typeof jest.useFakeTimers>[0] = {
+    doNotFake: ['Date', 'nextTick', 'queueMicrotask', 'setImmediate'],
+  };
+  const flushFake = async (): Promise<void> => {
+    for (let i = 0; i < 30; i += 1)
+      await act(() => jest.advanceTimersByTimeAsync(0));
+  };
+
+  it('says the project is waking while a turn wakes it, and lists the folder once it is awake, with no refresh (CAN-6724)', async () => {
+    sandboxAsleep = true;
+    // A turn restarts a sandbox whose idle session ended; a read can't.
+    asleepAs = { cloudCode: 'SANDBOX_SESSION_EXPIRED', wakeAllowed: false };
+    await openExplorerOnNewTask('wt-6724-turn');
+    expect(shown('files-tree-sandbox-sleeping')).toBe(true);
+
+    // A message starts a turn, which wakes the sandbox; it isn't awake yet.
+    jest.useFakeTimers(FILES_FAKE_TIMERS);
+    const target = {
+      projectId: 'web-core:ws-1',
+      worktreeId: 'web-core:wt-6724-turn',
+    };
+    runningTurn = 'turn-wakes';
+    snapshotRevision += 1;
+    act(() => {
+      refreshChatScopeRevisioned(target.projectId, target.worktreeId);
+    });
+    await flushFake();
+    expect(shown('files-tree-sandbox-waking')).toBe(true);
+    expect(shown('files-tree-sandbox-sleeping')).toBe(false);
+    expect(container.textContent).not.toContain('Send a message to wake it');
+
+    // Still asleep at the next try: still waking, never the sleeping notice.
+    await act(() =>
+      jest.advanceTimersByTimeAsync(CLOUD_FILES_WAKE_RETRY_MAX_MS),
+    );
+    await flushFake();
+    expect(shown('files-tree-sandbox-waking')).toBe(true);
+    expect(shown('files-tree-sandbox-sleeping')).toBe(false);
+
+    // The sandbox wakes while the turn runs. The pane lists the folder on
+    // its own, with no refresh and no change to the turn.
+    sandboxAsleep = false;
+    await act(() =>
+      jest.advanceTimersByTimeAsync(CLOUD_FILES_WAKE_RETRY_MAX_MS),
+    );
+    await flushFake();
+    expect(container.textContent).toContain('brief.md');
+    expect(shown('files-tree-sandbox-waking')).toBe(false);
+    expect(shown('files-tree-sandbox-sleeping')).toBe(false);
+    // The turn woke it; Files didn't ask main or the web core to.
+    expect(filesWakes('wt-6724-turn')).toEqual([]);
+    expect(askedToWake()).toBe(false);
+  });
+
+  it('falls back to the sleeping notice when the turn that was waking the project ends with it still asleep (CAN-6724)', async () => {
+    sandboxAsleep = true;
+    asleepAs = { cloudCode: 'SANDBOX_SESSION_EXPIRED', wakeAllowed: false };
+    await openExplorerOnNewTask('wt-6724-turn-fails');
+    jest.useFakeTimers(FILES_FAKE_TIMERS);
+    const target = {
+      projectId: 'web-core:ws-1',
+      worktreeId: 'web-core:wt-6724-turn-fails',
+    };
+    runningTurn = 'turn-wakes';
+    snapshotRevision += 1;
+    act(() => {
+      refreshChatScopeRevisioned(target.projectId, target.worktreeId);
+    });
+    await flushFake();
+    expect(shown('files-tree-sandbox-waking')).toBe(true);
+
+    runningTurn = null;
+    snapshotRevision += 1;
+    act(() => {
+      refreshChatScopeRevisioned(target.projectId, target.worktreeId);
+    });
+    await flushFake();
+    expect(shown('files-tree-sandbox-waking')).toBe(false);
+    expect(shown('files-tree-sandbox-sleeping')).toBe(true);
+    // No more tries once nothing is waking it.
+    const lists = coreRequests.filter(
+      (method) => method === 'worker.filesystem.directory.list',
+    ).length;
+    await act(() =>
+      jest.advanceTimersByTimeAsync(CLOUD_FILES_WAKE_RETRY_MAX_MS * 4),
+    );
+    await flushFake();
+    expect(
+      coreRequests.filter(
+        (method) => method === 'worker.filesystem.directory.list',
+      ).length,
+    ).toBe(lists);
+  });
+
+  for (const [eventsRevision, reads] of [
+    [2, 'sleeping'],
+    [3, 'waking'],
+  ] as const)
+    it(`trusts a snapshot's report that the project is waking only where the web core's events keep it current: at events revision ${eventsRevision}, Files on a sleeping project whose own wake is refused reads ${reads} (CAN-6841)`, async () => {
+      advertisedEventsRevision = eventsRevision;
+      snapshotSandbox = 'waking';
+      sandboxAsleep = true;
+      await describeConnectionAgain();
+      const task = `wt-6841-files-${eventsRevision}`;
+      onCaseEnd(() => useCloudSandboxStateStore.getState().clear());
+      try {
+        await openExplorerOnNewTask(task);
+        await settle();
+        // Files tries its one wake either way, and main refuses it. At
+        // revision 2 the snapshot's report is unknown, so Files keeps its
+        // own inference: the wake failed and the project is asleep. At 3 the
+        // report is published, and Files says a wake is under way.
+        expect(filesWakes(task)).toHaveLength(1);
+        expect(
+          useCloudSandboxStateStore.getState().byWorktree[
+            `web-core:ws-1/web-core:${task}`
+          ]?.state,
+        ).toBe(eventsRevision === 3 ? 'waking' : undefined);
+        expect(shown('files-tree-sandbox-waking')).toBe(reads === 'waking');
+        expect(shown('files-tree-sandbox-sleeping')).toBe(reads === 'sleeping');
+      } finally {
+        useCloudSandboxStateStore.getState().clear();
+      }
+    });
+
+  it('opening Files on a sleeping project asks main to wake it once, says it is waking, then lists the folder (CAN-6724)', async () => {
+    sandboxAsleep = true;
+    let finishWake = (): void => undefined;
+    wakeFilesAnswer = (): Promise<unknown> =>
+      new Promise((resolve) => {
+        finishWake = (): void => {
+          sandboxAsleep = false;
+          resolve({ ok: true });
+        };
+      });
+    await openExplorerOnNewTask('wt-6724-open');
+    // Main's one wake for this chat, while the pane says it is waking.
+    expect(filesWakes('wt-6724-open')).toEqual([
+      [
+        {
+          key: 'web-core:wt-6724-open',
+          workspaceId: 'ws-1',
+          worktreeId: 'wt-6724-open',
+        },
+      ],
+    ]);
+    expect(shown('files-tree-sandbox-waking')).toBe(true);
+    expect(shown('files-tree-sandbox-sleeping')).toBe(false);
+
+    act(() => finishWake());
+    await settle();
+    expect(container.textContent).toContain('brief.md');
+    expect(shown('files-tree-sandbox-waking')).toBe(false);
+    // Only main woke it: no relay call carried wake.
+    expect(askedToWake()).toBe(false);
+    expect(filesWakes('wt-6724-open')).toHaveLength(1);
+  });
+
+  it("a turn already waking the project is the open's one wake: when it ends still asleep, Files doesn't wake it again (CAN-6724)", async () => {
+    sandboxAsleep = true;
+    // A read could wake this sandbox, but a turn is already waking it.
+    runningTurn = 'turn-wakes';
+    await openExplorerOnNewTask('wt-6724-turn-then-files');
+    const target = {
+      projectId: 'web-core:ws-1',
+      worktreeId: 'web-core:wt-6724-turn-then-files',
+    };
+    snapshotRevision += 1;
+    act(() => {
+      refreshChatScopeRevisioned(target.projectId, target.worktreeId);
+    });
+    await settle();
+    expect(shown('files-tree-sandbox-waking')).toBe(true);
+    expect(filesWakes('wt-6724-turn-then-files')).toEqual([]);
+
+    // The turn ends with the sandbox still asleep: the wake failed. Files
+    // falls back to the notice and doesn't start a wake of its own.
+    runningTurn = null;
+    snapshotRevision += 1;
+    act(() => {
+      refreshChatScopeRevisioned(target.projectId, target.worktreeId);
+    });
+    await settle();
+    expect(shown('files-tree-sandbox-sleeping')).toBe(true);
+    expect(shown('files-tree-sandbox-waking')).toBe(false);
+    expect(filesWakes('wt-6724-turn-then-files')).toEqual([]);
+    expect(askedToWake()).toBe(false);
+  });
+
+  it('a refused Files wake keeps the sleeping notice and is not tried again in the same open (CAN-6724)', async () => {
+    sandboxAsleep = true;
+    await openExplorerOnNewTask('wt-6724-refused');
+    expect(filesWakes('wt-6724-refused')).toHaveLength(1);
+    expect(shown('files-tree-sandbox-sleeping')).toBe(true);
+    expect(shown('files-tree-sandbox-waking')).toBe(false);
+    expect(container.textContent).toContain(
+      'Project is sleeping. Send a message to wake it.',
+    );
+    // Another asleep answer in the same open doesn't wake again.
+    const [groupId] = Object.keys(
+      usePanelLayoutStore.getState().layouts[
+        'web-core:ws-1/web-core:wt-6724-refused'
+      ]?.groups ?? {},
+    );
+    expect(groupId).toBeDefined();
+    await settle();
+    expect(filesWakes('wt-6724-refused')).toHaveLength(1);
+    expect(askedToWake()).toBe(false);
+  });
+
+  it("says waking while the web core reports the project's sandbox waking, though this open's wake was refused, and lists once it reports ready (CAN-6766)", async () => {
+    sandboxAsleep = true;
+    await openExplorerOnNewTask('wt-6766-files');
+    expect(filesWakes('wt-6766-files')).toHaveLength(1);
+    expect(shown('files-tree-sandbox-sleeping')).toBe(true);
+    // A timeout skips the finally below; the case's end still clears it.
+    onCaseEnd(() => useCloudSandboxStateStore.getState().clear());
+    // Someone else wakes it (the web, another window): the web core reports
+    // the sandbox waking on the task's chat.
+    const reportSandbox = (state: 'waking' | 'ready'): void => {
+      act(() => {
+        useCloudSandboxStateStore.getState().set(
+          liveReplyKey({
+            projectId: 'web-core:ws-1',
+            worktreeId: 'web-core:wt-6766-files',
+            chatId: 'web-core:wt-6766-files',
+          }),
+          state,
+        );
+      });
+    };
+    try {
+      reportSandbox('waking');
+      await settle();
+      expect(shown('files-tree-sandbox-waking')).toBe(true);
+      expect(shown('files-tree-sandbox-sleeping')).toBe(false);
+      // Awake: the web core reports ready, and the panel lists the folder
+      // with no refresh and no wake of its own.
+      sandboxAsleep = false;
+      reportSandbox('ready');
+      await settle();
+      expect(container.textContent).toContain('brief.md');
+      expect(shown('files-tree-sandbox-waking')).toBe(false);
+      expect(filesWakes('wt-6766-files')).toHaveLength(1);
+      expect(askedToWake()).toBe(false);
+    } finally {
+      useCloudSandboxStateStore.getState().clear();
+    }
+  });
+
+  it("keeps the newest sandbox state by the task's revision, so a late older report from another chat never overwrites it (CAN-6766)", async () => {
+    sandboxAsleep = true;
+    await openExplorerOnNewTask('wt-6766-order');
+    // A timeout skips the finally below; the case's end still clears it.
+    onCaseEnd(() => useCloudSandboxStateStore.getState().clear());
+    const report = (
+      chatId: string,
+      state: 'waking' | 'ready',
+      revision: number,
+    ): void => {
+      act(() => {
+        useCloudSandboxStateStore.getState().set(
+          liveReplyKey({
+            projectId: 'web-core:ws-1',
+            worktreeId: 'web-core:wt-6766-order',
+            chatId,
+          }),
+          state,
+          revision,
+        );
+      });
+    };
+    try {
+      report('web-core:wt-6766-order', 'waking', 5);
+      await settle();
+      expect(shown('files-tree-sandbox-waking')).toBe(true);
+      // Another chat's older report lands late: the sandbox is still waking.
+      report('web-core:chat-6766-other', 'ready', 3);
+      await settle();
+      expect(shown('files-tree-sandbox-waking')).toBe(true);
+      expect(shown('files-tree-sandbox-sleeping')).toBe(false);
+    } finally {
+      useCloudSandboxStateStore.getState().clear();
+    }
   });
 
   it('drops a deleted cloud row at once, and a listing that still shows it never brings it back (CAN-6543)', async () => {
@@ -4616,6 +6585,47 @@ describe('a cloud task in the cowork page (CAN-6175 R2)', () => {
     ).not.toBeNull();
   });
 
+  it('shows a cloud folder still listing as loading, and an empty one as empty, never alike (CAN-6756)', async () => {
+    await openExplorerOnNewTask('wt-6756');
+    const docsRow = (): HTMLElement | null =>
+      container.querySelector<HTMLElement>(
+        '[data-file-tree-id="workspace:docs"]',
+      );
+    expect(docsRow()).not.toBeNull();
+
+    // docs/ is empty, and its listing takes a while, as a cloud one does.
+    docsEmpty = true;
+    let releaseListing = (): void => undefined;
+    listingGate = new Promise<void>((resolve) => {
+      releaseListing = resolve;
+    });
+    act(() => {
+      docsRow()?.click();
+    });
+    await settle();
+    // Past the shared loading delay, the open folder says it is loading.
+    await act(
+      () =>
+        new Promise((resolve) =>
+          setTimeout(resolve, LOADING_PLACEHOLDER_DELAY_MS + 50),
+        ),
+    );
+    expect(shown('files-tree-folder-loading')).toBe(true);
+    expect(shown('files-tree-folder-empty')).toBe(false);
+
+    // Its listing lands empty: the folder says so, and loads no longer.
+    releaseListing();
+    listingGate = null;
+    await settle();
+    expect(shown('files-tree-folder-loading')).toBe(false);
+    expect(shown('files-tree-folder-empty')).toBe(true);
+    expect(
+      container.querySelector('[data-testid="files-tree-folder-empty"]')
+        ?.textContent,
+    ).toBe('Empty folder');
+    expect(callsCarryingWebCoreIds()).toEqual([]);
+  });
+
   it('a local scope keeps every composer and tab control a cloud scope hides', () => {
     const local = createDesktopCapabilities('darwin', {}, {});
     const cloud = webCoreScopeCapabilities(local);
@@ -4624,7 +6634,6 @@ describe('a cloud task in the cowork page (CAN-6175 R2)', () => {
       'chatTabFork',
       'chatRootTabLifecycle',
       'chatResetToPoint',
-      'chatContextUsage',
       'chatFileMentions',
       'chatInterfaceModes',
     ] as const) {
@@ -4643,6 +6652,9 @@ describe('a cloud task in the cowork page (CAN-6175 R2)', () => {
     expect(cloud.chatPluginSelections).toBe(true);
     // Rides each send where the model's catalog runs it (CAN-6322).
     expect(cloud.chatFastMode).toBe(true);
+    // Folded from each answer's meter, which the web core serves (CAN-6755).
+    expect(local.chatContextUsage).toBe(true);
+    expect(cloud.chatContextUsage).toBe(true);
   });
 
   it('offers a local scope every panel kind a cloud scope lacks', () => {
@@ -4747,6 +6759,733 @@ describe('a cloud task in the cowork page (CAN-6175 R2)', () => {
     });
     await settle();
     await expectTypedAsFastAsKeysArrive();
+  });
+
+  describe('switching between cloud tasks (CAN-6754)', () => {
+    /**
+     * Adds tasks of their own to the cloud project, so no earlier case has
+     * read them: each one's first open reads its snapshot, as the first open
+     * of a task after app start does.
+     */
+    function addTasks(...ids: readonly string[]): void {
+      cloudCoworkStore.setState((state) => ({
+        tasksByProject: {
+          'web-core:ws-1': [
+            ...(state.tasksByProject['web-core:ws-1'] ?? []),
+            ...ids.map((worktreeId) => ({
+              key: `web-core:ws-1:${worktreeId}`,
+              workspaceId: 'ws-1',
+              worktreeId,
+              title: `Task ${worktreeId}`,
+              state: 'idle' as const,
+              updatedAt: CREATED_AT,
+            })),
+          ],
+        },
+      }));
+    }
+
+    /** Holds a task's snapshot until the case serves or refuses it. */
+    function holdSnapshotOf(task: string): {
+      readonly serve: () => void;
+      readonly refuse: () => void;
+    } {
+      let settleHold: (outcome: 'serve' | 'refuse') => void = () => undefined;
+      snapshotHolds.set(
+        task,
+        new Promise((resolve) => {
+          settleHold = resolve;
+        }),
+      );
+      return {
+        serve: () => settleHold('serve'),
+        refuse: () => settleHold('refuse'),
+      };
+    }
+
+    function openFromSidebar(task: string): void {
+      act(() => {
+        openCoworkWorkEntryFromSidebar('web-core:ws-1', `web-core:${task}`);
+      });
+    }
+
+    function composerShown(): boolean {
+      return (
+        container.querySelector(
+          '[data-chat-composer-root] [contenteditable="true"]',
+        ) !== null
+      );
+    }
+
+    /** What the page shows as open: its entry, and the sidebar's highlight. */
+    function pageEntry(): string | null {
+      return useStandaloneChatStore.getState().activeWorkEntryId;
+    }
+
+    /**
+     * Types into whatever composer the page shows and presses Send, as a user
+     * who thinks the click already landed does. Returns whether there was a
+     * composer to type into.
+     */
+    async function typeAndSend(text: string): Promise<boolean> {
+      const editable = container.querySelector<HTMLElement>(
+        '[data-chat-composer-root] [contenteditable="true"]',
+      );
+      if (editable === null) return false;
+      const editor = composerEditorOf(editable);
+      act(() => {
+        Transforms.select(editor, Editor.end(editor, []));
+        Editor.insertText(editor, text);
+      });
+      await settle();
+      act(() => {
+        container
+          .querySelector<HTMLButtonElement>('button[aria-label="Send message"]')
+          ?.click();
+      });
+      await settle();
+      return true;
+    }
+
+    /**
+     * Picks the second model in whatever composer the page shows, through its
+     * model picker. Returns whether there was a picker to pick from.
+     */
+    async function pickModelInComposer(): Promise<boolean> {
+      const trigger = container.querySelector<HTMLButtonElement>(
+        '[data-chat-composer-root] [data-testid="portal-chat-model-picker"]',
+      );
+      if (trigger === null) return false;
+      act(() => {
+        trigger.click();
+      });
+      await settle();
+      const option = Array.from(
+        container.ownerDocument.querySelectorAll<HTMLElement>(
+          '[data-testid="portal-chat-model-option"]',
+        ),
+      ).find((row) => row.textContent?.includes('Second model'));
+      if (option === undefined) throw new Error('No Second model row.');
+      act(() => {
+        option.click();
+      });
+      await settle();
+      return true;
+    }
+
+    /**
+     * Turns on the Review skill in whatever composer the page shows, through
+     * its + menu's plugins picker, and saves. Returns whether there was a
+     * composer to open it from.
+     */
+    async function saveSkillInComposer(): Promise<boolean> {
+      const plus = container.querySelector<HTMLButtonElement>(
+        '[data-chat-composer-root] [data-testid="chat-input-plus-button"]',
+      );
+      if (plus === null) return false;
+      const doc = container.ownerDocument;
+      act(() => {
+        plus.click();
+      });
+      await settle();
+      act(() => {
+        doc
+          .querySelector<HTMLButtonElement>(
+            '[data-testid="chat-plugins-button"]',
+          )
+          ?.click();
+      });
+      await settle();
+      act(() => {
+        doc
+          .querySelector<HTMLInputElement>('input[aria-label="Select Review"]')
+          ?.click();
+      });
+      act(() => {
+        doc
+          .querySelector<HTMLButtonElement>(
+            '[data-testid="portal-plugins-save"]',
+          )
+          ?.click();
+      });
+      await settle();
+      return true;
+    }
+
+    /**
+     * What the web core was asked to do to a task's chats: a send names its
+     * text, a change names its action.
+     */
+    function writesTo(task: string): unknown[] {
+      return coreRequestLog
+        .filter(
+          (entry) =>
+            ['core.chat.message.send', 'core.chat.update'].includes(
+              entry.method,
+            ) &&
+            (worktreeOf(entry.params) === task || entry.params.chatId === task),
+        )
+        .map((entry) =>
+          entry.method === 'core.chat.message.send'
+            ? `send ${String(entry.params.text)}`
+            : String(Reflect.get(Object(entry.params.action), 'type')),
+        );
+    }
+
+    /** The texts the web core was asked to send to a task's chats. */
+    function sentTo(task: string): unknown[] {
+      return coreRequestLog
+        .filter(
+          (entry) =>
+            entry.method === 'core.chat.message.send' &&
+            (worktreeOf(entry.params) === task || entry.params.chatId === task),
+        )
+        .map((entry) => entry.params.text);
+    }
+
+    it('moves the page to a clicked cloud task at once, and nothing sent, picked or saved while it loads reaches the task open before (CAN-6754)', async () => {
+      addTasks('wt-6754-a1', 'wt-6754-b1');
+      renderPage();
+      openFromSidebar('wt-6754-a1');
+      await settle();
+      expect(pageEntry()).toBe('web-core:wt-6754-a1');
+      expect(composerShown()).toBe(true);
+
+      // B's first read is held, as a cold read right after app start is.
+      const b = holdSnapshotOf('wt-6754-b1');
+      openFromSidebar('wt-6754-b1');
+      await settle();
+      const atOnce = {
+        page: pageEntry(),
+        loading:
+          shown('standalone-chat-loading') || shown('panel-binding-loading'),
+        composer: composerShown(),
+      };
+      // A user who thinks B is open picks a model, turns on a skill, and
+      // types and sends, in whatever composer the page shows.
+      await pickModelInComposer();
+      await saveSkillInComposer();
+      await typeAndSend('Meant for B');
+      expect({ ...atOnce, toA: writesTo('wt-6754-a1') }).toEqual({
+        page: 'web-core:wt-6754-b1',
+        loading: true,
+        composer: false,
+        toA: [],
+      });
+
+      // B's tabs land: B's own composer, sending to B.
+      b.serve();
+      await settle();
+      expect(pageEntry()).toBe('web-core:wt-6754-b1');
+      expect(composerShown()).toBe(true);
+      expect(await pickModelInComposer()).toBe(true);
+      expect(await saveSkillInComposer()).toBe(true);
+      expect(await typeAndSend('For B')).toBe(true);
+      expect(writesTo('wt-6754-b1')).toEqual([
+        'chat.set_model',
+        'chat.patch_tab_settings',
+        'send For B',
+      ]);
+      expect(writesTo('wt-6754-a1')).toEqual([]);
+    });
+
+    it("sweeps a project's archives a few tasks at a time, and never ahead of a task the user opens (CAN-6778)", async () => {
+      const clicked = 'wt-6778-clicked';
+      const swept = [
+        'wt-6778-b',
+        'wt-6778-c',
+        'wt-6778-d',
+        'wt-6778-e',
+        'wt-6778-f',
+        'wt-6778-g',
+      ];
+      addTasks(...swept, clicked);
+      // The sweep runs only for a project with no known activity: forget any
+      // archive an earlier case read for it.
+      useChatStore.setState({ archivedChats: {} });
+      useStandaloneChatStore.setState({ legacyArchivedByProject: {} });
+      const holds = swept.map((task) => holdSnapshotOf(task));
+      const sweepReads = (): number =>
+        coreRequestLog.filter(
+          (entry) =>
+            entry.method === 'core.chat.snapshot.get' &&
+            swept.includes(String(worktreeOf(entry.params))),
+        ).length;
+      renderPage();
+      openFromSidebar('wt-1');
+      await settle();
+      // An earlier case may have listed the project's entries before these
+      // tasks were added: list them again, as the sidebar's listing does.
+      await act(() =>
+        useStandaloneChatStore.getState().refreshWorkEntries('web-core:ws-1'),
+      );
+      await settle();
+      // The first open settled; the sweep reads a few tasks at once, each
+      // held read keeping its slot.
+      expect(sweepReads()).toBe(COWORK_ARCHIVE_SWEEP_CONCURRENCY);
+
+      // The user opens another task while the sweep runs; its read is held.
+      const open = holdSnapshotOf(clicked);
+      openFromSidebar(clicked);
+      await settle();
+      // Sweep reads finish while that open loads: no new one starts ahead
+      // of it.
+      holds[0]?.serve();
+      holds[1]?.serve();
+      await settle();
+      expect(sweepReads()).toBe(COWORK_ARCHIVE_SWEEP_CONCURRENCY);
+
+      // Once it lands, the sweep goes on, still a few at a time.
+      open.serve();
+      await settle();
+      expect(sweepReads()).toBe(COWORK_ARCHIVE_SWEEP_CONCURRENCY + 2);
+      for (const hold of holds) hold.serve();
+      await settle();
+      expect(sweepReads()).toBe(swept.length);
+    });
+
+    it('never re-reads a queued task whose archive an open read meanwhile (CAN-6778)', async () => {
+      const held = ['wt-6778-h1', 'wt-6778-h2', 'wt-6778-h3'];
+      const queued = ['wt-6778-q1', 'wt-6778-q2'];
+      const opened = 'wt-6778-opened';
+      addTasks(...held, ...queued, opened);
+      useChatStore.setState({ archivedChats: {} });
+      useStandaloneChatStore.setState({ legacyArchivedByProject: {} });
+      const holds = held.map((task) => holdSnapshotOf(task));
+      const readsOf = (task: string): number =>
+        coreRequestLog.filter(
+          (entry) =>
+            entry.method === 'core.chat.snapshot.get' &&
+            String(worktreeOf(entry.params)) === task,
+        ).length;
+      renderPage();
+      openFromSidebar('wt-1');
+      await settle();
+      await act(() =>
+        useStandaloneChatStore.getState().refreshWorkEntries('web-core:ws-1'),
+      );
+      await settle();
+
+      // The sweep holds its slots; the user opens a task still queued.
+      openFromSidebar(opened);
+      await settle();
+      expect(
+        Object.prototype.hasOwnProperty.call(
+          useChatStore.getState().archivedChats,
+          `web-core:ws-1/web-core:${opened}`,
+        ),
+      ).toBe(true);
+      const readsByTheOpen = readsOf(opened);
+
+      for (const hold of holds) hold.serve();
+      await settle();
+      expect(queued.map(readsOf)).toEqual([1, 1]);
+      expect(readsOf(opened)).toBe(readsByTheOpen);
+    });
+
+    it("keeps the last clicked cloud task when an earlier click's load lands after it (CAN-6754)", async () => {
+      addTasks('wt-6754-a2', 'wt-6754-b2', 'wt-6754-c2');
+      renderPage();
+      openFromSidebar('wt-6754-a2');
+      await settle();
+      expect(composerShown()).toBe(true);
+
+      const b = holdSnapshotOf('wt-6754-b2');
+      const c = holdSnapshotOf('wt-6754-c2');
+      openFromSidebar('wt-6754-b2');
+      await settle();
+      openFromSidebar('wt-6754-c2');
+      await settle();
+      expect({ page: pageEntry(), composer: composerShown() }).toEqual({
+        page: 'web-core:wt-6754-c2',
+        composer: false,
+      });
+
+      // B's late read never moves the page back, to B or to A.
+      b.serve();
+      await settle();
+      expect({ page: pageEntry(), composer: composerShown() }).toEqual({
+        page: 'web-core:wt-6754-c2',
+        composer: false,
+      });
+      expect(useChatStore.getState().selectedWorktree).toEqual({
+        projectId: 'web-core:ws-1',
+        worktreeId: 'web-core:wt-6754-c2',
+      });
+
+      c.serve();
+      await settle();
+      expect(pageEntry()).toBe('web-core:wt-6754-c2');
+      expect(await typeAndSend('For C')).toBe(true);
+      expect(sentTo('wt-6754-c2')).toHaveLength(1);
+      expect([...sentTo('wt-6754-a2'), ...sentTo('wt-6754-b2')]).toEqual([]);
+    });
+
+    it("shows a clicked cloud task's own load failure, never the task open before (CAN-6754)", async () => {
+      addTasks('wt-6754-a3', 'wt-6754-b3');
+      renderPage();
+      openFromSidebar('wt-6754-a3');
+      await settle();
+      expect(composerShown()).toBe(true);
+
+      const b = holdSnapshotOf('wt-6754-b3');
+      openFromSidebar('wt-6754-b3');
+      await settle();
+      expect({ page: pageEntry(), composer: composerShown() }).toEqual({
+        page: 'web-core:wt-6754-b3',
+        composer: false,
+      });
+
+      b.refuse();
+      await settle();
+      expect({
+        page: pageEntry(),
+        failure: shown('standalone-chat-load-error'),
+        composer: composerShown(),
+      }).toEqual({
+        page: 'web-core:wt-6754-b3',
+        failure: true,
+        composer: false,
+      });
+      expect(container.textContent).toContain(
+        'The web core could not read this task.',
+      );
+      expect(sentTo('wt-6754-a3')).toEqual([]);
+    });
+
+    /** Holds a task's chat list replies until the case releases them. */
+    function holdListOf(task: string): () => void {
+      let release = (): void => undefined;
+      listHolds.set(
+        task,
+        new Promise<void>((resolve) => {
+          release = resolve;
+        }),
+      );
+      return () => release();
+    }
+
+    /** Holds a task's transcript page replies until the case releases them. */
+    function holdPagesOf(task: string): () => void {
+      let release = (): void => undefined;
+      pageHolds.set(
+        task,
+        new Promise<void>((resolve) => {
+          release = resolve;
+        }),
+      );
+      return () => release();
+    }
+
+    /**
+     * The reads a task's open waits on, in the order the window sent them:
+     * its task snapshot, its chat list and its transcript pages. A chat's own
+     * snapshot, read for its agent tasks, is not one of them. Counted from
+     * `since`, a point in the request log: the page's archive sweep reads
+     * each task once when the project's tasks load, before any case's click.
+     */
+    function readsOf(task: string, since: number): string[] {
+      return coreRequestLog
+        .slice(since)
+        .filter((entry) => worktreeOf(entry.params) === task)
+        .flatMap((entry) => {
+          if (entry.method === 'core.chat.snapshot.get')
+            return entry.params.chatId === undefined ? ['snapshot'] : [];
+          if (entry.method === 'core.chat.list') return ['list'];
+          if (entry.method === 'core.chat.transcript.page') return ['page'];
+          return [];
+        });
+    }
+
+    /** Every method the window asked the web core about a task since `since`. */
+    function methodsFor(task: string, since: number): string[] {
+      return [
+        ...new Set(
+          coreRequestLog
+            .slice(since)
+            .filter(
+              (entry) =>
+                worktreeOf(entry.params) === task ||
+                entry.params.chatId === task,
+            )
+            .map((entry) => entry.method),
+        ),
+      ];
+    }
+
+    /** Whether the chat store holds or follows anything of a task. */
+    function storeHolds(task: string): boolean {
+      const key = `web-core:ws-1/web-core:${task}`;
+      const state = useChatStore.getState();
+      return (
+        state.worktreeChats[key] !== undefined ||
+        state.chatStateSync[key] !== undefined
+      );
+    }
+
+    /** The streams the window opened for a task. */
+    function streamsFor(task: string): string[] {
+      return [...openedStreams.values()]
+        .filter((stream) => worktreeOf(stream.params) === task)
+        .map((stream) => stream.method);
+    }
+
+    /** Whether a task's open tab has its transcript loaded. */
+    function transcriptLoaded(task: string): boolean {
+      const state =
+        useChatStore.getState().worktreeChats[`web-core:ws-1/web-core:${task}`];
+      const tab = state?.tabs.find((each) => each.id === state.activeTabId);
+      return tab !== undefined && tab.transcriptLoaded !== false;
+    }
+
+    /** A sidebar cloud row's hover target, as the shared sidebar names it. */
+    function rowIntent(task: string): Parameters<typeof noteChatIntent>[0] {
+      return {
+        kind: 'cloudTask',
+        projectId: 'web-core:ws-1',
+        worktreeId: `web-core:${task}`,
+      };
+    }
+
+    /** Waits past the pointer's dwell, as a pointer resting on a row does. */
+    async function dwell(): Promise<void> {
+      await act(() => new Promise((resolve) => setTimeout(resolve, 150)));
+      await settle();
+    }
+
+    it("reads a clicked cloud task's chat list with its snapshot, and its first transcript page as soon as the snapshot answers (CAN-6774)", async () => {
+      addTasks('wt-6754-a4', 'wt-6754-b4');
+      renderPage();
+      openFromSidebar('wt-6754-a4');
+      await settle();
+      expect(composerShown()).toBe(true);
+
+      // B's three reads are held, as cold replies are right after app start.
+      const snapshot = holdSnapshotOf('wt-6754-b4');
+      const releaseList = holdListOf('wt-6754-b4');
+      const releasePages = holdPagesOf('wt-6754-b4');
+      const click = coreRequestLog.length;
+      openFromSidebar('wt-6754-b4');
+      await settle();
+      // The chat list needs nothing the snapshot answers: both go at once.
+      const beforeSnapshot = readsOf('wt-6754-b4', click);
+      snapshot.serve();
+      await settle();
+      // The first page goes as the snapshot answers, while the list waits.
+      const beforeList = readsOf('wt-6754-b4', click);
+      releaseList();
+      await settle();
+      releasePages();
+      await settle();
+      expect({
+        beforeSnapshot,
+        beforeList,
+        after: readsOf('wt-6754-b4', click),
+        loaded: transcriptLoaded('wt-6754-b4'),
+        composer: composerShown(),
+      }).toEqual({
+        beforeSnapshot: ['snapshot', 'list'],
+        beforeList: ['snapshot', 'list', 'page'],
+        // Each read once: the page read early is the one the tab shows.
+        after: ['snapshot', 'list', 'page'],
+        loaded: true,
+        composer: true,
+      });
+    });
+
+    it("reads a cloud task's chat list again after its snapshot when the list was read at an older revision (CAN-6774)", async () => {
+      addTasks('wt-6754-a5', 'wt-6754-b5');
+      renderPage();
+      openFromSidebar('wt-6754-a5');
+      await settle();
+      expect(composerShown()).toBe(true);
+
+      // The list answers first, from before a change the snapshot covers.
+      snapshotRevision = 2;
+      listRevisionLag = 1;
+      const snapshot = holdSnapshotOf('wt-6754-b5');
+      const click = coreRequestLog.length;
+      openFromSidebar('wt-6754-b5');
+      await settle();
+      const beforeSnapshot = readsOf('wt-6754-b5', click);
+      listRevisionLag = 0;
+      snapshot.serve();
+      await settle();
+      expect({
+        beforeSnapshot,
+        // The older list is never installed: it is read again after the
+        // snapshot, as the open did before the two went together.
+        after: readsOf('wt-6754-b5', click).filter((read) => read !== 'page'),
+        composer: composerShown(),
+      }).toEqual({
+        beforeSnapshot: ['snapshot', 'list'],
+        after: ['snapshot', 'list', 'list'],
+        composer: true,
+      });
+    });
+
+    it('reads a hovered cloud task ahead with chat reads only, opens it from them, and drops them when the pointer leaves (CAN-6774)', async () => {
+      addTasks('wt-6754-a6', 'wt-6754-b6', 'wt-6754-c6', 'wt-6754-d6');
+      renderPage({ prefetches: true });
+      openFromSidebar('wt-6754-a6');
+      await settle();
+      expect(composerShown()).toBe(true);
+
+      // The pointer rests on B's row.
+      const hoverB = coreRequestLog.length;
+      act(() => {
+        noteChatIntent(rowIntent('wt-6754-b6'), 'pointer');
+      });
+      await dwell();
+      expect({
+        reads: readsOf('wt-6754-b6', hoverB),
+        // Chat reads only: nothing that wakes a sandbox, sends or saves.
+        asked: methodsFor('wt-6754-b6', hoverB),
+        // A hover is not an open: nothing installed, followed or told main.
+        held: storeHolds('wt-6754-b6'),
+        streams: streamsFor('wt-6754-b6'),
+        mainCalls: callsCarryingWebCoreIds(),
+      }).toEqual({
+        reads: ['snapshot', 'list', 'page'],
+        asked: [
+          'core.chat.snapshot.get',
+          'core.chat.list',
+          'core.chat.transcript.page',
+        ],
+        held: false,
+        streams: [],
+        mainCalls: [],
+      });
+
+      // The click opens B from what the hover read: nothing is read again.
+      openFromSidebar('wt-6754-b6');
+      await settle();
+      act(() => {
+        endChatIntent(rowIntent('wt-6754-b6'));
+      });
+      expect({
+        reads: readsOf('wt-6754-b6', hoverB),
+        loaded: transcriptLoaded('wt-6754-b6'),
+        composer: composerShown(),
+      }).toEqual({
+        reads: ['snapshot', 'list', 'page'],
+        loaded: true,
+        composer: true,
+      });
+
+      // The pointer rests on C's row, then leaves it: the reads are dropped,
+      // and opening C later reads it afresh.
+      const hoverC = coreRequestLog.length;
+      act(() => {
+        noteChatIntent(rowIntent('wt-6754-c6'), 'pointer');
+      });
+      await dwell();
+      act(() => {
+        endChatIntent(rowIntent('wt-6754-c6'));
+      });
+      await settle();
+      expect(storeHolds('wt-6754-c6')).toBe(false);
+      openFromSidebar('wt-6754-c6');
+      await settle();
+      expect(readsOf('wt-6754-c6', hoverC)).toEqual([
+        'snapshot',
+        'list',
+        'page',
+        'snapshot',
+        'list',
+        'page',
+      ]);
+
+      // A pointer that leaves D's row before the dwell reads nothing.
+      const hoverD = coreRequestLog.length;
+      act(() => {
+        noteChatIntent(rowIntent('wt-6754-d6'), 'pointer');
+      });
+      act(() => {
+        endChatIntent(rowIntent('wt-6754-d6'));
+      });
+      await dwell();
+      expect(readsOf('wt-6754-d6', hoverD)).toEqual([]);
+      expect(callsCarryingWebCoreIds()).toEqual([]);
+    });
+
+    it('bounds hover read-ahead across a sidebar sweep: a fast sweep reads nothing, a slow one keeps one task in flight, and a task the store holds is never read ahead (CAN-6774)', async () => {
+      const [a, b, c, d, e] = [
+        'wt-6774-a7',
+        'wt-6774-b7',
+        'wt-6774-c7',
+        'wt-6774-d7',
+        'wt-6774-e7',
+      ];
+      addTasks(a, b, c, d, e);
+      renderPage({ prefetches: true });
+      openFromSidebar(a);
+      await settle();
+      expect(composerShown()).toBe(true);
+      const since = coreRequestLog.length;
+      const snapshotsOf = (task: string): number =>
+        readsOf(task, since).filter((read) => read === 'snapshot').length;
+
+      // A fast sweep over every row: no row is rested on, so nothing is read.
+      for (const task of [b, c, d, e])
+        act(() => {
+          noteChatIntent(rowIntent(task), 'pointer');
+          endChatIntent(rowIntent(task));
+        });
+      await dwell();
+      expect([b, c, d, e].map(snapshotsOf)).toEqual([0, 0, 0, 0]);
+
+      // A slow sweep that rests on B, C and D in turn while B's snapshot is
+      // slow: only B is read while it is in flight. C, left meanwhile, is
+      // never read; D, still under the pointer, is read once B settles.
+      const slowB = holdSnapshotOf(b);
+      const slowD = holdSnapshotOf(d);
+      act(() => {
+        noteChatIntent(rowIntent(b), 'pointer');
+      });
+      await dwell();
+      act(() => {
+        endChatIntent(rowIntent(b));
+        noteChatIntent(rowIntent(c), 'pointer');
+      });
+      await dwell();
+      act(() => {
+        endChatIntent(rowIntent(c));
+        noteChatIntent(rowIntent(d), 'pointer');
+      });
+      await dwell();
+      const whileBInFlight = [b, c, d].map(snapshotsOf);
+      slowB.serve();
+      await settle();
+      await dwell();
+      const afterB = [b, c, d].map(snapshotsOf);
+      slowD.serve();
+      act(() => {
+        endChatIntent(rowIntent(d));
+      });
+      await settle();
+
+      // Resting on A, which the store holds, reads nothing ahead.
+      const atA = coreRequestLog.length;
+      act(() => {
+        noteChatIntent(rowIntent(a), 'pointer');
+      });
+      await dwell();
+      act(() => {
+        endChatIntent(rowIntent(a));
+      });
+      expect({
+        whileBInFlight,
+        afterB,
+        heldTask: readsOf(a, atA),
+        e: snapshotsOf(e),
+      }).toEqual({
+        whileBInFlight: [1, 0, 0],
+        afterB: [1, 0, 1],
+        heldTask: [],
+        e: 0,
+      });
+    });
   });
 
   describe('a cloud task deleted on another device (CAN-6614)', () => {
@@ -4898,6 +7637,164 @@ describe('a cloud task in the cowork page (CAN-6175 R2)', () => {
         });
         cloudCoworkStore.getState().disconnect('offline');
       });
+    });
+
+    it('a kept deleted task the person restores from the archive comes back live, not marked Deleted (CAN-6511)', async () => {
+      servesCoworkLists = true;
+      await openWithDraft();
+      act(() => deleteTaskElsewhere('wt-1', 'tab-removed'));
+      await settle();
+      expect(newTaskRow('wt-1')).toMatchObject({ deleted: true });
+
+      useCloudArchivedTasksStore.setState({
+        byProject: {
+          'web-core:ws-1': {
+            status: 'loaded',
+            tasks: [
+              {
+                archiveId: 'work-entry:wt-1',
+                revision: 2,
+                worktreeId: 'wt-1',
+                title: 'Brief',
+                archivedAt: CREATED_AT,
+                state: 'deleted',
+                expiresAt: null,
+              },
+            ],
+            restoring: [],
+            restoreFailed: null,
+          },
+        },
+      });
+      await act(async () => {
+        await useCloudArchivedTasksStore
+          .getState()
+          .restore('web-core:ws-1', 'work-entry:wt-1');
+      });
+      await settle();
+
+      // Listed again, live: no row kept as deleted, and the draft stays.
+      expect(newTaskRow('wt-1')).not.toMatchObject({ deleted: true });
+      expect(newTaskRow('wt-1')).toBeDefined();
+      expect(
+        isCloudTaskDeleted({
+          projectId: 'web-core:ws-1',
+          worktreeId: 'web-core:wt-1',
+        }),
+      ).toBe(false);
+      expect(useChatStore.getState().getTabDraft(OLD_CHAT)).toEqual(DRAFT);
+    });
+
+    it('restoring a task keeps a chat that was deleted on its own, with its draft, even when the task is deleted again (CAN-6511)', async () => {
+      const NOTES = [
+        { type: 'paragraph' as const, children: [{ text: 'Notes draft' }] },
+      ];
+      servesCoworkLists = true;
+      useChatStore.getState().saveTabDraft('web-core:chat-2', NOTES);
+      await openWithDraft();
+      const scope = { projectId: 'web-core:ws-1', worktreeId: 'web-core:wt-1' };
+      // A second chat is deleted on its own first, then the whole task.
+      act(() => removeChatElsewhere('wt-1', 'chat-2'));
+      await settle();
+      expect(isCloudChatDeleted(scope, 'web-core:chat-2')).toBe(true);
+      act(() => deleteTaskElsewhere('wt-1', 'tab-removed'));
+      await settle();
+
+      useCloudArchivedTasksStore.setState({
+        byProject: {
+          'web-core:ws-1': {
+            status: 'loaded',
+            tasks: [
+              {
+                archiveId: 'work-entry:wt-1',
+                revision: 2,
+                worktreeId: 'wt-1',
+                title: 'Brief',
+                archivedAt: CREATED_AT,
+                state: 'deleted',
+                expiresAt: null,
+              },
+            ],
+            restoring: [],
+            restoreFailed: null,
+          },
+        },
+      });
+      await act(async () => {
+        await useCloudArchivedTasksStore
+          .getState()
+          .restore('web-core:ws-1', 'work-entry:wt-1');
+      });
+      await settle();
+
+      // The restore brings the task back, not the chat deleted on its own:
+      // it stays kept, read-only, with its draft.
+      expect(isCloudTaskDeleted(scope)).toBe(false);
+      expect(isCloudChatDeleted(scope, 'web-core:chat-2')).toBe(true);
+      expect(shown('panel-tab-panel-chat-web-core:chat-2')).toBe(true);
+      expect(useChatStore.getState().getTabDraft('web-core:chat-2')).toEqual(
+        NOTES,
+      );
+
+      // Deleted again after the restore: the kept chat is still there.
+      act(() => deleteTaskElsewhere('wt-1', 'tab-removed'));
+      await settle();
+      expect(isCloudChatDeleted(scope, 'web-core:chat-2')).toBe(true);
+      expect(shown('panel-tab-panel-chat-web-core:chat-2')).toBe(true);
+      expect(useChatStore.getState().getTabDraft('web-core:chat-2')).toEqual(
+        NOTES,
+      );
+    });
+
+    it('a kept deleted task restored from the archive follows its event stream again (CAN-6511)', async () => {
+      servesCoworkLists = true;
+      await openWithDraft();
+      act(() => deleteTaskElsewhere('wt-1', 'tab-removed'));
+      await settle();
+      const taskStreams = (): OpenedStream[] =>
+        [...openedStreams.values()].filter(
+          (stream) =>
+            stream.method === 'core.chat.events' &&
+            worktreeOf(stream.params) === 'wt-1',
+        );
+      // Deleted elsewhere: its stream stops for good.
+      expect(taskStreams()).toEqual([]);
+
+      useCloudArchivedTasksStore.setState({
+        byProject: {
+          'web-core:ws-1': {
+            status: 'loaded',
+            tasks: [
+              {
+                archiveId: 'work-entry:wt-1',
+                revision: 2,
+                worktreeId: 'wt-1',
+                title: 'Brief',
+                archivedAt: CREATED_AT,
+                state: 'deleted',
+                expiresAt: null,
+              },
+            ],
+            restoring: [],
+            restoreFailed: null,
+          },
+        },
+      });
+      await act(async () => {
+        await useCloudArchivedTasksStore
+          .getState()
+          .restore('web-core:ws-1', 'work-entry:wt-1');
+      });
+      await settle();
+
+      // Restored: the task follows its stream again, and reads what the web
+      // core commits next instead of leaving it unread.
+      expect(taskStreams()).toHaveLength(1);
+      act(() => removeChatElsewhere('wt-1', 'chat-2'));
+      await settle();
+      expect(taskStreams()).toHaveLength(1);
+      expect(taskStreams()[0]?.frames).toEqual([]);
+      expect(useChatStore.getState().getTabDraft(OLD_CHAT)).toEqual(DRAFT);
     });
 
     it('keeps the draft and its file, and starts a new chat with both, when the web core removes the task’s chat', async () => {
@@ -5272,39 +8169,39 @@ describe('a cloud task in the cowork page (CAN-6175 R2)', () => {
       uploadGate = new Promise((resolve) => {
         release = resolve;
       });
-      try {
-        click('chat-input-chat-deleted-start');
-        await settle();
-        const [newTask = ''] = [...startedTasks];
-        expect(createdTasks.has(newTask)).toBe(true);
-        expect(useStandaloneChatStore.getState().activeWorkEntryId).toBe(
-          `web-core:${newTask}`,
-        );
-        const send = (): HTMLButtonElement | null =>
-          container.querySelector('button[aria-label="Send message"]');
-        expect(container.textContent).toContain('Keep this draft');
-        expect(send()?.disabled).toBe(true);
-        release();
-        await settle();
-        expect(pills()).toEqual([expect.stringContaining('brief.md')]);
-        expect(send()?.disabled).toBe(false);
-        act(() => {
-          send()?.click();
-        });
-        await settle();
-        const sent = coreRequestLog.filter(
-          (entry) =>
-            entry.method === 'core.chat.message.send' &&
-            entry.params.chatId === newTask,
-        );
-        expect(sent).toHaveLength(1);
-        expect(sent[0]?.params.attachments).toEqual([
-          { attachmentId: 'att-brief.md' },
-        ]);
-      } finally {
+      // A failure or timeout below leaves nothing held for the next case.
+      onCaseEnd(() => {
         release();
         uploadGate = null;
-      }
+      });
+      click('chat-input-chat-deleted-start');
+      await settle();
+      const [newTask = ''] = [...startedTasks];
+      expect(createdTasks.has(newTask)).toBe(true);
+      expect(useStandaloneChatStore.getState().activeWorkEntryId).toBe(
+        `web-core:${newTask}`,
+      );
+      const send = (): HTMLButtonElement | null =>
+        container.querySelector('button[aria-label="Send message"]');
+      expect(container.textContent).toContain('Keep this draft');
+      expect(send()?.disabled).toBe(true);
+      release();
+      await settle();
+      expect(pills()).toEqual([expect.stringContaining('brief.md')]);
+      expect(send()?.disabled).toBe(false);
+      act(() => {
+        send()?.click();
+      });
+      await settle();
+      const sent = coreRequestLog.filter(
+        (entry) =>
+          entry.method === 'core.chat.message.send' &&
+          entry.params.chatId === newTask,
+      );
+      expect(sent).toHaveLength(1);
+      expect(sent[0]?.params.attachments).toEqual([
+        { attachmentId: 'att-brief.md' },
+      ]);
     });
 
     it('keeps an edit made to the deleted chat while its new task is created', async () => {
@@ -6008,6 +8905,12 @@ describe('a cloud task in the cowork page (CAN-6175 R2)', () => {
     const host = document.createElement('div');
     document.body.appendChild(host);
     const cardRoot = createRoot(host);
+    onCaseEnd(() => {
+      act(() => {
+        cardRoot.unmount();
+      });
+      host.remove();
+    });
     const before = calls.length;
     try {
       act(() => {
@@ -6078,6 +8981,12 @@ describe('a cloud task in the cowork page (CAN-6175 R2)', () => {
     const host = document.createElement('div');
     document.body.appendChild(host);
     const cardRoot = createRoot(host);
+    onCaseEnd(() => {
+      act(() => {
+        cardRoot.unmount();
+      });
+      host.remove();
+    });
     try {
       act(() => {
         cardRoot.render(
@@ -6116,5 +9025,1173 @@ describe('a cloud task in the cowork page (CAN-6175 R2)', () => {
       });
       host.remove();
     }
+  });
+
+  describe('New task starts a cloud chat in a cloud project (CAN-6757)', () => {
+    const LOCAL_PROJECT = {
+      id: 'local-notes',
+      name: 'Local notes',
+      type: 'cowork' as const,
+      color: '#5b8def',
+      collapsed: false,
+      order: 0,
+    };
+    const ORG_PROJECT = {
+      key: 'web-core:ws-org',
+      workspaceId: 'ws-org',
+      name: 'Org launch',
+      kind: 'cowork' as const,
+      ownerOrganizationId: 'ORG-1',
+    };
+
+    beforeEach(() => {
+      useFeatureFlagsStore.setState({
+        isEnabled: (key) =>
+          key === CLIENT_FEATURE_FLAGS.canopyDesktopCloudChats.key ||
+          key === CLIENT_FEATURE_FLAGS.canopyOrgProjectsEnabled.key,
+      });
+      useWorkspaceContextStore.setState((store) => ({
+        hydrated: true,
+        state: { ...store.state, context: { kind: 'personal' } },
+      }));
+      useProjectsStore.setState({
+        projects: [LOCAL_PROJECT],
+        hasHydratedProjects: true,
+      });
+      useHomeComposerStore.getState().reset();
+    });
+
+    afterEach(() => {
+      act(() => {
+        useHomeComposerStore.getState().reset();
+        useProjectsStore.setState({ projects: [] });
+        useWorkspaceContextStore.setState((store) => ({
+          hydrated: false,
+          state: { ...store.state, context: { kind: 'personal' } },
+        }));
+        cloudCoworkStore.getState().disconnect('offline');
+      });
+    });
+
+    function renderHome(): void {
+      const client = createDesktopCanopyClient(
+        createDesktopCapabilities('darwin', {}, {}),
+      );
+      act(() => {
+        root.render(
+          <CanopyClientProvider client={client}>
+            <HomeSurface variant="page" />
+          </CanopyClientProvider>,
+        );
+      });
+    }
+
+    /** The cloud online with this account's project and an organization's. */
+    async function connectWithOrgProject(): Promise<void> {
+      await connectCowork();
+      act(() => {
+        cloudCoworkStore.setState((state) => ({
+          projects: [...state.projects, ORG_PROJECT],
+        }));
+      });
+    }
+
+    function homeOptions(): readonly string[] {
+      return Array.from(
+        document.querySelectorAll('[data-testid^="home-workspace-option-"]'),
+        (row) =>
+          (row.getAttribute('data-testid') ?? '').slice(
+            'home-workspace-option-'.length,
+          ),
+      );
+    }
+
+    async function pickHomeProject(projectId: string): Promise<void> {
+      act(() => {
+        container
+          .querySelector<HTMLElement>('[data-testid="home-workspace-select"]')
+          ?.click();
+      });
+      await settle();
+      act(() => {
+        document
+          .querySelector<HTMLElement>(
+            `[data-testid="home-workspace-option-${projectId}"]`,
+          )
+          ?.click();
+      });
+      await settle();
+    }
+
+    /** The rows New task's + menu offers, by test id. */
+    function homePlusRows(): readonly string[] {
+      return Array.from(
+        document.querySelectorAll(
+          '[data-testid^="home-composer-plus-"], [data-testid^="home-plugins-"], [data-testid^="home-pipeline-"], [data-testid^="home-plan-"], [data-testid^="home-schedule-"]',
+        ),
+        (row) => row.getAttribute('data-testid') ?? '',
+      )
+        .filter(
+          (id) =>
+            ![
+              'home-composer-plus-button',
+              'home-composer-plus-menu',
+              'home-composer-plus-add',
+            ].includes(id),
+        )
+        .sort();
+    }
+
+    /** Picks files through New task's + menu, as the file picker returns them. */
+    async function pickHomeFiles(files: readonly File[]): Promise<void> {
+      const click = jest
+        .spyOn(HTMLInputElement.prototype, 'click')
+        .mockImplementation(function (this: HTMLInputElement) {
+          Object.defineProperty(this, 'files', { value: files });
+          this.dispatchEvent(new Event('change'));
+        });
+      try {
+        act(() => {
+          container
+            .querySelector<HTMLElement>(
+              '[data-testid="home-composer-plus-button"]',
+            )
+            ?.click();
+        });
+        await settle();
+        act(() => {
+          document
+            .querySelector<HTMLElement>(
+              '[data-testid="home-composer-plus-attachment"]',
+            )
+            ?.click();
+        });
+        await settle();
+      } finally {
+        click.mockRestore();
+      }
+    }
+
+    /** The files New task holds for a cloud project, by name. */
+    function homeCloudFiles(): readonly (string | null)[] {
+      return Array.from(
+        container.querySelectorAll(
+          '[data-testid="portal-pending-attachments"] [data-state="staged"]',
+        ),
+        (chip) => chip.getAttribute('title'),
+      );
+    }
+
+    function sendFromHome(text: string): void {
+      act(() => {
+        useHomeComposerStore.getState().setText(text);
+      });
+      act(() => {
+        container
+          .querySelector<HTMLElement>('[data-testid="home-send-button"]')
+          ?.click();
+      });
+    }
+
+    it("lists the context's cloud projects beside local ones, and sending starts a cloud chat there on the cloud default model", async () => {
+      // This computer's default model, which a cloud chat must never take.
+      initClaudeModels([{ id: 'opus[1m]', label: 'Opus' }]);
+      renderHome();
+      await connectWithOrgProject();
+      await settle();
+
+      // The local project and this context's cloud project; never the
+      // organization's, which the sidebar shows only in its own context.
+      act(() => {
+        container
+          .querySelector<HTMLElement>('[data-testid="home-workspace-select"]')
+          ?.click();
+      });
+      await settle();
+      expect(homeOptions()).toEqual(['local-notes', 'web-core:ws-1']);
+      act(() => {
+        document
+          .querySelector<HTMLElement>(
+            '[data-testid="home-workspace-option-web-core:ws-1"]',
+          )
+          ?.click();
+      });
+      await settle();
+      expect(
+        container.querySelector('[data-testid="home-workspace-select"]')
+          ?.textContent,
+      ).toContain('Cloud research');
+
+      // The controls only this computer serves are gone, not disabled.
+      for (const control of [
+        'home-branch-picker-see-more',
+        'home-thinking-level-button',
+      ])
+        expect(shown(control)).toBe(false);
+      // + offers only files, which go to the new task's chat (CAN-6763).
+      act(() => {
+        container
+          .querySelector<HTMLElement>(
+            '[data-testid="home-composer-plus-button"]',
+          )
+          ?.click();
+      });
+      await settle();
+      expect(homePlusRows()).toEqual(['home-composer-plus-attachment']);
+      act(() => {
+        document.dispatchEvent(
+          new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }),
+        );
+      });
+      await settle();
+      expect(
+        container.querySelector('button[aria-label^="Select model"]'),
+      ).toBeNull();
+      expect(shown('home-send-button')).toBe(true);
+
+      sendFromHome('Plan the launch');
+      await settle();
+
+      // A new task in the cloud project, and the message sent to its chat.
+      const taskId = createdChatIds.at(-1) ?? '';
+      expect(taskId).not.toBe('');
+      const creates = coreRequestLog.filter(
+        (entry) =>
+          entry.method === 'core.chat.create' &&
+          worktreeOf(entry.params) === taskId,
+      );
+      expect(creates).toHaveLength(1);
+      expect(JSON.stringify(creates[0]?.params)).toContain('"ws-1"');
+      expect(sendsTo(taskId)).toBe(1);
+      const sent = coreRequestLog.find(
+        (entry) =>
+          entry.method === 'core.chat.message.send' &&
+          entry.params.chatId === taskId,
+      );
+      expect(JSON.stringify(sent?.params)).toContain('Plan the launch');
+      // The web core's default model: nothing names this computer's.
+      expect(JSON.stringify(coreRequestLog)).not.toContain('opus[1m]');
+      expect(
+        useChatStore
+          .getState()
+          .worktreeChats[
+            `web-core:ws-1/web-core:${taskId}`
+          ]?.tabs.map((tab) => tab.model),
+      ).toEqual([undefined]);
+      // Nothing about the cloud project reached this computer's bridge.
+      expect(callsCarryingWebCoreIds()).toEqual([]);
+      // Home's draft went with the message.
+      expect(useHomeComposerStore.getState().text).toBe('');
+      initClaudeModels([]);
+    });
+
+    it('shows no local link destination for a cloud project, so a pasted link goes where the picker shows', async () => {
+      renderHome();
+      await connectWithOrgProject();
+      await settle();
+
+      // With the local project selected, the link proposes a destination,
+      // which shows this check can see one.
+      const draft = 'Review https://github.com/acme/rocket please';
+      act(() => {
+        useHomeComposerStore.getState().setText(draft);
+      });
+      await settle();
+      expect(useHomeComposerStore.getState().linkTarget.status).not.toBe(
+        'idle',
+      );
+
+      // Picking a cloud project drops it, and typing the link again proposes
+      // nothing: the picker still names the cloud project, and no link chip
+      // offers a local one.
+      await pickHomeProject('web-core:ws-1');
+      act(() => {
+        useHomeComposerStore.getState().setText(`${draft} `);
+      });
+      await settle();
+      expect(useHomeComposerStore.getState().linkTarget.status).toBe('idle');
+      expect(shown('home-link-target')).toBe(false);
+      expect(
+        container.querySelector('[data-testid="home-workspace-select"]')
+          ?.textContent,
+      ).toContain('Cloud research');
+
+      act(() => {
+        container
+          .querySelector<HTMLElement>('[data-testid="home-send-button"]')
+          ?.click();
+      });
+      await settle();
+      const taskId = createdChatIds.at(-1) ?? '';
+      expect(taskId).not.toBe('');
+      const create = coreRequestLog.find(
+        (entry) =>
+          entry.method === 'core.chat.create' &&
+          worktreeOf(entry.params) === taskId,
+      );
+      expect(JSON.stringify(create?.params)).toContain('"ws-1"');
+      const sent = coreRequestLog.find(
+        (entry) =>
+          entry.method === 'core.chat.message.send' &&
+          entry.params.chatId === taskId,
+      );
+      expect(JSON.stringify(sent?.params)).toContain('github.com/acme/rocket');
+      expect(callsCarryingWebCoreIds()).toEqual([]);
+    });
+
+    it("lists an organization's cloud project in its context, and drops a selection the context doesn't hold", async () => {
+      renderHome();
+      await connectWithOrgProject();
+      await settle();
+      await pickHomeProject('web-core:ws-1');
+      expect(useHomeComposerStore.getState().workspaceId).toBe('web-core:ws-1');
+
+      act(() => {
+        useWorkspaceContextStore.setState((store) => ({
+          state: {
+            ...store.state,
+            context: { kind: 'organization', organizationId: 'org-1' },
+          },
+        }));
+      });
+      await settle();
+      // The Personal cloud project no longer stays chosen.
+      expect(useHomeComposerStore.getState().workspaceId).not.toBe(
+        'web-core:ws-1',
+      );
+      act(() => {
+        container
+          .querySelector<HTMLElement>('[data-testid="home-workspace-select"]')
+          ?.click();
+      });
+      await settle();
+      expect(homeOptions()).toEqual(['web-core:ws-org']);
+      expect(callsCarryingWebCoreIds()).toEqual([]);
+    });
+
+    it('keeps the draft in New task and says why when the cloud goes offline or the project goes before the send', async () => {
+      renderHome();
+      await connectWithOrgProject();
+      await settle();
+      await pickHomeProject('web-core:ws-1');
+      // Home says why under its composer, as for any send it refuses.
+      const errorText = (): string =>
+        container.querySelector('[data-testid="home-composer-error"]')
+          ?.textContent ?? '';
+
+      // Offline between picking and sending: refused, with the cloud's own
+      // words, and nothing created.
+      act(() => {
+        cloudCoworkStore.getState().disconnect('offline');
+      });
+      await settle();
+      sendFromHome('Keep this draft');
+      await settle();
+      expect(errorText()).toContain('Cloud chats are offline.');
+      expect(useHomeComposerStore.getState().text).toBe('Keep this draft');
+      expect(useHomeComposerStore.getState().workspaceId).toBe('web-core:ws-1');
+      expect(
+        coreRequestLog.filter((entry) => entry.method === 'core.chat.create'),
+      ).toEqual([]);
+
+      // Back online, and then the project is removed on another device while
+      // the draft waits: the selection and the draft stay until a send says
+      // why, never handed to a local project.
+      await connectWithOrgProject();
+      await settle();
+      expect(useHomeComposerStore.getState().workspaceId).toBe('web-core:ws-1');
+      act(() => {
+        cloudCoworkStore.setState((state) => ({
+          projects: state.projects.filter(
+            (project) => project.workspaceId !== 'ws-1',
+          ),
+        }));
+      });
+      await settle();
+      expect(useHomeComposerStore.getState().workspaceId).toBe('web-core:ws-1');
+      expect(useHomeComposerStore.getState().text).toBe('Keep this draft');
+      sendFromHome('Keep this draft');
+      await settle();
+      expect(errorText()).toContain(
+        "That cloud project isn't available any more.",
+      );
+      expect(useHomeComposerStore.getState().text).toBe('Keep this draft');
+      expect(
+        coreRequestLog.filter((entry) => entry.method === 'core.chat.create'),
+      ).toEqual([]);
+      expect(callsCarryingWebCoreIds()).toEqual([]);
+    });
+
+    it('never records a New task send to a cloud project as a task to repeat, nor offers it as an automation', async () => {
+      renderHome();
+      await connectWithOrgProject();
+      await settle();
+      const remembered = new Map<string, string>();
+      const storage = {
+        getItem: (key: string): string | null => remembered.get(key) ?? null,
+        setItem: (key: string, value: string): void => {
+          remembered.set(key, value);
+        },
+        removeItem: (key: string): void => {
+          remembered.delete(key);
+        },
+      };
+      const deps = {
+        now: (): number => 1_000,
+        loadAccountKey: (): Promise<string> => Promise.resolve('account-1'),
+        loadSuggestionsEnabled: (): Promise<boolean> => Promise.resolve(true),
+        storage,
+      };
+      const prompt = 'Summarise the weekly launch notes for the team';
+      act(() => {
+        useHomeComposerStore.getState().setText(prompt);
+      });
+
+      // A local project's task is remembered, so the check below can see one.
+      const local = snapshotHomeTask('page');
+      expect(local.workspaceId).toBe('local-notes');
+      await act(() => maybeOfferRepeatTaskAutomation(local, deps));
+      expect(remembered.get(REPEAT_TASK_HISTORY_STORAGE_KEY)).toContain(
+        'local-notes',
+      );
+      remembered.clear();
+
+      // A cloud project's is not, however often it repeats: an automation
+      // made from it would start a local chat in a project no IPC resolves.
+      await pickHomeProject('web-core:ws-1');
+      act(() => {
+        useHomeComposerStore.getState().setText(prompt);
+      });
+      const cloud = snapshotHomeTask('page');
+      expect(cloud.workspaceId).toBe('web-core:ws-1');
+      for (let send = 0; send < 3; send += 1)
+        await act(() => maybeOfferRepeatTaskAutomation(cloud, deps));
+      expect(remembered.get(REPEAT_TASK_HISTORY_STORAGE_KEY)).toBeUndefined();
+      expect(useRepeatTaskOfferStore.getState().offer).toBeNull();
+    });
+
+    function renderHomeBesidePage(): void {
+      const client = createDesktopCanopyClient(
+        createDesktopCapabilities('darwin', {}, {}),
+      );
+      // New task beside the page it opens, as the window shows them.
+      act(() => {
+        root.render(
+          <CanopyClientProvider client={client}>
+            <HomeSurface variant="page" />
+            <StandaloneChatPage />
+          </CanopyClientProvider>,
+        );
+      });
+    }
+
+    it('shows a first message the web core refuses, once the new task exists, as not sent, with the reason, and back in the composer', async () => {
+      renderHomeBesidePage();
+      await connectWithOrgProject();
+      await settle();
+      await pickHomeProject('web-core:ws-1');
+      sendRefusal = 'The cloud sandbox is waking up. Try again in a moment.';
+
+      sendFromHome('Plan the launch');
+      await settle();
+
+      const taskId = createdChatIds.at(-1) ?? '';
+      // The task exists, and the web core was asked once, and refused.
+      expect(
+        coreRequestLog.filter(
+          (entry) =>
+            entry.method === 'core.chat.create' &&
+            worktreeOf(entry.params) === taskId,
+        ),
+      ).toHaveLength(1);
+      expect(sendsTo(taskId)).toBe(1);
+      // Nothing reads as sent: no user message, and no failure under one.
+      const tab = useChatStore
+        .getState()
+        .worktreeChats[
+          `web-core:ws-1/web-core:${taskId}`
+        ]?.tabs.find((entry) => entry.id === `web-core:${taskId}`);
+      expect(
+        (tab?.messages ?? []).filter((message) =>
+          message.blocks.some(
+            (block) =>
+              block.type === 'text' && block.text.includes('Plan the launch'),
+          ),
+        ),
+      ).toEqual([]);
+      // The composer has it back, once, and says why it wasn't sent.
+      expect(
+        container.querySelector(
+          '[data-testid="chat-panel"] [data-chat-textarea]',
+        )?.textContent,
+      ).toBe('Plan the launch');
+      expect(
+        container.querySelector('[data-testid="chat-input-send-refused"]')
+          ?.textContent,
+      ).toContain(
+        "Your message wasn't sent: The cloud sandbox is waking up. Try again in a moment.",
+      );
+      expect(callsCarryingWebCoreIds()).toEqual([]);
+    });
+
+    it('holds a file pasted into New task for a cloud project until Send, sending this computer nothing (CAN-6763)', async () => {
+      renderHome();
+      await connectWithOrgProject();
+      await settle();
+      await pickHomeProject('web-core:ws-1');
+      const editor = container.querySelector<HTMLElement>(
+        '[data-testid="home-composer-editor"]',
+      );
+      expect(editor).not.toBeNull();
+      const file = new File(['png'], 'shot.png', { type: 'image/png' });
+      const paste = new Event('paste', { bubbles: true, cancelable: true });
+      Object.defineProperty(paste, 'clipboardData', {
+        value: {
+          items: [
+            { kind: 'file', type: 'image/png', getAsFile: (): File => file },
+          ],
+          files: [file],
+          types: ['Files'],
+          getData: (): string => '',
+        },
+      });
+      // jsdom has no isContentEditable, which the editor reads to take a paste.
+      const editable = Object.getOwnPropertyDescriptor(
+        HTMLElement.prototype,
+        'isContentEditable',
+      );
+      Object.defineProperty(HTMLElement.prototype, 'isContentEditable', {
+        configurable: true,
+        get(this: HTMLElement): boolean {
+          return this.closest('[contenteditable="true"]') !== null;
+        },
+      });
+      onCaseEnd(() => {
+        if (editable === undefined)
+          Reflect.deleteProperty(HTMLElement.prototype, 'isContentEditable');
+        else
+          Object.defineProperty(
+            HTMLElement.prototype,
+            'isContentEditable',
+            editable,
+          );
+      });
+      try {
+        act(() => {
+          editor?.dispatchEvent(paste);
+        });
+      } finally {
+        if (editable === undefined)
+          Reflect.deleteProperty(HTMLElement.prototype, 'isContentEditable');
+        else
+          Object.defineProperty(
+            HTMLElement.prototype,
+            'isContentEditable',
+            editable,
+          );
+      }
+      expect(paste.defaultPrevented).toBe(true);
+      await settle();
+      // No local staging was asked to take the cloud project's id, and
+      // nothing uploads before Send.
+      expect(callsCarryingWebCoreIds()).toEqual([]);
+      expect(calls.filter((call) => call.path === CLOUD_UPLOAD)).toEqual([]);
+      expect(useHomeComposerStore.getState().attachments).toEqual([]);
+      expect(homeCloudFiles()).toEqual(['shot.png']);
+      expect(shown('home-composer-error')).toBe(false);
+    });
+
+    /** The web core advertises the account-bound send, read afresh (CAN-6828). */
+    async function bindSendsToTheAccount(): Promise<void> {
+      advertisesSendBinding = true;
+      act(() => {
+        cloudCoworkStore.getState().disconnect('offline');
+      });
+      await connectWithOrgProject();
+      await settle();
+    }
+
+    const sendsOf = (
+      taskId: string,
+    ): { text: unknown; expectedPrincipalId: unknown; revision: unknown }[] =>
+      coreRequestLog
+        .filter(
+          (entry) =>
+            entry.method === 'core.chat.message.send' &&
+            entry.params.chatId === taskId,
+        )
+        .map((entry) => ({
+          text: entry.params.text,
+          expectedPrincipalId: entry.params.expectedPrincipalId,
+          revision: entry.params.revision,
+        }));
+
+    /**
+     * New task's message, with the create held, and a follow-up typed in the
+     * new chat meanwhile. Answers the new task's id and its chat.
+     */
+    async function newTaskWithFollowUp(): Promise<{
+      readonly taskId: string;
+      readonly create: () => void;
+    }> {
+      await pickHomeProject('web-core:ws-1');
+      let create = (): void => undefined;
+      createGate = new Promise<void>((resolve) => {
+        create = resolve;
+      });
+      sendFromHome('Plan the launch');
+      await settle();
+      const taskId = createdChatIds.at(-1) ?? '';
+      expect(taskId).not.toBe('');
+      act(() => {
+        void useChatStore.getState().sendMessage('And a follow-up', undefined, {
+          projectId: 'web-core:ws-1',
+          worktreeId: `web-core:${taskId}`,
+          chatId: `web-core:${taskId}`,
+        });
+      });
+      await settle();
+      // Nothing posts to a task the web core hasn't created.
+      expect(sendsOf(taskId)).toEqual([]);
+      return {
+        taskId,
+        create: (): void => {
+          createGate = null;
+          create();
+        },
+      };
+    }
+
+    it("binds New task's first message to its account, shows it at once, and sends a follow-up typed during the create after it (CAN-6828)", async () => {
+      renderHome();
+      await bindSendsToTheAccount();
+      const { taskId, create } = await newTaskWithFollowUp();
+      // Shown in the new chat at once, while the web core creates the task.
+      expect(
+        useChatStore
+          .getState()
+          .worktreeChats[`web-core:ws-1/web-core:${taskId}`]?.tabs.find(
+            (tab) => tab.id === `web-core:${taskId}`,
+          )
+          ?.messages.filter((message) => message.role === 'user')
+          .map((message) => message.blocks)[0],
+      ).toEqual([{ type: 'text', text: 'Plan the launch' }]);
+      create();
+      await settle();
+      // In the order they were pressed, both bound to the account.
+      expect(sendsOf(taskId)).toEqual([
+        { text: 'Plan the launch', expectedPrincipalId: 'u-1', revision: 3 },
+        { text: 'And a follow-up', expectedPrincipalId: 'u-1', revision: 3 },
+      ]);
+      expect(callsCarryingWebCoreIds()).toEqual([]);
+    });
+
+    it("sends a follow-up typed during the create after New task's first message against a web core that can't bind a send (CAN-6828)", async () => {
+      renderHome();
+      act(() => {
+        cloudCoworkStore.getState().disconnect('offline');
+      });
+      await connectWithOrgProject();
+      await settle();
+      const { taskId, create } = await newTaskWithFollowUp();
+      create();
+      await settle();
+      // New task's place was taken on the click, before the follow-up's.
+      expect(sendsOf(taskId).map((send) => send.text)).toEqual([
+        'Plan the launch',
+        'And a follow-up',
+      ]);
+    });
+
+    it("lets a follow-up typed during the create through when the web core refuses New task's first message (CAN-6828)", async () => {
+      renderHome();
+      await bindSendsToTheAccount();
+      refusedSendText = 'Plan the launch';
+      const { taskId, create } = await newTaskWithFollowUp();
+      create();
+      await settle();
+      // The refused message settles its place; the follow-up still posts.
+      expect(sendsOf(taskId).map((send) => send.text)).toEqual([
+        'Plan the launch',
+        'And a follow-up',
+      ]);
+    });
+
+    it("sends nothing for the earlier account and restores nothing when the web core refuses New task's first message as another account's (CAN-6828)", async () => {
+      renderHome();
+      await bindSendsToTheAccount();
+      await pickHomeProject('web-core:ws-1');
+      let create = (): void => undefined;
+      createGate = new Promise<void>((resolve) => {
+        create = resolve;
+      });
+      sendFromHome('Earlier account prompt');
+      await settle();
+      const taskId = createdChatIds.at(-1) ?? '';
+      expect(taskId).not.toBe('');
+      // The desktop switches account while the task is created: the web core
+      // now serves another account.
+      servedPrincipal = 'u-2';
+      act(() => {
+        useWorkspaceContextStore.setState((store) => ({
+          accountEpoch: store.accountEpoch + 1,
+        }));
+      });
+      createGate = null;
+      create();
+      await settle();
+      // Refused as another account's: nothing posted, nothing put back.
+      expect(sendsOf(taskId)).toEqual([
+        {
+          text: 'Earlier account prompt',
+          expectedPrincipalId: 'u-1',
+          revision: 3,
+        },
+      ]);
+      const tab = useChatStore
+        .getState()
+        .worktreeChats[
+          `web-core:ws-1/web-core:${taskId}`
+        ]?.tabs.find((entry) => entry.id === `web-core:${taskId}`);
+      expect(
+        tab?.messages.some((message) =>
+          JSON.stringify(message.blocks).includes('Earlier account prompt'),
+        ),
+      ).toBe(false);
+      expect(
+        serializeEditorValue(
+          useChatStore.getState().getTabDraft(`web-core:${taskId}`) ?? [],
+        ).text,
+      ).not.toContain('Earlier account prompt');
+    });
+
+    it("waits for the create and sends unbound against a web core that can't bind a send to its account (CAN-6828)", async () => {
+      renderHome();
+      // Described, but without the account-bound send.
+      act(() => {
+        cloudCoworkStore.getState().disconnect('offline');
+      });
+      await connectWithOrgProject();
+      await settle();
+      await pickHomeProject('web-core:ws-1');
+      let create = (): void => undefined;
+      createGate = new Promise<void>((resolve) => {
+        create = resolve;
+      });
+      sendFromHome('Plan the launch');
+      await settle();
+      const taskId = createdChatIds.at(-1) ?? '';
+      // As before: New task keeps the draft until the created chat takes it.
+      expect(useHomeComposerStore.getState().text).toBe('Plan the launch');
+      createGate = null;
+      create();
+      await settle();
+      expect(sendsOf(taskId)).toEqual([
+        {
+          text: 'Plan the launch',
+          expectedPrincipalId: undefined,
+          revision: undefined,
+        },
+      ]);
+    });
+
+    /** New task against a connection it couldn't bind: #9332's wait, then an unbound send. */
+    async function expectUnboundNewTaskSend(): Promise<void> {
+      await pickHomeProject('web-core:ws-1');
+      let create = (): void => undefined;
+      createGate = new Promise<void>((resolve) => {
+        create = resolve;
+      });
+      sendFromHome('Plan the launch');
+      await settle();
+      const taskId = createdChatIds.at(-1) ?? '';
+      expect(taskId).not.toBe('');
+      expect(useHomeComposerStore.getState().text).toBe('Plan the launch');
+      createGate = null;
+      create();
+      await settle();
+      expect(sendsOf(taskId)).toEqual([
+        {
+          text: 'Plan the launch',
+          expectedPrincipalId: undefined,
+          revision: undefined,
+        },
+      ]);
+    }
+
+    it("waits for the create and sends unbound when the relay can't describe the connection (CAN-6828)", async () => {
+      renderHome();
+      describeReply = 'failed';
+      await bindSendsToTheAccount();
+      await expectUnboundNewTaskSend();
+    });
+
+    for (const [reply, account] of [
+      ['noPrincipal', 'no account'],
+      ['emptyPrincipal', 'an empty account'],
+    ] as const) {
+      it(`waits for the create and sends unbound when the connection is described with ${account} (CAN-6828)`, async () => {
+        renderHome();
+        describeReply = reply;
+        await bindSendsToTheAccount();
+        await expectUnboundNewTaskSend();
+      });
+    }
+
+    it('keeps the draft in New task until the new cloud chat takes its first message', async () => {
+      renderHome();
+      await connectWithOrgProject();
+      await settle();
+      await pickHomeProject('web-core:ws-1');
+      // The web core is slow to create the task.
+      let create = (): void => undefined;
+      createGate = new Promise<void>((resolve) => {
+        create = resolve;
+      });
+      sendFromHome('Plan the launch');
+      await settle();
+      const taskId = createdChatIds.at(-1) ?? '';
+      expect(taskId).not.toBe('');
+      // Until the message is sent, Home still holds it, and a second send
+      // can't start another task.
+      expect(sendsTo(taskId)).toBe(0);
+      expect(useHomeComposerStore.getState().text).toBe('Plan the launch');
+      act(() => {
+        container
+          .querySelector<HTMLElement>('[data-testid="home-send-button"]')
+          ?.click();
+      });
+      await settle();
+      expect(
+        coreRequestLog.filter((entry) => entry.method === 'core.chat.create'),
+      ).toHaveLength(1);
+
+      createGate = null;
+      create();
+      await settle();
+      // Sent once, and only then is Home cleared.
+      expect(sendsTo(taskId)).toBe(1);
+      expect(useHomeComposerStore.getState().text).toBe('');
+      expect(callsCarryingWebCoreIds()).toEqual([]);
+    });
+
+    it('sends nothing and restores nothing when the account changes while the new cloud chat opens', async () => {
+      const switchAccount = (): void => {
+        act(() => {
+          useWorkspaceContextStore.setState((store) => ({
+            accountEpoch: store.accountEpoch + 1,
+          }));
+        });
+      };
+      const draftOf = (taskId: string): string =>
+        serializeEditorValue(
+          useChatStore.getState().getTabDraft(`web-core:${taskId}`) ?? [],
+        ).text;
+      renderHome();
+      await connectWithOrgProject();
+      await settle();
+
+      // Created after the account changed: the earlier account's prompt is
+      // never sent.
+      await pickHomeProject('web-core:ws-1');
+      let create = (): void => undefined;
+      createGate = new Promise<void>((resolve) => {
+        create = resolve;
+      });
+      sendFromHome('Earlier account prompt');
+      await settle();
+      const sentTask = createdChatIds.at(-1) ?? '';
+      expect(sentTask).not.toBe('');
+      switchAccount();
+      createGate = null;
+      create();
+      await settle();
+      expect(sendsTo(sentTask)).toBe(0);
+      expect(draftOf(sentTask)).not.toContain('Earlier account prompt');
+
+      // Refused after the account changed: the prompt isn't put back into any
+      // composer either.
+      act(() => {
+        useHomeComposerStore.getState().reset();
+      });
+      await pickHomeProject('web-core:ws-1');
+      createRefusal = 'This project is full.';
+      let refuse = (): void => undefined;
+      createGate = new Promise<void>((resolve) => {
+        refuse = resolve;
+      });
+      sendFromHome('Another earlier prompt');
+      await settle();
+      const refusedTask = createdChatIds.at(-1) ?? '';
+      expect(refusedTask).not.toBe(sentTask);
+      switchAccount();
+      createGate = null;
+      refuse();
+      await settle();
+      expect(draftOf(refusedTask)).not.toContain('Another earlier prompt');
+      expect(callsCarryingWebCoreIds()).toEqual([]);
+    });
+
+    it('keeps both the refused first message and a draft typed in the new chat meanwhile', async () => {
+      renderHome();
+      await connectWithOrgProject();
+      await settle();
+      await pickHomeProject('web-core:ws-1');
+      // The web core refuses the new task, but only after a while.
+      createRefusal = 'This project is full.';
+      let refuse = (): void => undefined;
+      createGate = new Promise<void>((resolve) => {
+        refuse = resolve;
+      });
+      sendFromHome('Plan the launch');
+      await settle();
+      const taskId = createdChatIds.at(-1) ?? '';
+      expect(taskId).not.toBe('');
+      // Meanwhile the person typed in the new chat, whose composer saved it
+      // and closed.
+      act(() => {
+        useChatStore
+          .getState()
+          .saveTabDraft(`web-core:${taskId}`, [
+            { type: 'paragraph', children: [{ text: 'Follow-up note' }] },
+          ]);
+      });
+      createGate = null;
+      refuse();
+      await settle();
+      // Neither is lost.
+      const draft = serializeEditorValue(
+        useChatStore.getState().getTabDraft(`web-core:${taskId}`) ?? [],
+      ).text;
+      expect(draft).toContain('Plan the launch');
+      expect(draft).toContain('Follow-up note');
+    });
+
+    it("refuses to stage a file for a cloud project through this computer's attachment import, and still stages a local project's", async () => {
+      // Every New task attach path (+ menu, paste, /attach, Linear) imports
+      // through it; a cloud project has no local folder.
+      await expect(
+        importChatAttachments(
+          { projectId: 'web-core:ws-1', worktreeId: 'home' },
+          ['/Users/me/shot.png'],
+        ),
+      ).rejects.toThrow();
+      expect(callsCarryingWebCoreIds()).toEqual([]);
+
+      // A local project's file still stages through this computer.
+      void importChatAttachments(
+        { projectId: 'local-notes', worktreeId: 'home' },
+        ['/Users/me/notes.md'],
+      ).catch(() => undefined);
+      await settle();
+      expect(
+        calls
+          .filter(
+            (call) => call.path === 'api.workspaceItems.importAttachments',
+          )
+          .map((call) => call.args),
+      ).toEqual([
+        [
+          {
+            projectId: 'local-notes',
+            worktreeId: 'home',
+            filePaths: ['/Users/me/notes.md'],
+            clipboardItems: undefined,
+          },
+        ],
+      ]);
+    });
+
+    it("sends New task's first message to a cloud project with the files picked for it (CAN-6763)", async () => {
+      renderHome();
+      await connectWithOrgProject();
+      await settle();
+      await pickHomeProject('web-core:ws-1');
+      await pickHomeFiles([
+        new File(['# Brief'], 'brief.md', { type: 'text/markdown' }),
+        new File(['{}'], 'notes.json', { type: 'application/json' }),
+      ]);
+      expect(homeCloudFiles()).toEqual(['brief.md', 'notes.json']);
+      // Held until Send: nothing uploads and nothing reaches this computer.
+      expect(calls.filter((call) => call.path === CLOUD_UPLOAD)).toEqual([]);
+      expect(callsCarryingWebCoreIds()).toEqual([]);
+
+      sendFromHome('Plan the launch');
+      await settle();
+
+      const taskId = createdChatIds.at(-1) ?? '';
+      expect(taskId).not.toBe('');
+      expect(
+        calls
+          .filter((call) => call.path === CLOUD_UPLOAD)
+          .map((call): unknown[] => [
+            Reflect.get(Object(call.args[0]), 'worktreeId'),
+            Reflect.get(Object(call.args[1]), 'name'),
+          ]),
+      ).toEqual([
+        [taskId, 'brief.md'],
+        [taskId, 'notes.json'],
+      ]);
+      const sent = coreRequestLog.filter(
+        (entry) =>
+          entry.method === 'core.chat.message.send' &&
+          entry.params.chatId === taskId,
+      );
+      expect(sent).toHaveLength(1);
+      expect(sent[0]?.params.text).toBe('Plan the launch');
+      expect(sent[0]?.params.attachments).toEqual([
+        { attachmentId: 'att-brief.md' },
+        { attachmentId: 'att-notes.json' },
+      ]);
+      expect(callsCarryingWebCoreIds()).toEqual([]);
+      // Home's draft, files and all, went with the message.
+      expect(useHomeComposerStore.getState().text).toBe('');
+      expect(useHomeComposerStore.getState().cloudFiles).toEqual([]);
+    });
+
+    it('refuses a file the web core would refuse when it is picked for a cloud project in New task, before reading it (CAN-6763)', async () => {
+      renderHome();
+      await connectWithOrgProject();
+      await settle();
+      await pickHomeProject('web-core:ws-1');
+      const oversized = new File(['x'], 'huge.pdf', {
+        type: 'application/pdf',
+      });
+      const readOversized = jest.fn(() => Promise.resolve(new ArrayBuffer(1)));
+      Object.defineProperties(oversized, {
+        size: { value: CLOUD_ATTACHMENT_MAX_BYTES + 1 },
+        arrayBuffer: { value: readOversized },
+      });
+      await pickHomeFiles([
+        oversized,
+        new File(['# Brief'], 'brief.md', { type: 'text/markdown' }),
+      ]);
+      expect(homeCloudFiles()).toEqual(['brief.md']);
+      expect(readOversized).not.toHaveBeenCalled();
+      // New task says why, in the web composer's words.
+      expect(
+        container.querySelector('[data-testid="home-composer-error"]')
+          ?.textContent,
+      ).toContain('huge.pdf: Attachment is too large');
+    });
+
+    it("posts nothing when a file picked in New task doesn't upload, and leaves the message and the uploaded file in the new chat's composer (CAN-6763)", async () => {
+      renderHomeBesidePage();
+      await connectWithOrgProject();
+      await settle();
+      await pickHomeProject('web-core:ws-1');
+      // The web core refuses full.md's upload.
+      await pickHomeFiles([
+        new File(['# Brief'], 'brief.md', { type: 'text/markdown' }),
+        new File(['# Full'], 'full.md', { type: 'text/markdown' }),
+      ]);
+      expect(homeCloudFiles()).toEqual(['brief.md', 'full.md']);
+
+      sendFromHome('Plan the launch');
+      await settle();
+
+      const taskId = createdChatIds.at(-1) ?? '';
+      expect(taskId).not.toBe('');
+      const target = {
+        projectId: 'web-core:ws-1',
+        worktreeId: `web-core:${taskId}`,
+        chatId: `web-core:${taskId}`,
+      };
+      // Nothing posted without the refused file.
+      expect(sendsTo(taskId)).toBe(0);
+      // The new chat's composer holds the message and the file that uploaded,
+      // and names the one that didn't.
+      expect(
+        container.querySelector(
+          '[data-testid="chat-panel"] [data-chat-textarea]',
+        )?.textContent,
+      ).toContain('Plan the launch');
+      expect(
+        useChatStore
+          .getState()
+          .worktreeChats[`${target.projectId}/${target.worktreeId}`]?.tabs.find(
+            (tab) => tab.id === target.chatId,
+          )
+          ?.pendingAttachments?.map((attachment) => attachment.filename),
+      ).toEqual(['brief.md']);
+      const notice = container.querySelector(
+        '[data-testid="chat-input-files-not-attached"]',
+      )?.textContent;
+      expect(notice).toContain('full.md');
+      expect(notice).not.toContain('brief.md');
+      // Home's draft moved to the new chat.
+      expect(useHomeComposerStore.getState().text).toBe('');
+      expect(useHomeComposerStore.getState().cloudFiles).toEqual([]);
+      expect(callsCarryingWebCoreIds()).toEqual([]);
+
+      // The dropped send holds up no later one in that chat.
+      act(() => {
+        void useChatStore
+          .getState()
+          .sendMessage('Without the full one', undefined, target);
+      });
+      await settle();
+      expect(sendsTo(taskId)).toBe(1);
+    });
+
+    it("uploads none of New task's files for a cloud project once the account changes before the task exists (CAN-6763)", async () => {
+      renderHome();
+      await connectWithOrgProject();
+      await settle();
+      await pickHomeProject('web-core:ws-1');
+      await pickHomeFiles([
+        new File(['# Brief'], 'brief.md', { type: 'text/markdown' }),
+      ]);
+      let create = (): void => undefined;
+      createGate = new Promise<void>((resolve) => {
+        create = resolve;
+      });
+      sendFromHome('Earlier account prompt');
+      await settle();
+      const taskId = createdChatIds.at(-1) ?? '';
+      expect(taskId).not.toBe('');
+      act(() => {
+        useWorkspaceContextStore.setState((store) => ({
+          accountEpoch: store.accountEpoch + 1,
+        }));
+      });
+      createGate = null;
+      create();
+      await settle();
+      // Nothing goes up under the account that replaced it, and nothing posts.
+      expect(calls.filter((call) => call.path === CLOUD_UPLOAD)).toEqual([]);
+      expect(sendsTo(taskId)).toBe(0);
+    });
+
+    it("hands a message the web core refuses back to the new chat's open composer", async () => {
+      renderHomeBesidePage();
+      await connectWithOrgProject();
+      await settle();
+      await pickHomeProject('web-core:ws-1');
+      // The web core refuses the new task, but only once its chat is open.
+      createRefusal = 'This project is full.';
+      let refuse = (): void => undefined;
+      createGate = new Promise<void>((resolve) => {
+        refuse = resolve;
+      });
+
+      sendFromHome('Plan the launch');
+      await settle();
+      const chatEditor = (): Element | null =>
+        container.querySelector(
+          '[data-testid="chat-panel"] [data-chat-textarea]',
+        );
+      expect(chatEditor()).not.toBeNull();
+      createGate = null;
+      refuse();
+      await settle();
+
+      const taskId = createdChatIds.at(-1) ?? '';
+      expect(taskId).not.toBe('');
+      expect(sendsTo(taskId)).toBe(0);
+      // The new chat's composer, already open, shows the message again.
+      expect(chatEditor()?.textContent).toContain('Plan the launch');
+      expect(callsCarryingWebCoreIds()).toEqual([]);
+    });
   });
 });

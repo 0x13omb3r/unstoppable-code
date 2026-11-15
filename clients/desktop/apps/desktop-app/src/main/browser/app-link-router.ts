@@ -14,7 +14,6 @@ import {
 } from './browser-url-policy';
 import { sendToWebContents } from '../lib/web-contents-send';
 import { getCanopyCloudBaseUrl } from '../canopy-cloud/config';
-import { isHostedSettingsEnabled } from '../services/hosted-settings-feature-flag';
 import { resolveWebSettingsLink } from './web-settings-link';
 
 const RENDERER_RESPONSE_TIMEOUT_MS = 1_500;
@@ -112,8 +111,7 @@ function requestRendererSettingsOpen(
 /**
  * The settings path for an in-app link to a web settings page, or `null` when
  * the link should keep ordinary app-link routing. OS-delivered links are out
- * of scope. Neither the flag service nor cloud configuration may break link
- * routing, so any failure (an unconfigured base URL throws
+ * of scope. Cloud configuration may not break link routing, so any failure (an unconfigured base URL throws
  * `CanopyCloudConfigError`) means no hand-off. The renderer still decides
  * whether Settings can open the page.
  */
@@ -123,7 +121,6 @@ function resolveSettingsHandoffPath(
 ): string | null {
   if (source !== 'app-link') return null;
   try {
-    if (!isHostedSettingsEnabled()) return null;
     return resolveWebSettingsLink(url, getCanopyCloudBaseUrl());
   } catch {
     return null;

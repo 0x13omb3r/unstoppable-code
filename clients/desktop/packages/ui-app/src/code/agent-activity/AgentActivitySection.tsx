@@ -1,5 +1,6 @@
 'use client';
 
+import { AgentActivityPanel } from '@canopy/ui-shared/components';
 import {
   CapabilityTileLayoutProvider,
   Stack,
@@ -60,12 +61,8 @@ export const AgentActivitySection = memo(function AgentActivitySection({
   // A live turn's section is pinned below the transcript, so it keeps that
   // dock's top hairline.
   return (
-    <section
-      className={
-        variant === 'active'
-          ? 'mx-auto w-full max-w-[var(--chat-composer-shell-width)] chat-width-transition shrink-0 border-t bg-base px-4 py-2'
-          : 'flex flex-col px-3'
-      }
+    <AgentActivityPanel
+      active={variant === 'active'}
       data-testid={`agent-activity-${variant}`}
     >
       <StepRow
@@ -108,6 +105,6 @@ export const AgentActivitySection = memo(function AgentActivitySection({
           ) : null}
         </div>
       ) : null}
-    </section>
+    </AgentActivityPanel>
   );
 });

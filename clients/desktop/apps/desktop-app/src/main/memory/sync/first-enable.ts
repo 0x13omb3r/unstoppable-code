@@ -893,6 +893,10 @@ export function firstEnableMergeInput(
     input: {
       memoryMd,
       topicFiles,
+      // Link repair and measurements need the whole cloud tree, even when
+      // the helper's prompt budget excludes a topic. The scope inventory
+      // separately keeps those omitted topics outside its write policy.
+      allTopicFiles: topics,
       inboxFiles,
       importFiles,
       omittedTopicFiles: {

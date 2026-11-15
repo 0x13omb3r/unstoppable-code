@@ -344,6 +344,60 @@ describe('cloud capability rows (CAN-6176)', () => {
     ]);
   });
 
+  it('a plugin this desktop uploaded maps to its copy by name and local marketplace, only while the cloud marks this desktop’s uploads (CAN-6725)', () => {
+    const withRef = (
+      marketplaceId: string,
+      pluginName: string,
+      uploaded?: { sourcePluginKey: string; sourceMarketplaceId: string },
+    ): CatalogEntry => {
+      const entry = plugin(pluginEntryId({ marketplaceId, pluginName }));
+      return entry.content.kind === 'plugin'
+        ? {
+            ...entry,
+            content: {
+              ...entry.content,
+              selectionRef: { marketplaceId, pluginName },
+              ...(uploaded === undefined
+                ? {}
+                : { uploadedFromThisDesktop: uploaded }),
+            },
+          }
+        : entry;
+    };
+    const copied = withRef('local', 'p');
+    const sameNameElsewhere = withRef('team', 'p');
+    const builtIn = withRef('builtin', 'b');
+    const copy = withRef('marketplace:mine', 'p', {
+      sourcePluginKey: 'p',
+      sourceMarketplaceId: 'local',
+    });
+    const rowsFor = (thisDesktopUploads: boolean): (string | null)[][] =>
+      cloudCapabilityRows({
+        local: [copied, sameNameElsewhere, builtIn],
+        localSkills: [],
+        cloud: [copy],
+        harness: 'claude',
+        thisDesktopUploads,
+        bundledMarketplaceIds: new Set(['builtin']),
+      }).map((entry) => [
+        entry.localEntry?.entryId ?? null,
+        entry.cloudEntry?.entryId ?? null,
+        entry.state.kind,
+      ]);
+    expect(rowsFor(true)).toEqual([
+      [copied.entryId, copy.entryId, 'ready'],
+      [sameNameElsewhere.entryId, null, 'needs_upload'],
+      [builtIn.entryId, null, 'unavailable'],
+    ]);
+    // Without the mark the copy is not this desktop's as far as it can tell.
+    expect(rowsFor(false)).toEqual([
+      [copied.entryId, null, 'needs_upload'],
+      [sameNameElsewhere.entryId, null, 'needs_upload'],
+      [builtIn.entryId, null, 'unavailable'],
+      [null, copy.entryId, 'ready'],
+    ]);
+  });
+
   it('a plugin is usable only where the chat’s harness supports and enables it; a missing entry fails closed', () => {
     const id = (name: string): string =>
       pluginEntryId({ marketplaceId: 'curated', pluginName: name });

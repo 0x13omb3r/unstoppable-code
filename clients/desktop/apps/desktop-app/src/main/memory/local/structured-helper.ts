@@ -34,6 +34,8 @@ export const LOCAL_MEMORY_HELPER_TIMEOUT_MS = 25 * 60_000;
 export interface LocalMemoryStructuredHelperOptions<T> {
   /** Observed task already started by the caller; routing is recorded on it. */
   taskKey: string;
+  signal?: AbortSignal;
+  preserveModelSelection?: boolean;
   kind:
     | 'local-memory-consolidation'
     | 'local-memory-chat-profile'
@@ -114,6 +116,9 @@ export async function runLocalMemoryStructuredHelper<T>(
   await ensureOwnerOnlyDir(options.scopeDir);
   const timeoutMs = options.timeoutMs ?? LOCAL_MEMORY_HELPER_TIMEOUT_MS;
   const abortController = new AbortController();
+  const unlinkCaller = options.signal
+    ? linkHelperAbort(options.signal, abortController)
+    : (): void => {};
   const deadline = setTimeout(() => {
     abortController.abort();
   }, timeoutMs);
@@ -122,6 +127,7 @@ export async function runLocalMemoryStructuredHelper<T>(
   try {
     invocation = await resolveHelperInvocation(model, undefined, {
       allowNoNativeAuthFallback: false,
+      preserveModelSelection: options.preserveModelSelection,
       workspaceId: options.workspaceId,
       ...(ownerOverride ?? {}),
       signal: abortController.signal,
@@ -214,10 +220,17 @@ export async function runLocalMemoryStructuredHelper<T>(
       usageOf: (r) => r.usage,
     });
   } catch (error) {
+    if (options.signal?.aborted) {
+      const usage = getStructuredHelperQueryErrorUsage(error);
+      throw usage
+        ? new StructuredHelperQueryError('Local memory helper cancelled', usage)
+        : new Error('Local memory helper cancelled');
+    }
     if (abortController.signal.aborted) throw timeoutError(timeoutMs, error);
     throw error;
   } finally {
     clearTimeout(deadline);
+    unlinkCaller();
     invocation?.dispose();
   }
 }

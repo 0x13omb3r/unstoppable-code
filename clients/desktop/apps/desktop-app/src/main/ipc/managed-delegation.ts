@@ -9,6 +9,7 @@ import {
   type ManagedDelegationWorktreeSummaryResult,
   type ManagedDelegationExtendLifetimeLimitResult,
   type ManagedDelegationLifetimeStatus,
+  type ManagedDelegationPolicyCatalogResult,
   type ManagedDelegationChangesResult,
   type ManagedDelegationTranscriptResult,
   type ManagedDelegationStopAllResult,
@@ -256,6 +257,20 @@ export function registerManagedDelegationHandlers(): void {
         return await readManagedDelegationRootsForUser(scope);
       } catch {
         throw new Error("Couldn't read chats with delegations.");
+      }
+    },
+  );
+  // Settings read for Allowed models: cached registry and auth facts only;
+  // never starts a provider or allocates a billing route.
+  registerIpcHandler<[], ManagedDelegationPolicyCatalogResult>(
+    IPC_CHANNELS.managedDelegationModelPolicyCatalog,
+    async (): Promise<ManagedDelegationPolicyCatalogResult> => {
+      try {
+        const { buildManagedDelegationPolicyCatalog } =
+          await import('../agents/delegation/model-policy');
+        return { ok: true, catalog: buildManagedDelegationPolicyCatalog() };
+      } catch {
+        return { ok: false, error: "Couldn't load the model catalog." };
       }
     },
   );

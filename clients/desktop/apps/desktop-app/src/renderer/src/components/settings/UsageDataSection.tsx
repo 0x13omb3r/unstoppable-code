@@ -71,7 +71,7 @@ const TOP_LEVEL_KEYS = [
 
 /**
  * Settings → Privacy → Usage data: one switch per outbound flow the product
- * works without. Follows the load → optimistic-set → save → rollback pattern.
+ * works without. Opt-outs stay off even if saving fails; only opt-ins roll back.
  *
  * The stored preference always holds the member's own choice. Main resolves
  * the effective policy for the selected workspace context (an organization's
@@ -160,15 +160,16 @@ export function UsageDataSection(): JSX.Element {
       preferencesRef.current = next;
       setPreferences(next);
       void window.api
-        .savePreferences({ usageData: next })
+        .savePreferences({ usageData: { [key]: checked } })
         .catch((error: unknown) => {
-          // Roll back only this key, keeping any later toggle.
+          reportClientAppError(error);
+          // A failed opt-out remains denied. A failed opt-in rolls back only
+          // this key, and cannot undo a later opt-out.
           const current = preferencesRef.current;
-          if (!current) return;
+          if (!checked || !current || current[key] !== checked) return;
           const rolledBack = { ...current, [key]: previous[key] };
           preferencesRef.current = rolledBack;
           setPreferences(rolledBack);
-          reportClientAppError(error);
         });
     },
     [],

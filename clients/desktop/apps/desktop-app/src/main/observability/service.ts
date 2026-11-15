@@ -291,6 +291,7 @@ import type {
 } from '../auth/provider-auth-state';
 import { CLAUDE_SYNTHETIC_MODEL_SENTINEL } from '../lib/claude-synthetic';
 import { skillSuggestionTurnRecorder } from '../skill-suggestions/turn-recorder';
+import { chatLearningTurnRecorder } from '../memory/local/transcript-learning-recorder';
 import type {
   CloudOAuthDiagnosticOutcome,
   CloudOAuthDiagnosticStage,
@@ -4510,23 +4511,23 @@ export class ObservabilityService {
         const validKind =
           kind === 'system_prompt_append' ||
           kind === 'plan_mode_developer_instructions' ||
-          kind === 'org_memory';
+          kind === 'org_memory' ||
+          kind === 'local_memory';
         const validCondition =
           applicationCondition === 'claude_system_prompt_append_each_turn' ||
           applicationCondition === 'codex_first_turn_without_session_id' ||
           applicationCondition === 'helper_task_system_prompt' ||
           applicationCondition === 'pipeline_step_system_prompt' ||
           applicationCondition === 'plan_mode_enabled' ||
-          applicationCondition === 'org_memory_enabled_for_turn';
+          applicationCondition === 'org_memory_enabled_for_turn' ||
+          applicationCondition === 'local_memory_enabled_for_turn' ||
+          applicationCondition === 'local_memory_withheld_for_turn';
         if (
-          (provider === 'claude' ||
-            provider === 'codex' ||
-            provider === 'ollama' ||
-            provider === 'cursor' ||
-            provider === 'opencode') &&
+          provider !== undefined &&
+          isTrackedPipelineProvider(provider) &&
           validKind &&
           validCondition &&
-          text
+          (text || (kind === 'local_memory' && text === ''))
         ) {
           injectedPrompts.push({
             kind,
@@ -5054,6 +5055,7 @@ export class ObservabilityService {
       ...(codexSubagentUsageTracker ? { codexSubagentUsageTracker } : {}),
     });
     skillSuggestionTurnRecorder.begin(key, entry.id, options);
+    chatLearningTurnRecorder.begin(key, entry.id, options);
     if (entry.provider === 'claude') {
       this.claudeTaskTrackers.get(key)?.applyPending(entry);
     }
@@ -8600,6 +8602,7 @@ export class ObservabilityService {
     if (key.startsWith('chat:')) {
       this.finalizedChatEntryIdsInProcess.add(openEntry.entry.id);
       skillSuggestionTurnRecorder.complete(key, openEntry.entry.id, status);
+      chatLearningTurnRecorder.complete(key, openEntry.entry.id, status);
     }
     if (!key.startsWith('chat:') && openEntry.entry.provider === 'claude') {
       this.endClaudeQuery(key);

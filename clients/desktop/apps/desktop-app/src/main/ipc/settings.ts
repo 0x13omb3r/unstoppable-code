@@ -1228,7 +1228,9 @@ async function probeOrgAiCreditsSpendable(
 export async function loadNativeAiCreditsAvailability(
   owner?: WorkOwner,
 ): Promise<NativeAiCreditsAvailability> {
-  const pricingUrl = `${getCanopyCloudBaseUrl()}/pricing`;
+  // `pricingUrl` keeps its name on this tunneled DTO for remote peers, but
+  // names the AI Credits page: there is no pricing page.
+  const pricingUrl = `${getCanopyCloudBaseUrl()}/account/billing`;
   // `inconclusive` marks the payload as defaults rather than observations. A
   // signed-out account is a real answer (nothing can pay), so only the failure
   // paths set it.

@@ -1,3 +1,4 @@
+import { Surface } from '@canopy/ui-shared/components';
 import { MutedUserBubblesContext } from '@/components/chat/muted-user-bubbles-context';
 import { ResumeQueueModal } from '@/components/usage-limit/ResumeQueueModal';
 /**
@@ -669,8 +670,10 @@ export function AppAdvisorWindowApp(): JSX.Element {
   }, []);
 
   return (
-    <div
-      className={`flex h-screen w-screen flex-col overflow-hidden fg-primary ${floating || docked ? 'bg-transparent' : 'bg-base'}`}
+    <Surface
+      variant={floating || docked ? 'advisor-window-clear' : 'app-pane'}
+      extent="viewport"
+      className="flex w-screen flex-col overflow-hidden"
     >
       <AppAdvisorWindowRuntimeBridge />
       {/* App Advisor's chat sits on its own raised panel, so its user
@@ -712,6 +715,6 @@ export function AppAdvisorWindowApp(): JSX.Element {
       {settingsOpen && (
         <AppAdvisorSettingsModal onClose={(): void => setSettingsOpen(false)} />
       )}
-    </div>
+    </Surface>
   );
 }

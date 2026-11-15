@@ -1,3 +1,4 @@
+import { McpScopeControlFrame } from '@canopy/ui-shared/components';
 import { Badge } from '@canopy/ui-shared/components/Badge';
 import {
   deleteDesktopMcpTarget,
@@ -410,10 +411,9 @@ function McpScopeControl({
     { scope: 'cloud', label: mcpPlacementLabel('cloud') },
   ];
   return (
-    <div
+    <McpScopeControlFrame
       role="radiogroup"
       aria-label="Scope"
-      className="inline-flex items-center gap-1 rounded-full bg-base p-1 ring-1 ring-inset ring-line-base"
       data-testid="mcp-server-scope"
     >
       {options.map(
@@ -432,7 +432,7 @@ function McpScopeControl({
           </Button>
         ),
       )}
-    </div>
+    </McpScopeControlFrame>
   );
 }
 

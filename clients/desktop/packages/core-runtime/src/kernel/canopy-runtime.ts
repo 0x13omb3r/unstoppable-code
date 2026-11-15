@@ -122,7 +122,7 @@ export interface CanopyRuntime<D> {
   readonly dispatcher: D;
   readonly operations: readonly RuntimeOperation[];
   /** Idempotent. Rejects when a required service fails; health stays queryable. */
-  start(): Promise<void>;
+  start(signal?: AbortSignal): Promise<void>;
   health(): RuntimeHealth;
   /** Idempotent; later calls return the first run's report. */
   shutdown(reason: string): Promise<ShutdownReport>;
@@ -290,7 +290,7 @@ export function createCanopyRuntime<
   return {
     dispatcher,
     operations,
-    start: () => container.start(),
+    start: (signal) => container.start(signal),
     health: () => container.health(),
     shutdown: (reason) => sequence.run(reason),
   };

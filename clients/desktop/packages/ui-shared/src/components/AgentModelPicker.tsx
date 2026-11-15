@@ -29,6 +29,8 @@ export interface AgentModelPickerProps {
   agentRoutesSupported: boolean;
   selection: string | undefined;
   effectiveModel: string | undefined;
+  /** Destination default used only to leave an Agent with an unknown model. */
+  agentRemovalModel?: string;
   agents: readonly AgentPickerOption[];
   onAgentChange: (selection: string | undefined) => void;
   disabled?: boolean;
@@ -41,6 +43,7 @@ export function AgentModelPicker({
   agentRoutesSupported,
   selection,
   effectiveModel,
+  agentRemovalModel,
   agents,
   onAgentChange,
   disabled,
@@ -53,12 +56,15 @@ export function AgentModelPicker({
   const selected = agents.find((agent) => agent.id === agentId);
   const select = (next: string | undefined): void => {
     setOpen(false);
-    onAgentChange(changeSelectedAgent(selection, next, effectiveModel));
+    onAgentChange(
+      changeSelectedAgent(selection, next, effectiveModel ?? agentRemovalModel),
+    );
   };
   if (!agentRoutesSupported) return <>{children}</>;
   const removalModel =
-    (selection && parseAgentRouteModelId(selection)?.baseModel) ||
-    effectiveModel;
+    ((selection && parseAgentRouteModelId(selection)?.baseModel) ||
+      effectiveModel) ??
+    agentRemovalModel;
   const removalUnavailable = Boolean(
     agentId && !isConcreteSelectedModel(removalModel),
   );

@@ -1,3 +1,4 @@
+import { SidebarFooterBannerSurface } from '@canopy/ui-shared/components';
 import { type JSX, type ReactNode } from 'react';
 import {
   Button,
@@ -22,17 +23,12 @@ interface SidebarFooterBannerProps {
   ariaLabel?: string;
   children: ReactNode;
   /**
-   * Placement and any host surface. Omit it with `surface="status"`, which
-   * owns the raised card and its hover.
-   */
-  className?: string;
-  /**
    * `status` is the raised card every interactive prompt shares (update,
    * sign-in repair, resume queue, clone progress): the card stays under the
    * pointer and a `bg-subtle` wash darkens it, rather than each prompt
    * choosing whether hover replaces the card.
    */
-  surface?: 'status';
+  surface?: 'status' | 'development';
   onClick?: () => void;
   testId: string;
   /** Hover content; only a string also becomes a static banner's native title. */
@@ -49,21 +45,6 @@ interface SidebarFooterBannerProps {
 // sidebar rows' 32px (`h-8`), so every item shares one height and corner.
 const BASE_CLASSNAME =
   'flex w-full items-center gap-1.5 overflow-hidden whitespace-nowrap rounded-row py-0 pl-1 pr-2 text-xs font-normal';
-// Split rows (primary + trailing action) drop `overflow-hidden`: the buttons'
-// focus-visible outlines draw outside their boxes (2px outline at 2px offset)
-// and would be clipped by the container. Label truncation still works because
-// the primary button carries its own overflow-hidden.
-// The raised card shared by every status prompt. Hover washes the card with
-// `bg-subtle` instead of replacing it, so the banner keeps its surface.
-const STATUS_SURFACE_CLASSNAME = SIDEBAR_STATUS_SURFACE_CLASSNAME;
-const STATUS_HOVER_WASH_CLASSNAME = SIDEBAR_STATUS_HOVER_WASH_CLASSNAME;
-// Split rows wash on the primary action only, so hovering the trailing icon
-// button highlights just itself.
-const STATUS_SPLIT_HOVER_WASH_CLASSNAME =
-  'has-[[data-banner-primary]:hover]:[background-image:linear-gradient(var(--bg-subtle),var(--bg-subtle))] has-[[data-banner-primary]:focus-visible]:[background-image:linear-gradient(var(--bg-subtle),var(--bg-subtle))]';
-const SPLIT_BASE_CLASSNAME =
-  'flex w-full items-center gap-1.5 whitespace-nowrap rounded-row py-0 pl-1 pr-2 text-xs font-normal';
-
 /**
  * Shared compact surface for status banners anchored immediately above the
  * sidebar account divider. Static development context and interactive prompts
@@ -72,30 +53,28 @@ const SPLIT_BASE_CLASSNAME =
 export function SidebarFooterBanner({
   ariaLabel,
   children,
-  className = '',
   surface,
   onClick,
   testId,
   title,
   trailingAction,
 }: SidebarFooterBannerProps): JSX.Element {
-  const heightClassName = useLabsExperimentEnabled('sidebar') ? 'h-8' : 'h-7';
+  const tall = useLabsExperimentEnabled('sidebar');
+  const heightClassName = tall ? 'h-8' : 'h-7';
   const surfaceClassName =
-    surface === 'status'
-      ? onClick
-        ? trailingAction
-          ? `${STATUS_SURFACE_CLASSNAME} ${STATUS_SPLIT_HOVER_WASH_CLASSNAME}`
-          : `${STATUS_SURFACE_CLASSNAME} ${STATUS_HOVER_WASH_CLASSNAME}`
-        : STATUS_SURFACE_CLASSNAME
-      : '';
-  const classes = `${heightClassName} ${BASE_CLASSNAME} ${
-    onClick ? 'focus-ring text-left' : ''
-  } ${surfaceClassName} ${className}`;
+    surface === 'development'
+      ? 'bg-warning-subtle fg-primary shadow-md'
+      : surface === 'status'
+        ? `${SIDEBAR_STATUS_SURFACE_CLASSNAME} ${SIDEBAR_STATUS_HOVER_WASH_CLASSNAME}`
+        : '';
+  const classes = `${heightClassName} ${BASE_CLASSNAME} focus-ring text-left ${surfaceClassName}`;
 
   if (onClick && trailingAction) {
     return (
-      <div
-        className={`${heightClassName} ${SPLIT_BASE_CLASSNAME} ${surfaceClassName} ${className}`}
+      <SidebarFooterBannerSurface
+        split
+        tall={tall}
+        surface={surface}
         data-testid={`${testId}-row`}
       >
         {/* `data-banner-primary` lets the consumer scope row-level hover
@@ -141,7 +120,7 @@ export function SidebarFooterBanner({
             {trailingAction.icon}
           </Button>
         </Tooltip>
-      </div>
+      </SidebarFooterBannerSurface>
     );
   }
 
@@ -166,8 +145,9 @@ export function SidebarFooterBanner({
   }
 
   return (
-    <div
-      className={classes}
+    <SidebarFooterBannerSurface
+      tall={tall}
+      surface={surface}
       title={typeof title === 'string' ? title : undefined}
       data-testid={testId}
       // Non-interactive banners with an accessible label are live statuses
@@ -176,7 +156,7 @@ export function SidebarFooterBanner({
       aria-label={ariaLabel}
     >
       {children}
-    </div>
+    </SidebarFooterBannerSurface>
   );
 }
 

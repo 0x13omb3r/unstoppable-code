@@ -13,8 +13,12 @@ import { chatStoreApi } from './store-ref';
 import type { ChatState } from './state';
 import type { ChatTab } from './types';
 import { catchUpStaleChat, isStaleChatCatchUpRunning } from './stale-catch-up';
+import { readAheadWebCoreScope } from './web-core';
 
-/** What a click would show: a chat, or a worktree's active/landing chat. */
+/**
+ * What a click would show: a chat, a worktree's active/landing chat, or a
+ * cloud task, which is read ahead through the web core alone (CAN-6774).
+ */
 export type ChatPrefetchTarget =
   | ({ kind: 'chat' } & ChatInterestChatRef)
   | {
@@ -23,7 +27,8 @@ export type ChatPrefetchTarget =
       worktreeId: string;
       /** Resolve the implicit entry destination instead of its active tab. */
       attentionLanding?: boolean;
-    };
+    }
+  | { kind: 'cloudTask'; projectId: string; worktreeId: string };
 
 /** Pointer intents wait for a short dwell; keyboard focus acts at once. */
 export type ChatPrefetchSource = 'pointer' | 'focus';
@@ -49,6 +54,15 @@ export interface ChatPrefetchHost {
   ): Promise<void>;
   flush: () => Promise<void>;
   scheduleIdle: (callback: () => void) => () => void;
+  /**
+   * Reads a cloud task ahead through the web core: chat reads only, so its
+   * sandbox never wakes, with nothing installed, followed or sent to main
+   * (CAN-6774). Null when the web core backend is not there.
+   */
+  readAheadCloudTask(
+    projectId: string,
+    worktreeId: string,
+  ): { readonly settled: Promise<void>; readonly discard: () => void } | null;
 }
 
 interface Intent {
@@ -70,6 +84,7 @@ function targetKey(target: ChatPrefetchTarget): string {
     target.worktreeId,
     target.kind === 'chat' ? target.chatId : null,
     target.kind === 'worktree' && target.attentionLanding === true,
+    target.kind === 'cloudTask',
   ]);
 }
 
@@ -92,6 +107,10 @@ export function startChatPrefetch(host: ChatPrefetchHost): () => void {
   let cancelIdle: (() => void) | undefined;
   const intents = new Map<string, Intent>();
   const inFlight = new Set<string>();
+  /** Cloud tasks read ahead, by target: dropped when the pointer leaves. */
+  const readAheads = new Map<string, () => void>();
+  /** The cloud task read ahead now, if any: one at a time (CAN-6774). */
+  let cloudInFlight: Promise<void> | null = null;
   const queue: Intent[] = [];
   // A failed idle read must not spin on the same cached tab. A new projection
   // can be tried again, and old projections do not remain retained here.
@@ -109,6 +128,32 @@ export function startChatPrefetch(host: ChatPrefetchHost): () => void {
   const prefetch = async (target: ChatPrefetchTarget): Promise<void> => {
     const scope = chatScopeKey(target.projectId, target.worktreeId);
     const untracked = !host.getState().chatStateSync[scope];
+    if (target.kind === 'cloudTask') {
+      // One cloud task is read ahead at a time, so a pointer swept over the
+      // sidebar never sends a read per row: a row rested on meanwhile waits,
+      // and is read only if the pointer is still on it.
+      const key = targetKey(target);
+      while (cloudInFlight !== null) {
+        await cloudInFlight;
+        if (!allowed() || !intents.has(key)) return;
+      }
+      // A task the store holds opens warm; nothing to read ahead.
+      if (host.getState().chatStateSync[scope]) return;
+      const ahead = host.readAheadCloudTask(
+        target.projectId,
+        target.worktreeId,
+      );
+      if (ahead === null) return;
+      readAheads.set(key, ahead.discard);
+      const settled = ahead.settled;
+      cloudInFlight = settled;
+      try {
+        await settled;
+      } finally {
+        if (cloudInFlight === settled) cloudInFlight = null;
+      }
+      return;
+    }
     if (target.kind === 'chat' && skip(target)) return;
     if (untracked) {
       const result = await host.hydrate(target.projectId, target.worktreeId);
@@ -225,6 +270,8 @@ export function startChatPrefetch(host: ChatPrefetchHost): () => void {
     for (const intent of Array.from(intents.values()))
       clearTimeout(intent.timer);
     intents.clear();
+    for (const discard of Array.from(readAheads.values())) discard();
+    readAheads.clear();
     queue.length = 0;
     cancelIdle?.();
     cancelIdle = undefined;
@@ -257,6 +304,10 @@ export function startChatPrefetch(host: ChatPrefetchHost): () => void {
       const key = targetKey(target);
       clearTimeout(intents.get(key)?.timer);
       intents.delete(key);
+      // A cloud task the pointer left is not opened: its reads are dropped.
+      // One a click opened meanwhile already took them.
+      readAheads.get(key)?.();
+      readAheads.delete(key);
     },
     dispose: (): void => {
       if (disposed) return;
@@ -307,6 +358,8 @@ const browserHost: ChatPrefetchHost = {
   catchUp: catchUpStaleChat,
   flush: flushChatInterest,
   scheduleIdle: scheduleBrowserIdle,
+  readAheadCloudTask: (projectId, worktreeId) =>
+    readAheadWebCoreScope({ projectId, worktreeId }),
 };
 
 export function useChatPrefetch(): void {

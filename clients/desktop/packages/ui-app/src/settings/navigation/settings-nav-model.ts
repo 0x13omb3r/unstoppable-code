@@ -101,7 +101,6 @@ function organizationTabRow(
 
 function organizationGroups(
   organization: OrganizationSettingsNavModel,
-  freeAccess: boolean,
 ): SettingsNavGroup[] {
   const visible = new Set(organization.visibleTabs);
   const subtabs = visible.has('settings') ? organization.settingsSubtabs : [];
@@ -114,7 +113,7 @@ function organizationGroups(
       continue;
     }
     if (subtabs === undefined || !subtabs.includes(entry.subtab)) continue;
-    const item = organizationSettingsSubtabItem(entry.subtab, freeAccess);
+    const item = organizationSettingsSubtabItem(entry.subtab);
     const attention =
       !settingsDisabled &&
       entry.subtab === 'billing' &&
@@ -170,10 +169,7 @@ export function buildSettingsNavGroups(
   model: SettingsNavModel,
 ): readonly SettingsNavGroup[] {
   if (model.organization !== null)
-    return organizationGroups(
-      model.organization,
-      model.account.freeAccess === true,
-    );
+    return organizationGroups(model.organization);
   return [
     {
       id: 'account',

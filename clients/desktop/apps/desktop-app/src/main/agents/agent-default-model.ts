@@ -65,11 +65,14 @@ const catalogAgentDefaults = new Map<
  * model by: the default that destination pins it to. Undefined while no such
  * Agent exists, or when the destination has no usable default.
  */
-export function resolveCatalogAgentDefaultModel(
+export async function resolveCatalogAgentDefaultModel(
   projectId: string,
 ): Promise<ChatModel | undefined> {
+  const { prepareAgentCatalogCompatibility } =
+    await import('../portal/agent-catalog-compatibility');
+  await prepareAgentCatalogCompatibility(projectId);
   if (!AGENT_MODELS.some((model) => isInheritingAgentModel(model)))
-    return Promise.resolve(undefined);
+    return undefined;
   const now = Date.now();
   const cached = catalogAgentDefaults.get(projectId);
   if (cached && now - cached.at < CATALOG_AGENT_DEFAULT_TTL_MS)

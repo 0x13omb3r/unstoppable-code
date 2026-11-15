@@ -7,16 +7,17 @@ import {
   type ReactNode,
 } from 'react';
 import {
+  ChatComposerShell,
   AnsweredQuestionsBlock,
   AskUserQuestionCard,
   Button,
+  DocumentProse,
   Heading,
   Markdown,
   Surface,
   answersToDisplay,
   type AskUserQuestionCardProps,
 } from '@canopy/ui-shared/components';
-import { CHAT_COMPOSER_SHELL_CLASS } from '@canopy/ui-shared';
 import type { PortalAskUserQuestionState } from '@canopy/protocol/portal';
 import {
   QUESTION_PRESETS,
@@ -39,17 +40,29 @@ import { FieldOptionsLab } from './FieldOptionsLab';
  * the page.
  */
 
-// Mirrors the desktop wrapper in `components/chat/AskUserQuestion.tsx`.
-const QUESTION_PROSE_CLASSES =
-  'prose prose-sm leading-5 prose-p:leading-5 [--tw-prose-body:var(--fg-primary)] dark:prose-invert max-w-none break-words prose-p:my-0 prose-pre:my-1.5 prose-pre:overflow-x-auto prose-pre:bg-fg-primary/[0.06] prose-pre:fg-primary/80 prose-code:fg-accent prose-code:before:content-none prose-code:after:content-none prose-headings:fg-primary prose-a:fg-accent prose-strong:fg-primary prose-li:my-0.5';
-
 // Compact composer classes from `ChatInput.tsx` while a question is docked.
-const COMPACT_COMPOSER_CLASS =
-  'relative flex flex-wrap items-center rounded-b-2xl border-t bg-tertiary';
+const COMPACT_COMPOSER_CLASS = 'relative flex flex-wrap items-center';
 const COMPACT_EDITOR_CLASS =
   'min-w-0 flex-1 max-h-20 overflow-y-auto cursor-text pl-12 pr-1 py-3';
 const COMPACT_EDITABLE_CLASS =
   'min-h-5 w-full whitespace-pre-wrap break-words bg-transparent text-s leading-5 fg-primary outline-none';
+
+function QuestionComposerFrame({
+  children,
+  open,
+}: {
+  readonly children: ReactNode;
+  readonly open: boolean;
+}): JSX.Element {
+  if (open) {
+    return (
+      <Surface variant="raised" className="overflow-hidden">
+        {children}
+      </Surface>
+    );
+  }
+  return <ChatComposerShell>{children}</ChatComposerShell>;
+}
 
 const AUTO_RESOLVE_MS = 600;
 const OPEN_PHASES: readonly PlaygroundPhase[] = [
@@ -66,9 +79,9 @@ type LabView = 'card' | 'fields' | 'choices';
 
 function renderQuestionMarkdown(text: string): ReactNode {
   return (
-    <div className={QUESTION_PROSE_CLASSES}>
+    <DocumentProse variant="preview">
       <Markdown>{text}</Markdown>
-    </div>
+    </DocumentProse>
   );
 }
 
@@ -321,38 +334,43 @@ export function QuestionFormsLabPage(): JSX.Element {
             </div>
 
             <div className="relative mx-auto w-full max-w-[var(--chat-composer-shell-width)] shrink-0 px-4 pb-4 pt-2">
-              <div className={open ? 'rounded-2xl shadow-lg' : 'contents'}>
+              <QuestionComposerFrame open={open}>
                 {open ? (
-                  <section
+                  <Surface
+                    as="section"
+                    variant="panel"
                     aria-label="Questions awaiting your reply"
                     data-testid="chat-question-dock"
-                    className="max-h-[min(60vh,32rem)] divide-y overflow-y-auto overscroll-contain rounded-t-2xl bg-tertiary"
                   >
-                    <AskUserQuestionCard
-                      key={state.requestId}
-                      state={state}
-                      renderMarkdown={renderQuestionMarkdown}
-                      onSubmit={onSubmit}
-                      onDismiss={onDismiss}
-                      busy={
-                        machine.phase === 'submitting'
-                          ? 'answer'
-                          : machine.phase === 'dismissing'
-                            ? 'dismiss'
+                    <div className="max-h-[min(60vh,32rem)] overflow-y-auto overscroll-contain">
+                      <AskUserQuestionCard
+                        key={state.requestId}
+                        state={state}
+                        renderMarkdown={renderQuestionMarkdown}
+                        onSubmit={onSubmit}
+                        onDismiss={onDismiss}
+                        busy={
+                          machine.phase === 'submitting'
+                            ? 'answer'
+                            : machine.phase === 'dismissing'
+                              ? 'dismiss'
+                              : null
+                        }
+                        errorKind={
+                          machine.phase === 'error'
+                            ? machine.failedAction
                             : null
-                      }
-                      errorKind={
-                        machine.phase === 'error' ? machine.failedAction : null
-                      }
-                      disconnected={machine.phase === 'disconnected'}
-                      embedded
-                    />
-                  </section>
+                        }
+                        disconnected={machine.phase === 'disconnected'}
+                        embedded
+                      />
+                    </div>
+                  </Surface>
                 ) : null}
-                <div
-                  className={
-                    open ? COMPACT_COMPOSER_CLASS : CHAT_COMPOSER_SHELL_CLASS
-                  }
+                <Surface
+                  variant="section"
+                  boundary={open ? 'top' : 'none'}
+                  className={COMPACT_COMPOSER_CLASS}
                 >
                   <div
                     className={
@@ -367,8 +385,8 @@ export function QuestionFormsLabPage(): JSX.Element {
                       className={COMPACT_EDITABLE_CLASS}
                     />
                   </div>
-                </div>
-              </div>
+                </Surface>
+              </QuestionComposerFrame>
             </div>
           </main>
         )}

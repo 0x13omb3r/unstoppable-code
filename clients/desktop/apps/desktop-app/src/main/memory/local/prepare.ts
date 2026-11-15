@@ -5,6 +5,7 @@ import { localMemoryStore } from './memory-store';
 import { LOCAL_MEMORY_RECALL_BUDGET, renderLocalMemoryRecall } from './render';
 import { resolveLocalMemoryPolicy } from './policy';
 import type { RecentInboxNote } from './store';
+import { getCanopyReleaseFlavor } from '../../lib/app-identity';
 
 const recentNotesBudget = {
   maxNotes: LOCAL_MEMORY_RECALL_BUDGET.recentNotesPerScope,
@@ -57,12 +58,21 @@ function recordInjectedUsage(
 
 export interface PreparedLocalMemory {
   renderedBlock: string;
+  privateMemory: boolean;
+  holdout: boolean;
+  scopes: Array<{
+    scope: LocalMemoryScopeRequest;
+    scopeDir: string;
+    index: string;
+    notes: RecentInboxNote[];
+  }>;
 }
 
 export async function prepareLocalMemoryContext(options: {
   userText: string;
   projectId: string;
   worktreeId: string;
+  turnId?: string;
 }): Promise<PreparedLocalMemory | null> {
   const preferences = await readPreferencesFile().catch(() => null);
   if (
@@ -88,6 +98,13 @@ export async function prepareLocalMemoryContext(options: {
     policy.kind === 'scoped'
       ? { scope: 'workspace', workspaceId: policy.workspaceId }
       : null;
+  const userScopeDir = userMemoryExcluded
+    ? null
+    : localMemoryStore.resolve(userScope).dir;
+  const workspaceScopeDir =
+    workspaceScope === null
+      ? null
+      : localMemoryStore.resolve(workspaceScope).dir;
   const [userIndex, workspaceIndex, userRecent, workspaceRecent] =
     await Promise.all([
       userMemoryExcluded
@@ -109,11 +126,55 @@ export async function prepareLocalMemoryContext(options: {
     recentNotes: [...userRecent, ...workspaceRecent].map((note) => note.text),
   });
   if (!rendered) return null;
-  const injectedUserNotes = userRecent.slice(0, rendered.includedNotes);
-  const injectedWorkspaceNotes = workspaceRecent.slice(
-    0,
-    Math.max(0, rendered.includedNotes - userRecent.length),
+  // The final included note can be only a prefix after the block's byte cap.
+  // Pair the renderer's exact excerpts with their source identities.
+  const candidates = [...userRecent, ...workspaceRecent].filter(
+    (note) => note.text.replace(/\0/g, '').trim().length > 0,
   );
+  const injectedNotes = rendered.includedNoteTexts.flatMap((text, index) => {
+    const source = candidates[index];
+    return source ? [{ ...source, text }] : [];
+  });
+  const injectedUserNotes = injectedNotes.slice(
+    0,
+    userRecent.filter((note) => note.text.replace(/\0/g, '').trim().length > 0)
+      .length,
+  );
+  const injectedWorkspaceNotes = injectedNotes.slice(injectedUserNotes.length);
+  // Internal builds only, injection-only holdout. Memory tools remain available.
+  // Stable/RC builds cannot opt in through environment or saved preferences.
+  const holdout =
+    getCanopyReleaseFlavor() === 'internal' &&
+    options.turnId !== undefined &&
+    memoryHoldoutBucket(options.turnId) === 0;
+  const prepared: PreparedLocalMemory = {
+    renderedBlock: holdout ? '' : rendered.block,
+    privateMemory: userMemoryExcluded,
+    holdout,
+    scopes: [
+      ...(userScopeDir !== null
+        ? [
+            {
+              scope: userScope,
+              scopeDir: userScopeDir,
+              index: rendered.userIndex,
+              notes: injectedUserNotes,
+            },
+          ]
+        : []),
+      ...(workspaceScope !== null && workspaceScopeDir !== null
+        ? [
+            {
+              scope: workspaceScope,
+              scopeDir: workspaceScopeDir,
+              index: rendered.workspaceIndex,
+              notes: injectedWorkspaceNotes,
+            },
+          ]
+        : []),
+    ],
+  };
+  if (holdout) return prepared;
   // The Markdown parser stays off Electron's startup import path: it loads
   // on the first injection, and later imports resolve from the cache.
   const { referencedTopicFileKeys } =
@@ -134,5 +195,13 @@ export async function prepareLocalMemoryContext(options: {
       referencedTopicFileKeys,
     );
   }
-  return { renderedBlock: rendered.block };
+  return prepared;
+}
+
+function memoryHoldoutBucket(turnId: string): number {
+  let hash = 2_166_136_261;
+  for (let index = 0; index < turnId.length; index += 1) {
+    hash = Math.imul(hash ^ turnId.charCodeAt(index), 16_777_619);
+  }
+  return (hash >>> 0) % 10;
 }

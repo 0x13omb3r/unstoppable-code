@@ -15,6 +15,7 @@ import {
   AppAdvisorProjectAgentAccessControl,
   AppearanceSelect,
   ArchivedChatsCard,
+  ArchivedChatsList,
   AutomationPipelineTargetFields,
   DropdownMenuItemIcon,
   DropdownMenuLinkItem,
@@ -23,6 +24,7 @@ import {
   FloatingMenu,
   type ActionMenuItem,
   type AppAdvisorProjectAgentAccessValue,
+  type ArchivedChatsListItem,
   type AutomationPipelineRunIn,
   type AutomationPipelineTaskList,
 } from '@canopy/ui-shared/components';
@@ -530,11 +532,9 @@ const THEMES = [
 
 function Swatch({ color }: { readonly color: string }): JSX.Element {
   return (
-    <span
-      aria-hidden="true"
-      className="size-3 rounded-full"
-      style={{ backgroundColor: color }}
-    />
+    <svg aria-hidden="true" className="size-3" viewBox="0 0 12 12">
+      <circle cx="6" cy="6" r="6" fill={color} />
+    </svg>
   );
 }
 
@@ -642,6 +642,138 @@ function ArchivedCardCell({
         className="static"
       />
     </SpecimenCell>
+  );
+}
+
+/** An ISO time `days` calendar days and `minutes` before now. */
+function labAgo(days: number, minutes = 0): string {
+  const date = new Date();
+  date.setDate(date.getDate() - days);
+  date.setMinutes(date.getMinutes() - minutes);
+  return date.toISOString();
+}
+
+function labListItems(): ArchivedChatsListItem[] {
+  return [
+    {
+      id: 'l1',
+      title: 'Nightly dependency audit',
+      meta: 'Opus 5.5 · 4 turns',
+      restorable: true,
+      unread: true,
+      archivedAt: labAgo(0, 12),
+      createdAt: labAgo(0, 40),
+      turnCount: 4,
+    },
+    {
+      id: 'l2',
+      title: 'Nightly dependency audit',
+      meta: 'Opus 5.5 · 4 turns',
+      restorable: true,
+      archivedAt: labAgo(1, 30),
+      createdAt: labAgo(1, 90),
+      turnCount: 4,
+    },
+    {
+      id: 'l3',
+      title: 'Restoring this chat',
+      meta: 'Opus 5.5 · 9 turns',
+      restorable: true,
+      restoring: true,
+      archivedAt: labAgo(2),
+      createdAt: labAgo(3),
+      turnCount: 9,
+    },
+    {
+      id: 'l4',
+      title: 'Summarizing this chat',
+      meta: 'Sonnet 5.5 · 2 turns',
+      restorable: true,
+      summarizing: true,
+      archivedAt: labAgo(4),
+      createdAt: labAgo(4, 60),
+      turnCount: 2,
+    },
+    {
+      id: 'l5',
+      title:
+        'A very long chat title that keeps going well past the width of the dialog so it has to truncate',
+      meta: 'Haiku 5.5 · 1 turn',
+      restorable: true,
+      unread: true,
+      archivedAt: labAgo(9),
+      createdAt: labAgo(10),
+      turnCount: 1,
+    },
+    {
+      id: 'l6',
+      title: 'Run 10',
+      meta: 'Opus 5.5 · 31 turns',
+      restorable: false,
+      archivedAt: labAgo(40),
+      createdAt: labAgo(48),
+      turnCount: 31,
+    },
+    {
+      id: 'l7',
+      title: 'Run 2',
+      meta: 'Opus 5.5 · 12 turns',
+      restorable: false,
+      archivedAt: labAgo(80),
+      createdAt: labAgo(81),
+      turnCount: 12,
+    },
+  ];
+}
+
+function ArchivedListCell({
+  label,
+  items,
+  initialSort = 'archived',
+}: {
+  readonly label: string;
+  readonly items: readonly ArchivedChatsListItem[];
+  readonly initialSort?: ComponentProps<typeof ArchivedChatsList>['sort'];
+}): JSX.Element {
+  const [sort, setSort] = useState(initialSort);
+  return (
+    <SpecimenCell label={label}>
+      <div className="flex h-96 flex-col">
+        <ArchivedChatsList
+          items={items}
+          sort={sort}
+          onSortChange={setSort}
+          onOpen={noop}
+          onRestore={noop}
+          onSummarize={noop}
+          onMarkAllRead={noop}
+        />
+      </div>
+    </SpecimenCell>
+  );
+}
+
+function ArchivedChatsListSheet(): JSX.Element {
+  const items = labListItems();
+  return (
+    <SpecimenPanel title="ArchivedChatsList">
+      <SpecimenGrid min={480}>
+        <ArchivedListCell
+          label="Grouped by archived time: unread, busy, past the restore window, long and repeated titles"
+          items={items}
+        />
+        <ArchivedListCell
+          label="Flat sort (Name): numeric order, no headers"
+          items={items}
+          initialSort="name"
+        />
+        <ArchivedListCell
+          label="Nothing unread: pick Unread for its empty state, or search for one with no matches"
+          items={items.map((item) => ({ ...item, unread: false }))}
+        />
+        <ArchivedListCell label="No archived chats" items={[]} />
+      </SpecimenGrid>
+    </SpecimenPanel>
   );
 }
 
@@ -850,6 +982,7 @@ export function SharedASpecimen(): JSX.Element {
       <AccessSheet />
       <AppearanceSheet />
       <ArchivedChatsSheet />
+      <ArchivedChatsListSheet />
       <PipelineTargetSheet />
     </div>
   );

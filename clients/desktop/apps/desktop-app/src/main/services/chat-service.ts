@@ -2515,6 +2515,7 @@ function chatSummaryEntity(input: {
           copilot: true,
           opencode: true,
           owner: input.owner,
+          projectId: input.workspaceId,
           agentDefaultModel: input.agentDefaultModel,
         })
       : undefined,
@@ -4761,7 +4762,9 @@ export async function listWorktreeChatSummaries(input: {
   const chatTabs = tabsFile.tabs.filter(
     (tab) => (tab.kind ?? 'chat') === 'chat',
   );
-  const agentDefaultModel = await catalogAgentDefaultModel(input.workspaceId);
+  const agentDefaultModel = await (
+    await import('../agents/agent-default-model')
+  ).resolveCatalogAgentDefaultModel(input.workspaceId);
   const scheduledMessageContext = await getScheduledMessageSummaryContext();
   return mapWithConcurrency(chatTabs, 4, async (tab, index) => {
     const owner = await resolveAiCreditsScopeOwner({
@@ -4787,6 +4790,17 @@ export async function listWorktreeChatSummaries(input: {
     });
     return {
       ...summary,
+      availableModels:
+        summary.availableModels ??
+        buildProjectedModelCatalog(undefined, {
+          cursor: true,
+          antigravity: true,
+          copilot: true,
+          opencode: true,
+          owner,
+          projectId: input.workspaceId,
+          agentDefaultModel,
+        }),
       lastMessageRole: await readChatLastMessageRole(
         input.workspaceId,
         input.worktreeId,

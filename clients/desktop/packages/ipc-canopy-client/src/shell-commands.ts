@@ -1,4 +1,7 @@
-import { parseAgentRouteModelId } from '@canopy/protocol/agents';
+import {
+  isValidSharedAgentModelId,
+  parseAgentRouteModelId,
+} from '@canopy/protocol/agents';
 /**
  * Shell commands (CAN-5985) over desktop IPC: the chat, standalone chat and
  * editor operations the web shell used to reach only through Portal
@@ -309,7 +312,10 @@ function providerForModel(
         return provider;
       }
     }
-    return null;
+    return (
+      registry.aiGatewayModels?.find((entry) => entry.id === model)
+        ?.recommendedHarness ?? null
+    );
   };
   const model = registry.aliases?.[requested] ?? requested;
   const native = find(model);
@@ -489,11 +495,32 @@ export function createShellCommandHandlers(deps: ShellCommandDeps): {
     return chatCommandReceipt(commandId, reply);
   };
 
-  const modelProvider = async (model: string): Promise<string | null> =>
-    providerForModel(
+  const modelProvider = async (
+    model: string,
+    projectId?: string,
+  ): Promise<string | null> => {
+    const provider = providerForModel(
       await channels.invoke(C.modelRegistryGet, isModelRegistry),
       model,
     );
+    if (provider !== null || !projectId || !isValidSharedAgentModelId(model))
+      return provider;
+    const snapshot = await channels.invoke(
+      C.desktopSessionSnapshot,
+      reply<Record<string, unknown>>(isRecord),
+      { workspaceLocalId: projectId },
+    );
+    const catalog = snapshot.availableModels;
+    if (!Array.isArray(catalog)) return null;
+    const agent: unknown = catalog.find(
+      (row: unknown) => isRecord(row) && row.id === model,
+    );
+    return isRecord(agent) &&
+      typeof agent.provider === 'string' &&
+      agent.available === true
+      ? agent.provider
+      : null;
+  };
 
   /** A standalone chat's Work Entry, from the computer's session snapshot. */
   const standaloneTarget = async (
@@ -986,7 +1013,7 @@ export function createShellCommandHandlers(deps: ShellCommandDeps): {
           patch: { modelSelectionMode: 'auto' },
         });
       }
-      const providerType = await modelProvider(payload.model);
+      const providerType = await modelProvider(payload.model, target.projectId);
       if (providerType === null) {
         return refusedReceipt(randomId(), UNKNOWN_MODEL);
       }
@@ -1218,7 +1245,7 @@ export function createShellCommandHandlers(deps: ShellCommandDeps): {
       if (target === null) {
         return refusedReceipt(randomId(), STANDALONE_NOT_FOUND);
       }
-      const providerType = await modelProvider(payload.model);
+      const providerType = await modelProvider(payload.model, target.projectId);
       if (providerType === null) {
         return refusedReceipt(randomId(), UNKNOWN_MODEL);
       }

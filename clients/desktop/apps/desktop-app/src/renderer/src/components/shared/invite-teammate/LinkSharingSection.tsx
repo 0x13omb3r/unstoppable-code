@@ -1,3 +1,4 @@
+import { StatusIllustration } from '@canopy/ui-shared/components';
 import { Stack } from '@canopy/ui-shared/components';
 import { type JSX, type ReactNode, useCallback, useRef, useState } from 'react';
 import type { SharedContainerLinkAudience } from '@canopy/protocol/shared-containers';
@@ -239,12 +240,14 @@ export function LinkSharingSection({
         <div className="flex min-w-0 items-start gap-3">
           <span className="flex h-9 w-8 shrink-0 items-end">
             <span
+              className="[&_svg]:!h-4 [&_svg]:!w-4"
               aria-hidden="true"
-              className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-subtle fg-secondary [&>svg]:!h-4 [&>svg]:!w-4"
               data-testid={`${TEST_ID}-icon`}
               data-audience={choiceTestId(current)}
             >
-              {selected.icon}
+              <StatusIllustration tone="subtle" variant="member">
+                {selected.icon}
+              </StatusIllustration>
             </span>
           </span>
           <div className="flex flex-col min-w-0 flex-1 gap-0.5">

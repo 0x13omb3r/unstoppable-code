@@ -136,8 +136,15 @@ function CatalogPicker({
   )?.harness;
   const rows = useMemo(
     () =>
-      local === null ? [] : localUploadRows(local, state.entries, harness),
-    [local, state.entries, harness],
+      local === null
+        ? []
+        : localUploadRows(
+            local,
+            state.entries,
+            harness,
+            state.thisDesktopUploads,
+          ),
+    [local, state.entries, harness, state.thisDesktopUploads],
   );
   const localItems: PortalPluginsLocalItemsSeam | undefined =
     accountId === null || rows.length === 0

@@ -202,15 +202,28 @@ const expectedImage: Record<
   'checkpoint file': { advanced: 3, manifestAdvanced: true },
 };
 
-function armCrash(point: CrashPoint): void {
+/**
+ * Arms the crash for renames under `root` only (CAN-6802): a test that timed
+ * out can leave its own checkpoint running, and its renames must neither trip
+ * this crash nor count toward its nth rename.
+ */
+function armCrash(point: CrashPoint, root: string): void {
   const { matches, nth } = crashPoints[point];
+  const under = `${root}${sep}`;
   let seen = 0;
   let crashed = false;
   mockFsFaults.failRename = (_from, to): boolean => {
+    if (!to.startsWith(under)) return false;
     if (!crashed && matches(to) && ++seen === nth) crashed = true;
     return crashed;
   };
 }
+
+/**
+ * Each crash image runs two checkpoints and two recoveries on disk, which a
+ * loaded CI runner can take past Jest's default 5 s (CAN-6802).
+ */
+const CRASH_IMAGE_TIMEOUT_MS = 30_000;
 
 /** Checkpoints the generations, appends the results, then crashes. */
 async function crashImage(
@@ -224,7 +237,7 @@ async function crashImage(
   const beforeRevision = await manifestRevision(root);
   await writer.append(chatId, results);
   const checkpoints = await highWaters(writer);
-  armCrash(point);
+  armCrash(point, root);
   await expect(writer.checkpointChat(checkpoints)).rejects.toThrow(
     'simulated crash before rename',
   );
@@ -248,25 +261,29 @@ describe('chat registry checkpoint crash images', () => {
     await writer.append(chatId, results);
     await writer.checkpointChat(await highWaters(writer));
     cleanDigest = await registrySnapshotDigest(clean, chatId);
-  });
+  }, CRASH_IMAGE_TIMEOUT_MS);
 
   afterAll(async () => {
     await rm(clean, { recursive: true, force: true });
   });
 
-  it('leaves the same files as checkpointing one identity at a time', async () => {
-    const each = await mkdtemp(join(tmpdir(), 'registry-crash-each-'));
-    try {
-      const writer = new DelegationRegistryStore(each);
-      await writer.append(chatId, delegationIds.map(generation));
-      await checkpointEach(writer);
-      await writer.append(chatId, results);
-      await checkpointEach(writer);
-      expect(await files(each)).toEqual(await files(clean));
-    } finally {
-      await rm(each, { recursive: true, force: true });
-    }
-  });
+  it(
+    'leaves the same files as checkpointing one identity at a time',
+    async () => {
+      const each = await mkdtemp(join(tmpdir(), 'registry-crash-each-'));
+      try {
+        const writer = new DelegationRegistryStore(each);
+        await writer.append(chatId, delegationIds.map(generation));
+        await checkpointEach(writer);
+        await writer.append(chatId, results);
+        await checkpointEach(writer);
+        expect(await files(each)).toEqual(await files(clean));
+      } finally {
+        await rm(each, { recursive: true, force: true });
+      }
+    },
+    CRASH_IMAGE_TIMEOUT_MS,
+  );
 
   it.each(crashPointNames)(
     'recovers a checkpoint stopped at the %s rename',
@@ -301,6 +318,7 @@ describe('chat registry checkpoint crash images', () => {
         }
       }
     },
+    CRASH_IMAGE_TIMEOUT_MS,
   );
 });
 

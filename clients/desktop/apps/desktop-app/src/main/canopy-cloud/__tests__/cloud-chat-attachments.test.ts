@@ -33,6 +33,12 @@ const mockClientDefinitions: {
 const mockConnectWebCore = jest.fn<Promise<unknown>, unknown[]>(() =>
   Promise.resolve({}),
 );
+/** The connection of main's Files wake, the only one with the wake proof. */
+const mockConnectFilesWake = jest.fn<Promise<unknown>, unknown[]>(() =>
+  Promise.resolve({}),
+);
+/** The cloud chats the asking window follows on its relay session. */
+const mockFollows = jest.fn<boolean, [unknown, string]>(() => false);
 const mockBridgeFetch = jest.fn();
 const mockState = { flagEnabled: true };
 
@@ -69,6 +75,8 @@ jest.mock('../web-core-connection', () => ({
   ...jest.requireActual<object>('../web-core-connection'),
   connectWebCore: (...args: unknown[]): Promise<unknown> =>
     mockConnectWebCore(...args),
+  connectWebCoreForFilesWake: (...args: unknown[]): Promise<unknown> =>
+    mockConnectFilesWake(...args),
 }));
 
 jest.mock('../../ipc/register', () => ({
@@ -165,19 +173,21 @@ const file = (
 
 describe('cloud chat attachment upload through main (CAN-5972, CAN-5988)', () => {
   beforeAll(() => {
-    registerCloudChatsHandlers((event) =>
-      resolveTrustedRelaySurface(
-        event,
-        [
-          { surface: 'main', window: windowOf(MAIN), url: MAIN_URL },
-          {
-            surface: 'app-advisor',
-            window: windowOf(ADVISOR),
-            url: ADVISOR_URL,
-          },
-        ],
-        [],
-      ),
+    registerCloudChatsHandlers(
+      (event) =>
+        resolveTrustedRelaySurface(
+          event,
+          [
+            { surface: 'main', window: windowOf(MAIN), url: MAIN_URL },
+            {
+              surface: 'app-advisor',
+              window: windowOf(ADVISOR),
+              url: ADVISOR_URL,
+            },
+          ],
+          [],
+        ),
+      (event, chatId) => mockFollows(event, chatId),
     );
   });
 
@@ -642,5 +652,142 @@ describe("a cloud chat's file download through main (CAN-6587)", () => {
       }),
     ).resolves.toEqual({ ok: false, reason: 'offline' });
     expect(await readFile(existing, 'utf8')).toBe('keep me');
+  });
+});
+
+describe("main's Files wake of a sleeping cloud chat (CAN-6724)", () => {
+  function wakeFiles(
+    event: RendererRelayEvent,
+    target: unknown = targetOf('web-core:chat-1'),
+  ): Promise<unknown> {
+    const handler = mockIpcHandlers.get(IPC_CHANNELS.cloudChatsWakeFiles);
+    if (handler === undefined) throw new Error('The wake is not registered.');
+    return Promise.resolve().then(() => handler(event, target));
+  }
+
+  const ROOTS = {
+    roots: [
+      { fileRootId: 'workspace', name: 'Workspace', kind: 'workspace-root' },
+    ],
+  };
+
+  beforeEach(() => {
+    mockQuery.mockReset();
+    mockQuery.mockImplementation((method) =>
+      Promise.resolve(
+        method === 'worker.filesystem.roots.list' ? ROOTS : { entries: [] },
+      ),
+    );
+    mockConnectWebCore.mockClear();
+    mockConnectFilesWake.mockClear();
+    mockFollows.mockReset();
+    mockFollows.mockImplementation((_event, chatId) => chatId === 'chat-1');
+    mockCalls.length = 0;
+    mockState.flagEnabled = true;
+  });
+
+  it('wakes a chat the window has open with one waking listing, on the connection that carries the wake proof', async () => {
+    await expect(wakeFiles(MAIN)).resolves.toEqual({ ok: true });
+    expect(mockFollows).toHaveBeenCalledWith(MAIN, 'chat-1');
+    expect(mockConnectFilesWake).toHaveBeenCalledTimes(1);
+    expect(mockConnectWebCore).not.toHaveBeenCalled();
+    expect(mockQuery.mock.calls).toEqual([
+      ['worker.filesystem.roots.list', { scope: { chatId: 'chat-1' } }],
+      [
+        'worker.filesystem.directory.list',
+        {
+          scope: { chatId: 'chat-1' },
+          fileRootId: 'workspace',
+          relativePath: '',
+          wake: true,
+        },
+      ],
+    ]);
+    expect(mockCalls).toEqual(['lease.acquire', 'lease.release']);
+  });
+
+  it("refuses a chat the window doesn't follow, a local or mismatched target, another window and a disabled flag, before any connection", async () => {
+    await expect(wakeFiles(MAIN, targetOf('web-core:chat-2'))).resolves.toEqual(
+      { ok: false, reason: 'rejected' },
+    );
+    mockFollows.mockImplementation(() => false);
+    await expect(wakeFiles(MAIN)).resolves.toEqual({
+      ok: false,
+      reason: 'not_open',
+    });
+    mockFollows.mockImplementation((_event, chatId) => chatId === 'chat-1');
+    for (const target of [
+      targetOf('chat-local-1'),
+      targetOf('web-core:../../settings'),
+      { key: 'web-core:chat-1', workspaceId: '../ws', worktreeId: 'chat-1' },
+      { ...Object(targetOf('web-core:chat-1')), wake: true },
+      'web-core:chat-1',
+    ])
+      await expect(wakeFiles(MAIN, target)).resolves.toEqual({
+        ok: false,
+        reason: 'rejected',
+      });
+    for (const event of [ADVISOR, STRANGER])
+      await expect(wakeFiles(event)).rejects.toThrow(
+        'Untrusted cloud chats sender.',
+      );
+    mockState.flagEnabled = false;
+    await expect(wakeFiles(MAIN)).resolves.toEqual({
+      ok: false,
+      reason: 'disabled',
+    });
+    expect(mockConnectFilesWake).not.toHaveBeenCalled();
+    expect(mockQuery).not.toHaveBeenCalled();
+  });
+
+  it('a second wake of the same chat shares the running one, and a refusal falls back with its reason', async () => {
+    let finish = (): void => undefined;
+    mockQuery.mockImplementation((method) =>
+      method === 'worker.filesystem.roots.list'
+        ? Promise.resolve(ROOTS)
+        : new Promise((resolve) => {
+            finish = (): void => resolve({ entries: [] });
+          }),
+    );
+    const first = wakeFiles(MAIN);
+    const second = wakeFiles(MAIN);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    finish();
+    await expect(Promise.all([first, second])).resolves.toEqual([
+      { ok: true },
+      { ok: true },
+    ]);
+    expect(mockConnectFilesWake).toHaveBeenCalledTimes(1);
+
+    // Still asleep after the wake, or a wake out of credit: refused.
+    mockQuery.mockImplementation((method) =>
+      method === 'worker.filesystem.roots.list'
+        ? Promise.resolve(ROOTS)
+        : Promise.reject(
+            new CanopyClientError({
+              kind: 'failed_precondition',
+              message: 'The sandbox is asleep.',
+              details: { reason: 'sandbox_sleeping' },
+              retry: { kind: 'never' },
+            }),
+          ),
+    );
+    await expect(wakeFiles(MAIN)).resolves.toEqual({
+      ok: false,
+      reason: 'refused',
+    });
+    mockConnectFilesWake.mockImplementationOnce(() =>
+      Promise.reject(
+        new CanopyClientError({
+          kind: 'unavailable',
+          message: 'Offline.',
+          retry: { kind: 'never' },
+        }),
+      ),
+    );
+    await expect(wakeFiles(MAIN)).resolves.toEqual({
+      ok: false,
+      reason: 'offline',
+    });
   });
 });

@@ -46,6 +46,48 @@ const cases: readonly {
   readonly props: W5RecoveryNoticeProps;
 }[] = [
   {
+    label: 'Archive recovery alone: current desktop and Portal',
+    props: { archiveRecovery: { unavailable: false, onReview: noop } },
+  },
+  {
+    label: "Archive recovery alone: couldn't check records",
+    props: { archiveRecovery: { unavailable: true, onReview: noop } },
+  },
+  ...([false, true] as const).map((unavailable) => ({
+    label: `Archive and cold recovery together: ${unavailable ? "couldn't check archives" : 'review available'}`,
+    props: {
+      status: blocked,
+      canRecover: true,
+      onRecover: noop,
+      archiveRecovery: { unavailable, onReview: noop },
+    },
+  })),
+  {
+    label: 'Portal: archive review beside read-only cold recovery',
+    props: {
+      status: projectRemoteW5Recovery(blocked),
+      canRecover: false,
+      archiveRecovery: { unavailable: false, onReview: noop },
+    },
+  },
+  {
+    label: 'Archive review remains available during cold recovery preparation',
+    props: {
+      status: blocked,
+      canRecover: true,
+      onRecover: noop,
+      busy: true,
+      archiveRecovery: { unavailable: false, onReview: noop },
+    },
+  },
+  {
+    label: 'Cold recovery complete, archive review still needed',
+    props: {
+      status: { state: 'complete', canRecover: false, entries: [] },
+      archiveRecovery: { unavailable: false, onReview: noop },
+    },
+  },
+  {
     label: 'Hidden: no notice',
     props: { status: { state: 'hidden', canRecover: false, entries: [] } },
   },

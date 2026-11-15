@@ -1,3 +1,10 @@
+import {
+  SplitTerminalTabLabel,
+  TerminalRunningMark,
+  TerminalSplitPaneTab,
+  TerminalTabFrame,
+  TerminalTabsBar,
+} from '@canopy/ui-shared/components';
 import { Badge } from '@canopy/ui-shared/components/Badge';
 import {
   useCallback,
@@ -91,7 +98,7 @@ export function TerminalList({
   }, []);
 
   return (
-    <div className="flex h-10 shrink-0 items-stretch border-b bg-card/40 text-xs">
+    <TerminalTabsBar>
       <div className="canopy-panel-tab-strip-wrap min-w-0 flex-1">
         <div
           className="canopy-scroll-fade canopy-scroll-fade-start"
@@ -158,7 +165,7 @@ export function TerminalList({
           <div className="flex items-center gap-0.5">{actions}</div>
         </div>
       )}
-    </div>
+    </TerminalTabsBar>
   );
 }
 
@@ -264,13 +271,9 @@ function GroupRow({
 
   if (!isSplit) {
     return (
-      <div
+      <TerminalTabFrame
+        active={isActive}
         data-testid={`terminal-group-tab-${group.id}`}
-        className={`group flex h-9 min-w-32 max-w-56 shrink-0 items-center gap-1 rounded-t-md border px-2 ${
-          isActive
-            ? 'border-b-base bg-base fg-primary'
-            : 'border-transparent bg-muted/25 fg-secondary hover:bg-muted/40 hover:fg-primary'
-        }`}
       >
         {isHeaderEditing ? (
           <InlineRename
@@ -321,20 +324,17 @@ function GroupRow({
             </Tooltip>
           </span>
         )}
-      </div>
+      </TerminalTabFrame>
     );
   }
 
   return (
-    <div
+    <TerminalTabFrame
+      active={isActive}
+      split
       data-testid={`terminal-group-tab-${group.id}`}
-      className={`flex h-9 shrink-0 items-center gap-1 rounded-t-md border px-1 ${
-        isActive
-          ? 'border-sky-500/50 border-b-base bg-sky-500/10'
-          : 'border-sky-500/25 bg-sky-500/5'
-      }`}
     >
-      <div className="group flex h-7 min-w-24 max-w-40 items-center gap-1 rounded px-1.5 fg-info">
+      <SplitTerminalTabLabel>
         {isHeaderEditing ? (
           <InlineRename
             className="text-2xs"
@@ -384,7 +384,7 @@ function GroupRow({
             </Tooltip>
           </span>
         )}
-      </div>
+      </SplitTerminalTabLabel>
       <ul className="flex h-full items-end gap-0.5">
         {group.terminalIds.map((id, index) => {
           const isFocused = group.focusedTerminalId === id;
@@ -400,14 +400,7 @@ function GroupRow({
           const paneKey = termEditKey(id);
           const isPaneEditing = editingKey === paneKey;
           return (
-            <li
-              key={id}
-              className={`group/pane flex h-8 min-w-24 max-w-44 items-center gap-1 rounded-t border px-2 ${
-                isFocused
-                  ? 'border-b-base bg-base fg-primary'
-                  : 'border-transparent bg-muted/25 fg-secondary hover:bg-muted/40 hover:fg-primary'
-              }`}
-            >
+            <TerminalSplitPaneTab active={isFocused} key={id}>
               {isPaneEditing ? (
                 <InlineRename
                   className="text-3xs"
@@ -468,11 +461,11 @@ function GroupRow({
                   </Tooltip>
                 </span>
               )}
-            </li>
+            </TerminalSplitPaneTab>
           );
         })}
       </ul>
-    </div>
+    </TerminalTabFrame>
   );
 }
 
@@ -555,7 +548,7 @@ function RowStatus({ status }: RowStatusProps): JSX.Element | null {
     <span
       className={`flex min-w-0 items-center gap-1 ${OPERATIONAL_STATUS_COLORS.active.foreground}`}
     >
-      <RunningDot />
+      <TerminalRunningMark />
       <span className="min-w-0 truncate lowercase">{status.processName}</span>
     </span>
   );
@@ -567,20 +560,4 @@ interface RowStateProps {
 
 function RowState({ label }: RowStateProps): JSX.Element {
   return <Badge>{label}</Badge>;
-}
-
-function RunningDot(): JSX.Element {
-  return (
-    <span
-      aria-hidden
-      className="relative inline-flex h-1.5 w-1.5 shrink-0 items-center justify-center"
-    >
-      <span
-        className={`absolute inline-flex h-full w-full animate-ping rounded-full ${OPERATIONAL_STATUS_COLORS.active.backgroundPing}`}
-      />
-      <span
-        className={`relative inline-flex h-1 w-1 rounded-full ${OPERATIONAL_STATUS_COLORS.active.background}`}
-      />
-    </span>
-  );
 }

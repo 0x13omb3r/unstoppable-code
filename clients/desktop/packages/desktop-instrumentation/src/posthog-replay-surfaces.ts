@@ -71,6 +71,8 @@ export const PANEL_KIND_REPLAY_PRIVACY = Object.freeze({
   cost: 'reviewed',
   'session-breakdown': 'reviewed',
   'new-tab': 'reviewed',
+  // The shared tree view blocks a Mod's text, code and Markdown.
+  'mod-pane': 'reviewed',
 } as const satisfies Record<PanelKind, ReplaySurfacePrivacy>);
 
 /**

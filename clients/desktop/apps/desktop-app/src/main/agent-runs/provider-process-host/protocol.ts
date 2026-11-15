@@ -19,6 +19,7 @@ export type ProviderProcessHostRequest =
       env: Record<string, string | undefined>;
       owner: ProviderProcessOwner;
       stdin?: ProviderProcessStdin;
+      windowsVerbatimArguments?: boolean;
     }
   | { type: 'stdin'; requestId: string; dataBase64: string }
   | { type: 'stdin-end'; requestId: string }
@@ -102,7 +103,9 @@ export function isProviderProcessHostRequest(
         typeof field(value, 'cwd') === 'string' &&
         isEnvironment(field(value, 'env')) &&
         isProviderProcessOwner(field(value, 'owner')) &&
-        isStdin(field(value, 'stdin'))
+        isStdin(field(value, 'stdin')) &&
+        (field(value, 'windowsVerbatimArguments') === undefined ||
+          typeof field(value, 'windowsVerbatimArguments') === 'boolean')
       );
     case 'stdin':
       return typeof field(value, 'dataBase64') === 'string';

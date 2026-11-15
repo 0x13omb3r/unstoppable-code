@@ -1,5 +1,4 @@
 import type { JSX } from 'react';
-import { POSTHOG_REPLAY_BLOCK_CLASS } from '@canopy/desktop-instrumentation/posthog-replay-privacy';
 import { REMOTE_CONTROL_LABEL } from '@canopy/protocol';
 import { Surface } from '@canopy/ui-shared/components';
 
@@ -51,8 +50,9 @@ export function RemoteControlPairingQr({
     );
   }
   return (
-    <div
-      className={`${POSTHOG_REPLAY_BLOCK_CLASS} rounded-lg bg-white p-2`}
+    <Surface
+      variant="pairing-code"
+      replay="block"
       data-testid="remote-control-pairing-qr"
     >
       <img
@@ -62,6 +62,6 @@ export function RemoteControlPairingQr({
         draggable={false}
         data-testid="remote-control-pairing-qr-image"
       />
-    </div>
+    </Surface>
   );
 }

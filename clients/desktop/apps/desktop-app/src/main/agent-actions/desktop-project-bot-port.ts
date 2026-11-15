@@ -73,6 +73,7 @@ export type DesktopAgentAdmissions = Pick<
   DesktopEnvironmentPort,
   | 'agentMessageAdmission'
   | 'agentChatStartAdmission'
+  | 'agentChatStartPrecheck'
   | 'agentStartedChatMessageAdmission'
 >;
 
@@ -173,8 +174,15 @@ async function readAdmission<T>(read: () => Promise<T>): Promise<T> {
 function sendAdmissions(
   admissions: () => Promise<DesktopAgentAdmissions>,
   call: DesktopAgentActionCall,
-): Pick<AgentChatSendContext, 'admission' | 'startAdmission'> {
+): Pick<
+  AgentChatSendContext,
+  'admission' | 'startAdmission' | 'startPrecheck'
+> {
   return {
+    startPrecheck: (targetWorkspaceId) =>
+      readAdmission(async () =>
+        (await admissions()).agentChatStartPrecheck(targetWorkspaceId, call),
+      ),
     admission: async (target): Promise<AgentSendAdmission> => {
       const { AgentChatSendError } =
         await import('../agent-messaging/send-orchestration');
@@ -192,9 +200,14 @@ function sendAdmissions(
         },
       };
     },
-    startAdmission: (task, firstMessage) =>
+    startAdmission: (task, firstMessage, newWorktree) =>
       readAdmission(async () =>
-        (await admissions()).agentChatStartAdmission(task, firstMessage, call),
+        (await admissions()).agentChatStartAdmission(
+          task,
+          firstMessage,
+          call,
+          newWorktree,
+        ),
       ),
   };
 }

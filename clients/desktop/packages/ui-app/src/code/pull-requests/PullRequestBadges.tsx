@@ -1,5 +1,9 @@
 'use client';
 
+import {
+  PullRequestHeaderLink,
+  PullRequestHeaderStatus,
+} from '@canopy/ui-shared/components';
 import { Dot, type DotTone } from '@canopy/ui-shared/components/Badge';
 import type { JSX } from 'react';
 import {
@@ -70,8 +74,6 @@ export function PrStateBadge({
   prUrl,
 }: PrStateBadgeProps): JSX.Element {
   const { Icon, className: iconClassName, label } = PR_STATE_ICON[state];
-  const className =
-    'electron-no-drag inline-flex h-7 shrink-0 items-center gap-1.5 whitespace-nowrap rounded-md px-2.5 text-xs font-normal fg-primary transition-colors';
   const content = (
     <>
       <Icon size={16} className={`shrink-0 ${iconClassName}`} />#{prNumber}
@@ -80,25 +82,23 @@ export function PrStateBadge({
 
   if (prUrl) {
     return (
-      <a
+      <PullRequestHeaderLink
         href={prUrl}
         target="_blank"
         rel="noopener noreferrer"
         aria-label={`Pull request #${prNumber} (${label})`}
-        className={`${className} hover:bg-subtle`}
       >
         {content}
-      </a>
+      </PullRequestHeaderLink>
     );
   }
 
   return (
-    <span
+    <PullRequestHeaderStatus
       aria-label={`Pull request #${prNumber} (${label})`}
-      className={className}
     >
       {content}
-    </span>
+    </PullRequestHeaderStatus>
   );
 }
 
@@ -125,7 +125,7 @@ const CI_STATUS_DOT: Record<PullRequestSectionCheckStatus, DotTone> = {
 
 export function CiStatusBadge({ status }: CiStatusBadgeProps): JSX.Element {
   return (
-    <span
+    <PullRequestHeaderStatus
       // The dot carries the state and the visible text is just `CI`, so the
       // badge is announced as one labelled image rather than a bare "CI".
       role="img"
@@ -136,7 +136,7 @@ export function CiStatusBadge({ status }: CiStatusBadgeProps): JSX.Element {
       // one padding value across the whole row beats per-control optical
       // nudges (an earlier `pr-1.5` here balanced this badge's own ink but
       // made it the odd one out in the container).
-      className="electron-no-drag inline-flex h-7 shrink-0 items-center gap-1.5 whitespace-nowrap rounded-md px-2.5 text-xs font-normal fg-primary transition-colors hover:bg-subtle"
+      hover
     >
       <span
         className={
@@ -146,7 +146,7 @@ export function CiStatusBadge({ status }: CiStatusBadgeProps): JSX.Element {
         <Dot tone={CI_STATUS_DOT[status]} />
       </span>
       CI
-    </span>
+    </PullRequestHeaderStatus>
   );
 }
 

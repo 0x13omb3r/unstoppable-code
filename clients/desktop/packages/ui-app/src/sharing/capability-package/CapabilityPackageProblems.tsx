@@ -1,3 +1,8 @@
+import {
+  PackageProblemItems,
+  PackageProblemSection,
+  PackageProblemTray,
+} from '@canopy/ui-shared/components';
 import { useState, type JSX, type ReactNode } from 'react';
 import {
   Stack,
@@ -35,15 +40,8 @@ import {
 
 const VISIBLE_LIMIT = 8;
 
-/**
- * The card draws the notice tray itself, so the header notice and the rows
- * share one surface. Keep it in step with `Notice`'s own `tray` surface.
- */
-const CARD_CLASS =
-  'overflow-hidden rounded-xl bg-base bg-[linear-gradient(var(--bg-subtle),var(--bg-subtle))] ring-[length:var(--border-hairline)] ring-line-secondary';
 /** Lines a section up with the header copy: the 12px inset, 16px glyph, 8px gap. */
 const COPY_INSET_CLASS = 'pl-9 pr-3';
-const SECTION_CLASS = `border-t border-line-base py-2 ${COPY_INSET_CLASS}`;
 
 const RESOLVED_TITLE = 'All problems resolved.';
 const UNDO_LABEL = 'Undo';
@@ -176,8 +174,7 @@ export function CapabilityPackageProblems({
   const noticeTestId = `${testIdPrefix}-dependency-problems-notice`;
 
   return (
-    <div
-      className={CARD_CLASS}
+    <PackageProblemTray
       data-testid={`${testIdPrefix}-dependency-problems`}
       data-problem-count={String(problems.length)}
       data-dismissed-count={String(dismissedInvocations.length)}
@@ -243,7 +240,7 @@ export function CapabilityPackageProblems({
       )}
 
       {single === undefined && problems.length > 0 && (
-        <ul className="divide-y divide-line-base border-t border-line-base">
+        <PackageProblemItems>
           {visible.map((problem) => (
             <ProblemRow
               key={problem.slug}
@@ -254,11 +251,11 @@ export function CapabilityPackageProblems({
               {...dismissProps}
             />
           ))}
-        </ul>
+        </PackageProblemItems>
       )}
 
       {(hidden > 0 || expanded) && problems.length > VISIBLE_LIMIT && (
-        <div className={`${SECTION_CLASS} text-xs`}>
+        <PackageProblemSection small>
           <Button
             variant="link"
             data-testid={`${testIdPrefix}-dependency-problems-show-all`}
@@ -271,12 +268,11 @@ export function CapabilityPackageProblems({
               ? SHOW_FEWER_LABEL
               : `Show all ${String(problems.length)} problems`}
           </Button>
-        </div>
+        </PackageProblemSection>
       )}
 
       {dismissedInvocations.length > 0 && onRestore !== undefined && (
-        <div
-          className={SECTION_CLASS}
+        <PackageProblemSection
           data-testid={`${testIdPrefix}-dependency-problems-dismissed-list`}
         >
           <Disclosure
@@ -308,7 +304,7 @@ export function CapabilityPackageProblems({
               ))}
             </Stack>
           </Disclosure>
-        </div>
+        </PackageProblemSection>
       )}
 
       {dismissedReferences.length > 0 && onRestoreReference !== undefined && (
@@ -319,7 +315,7 @@ export function CapabilityPackageProblems({
           testIdPrefix={testIdPrefix}
         />
       )}
-    </div>
+    </PackageProblemTray>
   );
 }
 
@@ -335,8 +331,7 @@ function DismissedReferenceList({
   testIdPrefix: string;
 }): JSX.Element {
   return (
-    <div
-      className={SECTION_CLASS}
+    <PackageProblemSection
       data-testid={`${testIdPrefix}-dependency-problems-dismissed-references`}
     >
       <Disclosure
@@ -370,7 +365,7 @@ function DismissedReferenceList({
           })}
         </Stack>
       </Disclosure>
-    </div>
+    </PackageProblemSection>
   );
 }
 

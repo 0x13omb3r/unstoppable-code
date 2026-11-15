@@ -4,6 +4,7 @@ import {
 } from '../../chat-plan-review';
 import { z } from 'zod';
 import {
+  CORE_CHAT_MESSAGE_SEND_ACCOUNT_BOUND_REVISION,
   CORE_CHAT_MESSAGE_SEND_SCHEMA_REVISION,
   CoreChatCapabilityStateSchema,
   CoreChatModelConfigSchema,
@@ -93,9 +94,26 @@ export const CoreChatMessageSendParamsSchema = ChatCommandBaseSchema.extend({
       turnTimerMessageId: IdentifierSchema,
     })
     .optional(),
-  /** Revision 2 output, sent only when the runtime advertises it. */
-  revision: z.literal(CORE_CHAT_MESSAGE_SEND_SCHEMA_REVISION).optional(),
+  /**
+   * The account the send was pressed under, as `core.runtime.initialize`
+   * names it (`authentication.principal.userId`): revision 3, sent only when
+   * the runtime advertises it (CAN-6828).
+   */
+  expectedPrincipalId: IdentifierSchema.optional(),
+  /** Revision 2 or 3 output, sent only when the runtime advertises it. */
+  revision: z
+    .union([
+      z.literal(CORE_CHAT_MESSAGE_SEND_SCHEMA_REVISION),
+      z.literal(CORE_CHAT_MESSAGE_SEND_ACCOUNT_BOUND_REVISION),
+    ])
+    .optional(),
 })
+  .refine(
+    (params) =>
+      params.expectedPrincipalId === undefined ||
+      params.revision === CORE_CHAT_MESSAGE_SEND_ACCOUNT_BOUND_REVISION,
+    { message: 'An expected principal needs revision 3.' },
+  )
   .refine(
     (params) =>
       !params.origin ||
@@ -281,6 +299,7 @@ export const CORE_CHAT_MESSAGE_INSTRUCTION_DEFINITIONS =
         'core.chat.message.invalidState',
         'core.chat.message.revisionConflict',
         'core.chat.message.notFound',
+        'core.chat.message.accountChanged',
       ]),
     }),
     'core.chat.queue.entry.cancel': defineCanopyInstruction({

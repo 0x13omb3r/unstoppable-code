@@ -15,6 +15,7 @@
  * owning worktree has visible tracked plans, a submenu of `All plans` and
  * each plan (`usePlansAddMenuSection`).
  */
+import { ImageThumbnail } from '@canopy/ui-shared/components';
 import {
   useEffect,
   useLayoutEffect,
@@ -294,9 +295,7 @@ export function PanelAddTabMenu({
         terminalPresetColorMode,
       );
       if (!dataUrl) return <TerminalIcon />;
-      return (
-        <img src={dataUrl} alt="" className="h-4 w-4 rounded object-contain" />
-      );
+      return <ImageThumbnail variant="menu-icon" src={dataUrl} alt="" />;
     }
     if (preset.icon?.kind === 'character') {
       return <span className="text-s leading-none">{preset.icon.value}</span>;

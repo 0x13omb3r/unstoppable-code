@@ -191,6 +191,11 @@ export function panelTabDisplayTitle(tab: PanelTabModel): string {
     // (`BoundSessionBreakdownTabLabel`) carries the name, masked.
     return getPanelDefinition('session-breakdown').title;
   }
+  if (tab.kind === 'mod-pane') {
+    // A Mod names its pane, and the name can hold anything; the plain title
+    // stays generic for the same reason as a breakdown's.
+    return getPanelDefinition('mod-pane').title;
+  }
   if (tab.kind === 'automations') {
     // Saved tabs keep the label they were added with, so a variant's former
     // Automations label shows its current Workflows name.
@@ -705,8 +710,8 @@ export function renderPanelTabIcon(tab: PanelTabModel): ReactNode {
  * and keeps its existing simple tooltip.
  */
 export function renderPanelTabTooltip(tab: PanelTabModel): ReactNode | null {
-  if (tab.kind === 'session-breakdown') {
-    return getPanelDefinition('session-breakdown').title;
+  if (tab.kind === 'session-breakdown' || tab.kind === 'mod-pane') {
+    return getPanelDefinition(tab.kind).title;
   }
   const browserId = boundBrowserId(tab);
   if (browserId !== null) {
@@ -773,6 +778,16 @@ export function renderPanelTabLabel(tab: PanelTabModel): ReactNode {
   const browserId = boundBrowserId(tab);
   if (browserId !== null) {
     return <BrowserPanelTabLabel browserId={browserId} />;
+  }
+  if (tab.kind === 'mod-pane') {
+    const storedTitle = tab.title.trim();
+    return (
+      <span className={POSTHOG_REPLAY_MASK_CLASS}>
+        {storedTitle.length > 0 && storedTitle !== tab.kind
+          ? storedTitle
+          : getPanelDefinition('mod-pane').title}
+      </span>
+    );
   }
   if (tab.kind === 'activity-card') {
     const sectionId = tab.instance?.sectionId;

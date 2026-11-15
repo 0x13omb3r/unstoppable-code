@@ -2557,6 +2557,7 @@ async function settlePortalChatQuestion(
     commandId: command.id,
     origin: 'portal',
     port,
+    ...(context.origin ? { externalAgent: context.origin } : {}),
     // A Portal session of the signed-in user answers as a person; an
     // external agent connected through it answers as an agent.
     ...(response.kind === 'answer'

@@ -278,7 +278,7 @@ function createWorkerRuntime(
   return {
     dispatcher,
     operations,
-    start: () => container.start(),
+    start: (signal) => container.start(signal),
     health: () => container.health(),
     shutdown: (reason) => sequence.run(reason),
     executor: { definitions, receipts },

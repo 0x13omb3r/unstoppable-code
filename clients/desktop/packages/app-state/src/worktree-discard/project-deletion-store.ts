@@ -176,6 +176,47 @@ function createProjectDeletionDiscardStore(
     ): void => {
       update(current, (view) => ({ ...view, busy: false, error }));
     };
+    const finished = (row: ProjectDeletionDiscardRow): boolean =>
+      row.progress === 'discarded' || row.progress === 'skipped';
+    const refreshDescription = (
+      current: number,
+      description: ProjectDeletionDiscardDescription,
+      error: ProjectDeletionDiscardError,
+    ): void => {
+      update(current, (view) => {
+        if (
+          description.status === 'refused' &&
+          view.rows.some((row) => !finished(row))
+        ) {
+          // A refusal omits removal bindings still needed to retry.
+          // Keep those reviewed bindings, not cancelled recovery permission.
+          return {
+            ...view,
+            description: {
+              ...view.description,
+              pendingRecovery: description.pendingRecovery,
+            },
+            superseded: false,
+            rows: view.rows.map((row) =>
+              row.progress === 'discarding'
+                ? { ...row, progress: 'stopped' }
+                : row,
+            ),
+            busy: false,
+            error,
+          };
+        }
+        return {
+          ...openView(view.offer, description, [
+            ...view.earlierDiscarded,
+            ...view.rows
+              .filter((row) => row.progress === 'discarded')
+              .map(nameOf),
+          ]),
+          error,
+        };
+      });
+    };
     /**
      * Every discard refuses while the interrupted deletion is in place, so it
      * is superseded first. The deletion it runs refuses again while items
@@ -186,12 +227,20 @@ function createProjectDeletionDiscardStore(
       opened: OpenView,
     ): Promise<'continue' | 'done'> => {
       const operationId = opened.description.interruptedDeletion?.operationId;
-      if (!operationId || opened.superseded) return 'continue';
+      if (
+        !operationId ||
+        opened.superseded ||
+        (opened.description.pendingRecovery?.length && opened.rows.length === 0)
+      )
+        return 'continue';
       const { offer } = opened;
       try {
         await client.command('workspace.delete', {
           workspaceId: offer.workspaceId,
           supersedeInterruptedDeletion: operationId,
+          ...(opened.description.pendingRecovery?.length
+            ? { discardPendingRecovery: opened.description.pendingRecovery }
+            : {}),
         });
       } catch (error) {
         if (opened.rows.length > 0)
@@ -206,15 +255,11 @@ function createProjectDeletionDiscardStore(
             retainedArchives: true,
           })
           .catch(() => undefined);
-        if (
-          fresh?.status === 'discardable' &&
-          (fresh.items.length > 0 ||
-            (fresh.interruptedDeletion !== undefined &&
-              fresh.interruptedDeletion.operationId !== operationId))
-        )
-          update(current, () =>
-            openView(offer, fresh, opened.earlierDiscarded),
-          );
+        if (fresh)
+          refreshDescription(current, fresh, {
+            kind: 'failed',
+            message: failureText(error),
+          });
         else stop(current, { kind: 'failed', message: failureText(error) });
         return 'done';
       }
@@ -226,8 +271,6 @@ function createProjectDeletionDiscardStore(
       offer.onDeleted?.();
       return 'done';
     };
-    const finished = (row: ProjectDeletionDiscardRow): boolean =>
-      row.progress === 'discarded' || row.progress === 'skipped';
     /** Discards one row unless it already finished; `stop` ends the run. */
     const discardRow = async (
       current: number,
@@ -253,6 +296,24 @@ function createProjectDeletionDiscardStore(
         });
       } catch (error) {
         setRow(current, latest.worktreeId, { progress: 'stopped' });
+        if (
+          view.description.pendingRecovery?.length ||
+          view.description.interruptedDeletion
+        ) {
+          const fresh = await client
+            .command('workspace.delete.discard.describe', {
+              workspaceId,
+              retainedArchives: true,
+            })
+            .catch(() => undefined);
+          if (fresh) {
+            refreshDescription(current, fresh, {
+              kind: 'failed',
+              message: failureText(error),
+            });
+            return 'stop';
+          }
+        }
         stop(current, { kind: 'failed', message: failureText(error) });
         return 'stop';
       }
@@ -277,7 +338,33 @@ function createProjectDeletionDiscardStore(
         return setRow(current, latest.worktreeId, { progress: 'skipped' })
           ? 'next'
           : 'stop';
-      if (result.reason === 'project-deletion-pending')
+      const error: ProjectDeletionDiscardError =
+        result.reason === 'changed'
+          ? { kind: 'changed', worktreeName: nameOf(latest) }
+          : {
+              kind: 'refused',
+              worktreeName: nameOf(latest),
+              reason: result.reason,
+            };
+      if (
+        result.reason === 'project-deletion-pending' ||
+        view.description.pendingRecovery?.length ||
+        view.description.interruptedDeletion
+      ) {
+        // Supersession may have cancelled receipts even when this row's
+        // failure is unrelated to the interrupted deletion.
+        const fresh = await client
+          .command('workspace.delete.discard.describe', {
+            workspaceId,
+            retainedArchives: true,
+          })
+          .catch(() => undefined);
+        if (fresh) {
+          refreshDescription(current, fresh, error);
+          return 'stop';
+        }
+      }
+      if (result.reason === 'project-deletion-pending') {
         // The interrupted deletion is still in place, so the supersede didn't
         // reach the host: confirming again supersedes it again. The listed
         // description still binds, as it was made as if it were superseded.
@@ -290,6 +377,7 @@ function createProjectDeletionDiscardStore(
               : candidate,
           ),
         }));
+      }
       // Otherwise the fresh description replaces the confirmed one; confirming
       // again is the person's choice, never automatic.
       else
@@ -297,16 +385,7 @@ function createProjectDeletionDiscardStore(
           progress: 'stopped',
           description: result.description,
         });
-      stop(
-        current,
-        result.reason === 'changed'
-          ? { kind: 'changed', worktreeName: nameOf(latest) }
-          : {
-              kind: 'refused',
-              worktreeName: nameOf(latest),
-              reason: result.reason,
-            },
-      );
+      stop(current, error);
       return 'stop';
     };
     /** Nothing listed is left: the ordinary deletion runs again. */
@@ -347,7 +426,11 @@ function createProjectDeletionDiscardStore(
         }
         if (
           description?.status !== 'discardable' ||
-          (description.items.length === 0 && !description.interruptedDeletion)
+          (description.pendingRecovery?.length &&
+            client.capabilities.worktreeRecoveryResolution !== true) ||
+          (description.items.length === 0 &&
+            !description.interruptedDeletion &&
+            !description.pendingRecovery?.length)
         ) {
           set({ view: { phase: 'closed' } });
           return false;
@@ -360,6 +443,16 @@ function createProjectDeletionDiscardStore(
         const opened = get().view;
         if (opened.phase !== 'open' || opened.busy) return;
         const current = generation;
+        if (
+          opened.description.pendingRecovery?.length &&
+          client.capabilities.worktreeRecoveryResolution !== true
+        ) {
+          stop(current, {
+            kind: 'failed',
+            message: "This desktop can't discard pending archive recovery.",
+          });
+          return;
+        }
         set({ view: { ...opened, busy: true, error: null } });
         if ((await supersedeFirst(current, opened)) !== 'continue') return;
         for (const row of opened.rows) {
@@ -368,11 +461,86 @@ function createProjectDeletionDiscardStore(
         }
         const after = get().view;
         if (current !== generation || after.phase !== 'open') return;
+        if (after.description.pendingRecovery?.length) {
+          try {
+            // Supersession can cancel effect-free receipts before refusing on
+            // sibling rows. Only unchanged members of the confirmed set remain
+            // authorized after those separate requests.
+            const fresh = await client.command(
+              'workspace.delete.discard.describe',
+              { workspaceId: opened.offer.workspaceId, retainedArchives: true },
+            );
+            if (current !== generation) return;
+            if (client.capabilities.worktreeRecoveryResolution !== true) {
+              stop(current, {
+                kind: 'failed',
+                message: "This desktop can't discard pending archive recovery.",
+              });
+              return;
+            }
+            // A refused discard description can leave only ordinary archive
+            // retry to do. The deletion still runs its own admission checks.
+            if (
+              fresh.items.length > 0 ||
+              fresh.pendingRecovery?.some(
+                (member) =>
+                  !after.description.pendingRecovery?.some(
+                    (confirmed) =>
+                      confirmed.operationId === member.operationId &&
+                      confirmed.confirmation === member.confirmation,
+                  ),
+              ) ||
+              (fresh.interruptedDeletion &&
+                fresh.interruptedDeletion.operationId !==
+                  after.description.interruptedDeletion?.operationId)
+            ) {
+              refreshDescription(current, fresh, {
+                kind: 'failed',
+                message: null,
+              });
+              return;
+            }
+            await client.command('workspace.delete', {
+              workspaceId: opened.offer.workspaceId,
+              ...(fresh.pendingRecovery?.length
+                ? { discardPendingRecovery: fresh.pendingRecovery }
+                : {}),
+              ...(fresh.interruptedDeletion
+                ? {
+                    supersedeInterruptedDeletion:
+                      fresh.interruptedDeletion.operationId,
+                  }
+                : {}),
+            });
+          } catch (error) {
+            const fresh = await client
+              .command('workspace.delete.discard.describe', {
+                workspaceId: opened.offer.workspaceId,
+                retainedArchives: true,
+              })
+              .catch(() => undefined);
+            if (fresh)
+              refreshDescription(current, fresh, {
+                kind: 'failed',
+                message: failureText(error),
+              });
+            else stop(current, { kind: 'failed', message: failureText(error) });
+            return;
+          }
+          if (current === generation) {
+            generation += 1;
+            earlier = null;
+            set({ view: { phase: 'closed' } });
+          }
+          opened.offer.onDeleted?.();
+          return;
+        }
         retryDeletion(after);
       },
       discardItem: async (worktreeId, onItemDiscarded): Promise<void> => {
         const opened = get().view;
         if (opened.phase !== 'open' || opened.busy) return;
+        if (opened.description.pendingRecovery?.length) return;
         const row = opened.rows.find(
           (candidate) => candidate.worktreeId === worktreeId,
         );
@@ -384,7 +552,11 @@ function createProjectDeletionDiscardStore(
           return;
         const after = get().view;
         if (current !== generation || after.phase !== 'open') return;
-        if (after.rows.every(finished)) retryDeletion(after);
+        if (
+          after.rows.every(finished) &&
+          !after.description.pendingRecovery?.length
+        )
+          retryDeletion(after);
         else set({ view: { ...after, busy: false } });
       },
       close: (): void => {

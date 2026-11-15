@@ -79,6 +79,11 @@ const entries: CatalogEntry[] = [
 
 class FakeWebCore implements CoreCoworkInvoker {
   entries: CatalogEntry[] = entries;
+  /**
+   * The hosted catalog the web core answers at revision 2 when models are
+   * asked for (CAN-6093), as `GET /api/cloud/models` sends it.
+   */
+  cloudModels: Record<string, unknown> | undefined = undefined;
   readonly calls: { method: string; params: Record<string, unknown> }[] = [];
   selectionRevision = 7;
   selectedItemIds: string[] = ['skill:curated/review'];
@@ -92,11 +97,22 @@ class FakeWebCore implements CoreCoworkInvoker {
   ): Promise<CanopyCoreRelayLikeReply> {
     this.calls.push({ method, params });
     switch (method) {
-      case 'core.catalog.snapshot.get':
+      case 'core.catalog.snapshot.get': {
+        const kinds = Array.isArray(params.kinds) ? params.kinds : [];
+        const answersCloudModels =
+          this.cloudModels !== undefined &&
+          params.revision !== undefined &&
+          (kinds.length === 0 || kinds.includes('model'));
         return Promise.resolve({
           ok: true,
-          value: { revision: 1, entries: this.entries, generatedAt: AT },
+          value: {
+            revision: 1,
+            entries: this.entries,
+            generatedAt: AT,
+            ...(answersCloudModels ? { cloudModels: this.cloudModels } : {}),
+          },
         });
+      }
       case 'core.catalog.selection.get':
         return Promise.resolve({
           ok: true,
@@ -395,6 +411,132 @@ describe('cloud chat catalog over the web core (CAN-5972)', () => {
         },
       },
     });
+  });
+
+  it("lists the hosted catalog's models as the web's picker does, by vendor and family, and leaves locked ones out (CAN-6753)", async () => {
+    const core = new FakeWebCore();
+    const modelEntry = (
+      id: string,
+      providerId: string,
+      availability: CatalogEntry['availability'],
+    ): CatalogEntry => ({
+      entryId: `model:${id}`,
+      kind: 'model',
+      name: id,
+      description: '',
+      source: 'remote',
+      content: {
+        kind: 'model',
+        providerId,
+        modelName: id,
+        contextWindow: null,
+        capabilities: [],
+      },
+      availability,
+      ...stamp,
+    });
+    // The web core lists Core's provider key, a model vendor, on each entry,
+    // and the hosted catalog itself as `cloudModels` at revision 2.
+    core.entries = [
+      modelEntry('vendor-b-model', 'openai', 'available'),
+      modelEntry('vendor-a-model', 'anthropic', 'available'),
+      modelEntry('vendor-a-locked', 'anthropic', 'disabled'),
+      ...entries.filter((entry) => entry.kind !== 'model'),
+    ];
+    core.cloudModels = {
+      models: [
+        {
+          id: 'vendor-b-model',
+          label: 'Vendor B model',
+          description: 'An older model',
+          provider: 'openai',
+          family: 'family-b',
+          familyLabel: 'Family B',
+          harness: 'codex',
+          showMoreOnly: true,
+          contextWindow: 400_000,
+          thinkingLevels: ['low', 'high', 'ultra'],
+          fastGatewayId: null,
+          fastModeSupported: true,
+          libraryEligibility: 'available',
+        },
+        {
+          id: 'vendor-a-model',
+          label: 'Vendor A model',
+          provider: 'anthropic',
+          family: 'family-a',
+          familyLabel: null,
+          harness: 'claude',
+          contextWindow: 200_000,
+          libraryEligibility: 'available',
+        },
+        {
+          id: 'vendor-a-locked',
+          label: 'Vendor A locked',
+          provider: 'anthropic',
+          family: 'family-a',
+          familyLabel: 'Family A',
+          harness: 'claude',
+          libraryEligibility: 'locked',
+        },
+      ],
+      modelHarnesses: {
+        'vendor-b-model': 'codex',
+        'vendor-a-model': 'claude',
+        'vendor-a-locked': 'claude',
+      },
+      defaultModelId: 'vendor-a-model',
+      defaultModelBlocked: false,
+      modelLibrary: 'unlocked',
+    };
+    const catalog = createCloudChatCatalog(core, SCOPE);
+    await catalog.refresh();
+
+    // The web's projection of the same rows: the harness as the provider,
+    // Core's provider as the vendor, Core's family, the AI Credits source,
+    // the Legacy flag and the owner's default. A locked model stays out,
+    // since this composer has no unlock flow.
+    expect(catalog.store.getState().models).toEqual([
+      {
+        id: 'vendor-b-model',
+        label: 'Vendor B model',
+        description: 'An older model',
+        showMoreOnly: true,
+        contextWindow: 400_000,
+        provider: 'codex',
+        source: 'ai-gateway',
+        harness: 'codex',
+        supportsFastMode: true,
+        kind: 'model',
+        available: true,
+        family: 'family-b',
+        familyLabel: 'Family B',
+        vendor: 'openai',
+        supportedThinkingLevels: ['low', 'high'],
+        libraryEligibility: 'available',
+      },
+      {
+        id: 'vendor-a-model',
+        label: 'Vendor A model',
+        contextWindow: 200_000,
+        provider: 'claude',
+        source: 'ai-gateway',
+        harness: 'claude',
+        supportsFastMode: false,
+        kind: 'model',
+        available: true,
+        family: 'family-a',
+        familyLabel: 'family-a',
+        vendor: 'anthropic',
+        isDefault: true,
+        libraryEligibility: 'available',
+      },
+    ]);
+    // Read at revision 2, the hosted catalog the web reads (CAN-6093).
+    expect(
+      core.calls.find((call) => call.method === 'core.catalog.snapshot.get')
+        ?.params,
+    ).toMatchObject({ revision: 2 });
   });
 
   it("names each row's source as the web core labels it and lists a curated skill once, through its plugin (CAN-6397)", async () => {

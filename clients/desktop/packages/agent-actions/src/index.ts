@@ -203,6 +203,7 @@ export {
 } from './surface/dispatch-schema';
 export {
   createAgentActionSurface,
+  isRetiredAgentActionType,
   type AgentActionSplitPort,
   type AgentManagedDelegationTools,
   type AgentActionSurface,

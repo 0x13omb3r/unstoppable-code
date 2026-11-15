@@ -43,6 +43,7 @@ interface CloudChatsWorld {
   onNotification(listener: (notification: unknown) => void): () => void;
   served(): string[];
   streams(): string[];
+  schemaRevisions(): Record<string, number>;
 }
 const { createCloudChatsWorld, SEEDED_CLOUD_CHATS } = jest.requireActual<{
   createCloudChatsWorld: (options: { accountId: string }) => CloudChatsWorld;
@@ -53,6 +54,7 @@ const { createCloudChatsWorld, SEEDED_CLOUD_CHATS } = jest.requireActual<{
     readonly secondChatId: string;
     readonly questionId: string;
     readonly questionToolUseId: string;
+    readonly messageIds: Readonly<Record<string, string>>;
   };
 }>('../../../../tests/electron/fixtures/cloudChatsWorld.js');
 
@@ -146,13 +148,24 @@ describe('the fake web core for desktop cloud chats (CAN-6280)', () => {
       scope: SCOPE,
       chatId: SEEDED_CLOUD_CHATS.rootChatId,
     }) as {
-      tabs: { items: { chatId: string }[] };
+      tabs: {
+        items: {
+          chatId: string;
+          settings?: { executionHarness: string | null };
+        }[];
+      };
       pendingQuestions: { requestId: string }[];
     };
     expect(snapshot.tabs.items.map((tab) => tab.chatId)).toEqual([
       SEEDED_CLOUD_CHATS.rootChatId,
       SEEDED_CLOUD_CHATS.secondChatId,
     ]);
+    // The harness the chat's reply ran on, which the desktop's model picker
+    // holds it to as the web's does; none for a chat the web core names none
+    // for (CAN-6761).
+    expect(
+      snapshot.tabs.items.map((tab) => tab.settings?.executionHarness),
+    ).toEqual(['claude', undefined]);
     expect(snapshot.pendingQuestions.map((each) => each.requestId)).toEqual([
       SEEDED_CLOUD_CHATS.questionId,
     ]);
@@ -189,6 +202,26 @@ describe('the fake web core for desktop cloud chats (CAN-6280)', () => {
     call('core.catalog.selection.get', {
       scope: { chatId: SEEDED_CLOUD_CHATS.rootChatId },
     });
+    // The desktop reads both catalogs at revision 2, which also answers the
+    // hosted model catalog (CAN-6753); a read without models does not.
+    for (const params of [
+      { kinds: [], includeUnavailable: true },
+      { kinds: ['model'], includeUnavailable: false },
+    ]) {
+      const read = call('core.catalog.snapshot.get', {
+        scope: { workspaceId: SEEDED_CLOUD_CHATS.workspaceId },
+        ...params,
+        revision: 2,
+      }) as { cloudModels?: { models: unknown[] } };
+      expect(read.cloudModels?.models).toEqual([]);
+    }
+    const capabilitiesOnly = call('core.catalog.snapshot.get', {
+      scope: { workspaceId: SEEDED_CLOUD_CHATS.workspaceId },
+      kinds: ['skill'],
+      includeUnavailable: true,
+      revision: 2,
+    }) as { cloudModels?: unknown };
+    expect(capabilitiesOnly.cloudModels).toBeUndefined();
   });
 
   it("lists the project's shared workspace files, and no other owner's (CAN-6568)", () => {
@@ -1130,6 +1163,70 @@ describe('the fake web core for desktop cloud chats (CAN-6280)', () => {
     expect(tasks.result.items).toEqual([]);
   });
 
+  it('lists an archived task as its work-entry container and restores it in place at the listed revision (CAN-6511)', () => {
+    const other = createCloudChatsWorld({ accountId: 'acct-1' });
+    const answer = (
+      method: string,
+      params: Record<string, unknown>,
+    ): { result?: unknown; error?: { code?: string } } => {
+      const shape = definition(method);
+      expect(shape.params.safeParse(params).error).toBeUndefined();
+      const reply = other.call(method, params) as {
+        result?: unknown;
+        error?: { code?: string };
+      };
+      if (reply.result !== undefined)
+        expect(shape.result?.safeParse(reply.result).error).toBeUndefined();
+      if (reply.error !== undefined)
+        expect(shape.error?.safeParse(reply.error).error).toBeUndefined();
+      return reply;
+    };
+    const workspaceId = SEEDED_CLOUD_CHATS.workspaceId;
+    const taskId = SEEDED_CLOUD_CHATS.taskId;
+    answer('core.chat.archive', {
+      commandId: 'cmd-archive',
+      projectId: workspaceId,
+      worktreeId: taskId,
+      _meta: { idempotencyKey: 'cmd-archive' },
+      action: { type: 'chat.archive_tab', tabId: taskId },
+    });
+    const listed = answer('core.archive.container.list', { workspaceId })
+      .result as { containers: { archiveId: string; revision: number }[] };
+    expect(listed.containers).toEqual([
+      expect.objectContaining({
+        archiveId: `work-entry:${taskId}`,
+        kind: 'work-entry',
+        locked: true,
+        scope: { workspaceId, chatId: taskId },
+      }),
+    ]);
+    const restore = (expectedRevision: number): ReturnType<typeof answer> =>
+      answer('core.archive.container.restore', {
+        archiveId: `work-entry:${taskId}`,
+        expectedRevision,
+        destinationScope: { workspaceId },
+        conflictPolicy: 'fail',
+        _meta: { idempotencyKey: `restore-${expectedRevision}` },
+      });
+    // A stale revision is refused and the task stays archived.
+    expect(restore(7).error?.code).toBe('core.archive.revisionConflict');
+    expect(restore(listed.containers[0].revision).result).toMatchObject({
+      operation: { status: 'completed' },
+      restoredScope: { workspaceId, chatId: taskId },
+    });
+    expect(
+      (
+        answer('core.archive.container.list', { workspaceId }).result as {
+          containers: unknown[];
+        }
+      ).containers,
+    ).toEqual([]);
+    const tasks = other.call('core.chat.task.list', {
+      scope: { workspaceId },
+    }) as { result: { items: { worktreeId: string }[] } };
+    expect(tasks.result.items.map((item) => item.worktreeId)).toEqual([taskId]);
+  });
+
   it('raises a chat’s tool approval, lists its card at revision 2 and settles it once answered (CAN-6515)', () => {
     const before = items.length;
     const params = {
@@ -1272,6 +1369,104 @@ describe('the fake web core for desktop cloud chats (CAN-6280)', () => {
       scope: { workspaceId: SEEDED_CLOUD_CHATS.workspaceId },
     }) as { result: { items: unknown[] } };
     expect(listed.result.items).toEqual([]);
+  });
+
+  it('serves each committed reply’s meter at revision 2 of the transcript page and chat events, and none at revision 1, as the web core does (CAN-6755)', async () => {
+    const metered = createCloudChatsWorld({ accountId: 'acct-1' });
+    const pushed: { params: { subscriptionId: string; item: unknown } }[] = [];
+    metered.onNotification((notification: unknown) => {
+      pushed.push(notification as (typeof pushed)[number]);
+    });
+    const callOn = (
+      method: string,
+      params: Record<string, unknown>,
+    ): unknown => {
+      const shape = definition(method);
+      expect(shape.params.safeParse(params).error).toBeUndefined();
+      const answer = metered.call(method, params) as
+        | { result: unknown }
+        | { error: unknown };
+      if (!('result' in answer))
+        throw new Error(`${method} answered ${JSON.stringify(answer)}`);
+      expect(
+        (shape.item === undefined ? shape.result : shape.openResult)?.safeParse(
+          answer.result,
+        ).error,
+      ).toBeUndefined();
+      return answer.result;
+    };
+    // Its manifest advertises both, as the web core's does.
+    expect(metered.schemaRevisions()).toMatchObject({
+      'core.chat.transcript.page': 2,
+      'core.chat.events': 2,
+    });
+    const meteredIds = (revision: number | undefined): string[] =>
+      (
+        callOn('core.chat.transcript.page', {
+          scope: { ...SCOPE, chatId: SEEDED_CLOUD_CHATS.rootChatId },
+          ...(revision === undefined ? {} : { revision }),
+        }) as { messages: { id: string; meter?: unknown }[] }
+      ).messages.flatMap((message) =>
+        message.meter === undefined ? [] : [message.id],
+      );
+    // The answer that asked the pending question has no meter yet.
+    expect(meteredIds(2)).toEqual([SEEDED_CLOUD_CHATS.messageIds.firstReply]);
+    expect(meteredIds(undefined)).toEqual([]);
+
+    const events = {
+      projectId: SCOPE.workspaceId,
+      worktreeId: SCOPE.worktreeId,
+    };
+    const revised = callOn('core.chat.events', {
+      scope: events,
+      cursor: null,
+      revision: 2,
+    }) as { subscriptionId: string };
+    const plain = callOn('core.chat.events', {
+      scope: events,
+      cursor: null,
+    }) as { subscriptionId: string };
+    callOn('core.chat.message.send', {
+      scope: SCOPE,
+      commandId: '0f3a9c1e-2b4d-4e6f-8a1b-3c5d7e9f1a77',
+      chatId: SEEDED_CLOUD_CHATS.secondChatId,
+      messageId: 'message-metered',
+      text: 'Shorter, please.',
+      _meta: { idempotencyKey: '0f3a9c1e-2b4d-4e6f-8a1b-3c5d7e9f1a77' },
+    });
+    await new Promise((resolve) => setTimeout(resolve, 250));
+    const replies = (subscriptionId: string): { meter?: unknown }[] =>
+      pushed
+        .filter((each) => each.params.subscriptionId === subscriptionId)
+        .flatMap(
+          (each) =>
+            (
+              each.params.item as {
+                changes: {
+                  type: string;
+                  message?: { role: string; meter?: unknown };
+                }[];
+              }
+            ).changes,
+        )
+        .flatMap((change) =>
+          change.type === 'message.upserted' &&
+          change.message?.role === 'assistant'
+            ? [change.message]
+            : [],
+        );
+    const revisedReplies = replies(revised.subscriptionId);
+    expect(revisedReplies).toHaveLength(1);
+    expect(
+      typeof Reflect.get(Object(revisedReplies[0]?.meter), 'costUsd'),
+    ).toBe('string');
+    expect(replies(plain.subscriptionId)).toHaveLength(1);
+    expect(replies(plain.subscriptionId)[0]).not.toHaveProperty('meter');
+    for (const notification of pushed)
+      expect(
+        definition('core.chat.events').item?.safeParse(notification.params.item)
+          .error,
+      ).toBeUndefined();
   });
 
   it('holds main’s client lease and takes its acknowledgements', () => {

@@ -11,10 +11,12 @@ import { importWebCoreChatFiles } from '@/lib/chatAttachments';
 import {
   setWebCoreTaskDeletionHandler,
   setWebCoreUnsentWorkCheck,
+  webCoreTaskRestored,
 } from '@/stores/chat/web-core';
 import {
   forgetCloudChatDeletion,
   forgetCloudTaskDeletion,
+  forgetCloudTaskMark,
   isCloudChatDeleted,
   isCloudTaskDeleted,
   keepDeletedChatTab,
@@ -264,6 +266,8 @@ function restoreKeptRows(): void {
   let live: ChatContents | null = null;
   for (const { scope, title, account } of keptRows.values()) {
     if (account !== currentAccount() || !isCloudTaskDeleted(scope)) continue;
+    // A restore in flight drops the deleted row: it must not come back.
+    if (restoring.has(keyOf(scope))) continue;
     const workspaceId = webCoreLocalId(scope.projectId);
     const taskId = webCoreLocalId(scope.worktreeId);
     if (workspaceId === null || taskId === null) continue;
@@ -298,6 +302,37 @@ export function installCloudTaskDeletionHandler(): void {
   installed = true;
   cloudCoworkStore.subscribe(restoreKeptRows);
   subscribeCloudTaskDeletions(recordDeletedChatAccounts);
+}
+
+/** Tasks whose restore from the project's archive is in flight. */
+const restoring = new Set<string>();
+
+/**
+ * A restore of the task from the project's archive starts (CAN-6511): its
+ * deleted row isn't kept again while the restore replaces it. The returned
+ * function ends that, restored or not.
+ */
+export function restoringCloudTask(scope: Scope): () => void {
+  const key = keyOf(scope);
+  restoring.add(key);
+  return (): void => {
+    restoring.delete(key);
+  };
+}
+
+/**
+ * A task restored from the project's archive (CAN-6511): it is no longer
+ * deleted here, and its chat reads the web core again, keeping its draft and
+ * attachments. Chats deleted on their own are not restored with it.
+ */
+export function restoredCloudTask(scope: Scope): void {
+  keptRows.delete(keyOf(scope));
+  // Its chats deleted on their own stay deleted, with their unsent work.
+  forgetCloudTaskMark(scope);
+  webCoreTaskRestored(scope);
+  useChatStore
+    .getState()
+    .refreshChatScopeRevisioned(scope.projectId, scope.worktreeId);
 }
 
 /**
@@ -507,15 +542,20 @@ export function startNewChatFromDeletedTask(
 }
 
 /**
- * Files a new chat started from a deleted one couldn't take, by chat id, so
- * its composer names them rather than lose them silently.
+ * Files a new chat couldn't take, by chat id, so its composer names them
+ * rather than lose them silently: one started from a deleted chat, or from
+ * New task for a cloud project (CAN-6763).
  */
 const MAX_NOT_ATTACHED = 32;
 const notAttached = new Map<string, readonly string[]>();
 const notAttachedListeners = new Set<() => void>();
 let notAttachedVersion = 0;
 
-function setFilesNotAttached(chatId: string, names: readonly string[]): void {
+/** Names the files a new chat couldn't take; none clears its notice. */
+export function setFilesNotAttached(
+  chatId: string,
+  names: readonly string[],
+): void {
   if (names.length === 0 && !notAttached.has(chatId)) return;
   notAttached.delete(chatId);
   if (names.length > 0) notAttached.set(chatId, names);

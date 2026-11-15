@@ -115,6 +115,18 @@ export const CatalogEntryContentSchema = z.discriminatedUnion('kind', [
     /** Per-harness support, install state and members (CAN-6034). */
     harnesses: CatalogPluginHarnessesSchema.optional(),
     selectionRef: PluginSelectionRefSchema.optional(),
+    /**
+     * A cloud plugin the calling desktop uploaded (CAN-6725): its local
+     * name and the local marketplace it came from, as that desktop sent
+     * them. Only at `core.catalog.snapshot.get` revision 4, only to that
+     * desktop's own connection; it never names the desktop.
+     */
+    uploadedFromThisDesktop: z
+      .strictObject({
+        sourcePluginKey: IdSchema,
+        sourceMarketplaceId: IdSchema,
+      })
+      .optional(),
   }),
   z.strictObject({
     kind: z.literal('mcp_server'),
@@ -217,6 +229,14 @@ export const CORE_CATALOG_SNAPSHOT_GET_SCHEMA_REVISION = 2;
  */
 export const CORE_CATALOG_SNAPSHOT_GET_SERVED_BY_REVISION = 3;
 
+/**
+ * Revision 4 (CAN-6725): everything revision 3 carries, and for a desktop's
+ * own connection, `uploadedFromThisDesktop` on the plugins it uploaded and
+ * `thisDesktopUploads` on the result. Readers before it parse `plugin` and
+ * the result strictly, so only a caller that sends revision 4 gets them.
+ */
+export const CORE_CATALOG_SNAPSHOT_GET_DESKTOP_UPLOADS_REVISION = 4;
+
 export const CatalogSnapshotGetParamsSchema = z.strictObject({
   scope: CanopyWorkspaceScopeSchema,
   kinds: z.array(CatalogEntryKindSchema),
@@ -225,6 +245,7 @@ export const CatalogSnapshotGetParamsSchema = z.strictObject({
     .union([
       z.literal(CORE_CATALOG_SNAPSHOT_GET_SCHEMA_REVISION),
       z.literal(CORE_CATALOG_SNAPSHOT_GET_SERVED_BY_REVISION),
+      z.literal(CORE_CATALOG_SNAPSHOT_GET_DESKTOP_UPLOADS_REVISION),
     ])
     .optional(),
 });
@@ -270,6 +291,12 @@ export const CatalogSnapshotGetResultSchema = z.strictObject({
   generatedAt: TimestampSchema,
   /** Only on revision 2 with models asked for, from the web core. */
   cloudModels: CatalogCloudModelsSchema.optional(),
+  /**
+   * Revision 4, for a desktop's own connection: the plugins it uploaded carry
+   * `uploadedFromThisDesktop`, so one without it was not uploaded from it.
+   * Absent, nothing says which plugins came from this desktop.
+   */
+  thisDesktopUploads: z.literal(true).optional(),
 });
 
 /** The snapshot declares no operation-specific codes. */

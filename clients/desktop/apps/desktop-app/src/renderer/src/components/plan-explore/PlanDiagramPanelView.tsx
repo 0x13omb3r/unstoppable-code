@@ -1,3 +1,4 @@
+import { Surface } from '@canopy/ui-shared/components';
 import { memo, Suspense, useCallback, useRef, type JSX } from 'react';
 import type { TrackedPlanData } from '@canopy/desktop-shared/types';
 import { useDiagramFind, type DiagramSearchHandle } from '@canopy/ui-app/find';
@@ -83,9 +84,15 @@ export const PlanDiagramPanelView = memo(function PlanDiagramPanelView({
       {/* Only while Show document is needed; otherwise the visualizer's own
           toolbar is the panel's first row. */}
       {!documentOnScreen && (
-        <div
+        <Surface
           data-testid="plan-diagram-panel-top-row"
-          className="electron-no-drag flex shrink-0 items-center justify-end gap-2 border-b px-4 py-2"
+          variant="section"
+          boundary="bottom"
+          gap="inline"
+          direction="row"
+          padding="section-default"
+          dragRegion={false}
+          className="shrink-0 items-center justify-end"
         >
           <HeaderActionButton
             tone="neutral"
@@ -94,7 +101,7 @@ export const PlanDiagramPanelView = memo(function PlanDiagramPanelView({
           >
             Show document
           </HeaderActionButton>
-        </div>
+        </Surface>
       )}
       <div className="flex min-h-0 min-w-0 flex-1 flex-col">
         <Suspense

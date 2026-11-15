@@ -1,3 +1,4 @@
+import { ImageThumbnail } from '@canopy/ui-shared/components';
 import {
   cloudAttachmentPreview,
   isCloudAttachmentPath,
@@ -36,15 +37,20 @@ function ImageLoading(): JSX.Element {
 function ImagePreview({ src }: { src: string }): JSX.Element {
   const [loaded, setLoaded] = useState(false);
   return (
-    <div className="flex items-center justify-center bg-fg-primary/[0.02] p-2">
+    <Surface
+      variant="quiet-panel"
+      padding="tight"
+      className="flex items-center justify-center"
+    >
       {!loaded && <ImageLoading />}
-      <img
+      <ImageThumbnail
+        variant="attachment-preview"
         src={src}
         alt=""
-        className={`max-h-50 max-w-full rounded object-contain${loaded ? '' : ' hidden'}`}
+        hidden={!loaded}
         onLoad={(): void => setLoaded(true)}
       />
-    </div>
+    </Surface>
   );
 }
 
@@ -263,12 +269,17 @@ export const AttachmentPreviewPopover = memo(function AttachmentPreviewPopover({
 
       {/* Footer: a cloud chat's attachment has no file here to open. */}
       {onOpen !== undefined || !isCloudAttachmentPath(absolutePath) ? (
-        <div className="flex shrink-0 border-t px-2 py-1.5">
+        <Surface
+          variant="section"
+          boundary="top"
+          padding="picker-section"
+          className="flex shrink-0"
+        >
           <Button variant="ghost" size="compact" onClick={handleOpen}>
             <FileIcon size="sm" />
             Open
           </Button>
-        </div>
+        </Surface>
       ) : null}
     </RichHoverCard>
   );

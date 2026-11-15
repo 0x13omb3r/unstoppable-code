@@ -1,3 +1,4 @@
+import { DialogActionFooter } from '@canopy/ui-shared/components';
 import { type JSX } from 'react';
 import { Stack, Button, Notice } from '@canopy/ui-shared/components';
 import { DialogModal } from '@/components/shared/DialogModal';
@@ -154,7 +155,7 @@ export function SplitPreflightModal({
         )}
       </div>
 
-      <div className="flex items-center justify-end gap-2 border-t px-6 py-3">
+      <DialogActionFooter center>
         <Button
           size="compact"
           onClick={onCancel}
@@ -171,7 +172,7 @@ export function SplitPreflightModal({
         >
           Start
         </Button>
-      </div>
+      </DialogActionFooter>
     </DialogModal>
   );
 }

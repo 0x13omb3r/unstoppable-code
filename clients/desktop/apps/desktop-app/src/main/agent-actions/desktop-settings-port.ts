@@ -12,7 +12,6 @@ import { IPC_CHANNELS } from '@canopy/desktop-shared/types';
 import type { SettingsRoute } from '@canopy/protocol/settings';
 import type { CanopyInjectedToolRuntime } from '../canopy-tools/core';
 import { readCanopyCloudAccountWithStatus } from '../lib/canopy-cloud-account-store';
-import { isHostedSettingsEnabled } from '../services/hosted-settings-feature-flag';
 import {
   sendToWindowDetailed,
   type SendableBrowserWindow,
@@ -35,8 +34,6 @@ export interface DesktopSettingsPortDeps {
   getWindow(
     call: AgentActionCall<CanopyInjectedToolRuntime>,
   ): SendableBrowserWindow | null;
-  /** The `canopy-desktop-hosted-settings` rollout flag. */
-  hostedSettingsEnabled(): boolean;
   /**
    * Account pages that work signed out. AI gateway does while its flag is
    * on: signed out, it sets up this device's own gateway.
@@ -74,8 +71,7 @@ export async function readDesktopSettingsAccount(): Promise<DesktopSettingsAccou
  * `settings.open` on desktop: verify the account and, for an organization
  * route, that the organization is one of the account's current memberships,
  * then ask the calling chat's main window to open the route. Nothing opens
- * while the hosted settings rollout flag is off, when membership cannot be
- * determined, or when the window is gone.
+ * when membership cannot be determined or when the window is gone.
  */
 export function createDesktopSettingsPort(
   deps: DesktopSettingsPortDeps,
@@ -85,8 +81,6 @@ export function createDesktopSettingsPort(
       route: SettingsRoute,
       call: AgentActionCall<CanopyInjectedToolRuntime>,
     ): Promise<AgentSettingsOpenResult> => {
-      if (!deps.hostedSettingsEnabled())
-        return { status: 'rejected', reason: 'unavailable' };
       let account: DesktopSettingsAccount;
       try {
         account = await deps.readAccount();
@@ -124,7 +118,6 @@ export const desktopSettingsPort: AgentSettingsPort<CanopyInjectedToolRuntime> =
   {
     ...createDesktopSettingsPort({
       readAccount: readDesktopSettingsAccount,
-      hostedSettingsEnabled: isHostedSettingsEnabled,
       opensSignedOut: (route) =>
         route.scope === 'account' &&
         route.page === 'ai-gateway' &&

@@ -494,6 +494,8 @@ export async function buildClaudeTerminalLaunchConfig(
     environment: false,
     ...(claudeConfigDir !== undefined ? { claudeConfigDir } : {}),
     ...(claudeHome ? { home: claudeHome } : {}),
+    // The terminal runs this session id, so a resume reloads its own Mods.
+    sessionId: input.sdkSessionId,
   });
   let claudeModAdmission: ClaudeTerminalLaunchConfig['claudeModAdmission'];
   let resolvedMcpServers: Record<string, unknown> = {};

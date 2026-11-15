@@ -468,6 +468,12 @@ export interface AgentDelegationSnapshot {
   readonly routeSnapshot?: PersistedAgentRouteSnapshot;
   /** Known before asynchronous route preparation has completed. */
   readonly requestedModelId?: string;
+  /**
+   * The requested model's display name, for a host whose model ids aren't
+   * readable (cloud chats send Core's definition id). Views show it in
+   * place of `requestedModelId` until a route reports its own labels.
+   */
+  readonly requestedModelLabel?: string;
   readonly control?: {
     readonly operationId: string;
     readonly operation:

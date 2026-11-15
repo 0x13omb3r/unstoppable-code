@@ -47,6 +47,8 @@ import {
   type PersistedChatTab,
 } from '@canopy/desktop-shared/types';
 import { withWorktreeRelocationInstruction } from '@canopy/desktop-shared/lib/pending-system-instructions';
+import { withChatAddressChangedInstruction } from '@canopy/desktop-shared/lib/chat-address-prompt';
+import { agentChatAddress } from './agent-chat-address';
 import {
   claudeProjectDirCandidates,
   findClaudeCodeSessionTranscriptCandidates,
@@ -172,20 +174,28 @@ function withRestoredWorkingDirectory(args: {
 
   return {
     ...args.tab,
-    pendingSystemInstructions: withWorktreeRelocationInstruction(
-      args.tab.pendingSystemInstructions
-        ? structuredClone(args.tab.pendingSystemInstructions)
-        : undefined,
-      resolveWorktreeCwd(
-        args.manifest.projectId,
-        args.manifest.id,
-        args.tab.selectedRepoId,
+    pendingSystemInstructions: withChatAddressChangedInstruction(
+      withWorktreeRelocationInstruction(
+        args.tab.pendingSystemInstructions
+          ? structuredClone(args.tab.pendingSystemInstructions)
+          : undefined,
+        resolveWorktreeCwd(
+          args.manifest.projectId,
+          args.manifest.id,
+          args.tab.selectedRepoId,
+        ),
+        resolveWorktreeCwd(
+          args.manifest.projectId,
+          args.destinationId,
+          args.tab.selectedRepoId,
+        ),
       ),
-      resolveWorktreeCwd(
+      agentChatAddress(
         args.manifest.projectId,
         args.destinationId,
-        args.tab.selectedRepoId,
+        args.tab.id,
       ),
+      agentChatAddress(args.manifest.projectId, args.manifest.id, args.tab.id),
     ),
   };
 }

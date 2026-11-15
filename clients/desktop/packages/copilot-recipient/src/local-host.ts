@@ -24,6 +24,7 @@ import {
   redactCopilotToolValue,
 } from './text-redaction';
 import type { CopilotRecipientIdentity } from './runtime';
+export type { CopilotProcessOwner } from './runtime';
 
 /** Structural P4 view: no core service, writer, refresh grant or host path dependency. */
 export interface CopilotRecipientHead {

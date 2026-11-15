@@ -1,5 +1,6 @@
 'use client';
 
+import { LinkedMemoryRow } from '@canopy/ui-shared/components';
 import {
   REPLAY_BLOCK_CLASS,
   REPLAY_MASK_CLASS,
@@ -342,8 +343,7 @@ export const MemoryRow = forwardRef<HTMLButtonElement, MemoryRowProps>(
   function MemoryRow({ entry, scope, meta, time, onOpen, menu }, ref) {
     const Icon = entry.file.source ? ChatIcon : DocumentIcon;
     return (
-      <li
-        className="group flex items-start gap-1 rounded-lg pr-1.5 hover:bg-subtle"
+      <LinkedMemoryRow
         data-testid="memory-row"
         data-memory-id={memoryRowId(entry.file.fileKey)}
         data-kind={entry.file.kind}
@@ -388,7 +388,7 @@ export const MemoryRow = forwardRef<HTMLButtonElement, MemoryRowProps>(
           </span>
         </button>
         <span className="pt-2">{menu}</span>
-      </li>
+      </LinkedMemoryRow>
     );
   },
 );

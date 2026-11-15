@@ -85,6 +85,8 @@ import { getResourceMonitorService } from '../resource-monitor';
 import { createAppAdvisorToolRuntime } from './runtime';
 import type { AppAdvisorToolRuntimeSurfaces } from './runtime';
 import { APP_ADVISOR_SYSTEM_PROMPT } from './system-prompt';
+import { chatAddressPrompt } from '@canopy/desktop-shared/lib/chat-address-prompt';
+import { APP_ADVISOR_BOT_ID } from '@canopy/desktop-shared/lib/bot-discovery';
 import { APP_ADVISOR_TOOL_REGISTRY } from '@canopy/desktop-shared/lib/app-advisor-tools';
 import { stableHash } from '@canopy/desktop-shared/lib/stable-hash';
 import { resolveAgentModelRuntime } from '../agents/agent-model-runtime';
@@ -561,10 +563,17 @@ export async function dispatchAppAdvisorChatMessage(
         'App Advisor execution harness does not match host-owned routing',
       );
     }
+    const appAdvisorSystemPrompt = `${APP_ADVISOR_SYSTEM_PROMPT}\n\n${chatAddressPrompt(
+      {
+        botId: APP_ADVISOR_BOT_ID,
+        taskId: request.worktreeId,
+        chatId: request.chatId,
+      },
+    )}`;
     const runtime = await resolveAgentModelRuntime({
       projectId: APP_ADVISOR_PROJECT_ID,
       model: selectedModel,
-      systemPromptAppend: APP_ADVISOR_SYSTEM_PROMPT,
+      systemPromptAppend: appAdvisorSystemPrompt,
       pluginSelections: selectedPluginSelections,
       providerType: selectedProviderType,
       executionHarness: authoritativeExecutionHarness,
@@ -607,9 +616,9 @@ export async function dispatchAppAdvisorChatMessage(
       : currentGlobalInstructionsBlock;
     const systemPromptAppend =
       appendUserOverallPreferencesBlock(
-        runtime.systemPromptAppend ?? APP_ADVISOR_SYSTEM_PROMPT,
+        runtime.systemPromptAppend ?? appAdvisorSystemPrompt,
         globalInstructionsBlock,
-      ) ?? APP_ADVISOR_SYSTEM_PROMPT;
+      ) ?? appAdvisorSystemPrompt;
     const observedSystemPromptAppend = systemPromptAppend;
     const cwd = await resolveAppAdvisorCwd();
     const attachmentBaseDir = resolveAgentAttachmentsDir(
@@ -847,7 +856,7 @@ export async function dispatchAppAdvisorChatMessage(
           pluginSelections,
           deferredToolsAllowed,
           systemPromptAppend:
-            runtime.systemPromptAppend ?? APP_ADVISOR_SYSTEM_PROMPT,
+            runtime.systemPromptAppend ?? appAdvisorSystemPrompt,
           globalInstructionsBlock,
           globalInstructionsSnapshot: resumingProviderSession
             ? globalInstructionsBlock

@@ -207,6 +207,22 @@ export function calendarEventChipAttributes(
  * are sky; runs are status-colored (green / red / grey / sky) so they read
  * distinctly from predicted fires. Disabled occurrences are dimmed + dashed.
  */
+export function calendarEventInk(event: CalendarEvent): string {
+  if (event.kind !== 'run') return 'fg-info';
+  switch (event.runStatus) {
+    case 'success':
+      return 'fg-success-strong';
+    case 'failure':
+      return 'fg-destructive';
+    case 'running':
+      return 'fg-info';
+    case 'missed':
+      return 'fg-warning';
+    default:
+      return 'fg-secondary';
+  }
+}
+
 export function calendarEventToneClasses(event: CalendarEvent): string {
   if (event.kind === 'run') {
     switch (event.runStatus) {
@@ -233,7 +249,7 @@ export function calendarEventToneClasses(event: CalendarEvent): string {
  * (`calendarEventToneClasses`), so its hover dim starts from there
  * (`calendarEventInteractionClasses`).
  */
-function isPausedOccurrence(event: CalendarEvent): boolean {
+export function isPausedOccurrence(event: CalendarEvent): boolean {
   return (
     event.kind === 'occurrence' &&
     event.activity !== null &&

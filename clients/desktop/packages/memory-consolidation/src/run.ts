@@ -1,3 +1,15 @@
+import type { MemoryConsolidationMetrics } from '@canopy/protocol/local-memory';
+import type { MemoryConsolidationMeasurement } from '@canopy/protocol/local-memory/metrics';
+import {
+  MEMORY_SYNC_LIMITS,
+  memorySyncJsonBytes,
+} from '@canopy/protocol/memory-sync';
+import {
+  inspectMemoryLinks,
+  repairMemoryLinks,
+  type MemoryLinkHealth,
+} from './link-health';
+import { measureMemoryConsolidation } from './metrics';
 import { keepChatHistoryProfile } from './chat-history-profile';
 import {
   isConsolidationInputClean,
@@ -19,7 +31,6 @@ import {
   mergeCompactedOutput,
   normalizeAndValidateOutput,
   preservePartialConsolidationSources,
-  resolveOutputIndexReferences,
   trackOutputEnvelope,
   type GeneratedConsolidationOutput,
   type TopicWritePolicy,
@@ -28,11 +39,29 @@ import {
   buildCompactionPrompt,
   buildConsolidationPrompt,
   CONSOLIDATION_SYSTEM_PROMPT,
+  projectLinkHealth,
 } from './prompt';
 import { shouldPruneMemoryFile, stripPrunedIndexLines } from './pruning';
 import { topicIdentity, type ScopeTopicInventory } from './topic-identity';
 
 export const INDEX_CLIPPED_NOTICE = 'index-clipped';
+
+// Reserve the maximum consumed-note array (26-character ULIDs), plus room for
+// the host's commit envelope. Count JSON escaping and the 64-character digest,
+// rather than raw document bytes. Local and cloud runs share the same bound.
+const REPAIR_COMMIT_RESERVED_BYTES =
+  64 * 1024 + 2 + MEMORY_SYNC_LIMITS.commitConsumedNotesMax * (26 + 3);
+
+function putBytes(path: string, content: string): number {
+  return (
+    memorySyncJsonBytes({
+      op: 'put',
+      path,
+      content,
+      contentHash: '0'.repeat(64),
+    }) + 1
+  );
+}
 
 export interface MemoryConsolidationResult {
   status:
@@ -43,6 +72,8 @@ export interface MemoryConsolidationResult {
     | 'invalid-output'
     | 'failed';
   inputHash?: string;
+  metrics?: MemoryConsolidationMetrics;
+  linkHealth?: MemoryLinkHealth;
   reason?: string;
   /**
    * A successful run that still had to cut the index at boundaries after
@@ -79,6 +110,8 @@ export interface MemoryConsolidationModelResponse {
 
 /** What the host writes after a run produced output it accepts. */
 export interface MemoryConsolidationApplyPlan {
+  /** Measurements of this exact plan, committed atomically by synced hosts. */
+  consolidation: MemoryConsolidationMeasurement;
   /** The index (pruned topics' lines removed) and the topics to write. */
   output: ConsolidationOutput;
   /** False when a partial answer left nothing to write. */
@@ -110,8 +143,13 @@ export interface MemoryConsolidationPorts {
   confirmPrunable: (
     candidates: ConsolidationInputFile[],
   ) => Promise<ConsolidationInputFile[]>;
-  /** Writes the plan; false when memory changed since the input was read. */
-  apply: (plan: MemoryConsolidationApplyPlan) => Promise<boolean>;
+  /**
+   * False cancels. True means the exact plan committed. Hosts whose final
+   * prune check can retain topics return the effective tree under their lock.
+   */
+  apply: (
+    plan: MemoryConsolidationApplyPlan,
+  ) => Promise<boolean | { tree: ConsolidationOutput }>;
   warn: (message: string, code: string) => void;
   now: () => Date;
 }
@@ -120,6 +158,26 @@ type Settle = (outcome: MemoryConsolidationOutcome, reason?: string) => void;
 
 const NO_STRUCTURED_OUTPUT =
   'Local memory consolidation returned no structured output';
+
+/** Keep queued unlinked targets without counting still-visible references twice. */
+function mergedUnresolved(
+  ...lists: MemoryLinkHealth['unresolvedLinks'][]
+): MemoryLinkHealth['unresolvedLinks'] {
+  const merged = new Map<string, MemoryLinkHealth['unresolvedLinks']>();
+  for (const links of lists) {
+    const occurrences = new Map<string, MemoryLinkHealth['unresolvedLinks']>();
+    for (const link of links) {
+      const key = JSON.stringify([link.source, link.target]);
+      const group = occurrences.get(key) ?? [];
+      group.push(link);
+      occurrences.set(key, group);
+    }
+    for (const [key, group] of occurrences) {
+      if (group.length > (merged.get(key)?.length ?? 0)) merged.set(key, group);
+    }
+  }
+  return Array.from(merged.values()).flat();
+}
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
@@ -266,8 +324,31 @@ function pruneCandidates(
   const writtenTopics = new Set(
     (output.topicFiles ?? []).map((topic) => topicIdentity(topic.filename)),
   );
+  const orphans = new Set(
+    (
+      input.linkHealth ??
+      inspectMemoryLinks({
+        memoryMd: input.memoryMd,
+        topicFiles: input.allTopicFiles ?? input.topicFiles,
+      })
+    ).orphanTopics.map(topicIdentity),
+  );
+  const proposedTopics = new Map(
+    (input.allTopicFiles ?? input.topicFiles).map((topic) => [
+      topicIdentity(topic.filename),
+      topic,
+    ]),
+  );
+  for (const topic of output.topicFiles ?? [])
+    proposedTopics.set(topicIdentity(topic.filename), topic);
+  for (const filename of inspectMemoryLinks({
+    memoryMd: output.memoryMd,
+    topicFiles: Array.from(proposedTopics.values()),
+  }).orphanTopics)
+    orphans.add(topicIdentity(filename));
   return input.topicFiles.filter(
     (file) =>
+      !orphans.has(topicIdentity(file.filename)) &&
       !writtenTopics.has(topicIdentity(file.filename)) &&
       shouldPruneMemoryFile({
         fileKey: file.fileKey,
@@ -291,6 +372,15 @@ export async function runMemoryConsolidation(
   input: ConsolidationInput,
   ports: MemoryConsolidationPorts,
 ): Promise<MemoryConsolidationResult> {
+  input = {
+    ...input,
+    linkHealth:
+      input.linkHealth ??
+      inspectMemoryLinks({
+        memoryMd: input.memoryMd,
+        topicFiles: input.allTopicFiles ?? input.topicFiles,
+      }),
+  };
   if (isConsolidationInputClean(input)) {
     warnAboutCleanOmission(input, ports);
     return { status: 'clean', inputHash: input.inputHash };
@@ -299,6 +389,11 @@ export async function runMemoryConsolidation(
     return { status: 'cancelled', inputHash: input.inputHash };
   }
 
+  const presentedPairs = new Set(
+    projectLinkHealth(input).unresolvedLinks.map(({ source, target }) =>
+      JSON.stringify([source, target]),
+    ),
+  );
   let generated: unknown = null;
   let generationReason: string | undefined;
   let settle: Settle = once(undefined);
@@ -340,7 +435,8 @@ export async function runMemoryConsolidation(
   // every scan; anything consolidation merged into it would be lost then.
   output = keepChatHistoryProfile(input.memoryMd, output);
   let indexClipped = false;
-  if (!isMemoryIndexWithinLimits(output.memoryMd)) {
+  const partial = diagnostics.length > 0;
+  if (!partial && !isMemoryIndexWithinLimits(output.memoryMd)) {
     if (!(await canContinue(ports))) {
       settle(
         'failure',
@@ -365,15 +461,10 @@ export async function runMemoryConsolidation(
     return { status: 'cancelled', inputHash: input.inputHash };
   }
 
-  let partial = diagnostics.length > 0;
+  let metrics: MemoryConsolidationMetrics | undefined;
+  let linkHealth: MemoryLinkHealth | undefined;
   try {
     const existingNames = (await ports.listScopeTopics()).names;
-    output.memoryMd = resolveOutputIndexReferences(
-      output,
-      existingNames,
-      diagnostics,
-    );
-    partial = diagnostics.length > 0;
     if (partial)
       output = preservePartialConsolidationSources(
         input,
@@ -388,13 +479,148 @@ export async function runMemoryConsolidation(
     const prunedTopics = await ports.confirmPrunable(
       partial ? [] : pruneCandidates(input, output, now),
     );
-    const prunedOutput: ConsolidationOutput = {
-      ...output,
-      memoryMd: stripPrunedIndexLines(output.memoryMd, prunedTopics),
+    const before = {
+      memoryMd: input.memoryMd,
+      topicFiles: input.allTopicFiles ?? input.topicFiles,
     };
+    const topics = new Map(
+      before.topicFiles.map((topic) => [topicIdentity(topic.filename), topic]),
+    );
+    for (const topic of output.topicFiles ?? [])
+      topics.set(topicIdentity(topic.filename), topic);
+    for (const topic of prunedTopics)
+      topics.delete(topicIdentity(topic.filename));
+    const repairInput = {
+      memoryMd: stripPrunedIndexLines(output.memoryMd, prunedTopics),
+      topicFiles: Array.from(topics.values()),
+    };
+    // A partial answer promises that original documents survive byte-for-byte.
+    // Repair only safe additions later, after a complete answer can be applied.
+    const repaired = partial
+      ? {
+          tree: repairInput,
+          health: inspectMemoryLinks(repairInput),
+          repairedLinkCounts: new Map<string, number>(),
+        }
+      : repairMemoryLinks(repairInput);
+    if (!partial && !isMemoryIndexWithinLimits(repaired.tree.memoryMd)) {
+      // Canonical filenames may expand after the model's fitted output. Never
+      // clip facts to make room for automatic repairs: retain the whole input
+      // and source notes for a compacted retry instead.
+      const reason = 'memoryMd: link repair exceeds index limits';
+      settle('failure', reason);
+      return { status: 'invalid-output', inputHash: input.inputHash, reason };
+    }
+    if (!partial && repaired.tree.memoryMd.trim().length === 0) {
+      const reason = 'memoryMd: empty after repairing or clipping index';
+      settle('failure', reason);
+      return { status: 'invalid-output', inputHash: input.inputHash, reason };
+    }
+    const changed = new Set(
+      (output.topicFiles ?? []).map((topic) => topicIdentity(topic.filename)),
+    );
+    const originals = new Map(
+      before.topicFiles.map((topic) => [
+        topicIdentity(topic.filename),
+        topic.content,
+      ]),
+    );
+    const requiredTopics = (repaired.tree.topicFiles ?? []).filter((topic) =>
+      changed.has(topicIdentity(topic.filename)),
+    );
+    // Generated writes and pruning are mandatory. Only additional repairs to
+    // untouched documents may wait; never split source consumption from output.
+    let bytes =
+      REPAIR_COMMIT_RESERVED_BYTES +
+      2 +
+      putBytes('MEMORY.md', repaired.tree.memoryMd) +
+      requiredTopics.reduce(
+        (sum, topic) =>
+          sum + putBytes(`topics/${topic.filename}`, topic.content),
+        0,
+      ) +
+      prunedTopics.reduce(
+        (sum, topic) =>
+          sum + memorySyncJsonBytes({ op: 'delete', path: topic.fileKey }) + 1,
+        0,
+      );
+    let changes = 1 + requiredTopics.length + prunedTopics.length;
+    if (
+      bytes > MEMORY_SYNC_LIMITS.commitRequestMaxBytes ||
+      changes > MEMORY_SYNC_LIMITS.commitChangesMax ||
+      requiredTopics.some(
+        (topic) =>
+          new TextEncoder().encode(topic.content).length >
+          MEMORY_SYNC_LIMITS.documentMaxBytes,
+      )
+    ) {
+      const reason =
+        'Consolidation output exceeds the serialized commit budget';
+      settle('failure', reason);
+      return { status: 'invalid-output', inputHash: input.inputHash, reason };
+    }
+    const writes = [...requiredTopics];
+    let appliedRepairs = repaired.repairedLinkCounts.get('MEMORY.md') ?? 0;
+    repaired.tree.topicFiles = (repaired.tree.topicFiles ?? []).map((topic) => {
+      const identity = topicIdentity(topic.filename);
+      if (!changed.has(identity) && originals.get(identity) !== topic.content) {
+        const cost = putBytes(`topics/${topic.filename}`, topic.content);
+        if (
+          bytes + cost > MEMORY_SYNC_LIMITS.commitRequestMaxBytes ||
+          changes + 1 > MEMORY_SYNC_LIMITS.commitChangesMax ||
+          new TextEncoder().encode(topic.content).length >
+            MEMORY_SYNC_LIMITS.documentMaxBytes
+        ) {
+          return {
+            ...topic,
+            content: originals.get(identity) ?? topic.content,
+          };
+        }
+        bytes += cost;
+        changes += 1;
+        writes.push(topic);
+      }
+      appliedRepairs +=
+        repaired.repairedLinkCounts.get(`topics/${topic.filename}`) ?? 0;
+      return topic;
+    });
+    const prunedOutput: ConsolidationOutput = {
+      memoryMd: repaired.tree.memoryMd,
+      topicFiles: writes,
+    };
+    const inputBytes = partial
+      ? 0
+      : [...input.inboxFiles, ...input.importFiles].reduce(
+          (sum, file) => sum + new TextEncoder().encode(file.content).length,
+          0,
+        );
+    const carriedLinks = (input.linkHealth?.unresolvedLinks ?? []).filter(
+      ({ source, target }) =>
+        partial || !presentedPairs.has(JSON.stringify([source, target])),
+    );
+    const plannedHealth = inspectMemoryLinks(repaired.tree);
+    const pendingLinks = mergedUnresolved(
+      carriedLinks,
+      repaired.health.unresolvedLinks,
+      plannedHealth.unresolvedLinks,
+    );
+    const plannedMetrics = measureMemoryConsolidation(
+      before,
+      repaired.tree,
+      inputBytes,
+      appliedRepairs,
+      pendingLinks.length,
+    );
     const applied = await ports.apply({
+      consolidation: {
+        result: partial ? 'partial' : 'success',
+        metrics: plannedMetrics,
+      },
       output: prunedOutput,
-      writesDocuments: !partial || (prunedOutput.topicFiles?.length ?? 0) > 0,
+      writesDocuments:
+        !partial ||
+        prunedOutput.memoryMd !== input.memoryMd ||
+        (prunedOutput.topicFiles?.length ?? 0) > 0,
       consumedInboxFiles: partial ? [] : input.inboxFiles,
       consumedImportFiles: partial ? [] : input.importFiles,
       prunedTopics,
@@ -404,6 +630,27 @@ export async function runMemoryConsolidation(
       settle('failure', 'Memory was edited before consolidation completed');
       return { status: 'cancelled', inputHash: input.inputHash };
     }
+    const appliedTree = applied === true ? repaired.tree : applied.tree;
+    const appliedHealth =
+      applied === true ? plannedHealth : inspectMemoryLinks(appliedTree);
+    linkHealth = {
+      ...appliedHealth,
+      unresolvedLinks: mergedUnresolved(
+        carriedLinks,
+        repaired.health.unresolvedLinks,
+        appliedHealth.unresolvedLinks,
+      ),
+    };
+    metrics =
+      applied === true
+        ? plannedMetrics
+        : measureMemoryConsolidation(
+            before,
+            appliedTree,
+            inputBytes,
+            appliedRepairs,
+            linkHealth.unresolvedLinks.length,
+          );
   } catch (error) {
     settle('failure', errorMessage(error));
     throw error;
@@ -413,12 +660,20 @@ export async function runMemoryConsolidation(
     const reason = `Partial consolidation: ${diagnostics.join('; ')}. Original memories and source notes retained for retry.`;
     settle('failure', reason);
     ports.warn(reason, 'LOCAL_MEMORY_CONSOLIDATION_PARTIAL_OUTPUT');
-    return { status: 'partial', inputHash: input.inputHash, reason };
+    return {
+      status: 'partial',
+      inputHash: input.inputHash,
+      reason,
+      metrics,
+      linkHealth,
+    };
   }
   settle('success');
   return {
     status: 'success',
     inputHash: input.inputHash,
+    metrics,
+    linkHealth,
     ...(indexClipped ? { notice: INDEX_CLIPPED_NOTICE } : {}),
   };
 }

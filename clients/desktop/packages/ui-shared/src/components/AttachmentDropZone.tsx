@@ -12,10 +12,13 @@ export interface AttachmentDropZoneProps {
 function AttachmentDropZoneContent({
   active = false,
   emptyMessage = 'Drop files here or click + to add attachments',
-}: Omit<AttachmentDropZoneProps, 'testId'>): JSX.Element {
+  iconSize = 'xl',
+}: Omit<AttachmentDropZoneProps, 'testId'> & {
+  readonly iconSize?: 'xl' | number;
+}): JSX.Element {
   return active ? (
     <Stack gap="inline" align="center">
-      <DownloadIcon size="xl" />
+      <DownloadIcon size={iconSize} />
       <p className="text-xs font-medium">Drop files to attach</p>
     </Stack>
   ) : (
@@ -45,6 +48,22 @@ export function AttachmentDropZone({
           />
         </div>
       </Surface>
+    </div>
+  );
+}
+
+/** Non-interactive feedback drawn over the destination during a file drag. */
+export function AttachmentDropOverlay({
+  testId,
+}: Pick<AttachmentDropZoneProps, 'testId'>): JSX.Element {
+  return (
+    <div
+      aria-hidden="true"
+      className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center border-2 border-dashed bg-base/85 text-center ring-2 ring-inset ring-line-accent fg-accent"
+      style={{ borderRadius: 'inherit' }}
+      data-testid={testId}
+    >
+      <AttachmentDropZoneContent active iconSize={24} />
     </div>
   );
 }

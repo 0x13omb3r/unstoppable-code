@@ -1,5 +1,10 @@
 'use client';
 
+import {
+  MemoryEvidenceQuote,
+  MemoryTimelineMark,
+} from '@canopy/ui-shared/components';
+
 import type { JSX, ReactNode } from 'react';
 import { Stack, Button, Heading } from '@canopy/ui-shared/components';
 import { X } from '@canopy/ui-shared/icons/AppIcons';
@@ -71,14 +76,9 @@ export function FactDetailDrawer({
                 <Heading level={3} variant="title">
                   Evidence
                 </Heading>
-                <blockquote
-                  className={withPrivacyClass(
-                    'rounded-lg border-l-2 border-line-accent bg-accent/5 px-4 py-3 text-s italic fg-secondary',
-                    blockClassName,
-                  )}
-                >
+                <MemoryEvidenceQuote blockReplay={blockClassName !== ''}>
                   “{detail.evidenceQuote}”
-                </blockquote>
+                </MemoryEvidenceQuote>
               </Stack>
             )}
 
@@ -133,10 +133,16 @@ export function FactDetailDrawer({
                 <Heading level={3} variant="title">
                   Supersession chain
                 </Heading>
-                <ol className="border-l pl-4 flex flex-col gap-2">
+                <Surface
+                  as="ol"
+                  variant="section"
+                  boundary="left"
+                  gap="inline"
+                  padding="nested"
+                >
                   {detail.supersessionChain.map((fact) => (
                     <li key={fact.id} className="relative text-xs fg-secondary">
-                      <span className="absolute -left-4.75 top-1 h-2 w-2 rounded-full bg-fg-tertiary" />
+                      <MemoryTimelineMark />
                       <SettingsLink
                         href={`/organization/${orgId}/memory/fact/${fact.id}`}
                         className={withPrivacyClass(
@@ -148,7 +154,7 @@ export function FactDetailDrawer({
                       </SettingsLink>
                     </li>
                   ))}
-                </ol>
+                </Surface>
               </Stack>
             )}
           </Stack>

@@ -24,10 +24,9 @@ import type {
 export type CampaignAnchor = 'first-open' | 'abandonment';
 
 /**
- * One resolved copy + destination pairing. Variants exist because two
- * campaigns branch on user state — campaign 1 on whether a trial offer is
- * confirmed claimable, campaign 2 on persisted role — and both need the
- * destination to move with the copy, not just the words.
+ * One resolved copy + destination pairing. Variants exist because a campaign
+ * can branch on user state — campaign 2 on persisted role — and the
+ * destination has to move with the copy, not just the words.
  */
 export interface CampaignVariant {
   title: string;
@@ -66,16 +65,12 @@ export const ACTIVATION_CAMPAIGNS: readonly CampaignDefinition[] = [
     offsetMs: 10 * MINUTE_MS,
     maxLatenessMs: 12 * HOUR_MS,
     variants: {
-      // Used whenever a claimable trial cannot be positively confirmed. The
-      // ticket is explicit: never show an offer the account cannot claim.
+      // The retired `offer` variant (a free-month trial) is gone: there are
+      // no trials. A notification id that still names it fails closed in the
+      // click router.
       [DEFAULT_VARIANT_KEY]: {
         title: 'Ready when you are',
         body: 'Start your first task and put an agent to work.',
-        destination: { kind: 'page', page: 'home' },
-      },
-      offer: {
-        title: 'Your free month is ready',
-        body: 'Start your first task and put it to work.',
         destination: { kind: 'page', page: 'home' },
       },
     },

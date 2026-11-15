@@ -4,7 +4,7 @@ import type { AiCreditsScopeRequest } from '@canopy/desktop-shared/types';
 import { CANOPY_CLOUD_ACCOUNT_CHANGED_EVENT } from '@canopy/desktop-shared/constants/canopy-cloud';
 import {
   MODEL_PICKER_AUTO_REASONS,
-  modelLibraryUnlockHint,
+  modelLibraryRowLock,
 } from '@canopy/ui-shared';
 import {
   useGetAiCreditsAction,
@@ -114,14 +114,14 @@ export function useAutoModelRoutingAvailability(
   // Auto may route to any model in the library, so it needs unlocked access
   // (CAN-4028). Checked ahead of the funding chain: a non-payer's daily
   // credits make that chain look healthy, and the row would then be offered
-  // for a router the server refuses. The same shared hint the model rows use.
-  const lockHint = modelLibraryUnlockHint(
+  // for a router the server refuses. The same shared lock the model rows use.
+  const lock = modelLibraryRowLock(
     resolveModelLibraryLock(isGuest, libraryAccess),
   );
-  if (lockHint !== undefined) {
+  if (lock !== undefined) {
     return {
       offered: true,
-      unavailableReason: lockHint,
+      unavailableReason: lock.hint,
       unavailableAction: unlockAuto,
     };
   }

@@ -104,7 +104,6 @@
             { "label": "Desktop app", "href": "/code" },
             { "label": "Mobile app", "href": "/products/mobile-app" },
             { "label": "Work", "href": "/work" },
-            { "label": "Pricing", "href": "/pricing" },
             { "label": "Web agents", "href": "/chat" },
             { "label": "Site builder", "href": "/products/ai-site-builder" },
             { "label": "Download app", "href": "/download" }

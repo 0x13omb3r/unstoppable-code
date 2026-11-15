@@ -1184,6 +1184,7 @@ function buildStandaloneChatSummary(
           copilot: true,
           opencode: true,
           owner: options?.owner,
+          projectId,
           agentDefaultModel: options?.agentDefaultModel,
         })
       : undefined,

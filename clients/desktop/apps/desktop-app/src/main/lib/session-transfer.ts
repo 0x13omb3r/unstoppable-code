@@ -197,6 +197,9 @@ export const SESSION_TRANSFER_FIELD_EXHAUSTIVENESS: Record<
   // Regenerated from destination transcript storage; never portable authority.
   transcript: true,
   transcriptLoaded: true,
+  // Never stored: a cloud chat's web core projection (CAN-6761), not a
+  // local chat's field.
+  capturedHarness: true,
   transcriptWindow: true,
   memoryByMessageId: true,
   agentArtifactCarryByTurn: true,

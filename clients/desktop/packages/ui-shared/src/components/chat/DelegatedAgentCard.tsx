@@ -173,13 +173,23 @@ export function delegatedAgentRouteMetadata(
   runtimeId?: string;
 } {
   const route = snapshot.routeSnapshot;
+  // Without a route, a host's label for the requested model names it, with
+  // its id beside it as a route's selected model shows.
+  const requestedLabel = snapshot.requestedModelLabel;
+  const requestedId =
+    requestedLabel === undefined ? undefined : snapshot.requestedModelId;
   return {
     selected:
       route?.selectedModelLabel ??
       route?.selectedModelId ??
+      requestedLabel ??
       snapshot.requestedModelId ??
       'Preparing model',
-    ...(route?.selectedModelId ? { selectedId: route.selectedModelId } : {}),
+    ...(route?.selectedModelId
+      ? { selectedId: route.selectedModelId }
+      : requestedId
+        ? { selectedId: requestedId }
+        : {}),
     runtime:
       route?.runtimeModelLabel ??
       route?.runtimeModelId ??

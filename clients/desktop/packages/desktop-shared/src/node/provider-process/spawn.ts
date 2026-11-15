@@ -39,6 +39,8 @@ export interface ProviderProcessRequest {
   readonly owner: ProviderProcessOwner;
   /** Default 'pipe'. With 'ignore', the returned process has no `stdin`. */
   readonly stdin?: ProviderProcessStdin;
+  /** cmd.exe callers supply their complete, quoted command line on Windows. */
+  readonly windowsVerbatimArguments?: boolean;
 }
 
 export interface ProviderProcessStopOptions {
@@ -190,6 +192,7 @@ class DirectProviderProcess extends EventEmitter implements ProviderProcess {
         // Electron main is a GUI process on Windows; without this the
         // console-subsystem node.exe flashes a console window each turn.
         windowsHide: true,
+        windowsVerbatimArguments: request.windowsVerbatimArguments,
         stdio: [request.stdin ?? 'pipe', 'pipe', 'pipe'],
       });
     } catch (error) {

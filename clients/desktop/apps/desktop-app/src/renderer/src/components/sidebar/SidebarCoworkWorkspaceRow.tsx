@@ -1,3 +1,11 @@
+import {
+  SidebarDropLine,
+  SidebarWorkspaceFrame,
+  SidebarCoworkHeader,
+  SidebarGroupStrip,
+} from '@canopy/ui-shared/components';
+import { WorkspaceIconSlot } from '@canopy/ui-shared/components';
+import { Surface } from '@canopy/ui-shared/components';
 import { useSidebarAutoDelete } from '@canopy/ui-app';
 import {
   memo,
@@ -94,8 +102,7 @@ import {
   EMPTY_PENDING_ARCHIVED_CONTAINERS,
   useArchivedContainersStore,
 } from '@/stores/archivedContainersStore';
-import { dismissPageLikeViewers } from '@/lib/dismissPageLikeViewers';
-import { openCoworkWorkEntryFromSidebar } from '@/lib/openCoworkWorkEntryFromSidebar';
+import { openCoworkWorkEntryOnClick } from '@/lib/openCoworkWorkEntryFromSidebar';
 import { openNewCoworkTaskFromSidebar } from '@/lib/openNewCoworkTaskFromSidebar';
 import { useNavigationStore } from '@/stores/navigationStore';
 import { useGitHubStore } from '@/stores/githubStore';
@@ -1503,12 +1510,8 @@ function SidebarCoworkWorkspaceRowImpl({
     return (
       <div className="relative">
         {selectedBlock?.group && (
-          <span
-            aria-hidden="true"
-            className="absolute -left-1.5 inset-y-0 w-0.5 rounded-full"
-            style={{
-              backgroundColor: sidebarItemGroupColor(selectedBlock.group.color),
-            }}
+          <SidebarGroupStrip
+            color={sidebarItemGroupColor(selectedBlock.group.color)}
           />
         )}
         <SidebarWorkEntryRow
@@ -1608,8 +1611,7 @@ function SidebarCoworkWorkspaceRowImpl({
       // Explicit navigation to a live entry dismisses the page-like archived
       // viewer (programmatic activations must not, so this lives on the click
       // handler rather than the selectWorktree funnel).
-      dismissPageLikeViewers();
-      openCoworkWorkEntryFromSidebar(item.id, entryId);
+      openCoworkWorkEntryOnClick(item.id, entryId);
       // Navigating unconditionally is deliberate here, and is *not* the same
       // call as `openForkedContainer`, which skips navigation when the
       // selection fails (see `open-forked-container.test.ts`). There, the user
@@ -1835,11 +1837,7 @@ function SidebarCoworkWorkspaceRowImpl({
         inert
         data-testid={`sidebar-item-group-header-frame-${surface}`}
       >
-        <span
-          aria-hidden="true"
-          className="absolute -left-1.5 inset-y-0 w-0.5 rounded-full"
-          style={{ backgroundColor: sidebarItemGroupColor(group.color) }}
-        />
+        <SidebarGroupStrip color={sidebarItemGroupColor(group.color)} />
         <SidebarItemGroupHeader
           group={group}
           status={
@@ -1869,12 +1867,10 @@ function SidebarCoworkWorkspaceRowImpl({
     // Non-flow copies (slot or selected-item pin) suffix their automation ids.
     const testIdSuffix = isFlow ? '' : `-${surface}`;
     return (
-      <div
+      <SidebarCoworkHeader
+        dragging={workspaceHeaderDragging}
         ref={isFlow ? setNodeRef : undefined}
         style={workspaceHeaderStyle}
-        className={`group/header group/sidebar-item relative flex h-8 items-center gap-1.5 rounded-row pl-1.5 pr-1 fg-primary transition-colors duration-150 hover:bg-subtle ${
-          workspaceHeaderDragging ? 'opacity-60' : ''
-        }`}
         data-sidebar-workspace-sortable-header={isPinCopy ? undefined : item.id}
         data-sidebar-workspace-source-dragging={
           !isPinCopy && workspaceHeaderDragging ? 'true' : undefined
@@ -1912,10 +1908,7 @@ function SidebarCoworkWorkspaceRowImpl({
             plain click on the handle toggles; dragging (≥6px) still reorders,
             and a post-drag click is suppressed by the header click-capture. */}
         {disableDrag || isPinCopy ? (
-          <span
-            className="relative inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full"
-            aria-hidden="true"
-          >
+          <WorkspaceIconSlot aria-hidden="true">
             <WorkspaceIconDisclosureSwap
               collapsed={!expanded}
               testIdSuffix={testIdSuffix}
@@ -1926,7 +1919,7 @@ function SidebarCoworkWorkspaceRowImpl({
                 testIdSuffix={testIdSuffix}
               />
             </WorkspaceIconDisclosureSwap>
-          </span>
+          </WorkspaceIconSlot>
         ) : (
           <button
             type="button"
@@ -2018,7 +2011,7 @@ function SidebarCoworkWorkspaceRowImpl({
             revealOnItemHover
           />
         </div>
-      </div>
+      </SidebarCoworkHeader>
     );
   };
 
@@ -2054,18 +2047,18 @@ function SidebarCoworkWorkspaceRowImpl({
   );
 
   return (
-    <div
+    <SidebarWorkspaceFrame
       ref={(node): void => {
         workspaceRootRef.current = node;
         setWorkspaceRoot(node);
       }}
-      className={`group/row relative rounded-row transition-colors ${
+      spacing={
         hasFollowingWorkspace
           ? showsExpandedContent || showsCollapsedSelectedEntry
-            ? 'mb-2'
-            : 'mb-px'
-          : ''
-      }`}
+            ? 'expanded'
+            : 'compact'
+          : 'none'
+      }
       data-workspace-expanded={
         excludeFromWorkspaceList === true
           ? undefined
@@ -2087,13 +2080,9 @@ function SidebarCoworkWorkspaceRowImpl({
         />
       )}
       {workspaceDropIndicatorPosition && (
-        <span
-          aria-hidden="true"
-          className={`pointer-events-none absolute inset-x-1.5 z-20 h-0.5 rounded-full bg-accent ${
-            workspaceDropIndicatorPosition === 'before'
-              ? '-top-px'
-              : '-bottom-px'
-          }`}
+        <SidebarDropLine
+          variant="workspace"
+          position={workspaceDropIndicatorPosition}
           data-drop-position={workspaceDropIndicatorPosition}
           data-testid="workspace-drop-indicator"
         />
@@ -2104,9 +2093,13 @@ function SidebarCoworkWorkspaceRowImpl({
           cowork rows must not behave differently from git projects in the
           unified list. */}
       {!hideWorkspaceHeader && (
-        <div className="sidebar-workspace-sticky-header z-30 bg-sidebar">
+        <Surface
+          variant="rail"
+          data-sidebar-workspace-header=""
+          className="z-30"
+        >
           {renderWorkspaceHeader('flow')}
-        </div>
+        </Surface>
       )}
 
       {/* Collapse exception: the active work entry row stays rendered, stuck
@@ -2320,7 +2313,7 @@ function SidebarCoworkWorkspaceRowImpl({
           )}
         </>
       )}
-    </div>
+    </SidebarWorkspaceFrame>
   );
 }
 

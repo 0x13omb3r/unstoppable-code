@@ -13,6 +13,7 @@ import type {
   ExecutionSummary,
 } from '@canopy/execution-engine/node/pipelines/executor/types';
 import type { ArchiveIoOperationRequest } from '../archive/archive-io-protocol';
+import { logMainProcessWarn } from '../lib/main-process-logging';
 import { relocateExecutionStateArtifactPaths } from './execution-state-relocation';
 
 async function pathExists(target: string): Promise<boolean> {
@@ -29,6 +30,8 @@ async function pathExists(target: string): Promise<boolean> {
     throw error;
   }
 }
+
+const UNREADABLE_FILE_LOG_SAMPLE_SIZE = 20;
 
 interface CleanupResult {
   warnings: string[];
@@ -131,8 +134,21 @@ export async function cleanupWorktreePipelines(
         // this cleanup never deletes them — leaving them in place loses
         // nothing, and failing the archive here would brick every worktree
         // deletion over a single foreign file in the shared executions dir.
-        warnings.push(
-          `Skipped ${listed.unreadableFiles.length} unreadable workflow execution state file(s) left in place: ${listed.unreadableFiles.join(', ')}`,
+        // They are not this worktree's runs and the person archiving cannot
+        // act on them, so they go to the main log rather than the archive's
+        // user-facing warnings (records left by a pre-CAN-6551 root
+        // migration otherwise surface as a toast on every archive). Every
+        // archive repeats this entry while the files remain, so only a
+        // bounded sample of names is logged to keep the capped log useful.
+        logMainProcessWarn(
+          `[worktree-cleanup] Skipped ${listed.unreadableFiles.length} unreadable workflow execution state file(s) left in place`,
+          {
+            total: listed.unreadableFiles.length,
+            files: listed.unreadableFiles.slice(
+              0,
+              UNREADABLE_FILE_LOG_SAMPLE_SIZE,
+            ),
+          },
         );
       }
     } else {

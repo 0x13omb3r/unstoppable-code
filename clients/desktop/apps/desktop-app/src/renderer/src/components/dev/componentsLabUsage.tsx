@@ -159,7 +159,7 @@ function UsageLimitSection(): JSX.Element {
             actions={
               <>
                 <NoticeButton variant="secondary">Switch model</NoticeButton>
-                <NoticeButton variant="primary">Buy credits</NoticeButton>
+                <NoticeButton variant="primary">Buy AI Credits</NoticeButton>
               </>
             }
             onDismiss={noop}

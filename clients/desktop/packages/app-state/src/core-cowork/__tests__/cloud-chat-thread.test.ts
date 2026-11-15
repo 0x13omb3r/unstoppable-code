@@ -396,6 +396,46 @@ describe('cloud chat thread binding (CAN-4185)', () => {
     });
   });
 
+  it("applies a batch whose tab patch names the chat's harness, a key it does not read (CAN-6777)", async () => {
+    const { stream, project } = harness({
+      'core.chat.snapshot.get': () => ok(snapshot('idle')),
+      'core.chat.transcript.page': () => ok(transcript(message('m1', 'Hello'))),
+    });
+    await flush();
+    stream.push({
+      kind: 'item',
+      cursor: { daemonEpoch: 'e1', sequence: 5 },
+      item: {
+        schemaVersion: 1,
+        eventId: 'ev-5',
+        occurredAt: '2026-11-07T15:00:00.000Z',
+        projectId: 'ws-1',
+        worktreeId: 'chat-1',
+        baseRevision: 4,
+        revision: 5,
+        changes: [
+          {
+            type: 'message.upserted',
+            chatId: 'chat-1',
+            message: message('m2', 'Answered'),
+          },
+          {
+            type: 'tab.metadata_patched',
+            tabId: 'chat-1',
+            patch: { executionHarness: 'claude' },
+          },
+        ],
+      },
+    });
+    await flush();
+    // The batch parses and applies: the answer shows.
+    expect(project).toHaveBeenLastCalledWith({
+      chatKey: 'web-core:chat-1',
+      messages: [message('m1', 'Hello'), message('m2', 'Answered')],
+      tasks: [],
+    });
+  });
+
   it('tells its host the messages its transcript holds, as each batch lands, so accepted sends can retire (CAN-6509)', async () => {
     const { thread, stream } = harness({
       'core.chat.snapshot.get': () => ok(snapshot('idle')),

@@ -1,3 +1,9 @@
+import type { ProjectDeletionPendingRecovery } from './project-deletion-discard';
+import type {
+  WorktreeRecoveryListParams,
+  WorktreeRecoveryResolveParams,
+  WorktreeRecoveryFinishParams,
+} from '../canopy-core/core/worktree/recovery';
 import type { AutoDeleteAttention } from './auto-delete-attention';
 import type { WorktreeRecoveryRequest } from './worktree-recovery';
 import type { CoworkFolderMissing } from '../canopy-core/core/workspace/cowork-folder';
@@ -27,6 +33,10 @@ import type { TurnFileRecord } from '../turn-files';
 import type { SuggestionsUpdate } from '../suggestions';
 import type { OnboardingTipsUpdate } from '../onboarding-tips';
 import type { ClaudeModsGetArgs, ClaudeModsUpdate } from '../claude-mods';
+import type {
+  ClaudeModSurfaceCommandArgs,
+  ClaudeModSurfaceRelayEvent,
+} from '../extension-ui';
 import type { ChatPlanReviewApproval } from '../canopy-core/chat-plan-review';
 export {
   TrackedPlanImplementationInputSchema,
@@ -323,6 +333,7 @@ export type PortalCommandType =
   | 'portal.onboarding_tips.update'
   | 'portal.claude_mods.get'
   | 'portal.claude_mods.update'
+  | 'portal.claude_mods.surface_command'
   | 'portal.script_actions.list'
   | 'portal.script_actions.rescan'
   | 'portal.script_actions.review'
@@ -392,6 +403,9 @@ export type PortalCommandType =
   | 'portal.worktree.branches.list'
   | 'portal.worktree.create'
   | 'portal.worktree.archive'
+  | 'portal.worktree.recovery.list'
+  | 'portal.worktree.recovery.resolve'
+  | 'portal.worktree.recovery.finish'
   | 'portal.worktree.discard.describe'
   | 'portal.worktree.discard'
   | 'portal.worktree.update'
@@ -511,6 +525,7 @@ export const PORTAL_COMMAND_TYPES = [
   'portal.onboarding_tips.update',
   'portal.claude_mods.get',
   'portal.claude_mods.update',
+  'portal.claude_mods.surface_command',
   'portal.script_actions.list',
   'portal.script_actions.rescan',
   'portal.script_actions.review',
@@ -580,6 +595,9 @@ export const PORTAL_COMMAND_TYPES = [
   'portal.worktree.branches.list',
   'portal.worktree.create',
   'portal.worktree.archive',
+  'portal.worktree.recovery.list',
+  'portal.worktree.recovery.resolve',
+  'portal.worktree.recovery.finish',
   'portal.worktree.discard.describe',
   'portal.worktree.discard',
   'portal.worktree.update',
@@ -683,6 +701,8 @@ export type PortalCommandEnumParityGuards = [
  */
 export const PORTAL_DESTRUCTIVE_COMMAND_TYPES: ReadonlySet<PortalCommandType> =
   new Set<PortalCommandType>([
+    'portal.worktree.recovery.resolve',
+    'portal.worktree.recovery.finish',
     'portal.worktree.archive',
     'portal.standalone_chat.archive',
     'portal.worktree.discard',
@@ -740,6 +760,7 @@ export const PORTAL_SMALL_RPC_COMMAND_TYPES: ReadonlySet<PortalCommandType> =
     'portal.onboarding_tips.update',
     'portal.claude_mods.get',
     'portal.claude_mods.update',
+    'portal.claude_mods.surface_command',
     'portal.workspace.claude_md.get',
     'portal.script_actions.list',
     'portal.script_actions.rescan',
@@ -784,6 +805,7 @@ export const PORTAL_SMALL_RPC_COMMAND_TYPES: ReadonlySet<PortalCommandType> =
     'portal.pipeline.chat_follow_up.prepare',
     'portal.pipeline.content.read',
     'portal.provider_usage.refresh',
+    'portal.worktree.recovery.list',
     'portal.worktree.discard.describe',
     'portal.workspace.delete.discard.describe',
   ]);
@@ -828,6 +850,8 @@ export const PORTAL_LONG_RPC_COMMAND_TYPES: ReadonlySet<PortalCommandType> =
     'portal.workspace.create',
     'portal.worktree.create',
     'portal.worktree.discard',
+    'portal.worktree.recovery.resolve',
+    'portal.worktree.recovery.finish',
     'portal.plugins.install_builtin',
     'portal.plugins.install_external',
     'portal.plugins.share_plugin',
@@ -865,7 +889,8 @@ export type PortalEventType =
   | 'portal.plan.event'
   | 'portal.pipeline.event'
   | 'portal.diff.snapshot'
-  | 'portal.file.snapshot';
+  | 'portal.file.snapshot'
+  | 'portal.claude_mods.surface';
 
 /**
  * Frozen runtime list of every supported `PortalEventType`. Mirrors
@@ -890,6 +915,7 @@ export const PORTAL_EVENT_TYPES = [
   'portal.pipeline.event',
   'portal.diff.snapshot',
   'portal.file.snapshot',
+  'portal.claude_mods.surface',
 ] as const satisfies readonly PortalEventType[];
 
 // ---------------------------------------------------------------------------
@@ -1795,6 +1821,13 @@ export const PORTAL_CAPABILITY_COLLECTION_MUTATIONS =
 /** Revision-guarded shared updates, independent of local collection editing. */
 export const PORTAL_CAPABILITY_COLLECTION_UPDATES =
   'collection_updates_v1' as const;
+/**
+ * Live exact-operation resolution and receipt-bound pending archive recovery
+ * discard during project deletion. Independent of cold W5 recovery (CAN-6479).
+ */
+export const PORTAL_CAPABILITY_WORKTREE_RECOVERY_RESOLUTION =
+  'worktree_recovery_resolution_v1' as const;
+
 /** Incarnation-bound, settled recovery actions (CAN-6389), not just display data. */
 export const PORTAL_CAPABILITY_WORKTREE_RECOVERY =
   'worktree_recovery_v1' as const;
@@ -3984,6 +4017,8 @@ export interface PortalPluginDetailResult {
    * then lists only the harnesses every build offers.
    */
   harnesses?: AgentExecutionHarness[];
+  /** This desktop executes supported OpenCode command hooks. Absent means unsupported. */
+  opencodeCommandHooks?: boolean;
   /**
    * Per-provider installation from the desktop's install status, so the
    * Portal harness rows match the desktop's. Absent when the desktop has no
@@ -5950,6 +5985,7 @@ export type PortalWorkspaceCreatePayload = {
  * with the desktop workspace id).
  */
 export interface PortalWorkspaceDeletePayload {
+  discardPendingRecovery?: ProjectDeletionPendingRecovery[];
   /** Absent means archive; delete requires host retention support. */
   mode?: 'archive' | 'delete';
   workspaceId: string;
@@ -6102,6 +6138,7 @@ export interface PortalCommandPayloadMap {
   'portal.onboarding_tips.update': OnboardingTipsUpdate;
   'portal.claude_mods.get': ClaudeModsGetArgs;
   'portal.claude_mods.update': ClaudeModsUpdate;
+  'portal.claude_mods.surface_command': ClaudeModSurfaceCommandArgs;
   'portal.script_actions.list': ScriptActionsListRequest;
   'portal.script_actions.rescan': ScriptActionsContext;
   'portal.script_actions.review': ScriptActionsReviewRequest;
@@ -6171,6 +6208,9 @@ export interface PortalCommandPayloadMap {
   'portal.worktree.branches.list': PortalWorktreeBranchesListPayload;
   'portal.worktree.create': PortalWorktreeCreatePayload;
   'portal.worktree.archive': PortalWorktreeArchivePayload;
+  'portal.worktree.recovery.list': WorktreeRecoveryListParams;
+  'portal.worktree.recovery.resolve': WorktreeRecoveryResolveParams;
+  'portal.worktree.recovery.finish': WorktreeRecoveryFinishParams;
   'portal.worktree.discard.describe': PortalWorktreeDiscardDescribePayload;
   'portal.worktree.discard': PortalWorktreeDiscardPayload;
   'portal.worktree.update': PortalWorktreeUpdatePayload;
@@ -10686,6 +10726,25 @@ export const PORTAL_CAPABILITY_ONBOARDING_TIPS = 'onboarding_tips_v1';
  * controls.
  */
 export const PORTAL_CAPABILITY_CLAUDE_MOD_ADMISSION = 'claude_mod_admission_v1';
+
+/**
+ * The paired desktop relays its Claude chats' Mod surfaces (toasts, status
+ * lines, log lines, the band and panes) as `portal.claude_mods.surface`
+ * events, and takes the person's presses, edits and picks back through
+ * `portal.claude_mods.surface_command`. A desktop announces it only while
+ * both its Mod surface and Mod admission flags are on, so browsers draw no
+ * Mod surface otherwise.
+ */
+export const PORTAL_CAPABILITY_CLAUDE_MOD_SURFACE = 'claude_mod_surface_v1';
+
+/**
+ * `portal.claude_mods.surface`: one update for one chat, as the desktop's
+ * session bridge sent it to its own windows, except that a site's tree goes
+ * as the CLI rendered it. Browsers validate it with
+ * `parseClaudeModSurfacePushEvent` before drawing it; never persisted beyond
+ * the event log.
+ */
+export type PortalClaudeModSurfaceEventPayload = ClaudeModSurfaceRelayEvent;
 
 /**
  * `portal.onboarding_tips.get` takes no arguments; both commands complete

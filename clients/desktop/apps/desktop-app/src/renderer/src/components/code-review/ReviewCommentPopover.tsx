@@ -1,3 +1,4 @@
+import { Surface } from '@canopy/ui-shared/components';
 import { useState, type JSX } from 'react';
 import type {
   ReviewAnnotation,
@@ -86,7 +87,7 @@ export function ReviewCommentPopover({
       dataTestId={dataTestId}
     >
       {mode === 'compose' && (
-        <div className="flex flex-col gap-1.5 rounded-lg border bg-popover p-2">
+        <Surface variant="review-composer">
           <TextArea
             aria-label="Comment"
             value={draftBody}
@@ -120,7 +121,7 @@ export function ReviewCommentPopover({
               Add comment
             </Button>
           </div>
-        </div>
+        </Surface>
       )}
 
       {mode === 'thread' && thread && (

@@ -10,6 +10,8 @@ import {
   createLinuxSecretProtection,
   type SecretServiceNative,
 } from '../secret-protection/linux';
+import { createNativeProtectionLifetime } from '../secret-protection/lifetime';
+import { createWindowsClosureWitness } from '../supervision/windows-closure';
 
 const namespace = {
   service: 'canopy.stable.vault',
@@ -1243,4 +1245,124 @@ describe('Linux key slots: trusted factory and V-3 identity', () => {
       load.mockRestore();
     }
   });
+});
+
+describe('native owner closure', () => {
+  it('uses one run edge across more than 4096 completed native calls', async () => {
+    const witness = createWindowsClosureWitness();
+    await witness.run(async () => {
+      const owner = createNativeProtectionLifetime();
+      const backend = { run: jest.fn(() => Promise.resolve({ code: 'ok' })) };
+      const port = createDarwinSecretProtection(
+        () => backend,
+        namespace,
+        'backend_failed',
+        owner,
+      );
+      for (let callIndex = 0; callIndex < 4_100; callIndex++)
+        await port.status(call());
+      owner.closeAdmission();
+      expect(await owner.drain(new AbortController().signal)).toBe(true);
+      expect(await owner.drain(new AbortController().signal)).toBe(true);
+      expect(backend.run).toHaveBeenCalledTimes(4_100);
+      expect(() => owner.admit()).toThrow();
+    });
+    const report = witness.finalize();
+    expect(report).toMatchObject({ started: 1, pending: 0, unsafe: false });
+    expect(witness.accepts(report)).toBe(true);
+  });
+
+  it('waits for raw status after its public abort, and never upgrades expired closure', async () => {
+    const witness = createWindowsClosureWitness();
+    await witness.run(async () => {
+      const owner = createNativeProtectionLifetime();
+      const raw = held<unknown>();
+      const entered = held<void>();
+      const port = createDarwinSecretProtection(
+        () => ({
+          run: (): Promise<unknown> => {
+            entered.resolve();
+            return raw.promise;
+          },
+        }),
+        namespace,
+        'backend_failed',
+        owner,
+      );
+      const caller = new AbortController();
+      const status = port.status({ signal: caller.signal });
+      await entered.promise;
+      caller.abort();
+      await expect(status).rejects.toThrow();
+      const deadline = new AbortController();
+      const draining = owner.drain(deadline.signal);
+      deadline.abort();
+      expect(await draining).toBe(false);
+      raw.resolve({ code: 'ok' });
+      await Promise.resolve();
+      expect(await owner.drain(new AbortController().signal)).toBe(false);
+    });
+    expect(witness.accepts(witness.finalize())).toBe(false);
+  });
+
+  it('drains queued abort cleanup and submitted mutation before confirming', async () => {
+    const witness = createWindowsClosureWitness();
+    await witness.run(async () => {
+      const owner = createNativeProtectionLifetime();
+      const mutation = held<unknown>();
+      const entered = held<void>();
+      let submitted: Uint8Array | undefined;
+      const backend: KeychainNative = {
+        run: async (_op, _service, _account, bytes) => {
+          submitted = bytes;
+          entered.resolve();
+          return mutation.promise;
+        },
+      };
+      const port = createDarwinSecretProtection(
+        () => backend,
+        namespace,
+        'backend_failed',
+        owner,
+      );
+      const first = port.writeKeySlot(slot, new Uint8Array([19]), {
+        ...call(),
+        mode: 'create',
+      });
+      await entered.promise;
+      const queuedSignal = new AbortController();
+      const queued = port.writeKeySlot(slot, new Uint8Array([23]), {
+        signal: queuedSignal.signal,
+        interaction: 'never',
+        mode: 'replace',
+      });
+      queuedSignal.abort();
+      await expect(queued).rejects.toThrow();
+      owner.closeAdmission();
+      let drained = false;
+      const draining = owner.drain(new AbortController().signal).then((ok) => {
+        drained = ok;
+        return ok;
+      });
+      await Promise.resolve();
+      expect(drained).toBe(false);
+      mutation.resolve({ code: 'ok' });
+      await expect(first).resolves.toEqual({ kind: 'written' });
+      expect(await draining).toBe(true);
+      expect(submitted).toEqual(new Uint8Array([0]));
+    });
+    expect(witness.accepts(witness.finalize())).toBe(true);
+  });
+});
+
+it('refuses local native closure after cross-context use, even without a Windows receipt', async () => {
+  const witness = createWindowsClosureWitness();
+  let drainOutside = (): Promise<boolean> => Promise.resolve(true);
+  await witness.run(() => {
+    const owner = createNativeProtectionLifetime();
+    drainOutside = (): Promise<boolean> =>
+      owner.drain(new AbortController().signal);
+  });
+  expect(await drainOutside()).toBe(false);
+  expect(witness.accepts(witness.finalize())).toBe(false);
 });

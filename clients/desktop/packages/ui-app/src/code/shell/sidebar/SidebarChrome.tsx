@@ -1,3 +1,4 @@
+import { SidebarChromeFrame } from '@canopy/ui-shared/components';
 import type { HTMLAttributes, JSX, ReactNode } from 'react';
 
 export type SidebarChromeVariant = 'rail' | 'drawer';
@@ -40,19 +41,6 @@ export interface SidebarChromeProps extends Omit<
   readonly split?: boolean;
 }
 
-const WIDTH_CLASSES: Readonly<Record<SidebarChromeWidth, string>> = {
-  compact: 'w-56',
-  default: 'w-64',
-  wide: 'w-72',
-  full: 'w-full',
-};
-
-// `border-<color>` is left off: the unlayered base border rule paints the
-// same `--line-base` on every edge (CAN-2734).
-const SPLIT_CLASS_NAME =
-  'h-[42vh] min-h-75 shrink-0 border-b lg:h-full lg:border-b-0 lg:border-r';
-
-/** Data-agnostic outer sidebar frame. Responsive placement remains host-owned. */
 export function SidebarChrome({
   children,
   variant = 'rail',
@@ -62,26 +50,21 @@ export function SidebarChrome({
   fullHeight = true,
   surface = 'transparent',
   split = false,
-  className,
   ...attributes
 }: SidebarChromeProps): JSX.Element {
-  const densityClass = density === 'compact' ? 'text-xs' : '';
-  const heightClass = fullHeight ? 'h-full ' : '';
-  const overflowClass =
-    scroll === 'frame'
-      ? 'overflow-auto '
-      : scroll === 'none'
-        ? ''
-        : 'overflow-hidden ';
-
   return (
-    <div
+    <SidebarChromeFrame
       {...attributes}
-      className={`flex ${heightClass}min-h-0 flex-col ${overflowClass}${WIDTH_CLASSES[width]} ${densityClass}${split ? ` ${SPLIT_CLASS_NAME}` : ''}${surface === 'sidebar' ? ' bg-sidebar' : ''}${className ? ` ${className}` : ''}`}
+      split={split}
+      painted={surface === 'sidebar'}
+      compact={density === 'compact'}
+      fullHeight={fullHeight}
+      scroll={scroll}
+      width={width}
       data-sidebar-density={density}
       data-sidebar-variant={variant}
     >
       {children}
-    </div>
+    </SidebarChromeFrame>
   );
 }

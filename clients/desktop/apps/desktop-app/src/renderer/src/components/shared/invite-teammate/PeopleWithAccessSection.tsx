@@ -1,3 +1,4 @@
+import { Surface } from '@canopy/ui-shared/components';
 import { Stack, Divider, Heading } from '@canopy/ui-shared/components';
 import type { JSX } from 'react';
 import type { SharedContainerPublicationState } from '@canopy/desktop-shared/types';
@@ -160,11 +161,14 @@ export function PeopleWithAccessSection({
             // new-grant highlight room to breathe.
             <ul className="-mx-2">
               {recipients.recipients.map((grant) => (
-                <li
+                <Surface
+                  as="li"
                   key={grant.id}
-                  className={`flex min-w-0 items-center gap-2 rounded-lg px-2 py-1 transition-colors duration-200 ${
-                    highlightedGrantId === grant.id ? 'bg-success-subtle' : ''
-                  }`}
+                  variant={
+                    highlightedGrantId === grant.id
+                      ? 'share-recipient-highlight'
+                      : 'share-recipient'
+                  }
                   data-testid={`shared-container-invite-modal-recipient-${grantRowKey(grant)}`}
                 >
                   {/* A person's name or email: replay records a same-size box. */}
@@ -223,7 +227,7 @@ export function PeopleWithAccessSection({
                   >
                     {REVOKE_LABEL}
                   </Button>
-                </li>
+                </Surface>
               ))}
             </ul>
           )}

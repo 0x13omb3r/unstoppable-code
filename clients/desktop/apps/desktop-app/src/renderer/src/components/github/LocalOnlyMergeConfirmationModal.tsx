@@ -1,3 +1,4 @@
+import { DialogActionFooter } from '@canopy/ui-shared/components';
 import { memo, useCallback, type JSX } from 'react';
 import type { RepoBranchInfo } from '@canopy/desktop-shared/types';
 import { Button } from '@canopy/ui-shared';
@@ -55,7 +56,7 @@ export const LocalOnlyMergeConfirmationModal = memo(
             </ul>
           </Surface>
         </div>
-        <div className="flex items-center justify-end gap-2 border-t p-4">
+        <DialogActionFooter center padding="roomy">
           <Button
             variant="secondary"
             size="compact"
@@ -72,7 +73,7 @@ export const LocalOnlyMergeConfirmationModal = memo(
           >
             {isSubmitting ? 'Merging…' : 'Merge'}
           </Button>
-        </div>
+        </DialogActionFooter>
       </DialogModal>
     );
   },

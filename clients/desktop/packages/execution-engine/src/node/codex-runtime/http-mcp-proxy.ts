@@ -14,6 +14,8 @@ import type {
   McpUpstreamAuthorization,
   McpUpstreamAuthorizer,
 } from '@canopy/core-runtime/node/mcp-auth';
+import { isRecord } from '../lib/type-guards';
+import type { CodexStdioMcpToolCallGate } from './mcp-stdio-gate';
 
 const HOP_BY_HOP_HEADERS = new Set([
   'connection',
@@ -43,6 +45,8 @@ interface HttpMcpRoute {
   headers: Record<string, string>;
   authorizer?: CodexHttpMcpRouteAuthorizer;
   activeRequests: Set<ClientRequest>;
+  toolCallGate?: CodexStdioMcpToolCallGate;
+  pendingGates: Set<AbortController>;
 }
 
 export interface CodexHttpMcpProxyLease {
@@ -92,12 +96,15 @@ export class CodexHttpMcpProxyService {
     ownerId: string;
     upstreamUrl: string;
     headers?: Record<string, string>;
+    toolCallGate?: CodexStdioMcpToolCallGate;
     authorizer?: CodexHttpMcpRouteAuthorizer;
   }): Promise<CodexHttpMcpProxyLease> {
     await this.ensureStarted();
     const routeId = randomBytes(24).toString('hex');
     this.routes.set(routeId, {
       ownerId: options.ownerId,
+      toolCallGate: options.toolCallGate,
+      pendingGates: new Set(),
       upstreamUrl: new URL(options.upstreamUrl),
       headers: { ...(options.headers ?? {}) },
       ...(options.authorizer && { authorizer: options.authorizer }),
@@ -113,6 +120,7 @@ export class CodexHttpMcpProxyService {
     for (const [routeId, route] of Array.from(this.routes.entries())) {
       if (route.ownerId !== ownerId) continue;
       this.routes.delete(routeId);
+      for (const gate of route.pendingGates) gate.abort();
       for (const request of Array.from(route.activeRequests)) {
         request.destroy();
       }
@@ -121,6 +129,7 @@ export class CodexHttpMcpProxyService {
 
   async shutdown(): Promise<void> {
     for (const route of Array.from(this.routes.values())) {
+      for (const gate of route.pendingGates) gate.abort();
       for (const request of Array.from(route.activeRequests)) {
         request.destroy();
       }
@@ -140,7 +149,11 @@ export class CodexHttpMcpProxyService {
     if (this.startPromise) return this.startPromise;
     this.startPromise = new Promise<void>((resolve, reject) => {
       const server = createServer((request, response) => {
-        this.proxy(request, response);
+        void this.proxy(request, response).catch(() => {
+          if (response.destroyed) return;
+          if (!response.headersSent) response.writeHead(403);
+          response.end();
+        });
       });
       server.once('error', reject);
       server.listen(0, '127.0.0.1', () => {
@@ -160,7 +173,10 @@ export class CodexHttpMcpProxyService {
     return this.startPromise;
   }
 
-  private proxy(request: IncomingMessage, response: ServerResponse): void {
+  private async proxy(
+    request: IncomingMessage,
+    response: ServerResponse,
+  ): Promise<void> {
     const match = request.url?.match(/^\/mcp\/([a-f0-9]{48})$/);
     const route = match?.[1] ? this.routes.get(match[1]) : undefined;
     if (!route) {
@@ -168,8 +184,74 @@ export class CodexHttpMcpProxyService {
       response.end('{"error":"MCP proxy route unavailable"}');
       return;
     }
+    let body: Buffer | undefined;
+    if (route.toolCallGate) {
+      const cancellation = new AbortController();
+      route.pendingGates.add(cancellation);
+      const interrupt = (): void => {
+        request.destroy();
+      };
+      cancellation.signal.addEventListener('abort', interrupt, { once: true });
+      const bodyDeadline = setTimeout(() => cancellation.abort(), 30_000);
+      bodyDeadline.unref();
+      const cancel = (): void => cancellation.abort();
+      request.once('aborted', cancel);
+      response.once('close', cancel);
+      try {
+        if (request.method === 'POST') {
+          const parts: Buffer[] = [];
+          let size = 0;
+          for await (const part of request) {
+            if (!Buffer.isBuffer(part)) throw new Error('Invalid MCP body.');
+            size += part.length;
+            if (size > 2 * 1024 * 1024)
+              throw new Error('MCP body exceeds limit.');
+            parts.push(part);
+          }
+          body = Buffer.concat(parts);
+          const message: unknown = JSON.parse(body.toString('utf8'));
+          if (!isRecord(message) || message.jsonrpc !== '2.0')
+            throw new Error('Invalid MCP message.');
+          if (message.method === 'tools/call') {
+            if (
+              !isRecord(message.params) ||
+              typeof message.params.name !== 'string' ||
+              !(await route.toolCallGate({
+                toolName: message.params.name,
+                arguments: message.params.arguments ?? {},
+                signal: cancellation.signal,
+              }))
+            )
+              throw new Error('MCP tool denied.');
+          } else if (
+            ![
+              'initialize',
+              'notifications/initialized',
+              'notifications/cancelled',
+              'tools/list',
+              'ping',
+            ].includes(String(message.method))
+          ) {
+            throw new Error('MCP method denied.');
+          }
+        } else if (request.method !== 'GET' && request.method !== 'DELETE') {
+          throw new Error('MCP method denied.');
+        }
+        if (
+          cancellation.signal.aborted ||
+          this.routes.get(match?.[1] ?? '') !== route
+        )
+          throw new Error('MCP route revoked.');
+      } finally {
+        clearTimeout(bodyDeadline);
+        cancellation.signal.removeEventListener('abort', interrupt);
+        route.pendingGates.delete(cancellation);
+        request.removeListener('aborted', cancel);
+        response.removeListener('close', cancel);
+      }
+    }
     if (!route.authorizer) {
-      this.forward(request, response, route, route.headers);
+      this.forward(request, response, route, route.headers, undefined, body);
       return;
     }
     // Held until the upstream request opens, then piped as is.
@@ -192,7 +274,14 @@ export class CodexHttpMcpProxyService {
           writeAuthorizationFailure(response, 'unavailable');
           return;
         }
-        this.forward(request, response, route, headers, granted.authorization);
+        this.forward(
+          request,
+          response,
+          route,
+          headers,
+          granted.authorization,
+          body,
+        );
       },
     );
   }
@@ -203,6 +292,7 @@ export class CodexHttpMcpProxyService {
     route: HttpMcpRoute,
     fixedHeaders: Record<string, string>,
     authorization?: McpUpstreamAuthorization,
+    body?: Buffer,
   ): void {
     if (!this.isLive(route)) {
       request.resume();
@@ -248,7 +338,8 @@ export class CodexHttpMcpProxyService {
     response.once('close', () => {
       if (!response.writableEnded) upstream.destroy();
     });
-    request.pipe(upstream);
+    if (body) upstream.end(body);
+    else request.pipe(upstream);
     request.resume();
   }
 

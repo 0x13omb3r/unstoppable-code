@@ -1022,3 +1022,45 @@ export function DataTable<T>({
     </Skeleton>
   );
 }
+
+/** Read-only file data with a sticky header and no application-table chrome. */
+export function CsvPreviewTable({
+  header,
+  rows,
+}: {
+  readonly header: readonly string[] | null;
+  readonly rows: readonly (readonly string[])[];
+}): JSX.Element {
+  return (
+    <table className="w-full border-collapse text-xs">
+      {header && (
+        <thead className="sticky top-0 bg-base">
+          <tr>
+            {header.map((cell, index) => (
+              <th
+                key={index}
+                className="border-b px-3 py-2 text-left font-semibold fg-primary"
+              >
+                {cell}
+              </th>
+            ))}
+          </tr>
+        </thead>
+      )}
+      <tbody>
+        {rows.map((row, rowIndex) => (
+          <tr key={rowIndex} className="hover:bg-fg-primary/[0.04]">
+            {row.map((cell, index) => (
+              <td
+                key={index}
+                className="border-b px-3 py-1.5 align-top fg-primary/90"
+              >
+                {cell}
+              </td>
+            ))}
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  );
+}

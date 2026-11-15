@@ -1,3 +1,4 @@
+import { Surface } from '@canopy/ui-shared/components';
 import { toAppError } from '@canopy/protocol/app-errors';
 import {
   reportClientAppError,
@@ -2476,17 +2477,15 @@ export const PrStatusBar = memo(function PrStatusBar({
               // Wrapper so the hover copy button can overlay the pill's right
               // end as a SIBLING (a button inside the trigger <button> would be
               // invalid markup). `min-w-0` keeps the truncation shrink chain.
-              <span
-                className="group/branchpill relative inline-flex min-w-0 items-center rounded-md transition-colors hover:bg-subtle -ml-1.5"
+              <Surface
+                as="span"
+                variant="branch-control"
+                className="group/branchpill relative -ml-1.5 inline-flex min-w-0 items-center"
                 onMouseEnter={(e): void =>
                   setBranchPillLockedWidth(e.currentTarget.offsetWidth)
                 }
                 onMouseLeave={(): void => setBranchPillLockedWidth(null)}
-                style={
-                  branchPillLockedWidth !== null
-                    ? { width: `${branchPillLockedWidth}px` }
-                    : undefined
-                }
+                paneWidth={branchPillLockedWidth ?? undefined}
               >
                 <button
                   ref={branchMenuTriggerRef}
@@ -2568,7 +2567,7 @@ export const PrStatusBar = memo(function PrStatusBar({
                     </Tooltip>
                   </span>
                 )}
-              </span>
+              </Surface>
             )}
             <FloatingMenu
               id={branchMenuId}

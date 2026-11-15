@@ -44,6 +44,20 @@ function questionWaits(): ChatWaitLifecycle {
   return lifecycle;
 }
 
+// shortcut: kept for the process, one entry per hot-reload question; prune on
+// settle if person-only questions become common.
+const personOnlyQuestions = new Set<string>();
+
+/**
+ * Mark a question only a person may answer, such as consent to run Mods
+ * (decision 21): an answer counts only when its caller vouches that a person
+ * gave it (`answeredByPerson`), and an external agent's answer or dismissal
+ * is refused.
+ */
+export function markPersonOnlyChatQuestion(questionId: string): void {
+  personOnlyQuestions.add(questionId);
+}
+
 /** Remember settled questions' scopes from now on; call before questions open. */
 export function trackSettledChatQuestions(): void {
   questionWaits();
@@ -68,6 +82,8 @@ export interface RespondToChatQuestionRequest {
   origin?: ChatCommandRequest['origin'];
   /** `agentSent` carries a trusted Portal sender's provenance. */
   executionOptions?: QuestionCommandExecutionOptions;
+  /** A trusted external agent sent this answer or dismissal. */
+  externalAgent?: ExternalAgentSender;
   /** Defaults to getChatStateCommandPort(). */
   port?: ChatStateCommandPort | null;
   /** Defaults to the port's command. Portal passes its trusted dispatch. */
@@ -117,6 +133,20 @@ function answerValidationError(
 export async function respondToChatQuestion(
   request: RespondToChatQuestionRequest,
 ): Promise<ChatQuestionRespondOutcome> {
+  if (
+    personOnlyQuestions.has(request.questionId) &&
+    // Fails closed: a caller that does not vouch for a person (an MCP, CLI,
+    // HTTP or daemon client of core.chat.question.respond) cannot answer.
+    ((request.externalAgent ?? request.executionOptions?.agentSent) !==
+      undefined ||
+      (request.response.kind === 'answer' &&
+        request.executionOptions?.answeredByPerson !== true))
+  ) {
+    return {
+      status: 'invalid',
+      message: 'Only a person can answer this question.',
+    };
+  }
   const port =
     request.port === undefined ? getChatStateCommandPort() : request.port;
   if (!port) return { status: 'unavailable' };

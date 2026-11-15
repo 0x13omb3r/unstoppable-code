@@ -797,6 +797,7 @@ export function registerProjectHandlers(
           source: 'single_repo_project_delete',
           singleRepoProject: true,
           supersedeInterruptedDeletion: request.supersedeInterruptedDeletion,
+          discardPendingRecovery: request.discardPendingRecovery,
         }),
       );
       // This channel has always failed when the managed repository could not

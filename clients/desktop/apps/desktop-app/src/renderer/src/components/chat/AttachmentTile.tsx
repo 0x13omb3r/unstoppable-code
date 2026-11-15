@@ -1,7 +1,7 @@
 import type { JSX, ReactNode } from 'react';
 import { BUBBLE_BADGE_CHROME } from '@canopy/ui-shared';
 import {
-  ATTACHMENT_TILE_EDGE_CLASS,
+  ComposerAttachmentSurface,
   IMAGE_THUMBNAIL_EDGE_CLASS,
 } from '@canopy/ui-shared/components';
 import { CloseIcon } from '@canopy/ui-shared/icons/AppIcons';
@@ -43,17 +43,14 @@ export function AttachmentImageTile({
   readonly children?: ReactNode;
 }): JSX.Element {
   return (
-    <span
-      data-attachment-kind="image"
-      className={`${POSTHOG_REPLAY_BLOCK_CLASS} relative block h-30 w-30 overflow-hidden rounded-lg bg-secondary`}
-    >
+    <ComposerAttachmentSurface kind="image">
       {children}
       <span
         aria-hidden
         data-testid="attachment-image-edge"
         className={IMAGE_THUMBNAIL_EDGE_CLASS}
       />
-    </span>
+    </ComposerAttachmentSurface>
   );
 }
 
@@ -81,10 +78,7 @@ export function AttachmentCardTile({
     // Spans, so a tile can also be the face of a button (a code selection).
     // The edge matches the image tiles' beside it. The 12px corner is the
     // composer box's 20px less the strip's 8px inset, so the arcs nest.
-    <span
-      data-attachment-kind={kind}
-      className={`flex h-30 w-40 flex-col overflow-hidden rounded-lg bg-secondary text-left ${ATTACHMENT_TILE_EDGE_CLASS}`}
-    >
+    <ComposerAttachmentSurface kind={kind}>
       <span className="flex min-h-0 flex-1 items-center justify-center overflow-hidden">
         {preview}
       </span>
@@ -93,7 +87,7 @@ export function AttachmentCardTile({
         <span className="min-w-0 truncate">{name}</span>
         {badge}
       </span>
-    </span>
+    </ComposerAttachmentSurface>
   );
 }
 

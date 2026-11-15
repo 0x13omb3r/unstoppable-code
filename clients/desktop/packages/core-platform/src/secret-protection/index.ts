@@ -1,3 +1,4 @@
+import { untrackedProtectionWork, type NativeProtectionWork } from './work';
 import { loadPreparedNativeArtifact } from './authorization';
 import type { PlatformSecretProtectionServices } from '@canopy/core-runtime';
 import { createDarwinSecretProtection, type KeychainNative } from './darwin';
@@ -36,6 +37,7 @@ function isCredentialNative(value: unknown): value is CredentialNative {
 
 function createWindowsServices(
   options: SecretProtectionOptions,
+  work: NativeProtectionWork = untrackedProtectionWork,
 ): PlatformSecretProtectionServices {
   const policy = resolveWindowsSecretProtectionPolicy(options);
 
@@ -54,6 +56,7 @@ function createWindowsServices(
     },
     policy.namespace,
     policy.unavailable,
+    work,
   );
 }
 
@@ -71,6 +74,7 @@ function isSecretServiceNative(value: unknown): value is SecretServiceNative {
 
 function createLinuxServices(
   options: SecretProtectionOptions,
+  work: NativeProtectionWork = untrackedProtectionWork,
 ): PlatformSecretProtectionServices {
   const policy = resolveSecretProtectionPolicy(options);
 
@@ -89,6 +93,7 @@ function createLinuxServices(
     },
     policy.namespace,
     policy.unavailable,
+    work,
   );
 }
 
@@ -99,9 +104,10 @@ function createLinuxServices(
  */
 export function createSecretProtectionServices(
   options: SecretProtectionOptions,
+  work: NativeProtectionWork = untrackedProtectionWork,
 ): PlatformSecretProtectionServices {
-  if (options.os === 'win32') return createWindowsServices(options);
-  if (options.os === 'linux') return createLinuxServices(options);
+  if (options.os === 'win32') return createWindowsServices(options, work);
+  if (options.os === 'linux') return createLinuxServices(options, work);
 
   const policy = resolveSecretProtectionPolicy(options);
   let loaded: KeychainNative | undefined;
@@ -120,5 +126,6 @@ export function createSecretProtectionServices(
     load,
     policy.namespace,
     policy.unavailable,
+    work,
   );
 }

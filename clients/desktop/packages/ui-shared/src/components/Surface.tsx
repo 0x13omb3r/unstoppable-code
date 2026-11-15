@@ -1,4 +1,4 @@
-import type { HTMLAttributes, JSX, ReactNode, Ref } from 'react';
+import type { CSSProperties, HTMLAttributes, JSX, ReactNode, Ref } from 'react';
 import { createElement } from 'react';
 import { HAIRLINE_INSET_RING_CLASS } from '../lib/row-chips';
 import { REPLAY_BLOCK_CLASS, REPLAY_MASK_CLASS } from '../lib/replay-privacy';
@@ -39,11 +39,48 @@ export type SurfaceVariant =
   | 'group'
   | 'card'
   | 'raised'
+  | 'product-preview'
+  | 'product-preview-window'
   | 'inset'
   | 'dashed'
   | 'page'
+  | 'centered-page'
+  | 'share-recipient-highlight'
+  | 'share-recipient'
+  | 'branch-control'
+  | 'mcp-manage-row'
+  | 'advisor-window-clear'
+  | 'gallery-banner'
+  | 'attached-action-card'
+  | 'guest-nudge'
   | 'pane'
+  | 'app-pane'
+  | 'startup-pane'
   | 'panel'
+  | 'tinted-panel'
+  | 'review-card'
+  | 'review-composer'
+  | 'selection-comment-popover'
+  | 'mode-picker'
+  | 'advisor-shadow'
+  | 'mobile-promo-panel'
+  | 'sign-in-card'
+  | 'share-status-list'
+  | 'guidance-step'
+  | 'pairing-code'
+  | 'notice-strip'
+  | 'diagram-toolbar'
+  | 'annotation-header'
+  | 'date-chip'
+  | 'worktree-panel-group'
+  | 'workflow-icon'
+  | 'workflow-nav-current'
+  | 'workflow-nav-job'
+  | 'workflow-toolbar'
+  | 'transfer-row'
+  | 'metadata-row'
+  | 'quiet-panel'
+  | 'workspace-panel'
   | 'rail'
   | 'well'
   | 'section';
@@ -53,10 +90,15 @@ export type SurfaceBoundary =
   | 'none'
   | 'top'
   | 'bottom'
+  | 'muted-bottom'
+  | 'bottom-right'
+  | 'between-rows'
   | 'start'
+  | 'active-rail'
   | 'left'
   | 'end'
   | 'right'
+  | 'wide-right'
   | 'block'
   | 'frame';
 
@@ -64,10 +106,15 @@ const SURFACE_BOUNDARY_CLASS: Readonly<Record<SurfaceBoundary, string>> = {
   none: '',
   top: 'border-t',
   bottom: 'border-b',
+  'muted-bottom': 'border-b border-line-tertiary',
+  'bottom-right': 'border-b border-r',
+  'between-rows': 'border-b last:border-b-0',
   start: 'border-s',
   left: 'border-l',
+  'active-rail': 'border-l-2 border-line-accent',
   end: 'border-e',
   right: 'border-r',
+  'wide-right': 'md:border-r',
   block: 'border-y',
   frame: `${HAIRLINE_INSET_RING_CLASS} ring-line-base`,
 };
@@ -82,12 +129,49 @@ const SURFACE_BOUNDARY_CLASS: Readonly<Record<SurfaceBoundary, string>> = {
 export type SurfaceSize = 'default' | 'small' | 'drawer';
 
 /** A pane's height comes from its parent or the viewport, never a caller override. */
-export type SurfaceExtent = 'content' | 'parent' | 'viewport';
+export type SurfaceExtent =
+  | 'content'
+  | 'parent'
+  | 'viewport'
+  | 'dynamic-viewport'
+  | 'window-toolbar'
+  | 'window'
+  | 'wide-parent'
+  | 'worktree-split'
+  | 'workflow-navigation'
+  | 'picker-scroll'
+  | 'advisor-overlay'
+  | 'advisor-toolbar'
+  | 'cowork-toolbar'
+  | 'portal-toolbar'
+  | 'aux-toolbar'
+  | 'breadcrumb-toolbar'
+  | 'mobile-toolbar'
+  | 'portal-touch-toolbar'
+  | 'workspace-toolbar'
+  | 'subagents-toolbar';
 
 const SURFACE_EXTENT_CLASS: Readonly<Record<SurfaceExtent, string>> = {
   content: '',
   parent: 'h-full',
   viewport: 'h-screen',
+  'dynamic-viewport': 'h-dvh',
+  'window-toolbar': 'max-h-10.75',
+  window: 'min-h-dvh',
+  'wide-parent': 'lg:h-full',
+  'worktree-split': 'h-[52vh] min-h-105 lg:h-full',
+  'workflow-navigation': 'max-h-60',
+  'picker-scroll': 'max-h-48',
+  'advisor-overlay': 'max-h-[calc(100vh-32px)]',
+  'advisor-toolbar': 'min-h-10.75',
+  'cowork-toolbar': 'min-h-11.5',
+  'portal-toolbar': 'h-10',
+  'aux-toolbar': 'h-9.5',
+  'breadcrumb-toolbar': 'h-11.5',
+  'mobile-toolbar': 'h-11',
+  'portal-touch-toolbar': 'h-12',
+  'workspace-toolbar': 'h-10.75',
+  'subagents-toolbar': 'min-h-12',
 };
 
 /**
@@ -100,9 +184,38 @@ export type SurfacePadding =
   | 'compact'
   | 'default'
   | 'roomy'
+  | 'window-toolbar'
+  | 'diff-controls'
+  | 'toolbar-trigger'
+  | 'file-overlap'
   | 'section-compact'
   | 'section-default'
-  | 'dialog-footer';
+  | 'dialog-footer'
+  | 'dialog-footer-medium'
+  | 'section-top'
+  | 'section-top-tight'
+  | 'titlebar-trailing'
+  | 'menu-inset'
+  | 'picker-section'
+  | 'compact-toolbar'
+  | 'diagram-toolbar'
+  | 'board-header'
+  | 'workflow-nav-leading'
+  | 'navigation-inset'
+  | 'nested-tight'
+  | 'nested-compact'
+  | 'nested'
+  | 'underline-tight'
+  | 'panel-actions'
+  | 'dialog-header'
+  | 'form-footer'
+  | 'row-block'
+  | 'panel-heading'
+  | 'toolbar-tight'
+  | 'toolbar-compact'
+  | 'page-inline'
+  | 'safe-area-top'
+  | 'wide-trailing';
 
 /**
  * Fill, edge and shadow per variant: the one place a surface's look changes.
@@ -113,11 +226,59 @@ export const SURFACE_VARIANT_CLASS: Readonly<Record<SurfaceVariant, string>> = {
   group: `bg-secondary ${HAIRLINE_INSET_RING_CLASS} ring-line-base`,
   card: `bg-card ${HAIRLINE_INSET_RING_CLASS} ring-line-base`,
   raised: 'bg-card shadow-sm',
+  'product-preview': 'bg-card shadow-lg',
+  'product-preview-window': 'bg-card text-xs shadow-lg',
   inset: `bg-base ${HAIRLINE_INSET_RING_CLASS} ring-line-base`,
   dashed: 'border border-dashed border-line-secondary',
   page: 'flex min-h-screen flex-col bg-base fg-primary',
+  'centered-page': 'flex min-h-screen items-center justify-center bg-base',
+  'share-recipient-highlight':
+    'flex min-w-0 items-center gap-2 bg-success-subtle px-2 py-1 transition-colors duration-200',
+  'share-recipient':
+    'flex min-w-0 items-center gap-2 px-2 py-1 transition-colors duration-200',
+  'branch-control': 'transition-colors hover:bg-subtle',
+  'mcp-manage-row':
+    'flex items-center gap-3 px-2.5 py-2 hover:bg-fg-primary/[0.04]',
+  'advisor-window-clear': 'bg-transparent fg-primary',
+  'gallery-banner': 'bg-depth',
+  'attached-action-card': 'overflow-hidden bg-tertiary shadow-sm',
+  'guest-nudge':
+    'animate-slide-up bg-card/95 fg-primary shadow-lg backdrop-blur-sm',
   pane: 'bg-base',
+  'app-pane': 'bg-base fg-primary',
+  'startup-pane': 'bg-base fg-primary animate-fade-in',
   panel: 'bg-card',
+  'tinted-panel': 'bg-card/50',
+  'quiet-panel': 'bg-fg-primary/[0.02]',
+  'review-card': 'flex flex-col gap-2 border bg-popover p-3',
+  'review-composer': 'flex flex-col gap-1.5 border bg-popover p-2',
+  'selection-comment-popover': 'flex flex-col gap-1.5 bg-popover p-2 shadow-xl',
+  'metadata-row': 'gap-x-3 gap-y-0.5 text-s border-b last:border-b-0',
+  'advisor-shadow': 'shadow-xl',
+  'mobile-promo-panel': 'bg-card shadow-xl pb-[env(safe-area-inset-bottom)]',
+  'sign-in-card': 'border bg-card/60 p-6',
+  'share-status-list':
+    'flex list-disc flex-col gap-1 border border-line-attention/30 bg-warning-subtle px-7 py-2 text-xs fg-secondary',
+  'guidance-step':
+    'mt-px flex h-5 w-5 shrink-0 items-center justify-center bg-secondary text-xs font-semibold fg-primary',
+  'pairing-code': 'bg-white p-2',
+  'notice-strip': 'border-b bg-subtle px-3 py-1.5',
+  'diagram-toolbar': 'flex items-center gap-1.5 border-b px-2.5 py-1.5',
+  'annotation-header':
+    'border-b bg-quaternary px-3 py-1.5 text-2xs font-medium fg-secondary',
+  'date-chip': 'border bg-card px-3 py-1 text-xs fg-secondary',
+  'worktree-panel-group': 'canopy-panel-group',
+  'workflow-icon':
+    'flex h-9 w-9 shrink-0 items-center justify-center bg-accent-subtle text-m',
+  'workflow-nav-current':
+    'flex items-center bg-fg-primary/[0.04] font-semibold transition-colors',
+  'workflow-nav-job':
+    'flex items-center transition-colors hover:bg-fg-primary/[0.04]',
+  'workflow-toolbar':
+    'flex shrink-0 items-center gap-3 border-b bg-card px-4 py-3',
+  'transfer-row': 'flex flex-col gap-1.5 border-b px-2 py-2',
+  'mode-picker': 'ml-auto inline-flex items-center gap-1 border bg-base p-1',
+  'workspace-panel': 'min-h-55 bg-card/50',
   rail: 'bg-sidebar',
   well: 'bg-secondary',
   section: '',
@@ -139,11 +300,48 @@ export const SURFACE_RADIUS_CLASS: Readonly<Record<SurfaceVariant, string>> = {
   group: 'rounded-lg',
   card: 'rounded-xl',
   raised: 'rounded-xl',
+  'product-preview': 'rounded-xl',
+  'product-preview-window': 'rounded-xl',
   inset: 'rounded-md',
   dashed: 'rounded-lg',
   page: '',
+  'centered-page': '',
+  'share-recipient-highlight': 'rounded-lg',
+  'share-recipient': 'rounded-lg',
+  'branch-control': 'rounded-md',
+  'mcp-manage-row': 'rounded-md',
+  'advisor-window-clear': '',
+  'gallery-banner': 'rounded-lg',
+  'attached-action-card': 'rounded-lg',
+  'guest-nudge': 'rounded-xl',
   pane: '',
+  'app-pane': '',
+  'startup-pane': '',
   panel: '',
+  'tinted-panel': '',
+  'quiet-panel': '',
+  'review-card': 'rounded-lg',
+  'review-composer': 'rounded-lg',
+  'selection-comment-popover': 'rounded-lg',
+  'mode-picker': 'rounded-full',
+  'advisor-shadow': 'rounded-2xl',
+  'mobile-promo-panel': '',
+  'sign-in-card': 'rounded-2xl',
+  'share-status-list': 'rounded-lg',
+  'guidance-step': 'rounded-full',
+  'pairing-code': 'rounded-lg',
+  'notice-strip': '',
+  'diagram-toolbar': '',
+  'annotation-header': '',
+  'date-chip': 'rounded-full',
+  'worktree-panel-group': '',
+  'workflow-icon': 'rounded-lg',
+  'workflow-nav-current': '',
+  'workflow-nav-job': '',
+  'workflow-toolbar': '',
+  'transfer-row': '',
+  'metadata-row': '',
+  'workspace-panel': '',
   rail: '',
   well: '',
   section: '',
@@ -164,9 +362,38 @@ export const SURFACE_PADDING_CLASS: Readonly<Record<SurfacePadding, string>> = {
   compact: 'p-3',
   default: 'p-4',
   roomy: 'p-6',
+  'window-toolbar': 'px-5 py-2',
+  'diff-controls': 'px-1 pt-1',
+  'toolbar-trigger': 'py-1.5 pl-3 pr-1',
+  'file-overlap': 'px-3 pt-1 pb-3',
   'section-compact': 'px-3 py-2',
   'section-default': 'px-4 py-2',
   'dialog-footer': 'px-6 py-3',
+  'dialog-footer-medium': 'px-5 py-3',
+  'section-top': 'pt-4',
+  'section-top-tight': 'pt-2',
+  'titlebar-trailing': 'pr-2',
+  'menu-inset': 'p-1',
+  'picker-section': 'px-2 py-1.5',
+  'compact-toolbar': 'px-3 py-1.5',
+  'diagram-toolbar': 'px-2.5 py-1.5',
+  'board-header': 'px-2.5 py-2',
+  'workflow-nav-leading': 'pl-1.5',
+  'navigation-inset': 'pl-1',
+  'nested-tight': 'pl-2',
+  'nested-compact': 'pl-3',
+  nested: 'pl-4',
+  'underline-tight': 'pb-1',
+  'panel-actions': 'pt-3 px-4',
+  'dialog-header': 'px-6 py-2',
+  'form-footer': 'px-6 py-4',
+  'row-block': 'py-3',
+  'panel-heading': 'px-4 py-3',
+  'toolbar-tight': 'px-2',
+  'toolbar-compact': 'px-3',
+  'page-inline': 'px-4',
+  'safe-area-top': 'pt-[env(safe-area-inset-top)]',
+  'wide-trailing': 'md:pr-3',
 };
 
 type SurfaceAttributes = Omit<
@@ -179,6 +406,18 @@ export interface SurfaceProps extends SurfaceAttributes {
   readonly variant: SurfaceVariant;
   /** The element to render; `div` by default. */
   readonly as?: LayoutElement;
+  /** Width supplied by a resizable split-pane host. */
+  readonly paneWidth?: CSSProperties['width'];
+  /** Height measured by a native window host. */
+  readonly paneHeight?: CSSProperties['height'];
+  /** Basis of a resizable tray in a flex column. */
+  readonly paneBasis?: CSSProperties['flexBasis'];
+  /** Native titlebar clearance supplied by the window host. */
+  readonly nativeLeadingInset?: CSSProperties['paddingLeft'];
+  /** Desktop window-chrome hit testing. */
+  readonly dragRegion?: boolean;
+  /** Draw the shared keyboard-focus outline on a focusable surface. */
+  readonly focusRing?: boolean;
   readonly ref?: Ref<HTMLElement>;
   /** Keep private content protected when its raw wrapper becomes a Surface. */
   readonly replay?: 'block' | 'mask';
@@ -196,6 +435,8 @@ export interface SurfaceProps extends SurfaceAttributes {
    * a `Stack` or `Inline` inside.
    */
   readonly gap?: SpaceRole;
+  /** Direction of the layout when gap is set. */
+  readonly direction?: 'column' | 'row';
   /** The picked state; see {@link SURFACE_SELECTED_CLASS}. */
   readonly selected?: boolean;
   /** A clickable box; see {@link SURFACE_INTERACTIVE_CLASS}. */
@@ -215,6 +456,8 @@ export function surfaceClassName({
   extent = 'content',
   padding = 'none',
   gap,
+  direction,
+
   selected = false,
   interactive = false,
   boundary = 'none',
@@ -227,6 +470,7 @@ export function surfaceClassName({
   | 'extent'
   | 'padding'
   | 'gap'
+  | 'direction'
   | 'selected'
   | 'interactive'
   | 'boundary'
@@ -234,7 +478,9 @@ export function surfaceClassName({
   | 'className'
 >): string {
   return [
-    gap ? `flex flex-col ${SPACE_ROLE_GAP_CLASS[gap]}` : '',
+    gap
+      ? `flex${direction === 'row' ? '' : ' flex-col'} ${SPACE_ROLE_GAP_CLASS[gap]}`
+      : '',
     size === 'small' && SURFACE_RADIUS_CLASS[variant]
       ? SURFACE_SMALL_RADIUS_CLASS
       : size === 'drawer' && SURFACE_RADIUS_CLASS[variant]
@@ -243,6 +489,9 @@ export function surfaceClassName({
     selected ? SURFACE_SELECTED_CLASS : SURFACE_VARIANT_CLASS[variant],
     (variant === 'pane' ||
       variant === 'panel' ||
+      variant === 'tinted-panel' ||
+      variant === 'quiet-panel' ||
+      variant === 'workspace-panel' ||
       variant === 'rail' ||
       variant === 'well' ||
       variant === 'section') &&
@@ -271,10 +520,17 @@ export function surfaceClassName({
 export function Surface({
   as: Tag = 'div',
   variant,
+  paneWidth,
+  paneHeight,
+  paneBasis,
+  nativeLeadingInset,
+  dragRegion,
+  focusRing,
   size,
   extent,
   padding,
   gap,
+  direction,
   selected,
   interactive,
   boundary,
@@ -288,6 +544,18 @@ export function Surface({
     {
       ...rest,
       'data-surface': variant,
+      style:
+        paneWidth === undefined &&
+        paneHeight === undefined &&
+        paneBasis === undefined &&
+        nativeLeadingInset === undefined
+          ? undefined
+          : {
+              width: paneWidth,
+              height: paneHeight,
+              flexBasis: paneBasis,
+              paddingLeft: nativeLeadingInset,
+            },
       'data-selected': selected ? '' : undefined,
       className: surfaceClassName({
         variant,
@@ -295,11 +563,22 @@ export function Surface({
         extent,
         padding,
         gap,
+        direction,
         selected,
         interactive,
         boundary,
         replay,
-        className,
+        className: [
+          dragRegion === undefined
+            ? ''
+            : dragRegion
+              ? 'electron-drag'
+              : 'electron-no-drag',
+          focusRing ? 'focus-ring' : '',
+          className,
+        ]
+          .filter(Boolean)
+          .join(' '),
       }),
     },
     children,
@@ -307,6 +586,43 @@ export function Surface({
 }
 
 export type DividerOrientation = 'horizontal' | 'vertical';
+
+const STATUS_ILLUSTRATION_CLASS = {
+  confirmation: 'h-16 w-16',
+  profile: 'h-12 w-12 fg-accent-strong',
+  workers: 'mx-auto h-10 w-10 fg-secondary',
+  member: 'h-8 w-8 fg-secondary',
+  'section-heading': 'mt-0.5 h-9 w-9 shrink-0 fg-accent-strong',
+} as const;
+
+const STATUS_ILLUSTRATION_TONE = {
+  success: 'bg-success-subtle',
+  warning: 'bg-warning-subtle',
+  subtle: 'bg-subtle',
+  accent: 'bg-accent-subtle',
+  neutral: 'bg-secondary',
+} as const;
+
+/** A centered icon for a confirmation, empty state, or identity row. */
+export function StatusIllustration({
+  tone,
+  variant = 'confirmation',
+  children,
+}: {
+  readonly tone: keyof typeof STATUS_ILLUSTRATION_TONE;
+  readonly variant?: keyof typeof STATUS_ILLUSTRATION_CLASS;
+  readonly children: ReactNode;
+}): JSX.Element {
+  const Tag =
+    variant === 'confirmation' || variant === 'workers' ? 'div' : 'span';
+  return (
+    <Tag
+      className={`flex items-center justify-center rounded-full ${STATUS_ILLUSTRATION_CLASS[variant]} ${STATUS_ILLUSTRATION_TONE[tone]}`}
+    >
+      {children}
+    </Tag>
+  );
+}
 
 export interface DividerProps {
   /** `horizontal` (a full-width line) by default. */
@@ -347,5 +663,56 @@ export function Divider({
       aria-orientation={orientation}
       className={className ? `${line} ${className}` : line}
     />
+  );
+}
+
+/** Desktop page chrome whose pinned edge fades without changing row geometry. */
+export function PageTitlebarSurface({
+  pinned,
+  scrolled,
+  divider,
+  height,
+  dragRegion,
+  className,
+  children,
+  testId,
+}: {
+  readonly pinned: boolean;
+  readonly scrolled: boolean;
+  readonly divider: boolean;
+  readonly height: 'bar' | 'breadcrumb' | 'content';
+  readonly dragRegion: boolean;
+  readonly className?: string;
+  readonly children: ReactNode;
+  readonly testId?: string;
+}): JSX.Element {
+  const placement = [
+    'flex shrink-0 items-stretch',
+    dragRegion ? 'electron-drag' : '',
+    pinned
+      ? "sticky top-0 after:pointer-events-none after:absolute after:inset-x-0 after:bottom-0 after:h-[var(--border-hairline)] after:bg-[var(--line-base)] after:transition-opacity after:duration-150 after:content-['']"
+      : '',
+    pinned ? (scrolled ? 'after:opacity-100' : 'after:opacity-0') : '',
+    className,
+  ]
+    .filter(Boolean)
+    .join(' ');
+  return (
+    <div
+      data-testid={testId}
+      className={surfaceClassName({
+        variant: pinned ? 'pane' : 'section',
+        boundary: divider ? 'bottom' : undefined,
+        extent:
+          height === 'bar'
+            ? 'portal-toolbar'
+            : height === 'breadcrumb'
+              ? 'breadcrumb-toolbar'
+              : undefined,
+        className: placement,
+      })}
+    >
+      {children}
+    </div>
   );
 }

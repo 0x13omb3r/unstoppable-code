@@ -26,15 +26,13 @@ import {
 } from '@/lib/openBillingPage';
 import {
   AI_CREDITS_PURCHASE_LABEL,
-  AI_CREDITS_REOPEN_BILLING_LABEL,
-  AiCreditsArrivedNotice,
-  UsageLimitNotice,
   NoticeButton,
   usageLimitModelSwitchActionLabel,
   usageLimitModelSwitchFailureDetail,
   usageLimitModelSwitchMessage,
   usageLimitModelSwitchPurchaseMessage,
 } from '@canopy/ui-shared/components';
+import { CreditsNotice, type CreditsNoticeOwner } from '@canopy/ui-app/credits';
 import { formatUsageLimitTimeLabel } from '@/lib/usage-limit-time-label';
 import type { CreditsModelRoutability } from '@/lib/chatBillingFramework';
 import type { CreditsModelSwitchResult } from '@/lib/creditsModelSwitch';
@@ -87,6 +85,15 @@ const USE_CREDITS_NOW_SCOPE =
   "Spends AI Credits in this chat only. Other chats aren't affected.";
 const ALWAYS_USE_CREDITS_SCOPE =
   'Spends AI Credits automatically in every chat whenever a usage limit is hit.';
+
+/** An organization member whose pool needs its admin. */
+const CONTACT_ADMIN_OWNER: CreditsNoticeOwner = {
+  kind: 'organization',
+  canFund: false,
+  creditPool: true,
+};
+/** Anyone this chat's coverage read lets buy, or who is mid-purchase. */
+const BUYER_OWNER: CreditsNoticeOwner = { kind: 'personal' };
 
 /**
  * Worktree-only "Schedule Resume" affordance. Passed in by surfaces that support
@@ -685,19 +692,6 @@ export function AiCreditsUsageLimitBanner({
     !showPricing &&
     !showContactAdmin &&
     scheduledFor === null;
-  const showActionRow =
-    showOffer ||
-    showContactAdmin ||
-    showPricing ||
-    showScheduleResume ||
-    showUseAiCredits ||
-    showModelSwitch;
-  const hasActionButton =
-    showScheduleResume ||
-    showOffer ||
-    showPricing ||
-    showUseAiCredits ||
-    showModelSwitch;
   // A yes/no question about spending credits ends the message whenever a
   // button can say yes, so every label only has to answer it: the resume
   // button becomes the "no" (CAN-5159).
@@ -816,13 +810,11 @@ export function AiCreditsUsageLimitBanner({
   const resumeLabel = `${asksToUseCredits ? 'No, resume' : 'Resume'} at ${
     resetsLabel ?? 'reset'
   }`;
-  const actions = hasActionButton ? (
-    <span
-      data-testid={
-        showOffer ? 'chat-input-usage-limit-ai-credits-offer' : undefined
-      }
-      className="contents"
-    >
+  // The host's own answers to the question, ahead of the credits actions.
+  const hasHostActions =
+    showScheduleResume || showOffer || showUseAiCredits || showModelSwitch;
+  const hostActions = hasHostActions ? (
+    <>
       {showScheduleResume && scheduleResume && (
         <NoticeButton
           variant="secondary"
@@ -887,99 +879,102 @@ export function AiCreditsUsageLimitBanner({
           {usageLimitModelSwitchActionLabel(switchTargetLabel)}
         </NoticeButton>
       )}
-      {showReopenBilling && (
-        <NoticeButton
-          variant="secondary"
-          onClick={(): void => handoffControls?.onReopenBilling?.()}
-          busy={handoffControls?.reopenPending === true}
-          disabled={
-            handoffControls?.onReopenBilling === undefined ||
-            handoffControls.reopenDisabled
-          }
-          // Keep focus where it was (often the composer), like the CTA.
-          onMouseDown={(e): void => e.preventDefault()}
-          data-testid="chat-input-usage-limit-reopen-billing"
-        >
-          {AI_CREDITS_REOPEN_BILLING_LABEL}
-        </NoticeButton>
-      )}
-      {showPricing && (
-        <GetAiCreditsCta
-          label={AI_CREDITS_PURCHASE_LABEL}
-          {...(creditsScope ? { aiCreditsScope: creditsScope } : {})}
-          // NOT `enableOnQuota`. That writes the GLOBAL
-          // `aiCreditsRoutingMode: 'on-quota'` preference, which only the
-          // explicit Always use credits button may do. Buying credits here is
-          // consent to spend them in THIS chat (CAN-5159): once the arrival
-          // settles, the auto-route above routes this chat and the card
-          // confirms it. It never opts the user into automatic credit spend
-          // on every future limit, in every chat.
-          //
-          // Always the browser, even when Settings → Billing could open
-          // in-app: the purchase stays tracked in this waiting chat, so the
-          // auto-route above fires without a second click. Settings would
-          // clear the hand-off and the offer would ask again.
-          //
-          // The CTA already fires `announceAiCreditsChanged()` on coverage,
-          // which re-reads availability. Re-reading is all this needs to do.
-          onCovered={refreshCoverage}
-          buttonVariant="primary"
-          buttonSize="sm"
-          handoffLayout="compact"
-          onHandoffChange={reportHandoff}
-          billingDestination="browser"
-          confirmArrival="usage-limit"
-          persistHandoffFor={target}
-          dataTestId="chat-input-usage-limit-view-plans"
-        />
-      )}
-    </span>
+    </>
   ) : undefined;
+
+  // The tracked browser hand-off (CAN-5534): the notice shows it for the
+  // purchase and, mid-purchase, for Check again.
+  const purchaseControl = (
+    <GetAiCreditsCta
+      label={AI_CREDITS_PURCHASE_LABEL}
+      {...(creditsScope ? { aiCreditsScope: creditsScope } : {})}
+      // NOT `enableOnQuota`. That writes the GLOBAL
+      // `aiCreditsRoutingMode: 'on-quota'` preference, which only the
+      // explicit Always use credits button may do. Buying credits here is
+      // consent to spend them in THIS chat (CAN-5159): once the arrival
+      // settles, the auto-route above routes this chat and the card
+      // confirms it. It never opts the user into automatic credit spend
+      // on every future limit, in every chat.
+      //
+      // Always the browser, even when Settings → Billing could open
+      // in-app: the purchase stays tracked in this waiting chat, so the
+      // auto-route above fires without a second click. Settings would
+      // clear the hand-off and the offer would ask again.
+      //
+      // The CTA already fires `announceAiCreditsChanged()` on coverage,
+      // which re-reads availability. Re-reading is all this needs to do.
+      onCovered={refreshCoverage}
+      buttonVariant="primary"
+      buttonSize="sm"
+      handoffLayout="compact"
+      onHandoffChange={reportHandoff}
+      billingDestination="browser"
+      confirmArrival="usage-limit"
+      persistHandoffFor={target}
+      dataTestId="chat-input-usage-limit-view-plans"
+    />
+  );
+
+  // The coverage read feeds the notice's prompt: an organization that needs
+  // its admin offers no purchase, and a purchase is offered only when this
+  // chat's owner can't spend credits yet, or to finish one in progress.
+  const owner = showContactAdmin ? CONTACT_ADMIN_OWNER : BUYER_OWNER;
 
   // The same continuation and actions under a positive title once credits
   // bought here are available. Generic until the balance read settles, so
   // the title changes at most once.
-  if (arrivalId !== null) {
-    return (
-      <AiCreditsArrivedNotice
-        ref={attachNotice}
-        addedCredits={arrivalEvidence?.addedCredits ?? null}
-        balanceCredits={arrivalEvidence?.balanceCredits ?? null}
-        data-testid="chat-input-usage-limit-banner"
-        tabIndex={-1}
-        onDismiss={dismiss}
-        dismissTestId="chat-input-usage-limit-dismiss"
-        {...(detail !== undefined ? { detail } : {})}
-        {...(showActionRow ? { actions, actionsPlacement } : {})}
-      >
-        {continuation}
-      </AiCreditsArrivedNotice>
-    );
-  }
-
   return (
-    <UsageLimitNotice
+    <CreditsNotice
+      condition="quota_limit"
+      owner={owner}
+      placement="composer"
+      purchase={{ kind: 'host', mode: 'handoff', control: purchaseControl }}
+      purchaseNeeded={showPurchase}
+      pending={
+        visibleHandoff === null
+          ? null
+          : {
+              feedback: visibleHandoff.feedback,
+              // Shown for the whole hand-off except after a failed check;
+              // disabled until the CTA reports controls for this chat.
+              reopenBilling: {
+                ...(handoffControls?.onReopenBilling !== undefined
+                  ? { onReopen: handoffControls.onReopenBilling }
+                  : {}),
+                pending: handoffControls?.reopenPending === true,
+                disabled: handoffControls?.reopenDisabled === true,
+                testId: 'chat-input-usage-limit-reopen-billing',
+              },
+            }
+      }
+      arrived={
+        arrivalId === null
+          ? null
+          : {
+              addedCredits: arrivalEvidence?.addedCredits ?? null,
+              balanceCredits: arrivalEvidence?.balanceCredits ?? null,
+            }
+      }
       provider={banner.provider === 'codex' ? 'codex' : 'claude'}
-      // Mid-purchase the step the user is on replaces the limit they already
-      // acted on, as on every purchase path (CAN-5160).
-      {...(handoffCopy !== null && visibleHandoff !== null
-        ? {
-            purchaseStep: {
-              title: handoffCopy.title,
-              failed: visibleHandoff.feedback === 'check-failed',
-            },
-          }
-        : {})}
+      secondaryAction={hostActions}
+      actionsGroup={{
+        ...(showOffer
+          ? { testId: 'chat-input-usage-limit-ai-credits-offer' }
+          : {}),
+      }}
+      actionsPlacement={actionsPlacement}
       ref={attachNotice}
       data-testid="chat-input-usage-limit-banner"
       tabIndex={-1}
       onDismiss={dismiss}
-      dismissLabel="Dismiss usage limit notice"
+      // The arrival keeps its own dismiss label.
+      {...(arrivalId === null
+        ? { dismissLabel: 'Dismiss usage limit notice' }
+        : {})}
       dismissTestId="chat-input-usage-limit-dismiss"
       {...(detail !== undefined ? { detail } : {})}
-      {...(showActionRow ? { actions, actionsPlacement } : {})}
     >
       {continuation}
-    </UsageLimitNotice>
+    </CreditsNotice>
   );
 }

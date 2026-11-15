@@ -1222,15 +1222,15 @@ export function ComposerStatesGallery(): JSX.Element {
                     <figcaption className="text-xs fg-secondary">
                       {state.title}
                     </figcaption>
-                    <div
+                    <Surface
+                      variant="inset"
                       data-gallery-capture
-                      className="relative overflow-hidden rounded-lg bg-base"
-                      style={{
-                        width:
-                          'width' in state && state.width !== undefined
-                            ? state.width
-                            : PANEL_WIDTH,
-                      }}
+                      className="relative overflow-hidden"
+                      paneWidth={
+                        'width' in state && state.width !== undefined
+                          ? state.width
+                          : PANEL_WIDTH
+                      }
                     >
                       {'readOnly' in state ? (
                         <ReadOnlyComposer stale={state.readOnly === 'stale'} />
@@ -1242,7 +1242,7 @@ export function ComposerStatesGallery(): JSX.Element {
                           {state.dragging ? <ChatDropOverlay /> : null}
                         </>
                       )}
-                    </div>
+                    </Surface>
                   </figure>
                 ))}
               </div>

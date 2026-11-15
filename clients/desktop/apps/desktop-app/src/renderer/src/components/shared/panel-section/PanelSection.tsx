@@ -1,3 +1,4 @@
+import { Surface } from '@canopy/ui-shared/components';
 import {
   isValidElement,
   useContext,
@@ -139,12 +140,8 @@ export function PanelSection({
       void _tone;
       void _tooltipLabel;
       return (
-        <div
-          className={
-            showBodyWithActionCard
-              ? 'overflow-hidden rounded-lg bg-tertiary shadow-sm'
-              : undefined
-          }
+        <Surface
+          variant={showBodyWithActionCard ? 'attached-action-card' : 'section'}
           data-testid="action-card-container"
         >
           <div className="w-full" data-testid="body-only-section-action-card">
@@ -165,7 +162,7 @@ export function PanelSection({
           >
             {children}
           </div>
-        </div>
+        </Surface>
       );
     }
     let resolvedHeaderAction = headerAction;

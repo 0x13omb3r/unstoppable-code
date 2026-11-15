@@ -77,6 +77,7 @@ export interface CatalogPublishOptions {
 export interface CatalogPublishPackage {
   analysisId: string;
   selectedOptionalResourceIds: readonly string[];
+  keepInStep: boolean;
 }
 
 /** What an install did for each requested provider. */
@@ -150,6 +151,15 @@ export interface CoreCatalogHost {
     pkg: CatalogPublishPackage,
     options?: CatalogPublishOptions,
   ): Promise<CatalogPublication>;
+  /**
+   * Deletes the account's private cloud copy of a skill and its local link
+   * (CAN-6176, D10). `expectedRemoteVersion` is the content hash the caller
+   * saw, or null for whatever is there.
+   */
+  unpublishSkill?(
+    publicationId: string,
+    expectedRemoteVersion: string | null,
+  ): Promise<void>;
 }
 
 function defineCause(error: Error, cause: unknown): void {
@@ -200,6 +210,9 @@ export type CatalogHostRefusal =
   | 'publish-package-blocked'
   | 'publish-name-taken'
   | 'publish-account-mismatch'
+  | 'unpublish-not-found'
+  | 'unpublish-shared'
+  | 'unpublish-version-moved'
   | 'workspace-revision-conflict'
   | 'workspace-not-found'
   | 'workspace-unavailable'

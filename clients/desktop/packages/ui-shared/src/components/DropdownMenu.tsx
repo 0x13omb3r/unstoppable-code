@@ -307,6 +307,7 @@ DropdownMenuItem.displayName = 'DropdownMenuItem';
 
 export interface DropdownMenuLinkItemProps extends AnchorHTMLAttributes<HTMLAnchorElement> {
   readonly href: string;
+  readonly touchTarget?: boolean;
 }
 
 /**
@@ -317,7 +318,13 @@ export const DropdownMenuLinkItem = forwardRef<
   HTMLAnchorElement,
   DropdownMenuLinkItemProps
 >(function DropdownMenuLinkItem(
-  { className = '', role = 'menuitem', children, ...props },
+  {
+    className = '',
+    role = 'menuitem',
+    children,
+    touchTarget = false,
+    ...props
+  },
   ref,
 ): JSX.Element {
   const rowStyle = useContext(DropdownMenuRowStyleContext);
@@ -328,7 +335,7 @@ export const DropdownMenuLinkItem = forwardRef<
     <a
       ref={ref}
       role={role}
-      className={`canopy-dropdown-menu-item outline-none flex h-8 w-full items-center gap-2 ${cornersClassName} px-2 text-left ${textClassName} font-normal fg-primary transition-colors hover:bg-subtle focus-visible:bg-subtle ${className}`}
+      className={`canopy-dropdown-menu-item outline-none flex h-8 w-full items-center gap-2 ${cornersClassName} px-2 text-left ${textClassName} font-normal fg-primary transition-colors hover:bg-subtle focus-visible:bg-subtle ${touchTarget ? 'min-h-11' : ''} ${className}`}
       {...props}
     >
       <PlainRowContext.Provider value={true}>

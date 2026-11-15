@@ -18,6 +18,7 @@ import type {
   SharedContainerStartPage,
 } from '@canopy/protocol/shared-containers';
 import {
+  captureWorktreeBrowserStateRollback,
   loadWorktreeBrowserState,
   saveWorktreeBrowserState,
 } from '../browser/browser-persistence';
@@ -45,6 +46,7 @@ interface ProjectionContext {
   nextPanel: number;
   nextGroup: number;
   nextBrowser: number;
+  allowBrowsers: boolean;
 }
 
 type SharedContainerViewerPublishedPanelNode =
@@ -169,6 +171,7 @@ function localPanel(
     };
   }
   if (panel.kind === 'browser') {
+    if (!context.allowBrowsers) return null;
     if ('url' in panel) {
       const browserId = stableUuid(
         `${context.containerId}\0${context.nextBrowser++}\0${panel.url}`,
@@ -381,6 +384,13 @@ export async function applyInitialSharedContainerViewerLayout(input: {
     nextPanel: 0,
     nextGroup: 0,
     nextBrowser: 0,
+    // Drop only browser panels when seeding would overwrite fallback evidence.
+    allowBrowsers:
+      reset ||
+      loadWorktreeBrowserState(
+        SHARED_CONTAINER_VIEWER_PROJECT_ID,
+        input.containerId,
+      ).status !== 'fallback',
   };
   const root = localNode(input.layout.root, context);
   if (!root) return EMPTY_APPLIED_LAYOUT;
@@ -398,14 +408,12 @@ export async function applyInitialSharedContainerViewerLayout(input: {
     activeGroupId,
     mostRecentActiveGroupIds: [activeGroupId],
   };
-  // Captured before any write: a failed reset restores what the recipient
-  // had rather than leaving them with no layout.
-  const previousBrowserState = reset
-    ? loadWorktreeBrowserState(
+  const restoreBrowserState = reset
+    ? await captureWorktreeBrowserStateRollback(
         SHARED_CONTAINER_VIEWER_PROJECT_ID,
         input.containerId,
-      ).state
-    : null;
+      )
+    : undefined;
   const restoreLayout = (): void => {
     if (previousLayout) {
       panelLayoutPersistenceStore.saveWorktreeLayout(
@@ -421,18 +429,11 @@ export async function applyInitialSharedContainerViewerLayout(input: {
     );
   };
   const rollback = async (): Promise<void> => {
-    restoreLayout();
-    if (!reset) return;
-    await saveWorktreeBrowserState({
-      projectId: SHARED_CONTAINER_VIEWER_PROJECT_ID,
-      worktreeId: input.containerId,
-      state: previousBrowserState ?? {
-        version: 2,
-        browsers: [],
-        browserOrder: [],
-        activeBrowserId: null,
-      },
-    });
+    try {
+      restoreLayout();
+    } finally {
+      await restoreBrowserState?.();
+    }
   };
   // Preserve the established first-open timing: the renderer can ask for its
   // layout as soon as replica open settles. This save is provisional until

@@ -1,4 +1,4 @@
-import type { JSX, ReactNode } from 'react';
+import type { ComponentPropsWithoutRef, JSX, ReactNode } from 'react';
 import { ChevronDownMediumIcon } from '../icons/AppIcons';
 
 export interface WorkspaceIconDisclosureSwapProps {
@@ -49,5 +49,17 @@ export function WorkspaceIconDisclosureSwap({
         }`}
       />
     </span>
+  );
+}
+
+/** Non-interactive counterpart to the workspace icon button. */
+export function WorkspaceIconSlot(
+  props: Omit<ComponentPropsWithoutRef<'span'>, 'className'>,
+): JSX.Element {
+  return (
+    <span
+      {...props}
+      className="relative inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full"
+    />
   );
 }

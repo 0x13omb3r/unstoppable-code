@@ -31,6 +31,11 @@ export interface ClaudeModPluginInput {
    * or it has no install. It is still turned off, with no skipped record.
    */
   notLoaded?: true;
+  /**
+   * A Mod Claude wrote in a session: the `<name>@inline` ids Claude loads it
+   * under, turned off in place of `pluginId` (Canopy's `<name>@claude-session`).
+   */
+  inlineIds?: readonly string[];
 }
 
 export type ClaudeModAuthority = 'ok' | 'absent' | 'unreadable';
@@ -49,6 +54,8 @@ export interface ClaudeModAdmissionInput {
    * when a session resumes. Listed while every Mod is off, to turn them off.
    */
   sessionModIds?: readonly string[];
+  /** Mods Claude wrote in the session this launch resumes, each admitted like any Mod. */
+  sessionMods?: readonly ClaudeModPluginInput[];
 }
 
 /**
@@ -709,13 +716,15 @@ function listPluginFolders(dir: string): string[] {
 }
 
 /**
- * The ids Claude Code 2.1.310 loads session-written Mods under when a session
- * resumes: `<name>@inline` for each folder in `<config>/dev-mods/<session>/`.
- * Both the folder and manifest names are listed; an extra id only adds a
- * disable.
+ * Mods Claude wrote in sessions, `<config>/dev-mods/<session>/<mod>/`, or only
+ * `sessionId`'s. Each is named as its manifest (else its folder) names it, as
+ * `<name>@claude-session`, with every `<name>@inline` id Claude may load it
+ * under when that session starts again; an extra id only adds a disable.
  */
-export function listClaudeSessionModIds(claudeConfigDir: string): string[] {
-  const ids = new Set<string>();
+export function listClaudeSessionMods(
+  claudeConfigDir: string,
+  sessionId?: string,
+): (ClaudeModPluginInput & { inlineIds: readonly string[] })[] {
   const subfolders = (folder: string): string[] => {
     try {
       return readdirSync(folder, { withFileTypes: true })
@@ -726,16 +735,53 @@ export function listClaudeSessionModIds(claudeConfigDir: string): string[] {
     }
   };
   const root = path.join(claudeConfigDir, 'dev-mods');
-  for (const session of subfolders(root)) {
-    for (const folder of subfolders(path.join(root, session))) {
-      // Named as Claude names it; an unreadable size refuses the launch.
-      const manifestName = claudeManifestName(path.join(root, session, folder));
-      for (const name of [folder, manifestName]) {
-        if (name && /^[^@\s/\\]+$/.test(name)) ids.add(`${name}@inline`);
+  if (sessionId === undefined) {
+    // A session this can't read can't start (its own launch is refused), and
+    // its Mods load nowhere else, so it never blocks the other sessions.
+    return subfolders(root).flatMap((session) => {
+      try {
+        return listClaudeSessionMods(claudeConfigDir, session);
+      } catch {
+        return [];
       }
-    }
+    });
   }
-  return Array.from(ids).sort();
+  if (!/^[\w-][\w.-]*$/.test(sessionId)) return [];
+  const mods: (ClaudeModPluginInput & { inlineIds: readonly string[] })[] = [];
+  for (const folder of subfolders(path.join(root, sessionId))) {
+    const dir = path.join(root, sessionId, folder);
+    // Named as Claude names it; an unreadable size refuses the launch.
+    const names = [claudeManifestName(dir), folder].filter(
+      (name): name is string => !!name && /^[^@\s/\\]+$/.test(name),
+    );
+    const name = names[0];
+    if (name === undefined) {
+      throw new ClaudeModUncheckablePluginError(
+        `Claude can't start: the Mod Claude wrote in ${dir} has a name this app can't check. Remove that folder.`,
+      );
+    }
+    let installPath: string | null = null;
+    try {
+      installPath = realpathSync(dir);
+    } catch {
+      // The evaluator fails closed on a Mod it cannot read.
+    }
+    mods.push({
+      pluginId: `${name}@claude-session`,
+      installPath,
+      inlineIds: Array.from(new Set(names.map((each) => `${each}@inline`))),
+    });
+  }
+  return mods;
+}
+
+/** Every session-written Mod's `<name>@inline` ids, turned off while Mods are off. */
+export function listClaudeSessionModIds(claudeConfigDir: string): string[] {
+  return Array.from(
+    new Set(
+      listClaudeSessionMods(claudeConfigDir).flatMap((mod) => mod.inlineIds),
+    ),
+  ).sort();
 }
 
 /**
@@ -865,7 +911,11 @@ export function evaluateClaudeModAdmission(
     if (!isSafePluginIdentity(plugin.pluginId)) {
       // An id the skipped records cannot name is still kept from loading.
       if (source === 'selected') stripSelectedPlugins.push(plugin);
-      else enabledPlugins[plugin.pluginId] = false;
+      else {
+        for (const id of plugin.inlineIds ?? [plugin.pluginId]) {
+          enabledPlugins[id] = false;
+        }
+      }
       return;
     }
     const failClosed = (
@@ -873,7 +923,11 @@ export function evaluateClaudeModAdmission(
       digest: string | null,
     ): void => {
       if (source === 'selected') stripSelectedPlugins.push(plugin);
-      else if (!plugin.pluginId.endsWith('@inline')) {
+      else if (plugin.inlineIds) {
+        // Shared with a selected plugin of the same name, which goes off too.
+        for (const inlineId of plugin.inlineIds)
+          enabledPlugins[inlineId] = false;
+      } else if (!plugin.pluginId.endsWith('@inline')) {
         enabledPlugins[plugin.pluginId] = false;
       }
       recordSkipped(plugin, source, reason, digest);
@@ -924,6 +978,7 @@ export function evaluateClaudeModAdmission(
 
   for (const plugin of input.selectedPlugins) checkPlugin(plugin, 'selected');
   for (const plugin of input.ambientPlugins) checkPlugin(plugin, 'ambient');
+  for (const plugin of input.sessionMods ?? []) checkPlugin(plugin, 'ambient');
   // A session Mod keeps its own question while Mods are on (decision 65).
   if (input.modsDisabled || input.authority === 'unreadable') {
     for (const pluginId of input.sessionModIds ?? []) {

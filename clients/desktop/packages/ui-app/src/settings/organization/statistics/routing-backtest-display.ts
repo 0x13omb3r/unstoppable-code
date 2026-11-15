@@ -195,7 +195,7 @@ export function unavailableMessage(
 export function failureMessage(code: ModelRoutingBacktestFailureCode): string {
   switch (code) {
     case 'insufficient_credits':
-      return 'Ran out of AI Credits. Add credits to finish; turns already replayed aren’t charged again.';
+      return 'Ran out of AI Credits. Buy AI Credits to finish; turns already replayed aren’t charged again.';
     case 'policy_blocked':
       return 'Your organization’s model settings turn off model routing.';
     case 'transcripts_disabled':
@@ -217,7 +217,7 @@ export function createErrorMessage(
 ): string {
   switch (code) {
     case 'insufficient_credits':
-      return 'Add AI Credits to run this estimate.';
+      return 'Not enough AI Credits to run this estimate.';
     case 'daily_limit':
       return `You’ve run ${MODEL_ROUTING_BACKTEST_DAILY_RUN_LIMIT} estimates today. Try again tomorrow.`;
     case 'full_mode_unavailable':

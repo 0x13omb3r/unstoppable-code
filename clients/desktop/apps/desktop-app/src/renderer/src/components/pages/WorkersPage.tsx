@@ -1,8 +1,12 @@
+import {
+  WorkerCardSurface,
+  WorkerTerminalSurface,
+} from '@canopy/ui-shared/components';
+import { StatusIllustration } from '@canopy/ui-shared/components';
 import { Badge, type BadgeTone } from '@canopy/ui-shared/components/Badge';
 import { StatusGlyph } from '@canopy/ui-shared/components/StatusGlyph';
 import { Stack, Button, Heading, Surface } from '@canopy/ui-shared/components';
 import { type JSX, useCallback, useEffect, useMemo, useState } from 'react';
-import { POSTHOG_REPLAY_BLOCK_CLASS } from '@canopy/desktop-instrumentation/posthog-replay-privacy';
 import { PageTitlebar } from '../shared/PageTitlebar';
 import { PageContent } from '../shared/PageContent';
 import { PageHeader } from '@canopy/ui-shared/components/PageHeader';
@@ -180,16 +184,11 @@ function WorkerCard({
     testIdSuffix ? `${base}-${testIdSuffix}` : base;
 
   return (
-    <div
+    <WorkerCardSurface
       data-testid={testId(`worker-card-${worker.workerId}`)}
       data-worker-status={worker.status}
-      className={`flex flex-col overflow-hidden transition-shadow ${
-        modalLayout
-          ? 'min-h-0 flex-1 rounded-none border-0 bg-transparent'
-          : `rounded-xl border bg-card/60 ${
-              highlighted ? 'border-line-accent ring-2 ring-line-accent/60' : ''
-            }`
-      }`}
+      modal={modalLayout}
+      highlighted={highlighted}
     >
       <div
         className={`flex min-h-0 flex-col gap-3 ${modalLayout ? 'flex-1' : ''}`}
@@ -271,14 +270,14 @@ function WorkerCard({
         {compact ? (
           <div />
         ) : (
-          <div
+          <WorkerTerminalSurface
             // The host paints the terminal's own canvas color, so no strip of
             // page surface shows beside a partially filled xterm row. There is
             // no theme role for it: the terminal is this dark in both modes,
             // and `bg-inverse` would turn the host white in dark mode.
             // The block class keeps the worker's prompt and output out of
             // session replay.
-            className={`${POSTHOG_REPLAY_BLOCK_CLASS} flex min-h-0 flex-col border-y ${terminalClassName}`}
+            layout={terminalClassName}
             style={{ backgroundColor: TERMINAL_BG_COLOR }}
             data-testid={testId(`worker-terminal-${worker.workerId}`)}
           >
@@ -308,7 +307,7 @@ function WorkerCard({
                 Starting…
               </div>
             )}
-          </div>
+          </WorkerTerminalSurface>
         )}
       </div>
       <div className="flex items-center justify-between gap-3 px-4 py-3">
@@ -344,7 +343,7 @@ function WorkerCard({
           </div>
         )}
       </div>
-    </div>
+    </WorkerCardSurface>
   );
 }
 
@@ -542,9 +541,9 @@ export function WorkersPage(): JSX.Element {
               data-testid="workers-empty-state"
             >
               <div className="flex flex-col gap-4 px-6 py-12 text-center">
-                <div className="mx-auto flex h-10 w-10 items-center justify-center rounded-full bg-secondary fg-secondary">
+                <StatusIllustration variant="workers" tone="neutral">
                   <ClaudeLogo width={18} height={18} />
-                </div>
+                </StatusIllustration>
                 <Stack gap="tight">
                   <Heading level={2} variant="title">
                     No active workers

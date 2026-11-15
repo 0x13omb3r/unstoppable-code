@@ -9,7 +9,6 @@ export {
   useSettingsHost,
   useSettingsNavigation,
   useSettingsPathname,
-  useSettingsPaymentHandoffAvailable,
   useSettingsPrivacy,
   useSettingsRouter,
   useSettingsScrollElement,

@@ -431,7 +431,7 @@ async function publishPortalWorktreeSetupStatus(
  * back to a workspace-id-only event (renderer does a debounced silent reload)
  * if the list cannot be re-read.
  */
-async function broadcastWorktreeListToRenderer(
+export async function broadcastWorktreeListToRenderer(
   context: PortalAdapterContext,
   workspaceId: string,
 ): Promise<void> {

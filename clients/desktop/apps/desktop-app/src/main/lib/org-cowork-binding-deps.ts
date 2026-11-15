@@ -35,6 +35,11 @@ export type OrgDefaultCoworkEligibility = 'eligible' | 'ineligible';
 export type OrgMemberCodeEligibility = 'eligible' | 'ineligible';
 
 const permanentlyIneligibleOrganizations = new Set<string>();
+/** A ready default Chats workspace answers repeat listings this long (CAN-6096). */
+const PROVISIONED_TTL_MS = 2 * 60_000;
+const provisioning = new Map<string, Promise<void>>();
+const provisionedAt = new Map<string, number>();
+let provisioningGeneration = 0;
 let binding: OrgCoworkBinding | undefined;
 let installed = false;
 
@@ -245,14 +250,40 @@ export async function ensureOrgDefaultCoworkWorkspace(
   }
 }
 
-/** Fire-and-forget provisioning used by startup, context switches, and lists. */
+function forgetProvisioning(): void {
+  provisioningGeneration += 1;
+  provisioning.clear();
+  provisionedAt.clear();
+}
+
+/**
+ * Fire-and-forget provisioning used by startup, context switches, and lists.
+ * Concurrent starts share one attempt and a success answers repeats for
+ * {@link PROVISIONED_TTL_MS}; a failure is never remembered.
+ */
 export function startOrgDefaultCoworkProvisioning(
   organizationId: string,
 ): Promise<void> {
-  return ensureOrgDefaultCoworkWorkspace(organizationId).then(
-    () => undefined,
-    () => undefined,
-  );
+  const inFlight = provisioning.get(organizationId);
+  if (inFlight) return inFlight;
+  const readyAt = provisionedAt.get(organizationId);
+  if (readyAt !== undefined && Date.now() - readyAt < PROVISIONED_TTL_MS)
+    return Promise.resolve();
+  const generation = provisioningGeneration;
+  const attempt = ensureOrgDefaultCoworkWorkspace(organizationId)
+    .then(
+      () => {
+        if (generation === provisioningGeneration)
+          provisionedAt.set(organizationId, Date.now());
+      },
+      () => undefined,
+    )
+    .finally(() => {
+      if (provisioning.get(organizationId) === attempt)
+        provisioning.delete(organizationId);
+    });
+  provisioning.set(organizationId, attempt);
+  return attempt;
 }
 
 export function installOrgDefaultCoworkProvisioning(): void {
@@ -273,6 +304,7 @@ export function installOrgDefaultCoworkProvisioning(): void {
     if (state.reason === 'account-change') {
       permanentlyIneligibleOrganizations.clear();
     }
+    forgetProvisioning();
     startForContext(state.context);
   });
 }
@@ -281,4 +313,5 @@ export function resetOrgCoworkBindingForTests(): void {
   binding = undefined;
   installed = false;
   permanentlyIneligibleOrganizations.clear();
+  forgetProvisioning();
 }

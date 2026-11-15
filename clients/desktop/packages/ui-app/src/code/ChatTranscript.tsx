@@ -1,5 +1,6 @@
 'use client';
 
+import { TranscriptViewport } from '@canopy/ui-shared/components';
 import type { CanopyClient } from '@canopy/app-core';
 import {
   foldToolResultsIntoToolUses,
@@ -59,6 +60,7 @@ import {
 } from './ChatPartView';
 import { summarizeTranscriptPrompts } from './sent-prompt-summary';
 import { REPLAY_BLOCK_CLASS } from '@canopy/ui-shared/lib/replay-privacy';
+import { TurnNotices, type ChatTurnNotice } from './TurnNotices';
 
 /**
  * Presentational chat transcript: renders the turn groups (via
@@ -98,6 +100,11 @@ export interface ChatTranscriptProps {
    * persists). Omitted by hosts without the `turnFeedback` capability.
    */
   readonly renderTurnFeedback?: (localMessageId: string) => ReactNode;
+  /**
+   * The host's notes under each turn, by the turn's `userMessageId`
+   * (CAN-6176). Passed only by a host that keeps notes on its own turns.
+   */
+  readonly turnNotices?: Readonly<Record<string, readonly ChatTurnNotice[]>>;
   /** Host-owned action rendered beside the latest turn only. */
   readonly renderLatestTurnAction?: (context: {
     readonly disabled: boolean;
@@ -281,6 +288,7 @@ export function ChatTranscript({
   appIcon,
   emptyState,
   renderTurnFeedback,
+  turnNotices,
   renderLatestTurnAction,
   footerSlot,
   footerStatus,
@@ -768,12 +776,11 @@ export function ChatTranscript({
   }
 
   const transcript = (
-    <div
+    <TranscriptViewport
       // `overscroll-contain` keeps a momentum scroll that reaches the top or
       // bottom of the transcript from chaining to the page/body behind it on
       // touch devices (CAN-1206). It has no effect on non-overscrolling
       // desktop scroll, so the desktop transcript is unchanged.
-      className="flex h-full min-h-0 flex-col overflow-y-auto overscroll-contain p-3 [&_[data-chat-call-focus]]:rounded-lg [&_[data-chat-call-focus]]:ring-2 [&_[data-chat-call-focus]]:ring-line-accent"
       data-testid="chat-transcript"
       data-turn-count={turnGroups.length}
       ref={scrollRef}
@@ -936,6 +943,7 @@ export function ChatTranscript({
                       }
                     : {})}
                 />
+                <TurnNotices notices={turnNotices?.[turnGroup.userMessageId]} />
               </div>
             );
           })}
@@ -988,7 +996,7 @@ export function ChatTranscript({
 
         <div />
       </div>
-    </div>
+    </TranscriptViewport>
   );
   return (
     <StreamingTranscript id={chatId ?? ''} hasContent>

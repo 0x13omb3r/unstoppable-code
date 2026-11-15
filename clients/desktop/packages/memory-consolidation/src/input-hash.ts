@@ -25,6 +25,8 @@ export function memoryConsolidationInputHashParts(input: {
   memoryMd: string;
   files: readonly MemoryConsolidationHashFile[];
   imports: readonly MemoryConsolidationHashImport[];
+  /** Ordered retry pairs are prompt input even after their markup is gone. */
+  unresolvedLinks?: readonly { source: string; target: string }[];
 }): string[] {
   const parts = ['MEMORY.md\0', input.memoryMd];
   const byKey = (
@@ -44,6 +46,15 @@ export function memoryConsolidationInputHashParts(input: {
     );
     if (material.sourceTool) parts.push(material.sourceTool, '\0');
     parts.push(material.repo ?? '', '\0', material.modified ?? '');
+  }
+  // Keep historical digests unchanged when no durable retry work is present.
+  if (input.unresolvedLinks && input.unresolvedLinks.length > 0) {
+    parts.push(
+      '\0link-retries\0',
+      JSON.stringify(
+        input.unresolvedLinks.map(({ source, target }) => [source, target]),
+      ),
+    );
   }
   return parts;
 }

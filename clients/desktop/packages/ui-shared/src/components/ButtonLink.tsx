@@ -26,6 +26,8 @@ export type ButtonLinkProps = Omit<
     /** Every `Button` variant except `link`, which is `TextLink`. */
     variant?: ButtonVariant;
     size?: ButtonSize;
+    /** Allow a title and supporting line to grow within the outline. */
+    multiline?: boolean;
     /** Renders the link without its `href`, so it cannot be followed. */
     disabled?: boolean;
     /** Placement only (`self-start`, `max-w-full`); never colour or type. */
@@ -43,6 +45,7 @@ export const ButtonLink = forwardRef<HTMLAnchorElement, ButtonLinkProps>(
       href,
       variant = 'secondary',
       size = 'md',
+      multiline = false,
       iconOnly = false,
       leadingIcon = false,
       disabled = false,
@@ -67,6 +70,7 @@ export const ButtonLink = forwardRef<HTMLAnchorElement, ButtonLinkProps>(
         className={buttonClassName({
           variant,
           size,
+          multiline,
           iconOnly,
           leadingIcon,
           className,

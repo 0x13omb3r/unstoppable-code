@@ -1,3 +1,4 @@
+import { isChatLearningFlagEnabled } from './transcript-learning-gate';
 import {
   APP_ADVISOR_PROJECT_ID,
   type ChatActiveSessionInfo,
@@ -45,6 +46,11 @@ const lastRunAt = new Map<string, number>();
 let previousSessions = new Map<string, ChatActiveSessionInfo>();
 let unsubscribeSessionActivity: (() => void) | null = null;
 let started = false;
+let e2ePass: OneShotPass | undefined;
+interface OneShotPass {
+  cancelled: boolean;
+}
+
 let sessionActivityChain: Promise<void> = Promise.resolve();
 
 function sessionKey(session: ChatActiveSessionInfo): string {
@@ -192,43 +198,49 @@ function isWithinHourlyCap(lastConsolidatedAt: string | undefined): boolean {
 function scopeEpochIsCurrent(
   scope: ConsolidationScope,
   epoch: number,
+  pass?: OneShotPass,
 ): boolean {
-  return started && (cancellationEpochs.get(scope.scopeDir) ?? 0) === epoch;
+  return (
+    (started || (pass !== undefined && !pass.cancelled)) &&
+    (cancellationEpochs.get(scope.scopeDir) ?? 0) === epoch
+  );
 }
 
 async function schedulerMayWrite(
   scope: ConsolidationScope,
   epoch: number,
+  pass?: OneShotPass,
 ): Promise<boolean> {
   // Every await below yields to cancellations (stop, new turn activity), so
   // the started-state + epoch must be rechecked after EACH await, and
   // idleness re-confirmed immediately before the write is granted.
-  if (!scopeEpochIsCurrent(scope, epoch)) {
+  if (!scopeEpochIsCurrent(scope, epoch, pass)) {
     return false;
   }
   if (!(await isScopeIdle(scope))) {
     return false;
   }
-  if (!scopeEpochIsCurrent(scope, epoch)) {
+  if (!scopeEpochIsCurrent(scope, epoch, pass)) {
     return false;
   }
   const preferences = await readPreferencesFile().catch(() => null);
   if (preferences?.localMemoryEnabled !== true) {
     return false;
   }
-  if (!scopeEpochIsCurrent(scope, epoch)) {
+  if (!scopeEpochIsCurrent(scope, epoch, pass)) {
     return false;
   }
   if (!(await isScopeIdle(scope))) {
     return false;
   }
-  return scopeEpochIsCurrent(scope, epoch);
+  return scopeEpochIsCurrent(scope, epoch, pass);
 }
 
 async function attemptScopeConsolidation(
   scope: ConsolidationScope,
+  pass?: OneShotPass,
 ): Promise<void> {
-  if (!started) {
+  if (!started && pass === undefined) {
     return;
   }
   if (inFlight.has(scope.scopeDir)) {
@@ -292,6 +304,21 @@ async function attemptScopeConsolidation(
     // five-minute debounce; local dynamic imports are safe in packaged main.
     const { collectConsolidationInput, runLocalMemoryConsolidation } =
       await import('./consolidation-task');
+    // Learning may create the first inbox note, so run before the clean-input
+    // short circuit. The ordinary debounce/queue remains the idle trigger.
+    // Flag-off shipping path: one in-memory flag read; no import, await or I/O.
+    if (isChatLearningFlagEnabled()) {
+      const { requestChatLearning } =
+        await import('./transcript-learning-request');
+      await requestChatLearning(scopeRequest(scope)).catch(() => {
+        // Derived learning must not prevent explicit notes from consolidating.
+        process.emitWarning(
+          'Chat memory extraction failed; ordinary consolidation will continue.',
+          { code: 'LOCAL_MEMORY_CHAT_LEARNING_FAILED' },
+        );
+      });
+      if (!(await schedulerMayWrite(scope, epoch, pass))) return;
+    }
     const preflight = await collectConsolidationInput(scope.scopeDir);
     if (isConsolidationInputClean(preflight)) {
       return;
@@ -303,7 +330,7 @@ async function attemptScopeConsolidation(
     // Preflight awaited preferences/state/import/fs work; revalidate the
     // epoch and idleness before enqueueing so a cancellation during preflight
     // stops this stale attempt.
-    if (!(await schedulerMayWrite(scope, epoch))) {
+    if (!(await schedulerMayWrite(scope, epoch, pass))) {
       return;
     }
 
@@ -312,7 +339,7 @@ async function attemptScopeConsolidation(
       task: async (): Promise<void> => {
         // Revalidate once more when the queued slot actually runs; the queue
         // may have delayed this task past another cancellation.
-        if (!(await schedulerMayWrite(scope, epoch))) {
+        if (!(await schedulerMayWrite(scope, epoch, pass))) {
           return;
         }
         const latestState = await readConsolidationState(scope.scopeDir);
@@ -336,7 +363,7 @@ async function attemptScopeConsolidation(
         );
         if (
           currentPreferences?.localMemoryEnabled !== true ||
-          !scopeEpochIsCurrent(scope, epoch)
+          !scopeEpochIsCurrent(scope, epoch, pass)
         ) {
           return;
         }
@@ -386,7 +413,7 @@ async function attemptScopeConsolidation(
             scopeDir: scope.scopeDir,
             ...(scope.workspaceId ? { workspaceId: scope.workspaceId } : {}),
             ...helperModel,
-            shouldContinue: () => schedulerMayWrite(scope, epoch),
+            shouldContinue: () => schedulerMayWrite(scope, epoch, pass),
           });
           await recordConsolidationRun(
             scope.scopeDir,
@@ -403,7 +430,10 @@ async function attemptScopeConsolidation(
         if (result.status !== 'success' || !result.inputHash) {
           return;
         }
-        if ((queuedInput.omittedImportFiles?.fileCount ?? 0) > 0) {
+        if (
+          (queuedInput.omittedImportFiles?.fileCount ?? 0) > 0 ||
+          (result.linkHealth?.unresolvedLinks.length ?? 0) > 0
+        ) {
           await scheduleScope(scope, LOCAL_MEMORY_CONSOLIDATION_HOURLY_CAP_MS);
         }
       },
@@ -503,6 +533,26 @@ async function processSessionActivity(): Promise<void> {
     .catch(() => undefined);
 }
 
+/** Explicit benchmark pass only; never starts subscriptions, timers or retries. */
+export async function runLocalMemoryLearningPassForE2e(
+  request: LocalMemoryScopeRequest,
+): Promise<void> {
+  if (!isE2eBuild()) throw new Error('Test-only memory pass unavailable');
+  if (e2ePass !== undefined)
+    throw new Error('Test-only memory pass already running');
+  const scope =
+    request.scope === 'user'
+      ? userScope()
+      : workspaceScope(request.workspaceId);
+  const pass: OneShotPass = { cancelled: false };
+  e2ePass = pass;
+  try {
+    await attemptScopeConsolidation(scope, pass);
+  } finally {
+    e2ePass = undefined;
+  }
+}
+
 export function startLocalMemoryConsolidationScheduler(): void {
   if (isE2eBuild() || started) {
     return;
@@ -517,6 +567,7 @@ export function startLocalMemoryConsolidationScheduler(): void {
 }
 
 export function stopLocalMemoryConsolidationScheduler(): void {
+  if (e2ePass) e2ePass.cancelled = true;
   if (!started && unsubscribeSessionActivity === null) {
     return;
   }

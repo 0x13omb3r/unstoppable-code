@@ -278,9 +278,11 @@ export function CodeShell({
     };
   };
   const defaultLeftPanel = (
-    <div
-      className="shrink-0 border-r"
-      style={{ width: leftPanelWidth }}
+    <Surface
+      variant="section"
+      boundary="right"
+      className="shrink-0"
+      paneWidth={leftPanelWidth}
       {...testIdProps('leftPanel', 'code-shell-left-panel')}
     >
       <WorktreeSidebar
@@ -293,7 +295,7 @@ export function CodeShell({
         onCreateTask={onCreateTask}
         touchTargets={touchTargets}
       />
-    </div>
+    </Surface>
   );
   // Slot semantics: `undefined` keeps the built-in WorktreeSidebar region;
   // `null`/`false` suppress the region entirely (no empty fixed-width column);
@@ -302,13 +304,15 @@ export function CodeShell({
     leftPanelContent === undefined ? (
       defaultLeftPanel
     ) : leftPanelContent === null || leftPanelContent === false ? null : (
-      <div
-        className="shrink-0 border-r"
-        style={{ width: leftPanelWidth }}
+      <Surface
+        variant="section"
+        boundary="right"
+        className="shrink-0"
+        paneWidth={leftPanelWidth}
         {...testIdProps('leftPanel', 'code-shell-left-panel')}
       >
         {leftPanelContent}
-      </div>
+      </Surface>
     );
   const center = (
     // flex + min-h-0 are load-bearing: as a plain block this wrapper would let
@@ -325,9 +329,11 @@ export function CodeShell({
   );
   const defaultRightPanel =
     selectedWorkspaceLocalId && selectedWorktreeLocalId ? (
-      <div
-        className="shrink-0 border-l"
-        style={{ width: rightPanelWidth }}
+      <Surface
+        variant="section"
+        boundary="left"
+        className="shrink-0"
+        paneWidth={rightPanelWidth}
         {...testIdProps('rightPanel', 'code-shell-right-panel')}
       >
         <ActivityPanel
@@ -339,7 +345,7 @@ export function CodeShell({
           onOpenFile={onOpenFile}
           onOpenDirectory={onOpenDirectory}
         />
-      </div>
+      </Surface>
     ) : null;
   // Slot semantics: `undefined` keeps the built-in ActivityPanel rail;
   // `null`/`false` suppress the rail entirely (no empty fixed-width column —
@@ -349,13 +355,15 @@ export function CodeShell({
     rightPanelContent === undefined ? (
       defaultRightPanel
     ) : rightPanelContent === null || rightPanelContent === false ? null : (
-      <div
-        className="shrink-0 border-l"
-        style={{ width: rightPanelWidth }}
+      <Surface
+        variant="section"
+        boundary="left"
+        className="shrink-0"
+        paneWidth={rightPanelWidth}
         {...testIdProps('rightPanel', 'code-shell-right-panel')}
       >
         {rightPanelContent}
-      </div>
+      </Surface>
     );
   // The top bar is worktree-scoped chrome: resolve it to null unless BOTH a
   // workspace and a worktree are selected, so it never flashes for an empty
@@ -378,8 +386,10 @@ export function CodeShell({
     // a long transcript cannot stretch the root past its h-full box and push
     // the sticky composer below the fold (the pre-adoption portal shell root
     // carried the same containment).
-    <div
-      className="flex h-full min-h-0 flex-col overflow-hidden bg-base fg-primary"
+    <Surface
+      variant="app-pane"
+      extent="parent"
+      className="flex min-h-0 flex-col overflow-hidden"
       {...testIdProps('shell', 'code-shell')}
     >
       {header && (
@@ -411,6 +421,6 @@ export function CodeShell({
           {bottomStatus}
         </div>
       )}
-    </div>
+    </Surface>
   );
 }

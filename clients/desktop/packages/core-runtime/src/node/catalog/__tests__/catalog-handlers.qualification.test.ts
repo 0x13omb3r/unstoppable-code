@@ -122,11 +122,22 @@ class MemoryCatalogHost implements CoreCatalogHost {
     installPlugin: 0,
     publishPlugin: 0,
     publishSkill: [] as { entryId: string; pkg: CatalogPublishPackage }[],
+    unpublishSkill: [] as [string, string | null][],
     publishPluginPackage: [] as {
       target: CatalogPluginTarget;
       pkg: CatalogPublishPackage;
       options?: CatalogPublishOptions;
     }[],
+  };
+  unpublishOutcome: Error | null = null;
+  unpublishSkill?: (
+    publicationId: string,
+    expectedRemoteVersion: string | null,
+  ) => Promise<void> = (publicationId, expectedRemoteVersion) => {
+    this.calls.unpublishSkill.push([publicationId, expectedRemoteVersion]);
+    return this.unpublishOutcome === null
+      ? Promise.resolve()
+      : Promise.reject(this.unpublishOutcome);
   };
   publishOutcome: CatalogPublication | Error = {
     publicationId: 'mkt-1',
@@ -820,7 +831,13 @@ describe('core.catalog handlers (CAN-4123)', () => {
       ['p3', { kind: 'skill', entryId: 'skill:s/x' }, 'invalid_argument'],
       [
         'p3b',
-        { package: { analysisId: 'a', selectedOptionalResourceIds: [] } },
+        {
+          package: {
+            analysisId: 'a',
+            selectedOptionalResourceIds: [],
+            keepInStep: false,
+          },
+        },
         // Served below by a host that uploads a plugin's package.
         'capability_unavailable',
       ],
@@ -870,7 +887,11 @@ describe('core.catalog handlers (CAN-4123)', () => {
 
   it("uploads a local plugin's consented package once per key (CAN-6176 D13)", async () => {
     const dispatcher = compose();
-    const pkg = { analysisId: 'analysis-p', selectedOptionalResourceIds: [] };
+    const pkg = {
+      analysisId: 'analysis-p',
+      selectedOptionalResourceIds: [],
+      keepInStep: false,
+    };
     const publish = (
       key: string,
       overrides: Record<string, unknown> = {},
@@ -979,6 +1000,7 @@ describe('core.catalog handlers (CAN-4123)', () => {
     const pkg = {
       analysisId: 'analysis-1',
       selectedOptionalResourceIds: ['r'],
+      keepInStep: true,
     };
     const published = {
       publicationId: 'skill-remote-1',
@@ -1069,6 +1091,76 @@ describe('core.catalog handlers (CAN-4123)', () => {
 
     host.publishSkill = undefined;
     await expect(publish('s5')).rejects.toMatchObject({
+      payload: { kind: 'capability_unavailable' },
+    });
+  });
+
+  it('removes a skill’s cloud copy once per key and refuses what it cannot remove (CAN-6176)', async () => {
+    const dispatcher = compose();
+    const unpublish = (
+      key: string,
+      overrides: Record<string, unknown> = {},
+    ): Promise<unknown> =>
+      dispatcher.instruction(
+        'core.catalog.entry.unpublish',
+        {
+          publicationId: 'skill-remote-1',
+          kind: 'skill',
+          expectedRemoteVersion: 'b'.repeat(64),
+          ...overrides,
+          _meta: keyed(key),
+        },
+        { caller: writer, metadata: keyed(key) },
+      );
+    await expect(
+      Promise.all([unpublish('u1'), unpublish('u1')]),
+    ).resolves.toEqual([
+      { publicationId: 'skill-remote-1' },
+      { publicationId: 'skill-remote-1' },
+    ]);
+    expect(host.calls.unpublishSkill).toEqual([
+      ['skill-remote-1', 'b'.repeat(64)],
+    ]);
+
+    await expect(unpublish('u2', { kind: 'plugin' })).rejects.toMatchObject({
+      payload: { kind: 'capability_unavailable' },
+    });
+    expect(host.calls.unpublishSkill).toHaveLength(1);
+
+    for (const [refusal, payload] of [
+      [
+        'unpublish-not-found',
+        { kind: 'not_found', code: 'core.catalog.publicationNotFound' },
+      ],
+      [
+        'unpublish-shared',
+        { kind: 'failed_precondition', code: 'core.catalog.entryReadOnly' },
+      ],
+      [
+        'unpublish-version-moved',
+        {
+          kind: 'conflict',
+          code: 'core.catalog.remoteVersionConflict',
+          retry: { kind: 'after_refresh', resource: 'core.catalog.entry' },
+        },
+      ],
+      [
+        'publish-remote-unavailable',
+        {
+          kind: 'unavailable',
+          code: 'core.catalog.remoteUnavailable',
+          retry: { kind: 'never' },
+        },
+      ],
+    ] as const) {
+      host.unpublishOutcome = new CatalogHostRefusedError(refusal);
+      await expect(unpublish(`r-${refusal}`)).rejects.toMatchObject({
+        payload,
+      });
+    }
+
+    host.unpublishSkill = undefined;
+    await expect(unpublish('u3')).rejects.toMatchObject({
       payload: { kind: 'capability_unavailable' },
     });
   });

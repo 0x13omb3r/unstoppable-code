@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
+import type * as ChildProcessModule from 'node:child_process';
 import { EventEmitter } from 'node:events';
-import { mkdtempSync, realpathSync, rmSync } from 'node:fs';
+import { mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import * as path from 'node:path';
 import { PassThrough } from 'node:stream';
@@ -327,6 +328,36 @@ afterEach(() => {
 
 afterAll(() => {
   rmSync(dir, { recursive: true, force: true });
+});
+
+it('retains explicit Windows quoting through the launcher, host and native spawn', async () => {
+  const childProcess =
+    jest.requireActual<typeof ChildProcessModule>('node:child_process');
+  const spawnSpy = jest.spyOn(childProcess, 'spawn');
+  const script = path.join(dir, 'quoted hook script.cjs');
+  writeFileSync(script, 'process.stdout.write("quoted path reached");');
+  const harness = inProcessHarness();
+  try {
+    const args = [process.platform === 'win32' ? `"${script}"` : script];
+    const child = harness.client.spawn(
+      request(args, { windowsVerbatimArguments: true }),
+    );
+    const observed = observe(child);
+    expect(await readAll(child)).toBe('quoted path reached');
+    await observed.closed;
+    expect(observed.closes).toEqual([[0, null]]);
+    expect(spawnSpy.mock.calls[0]?.[2]?.windowsVerbatimArguments).toBe(true);
+    expect(
+      isProviderProcessHostRequest({
+        ...request(args),
+        type: 'spawn',
+        requestId: 'invalid-quoting-mode',
+        windowsVerbatimArguments: 'true',
+      }),
+    ).toBe(false);
+  } finally {
+    await harness.dispose();
+  }
 });
 
 describe.each(MODES)('provider process host (%s)', (mode) => {

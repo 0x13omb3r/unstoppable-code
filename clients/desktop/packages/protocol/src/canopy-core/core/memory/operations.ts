@@ -19,6 +19,7 @@ import {
 export const MEMORY_GRANTS = {
   read: 'core.memory.read',
   write: 'core.memory.write',
+  learn: 'core.memory.learn',
 } as const;
 
 const ID = z.string().min(1).max(512);
@@ -194,6 +195,21 @@ export const CORE_MEMORY_QUERY_DEFINITIONS = defineCanopyQueryRegistry('core', {
 
 export const CORE_MEMORY_INSTRUCTION_DEFINITIONS =
   defineCanopyInstructionRegistry('core', {
+    'core.memory.chats.learn': defineCanopyInstruction({
+      ...BASE,
+      idempotency: 'inherent',
+      requiredGrants: [MEMORY_GRANTS.learn],
+      params: z.strictObject({
+        memory: MemoryScopeKindSchema,
+        workspaceId: ID.optional(),
+        _meta: CanopyRequestMetadataSchema.optional(),
+      }),
+      result: z.strictObject({
+        status: z.enum(['learned', 'skipped']),
+        notes: z.number().int().nonnegative(),
+      }),
+      error: inherentOperationErrorSchema(['core.memory.disabled']),
+    }),
     'core.memory.entry.append': defineCanopyInstruction({
       ...BASE,
       idempotency: 'keyed',

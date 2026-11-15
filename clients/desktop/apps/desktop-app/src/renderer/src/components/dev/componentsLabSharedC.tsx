@@ -6,6 +6,8 @@ import {
   type ReactNode,
 } from 'react';
 import {
+  Surface,
+  ChatComposerShell,
   Button,
   CodexAccountModelNotice,
   ComposerAccessPicker,
@@ -17,7 +19,6 @@ import {
   ComposerTray,
   ComposerTrayHost,
   ComposerTrayProvider,
-  ComposerTraySlot,
   CopyDetailsButton,
   CopyStatusRegion,
   CreditLedgerTable,
@@ -489,9 +490,11 @@ function ComposerBox({
   readonly children?: ReactNode;
 }): JSX.Element {
   return (
-    <div className="relative flex min-h-16 items-center rounded-2xl bg-tertiary px-4 text-s fg-secondary shadow-2xs">
-      {children ?? 'Ask anything, or type / for commands'}
-    </div>
+    <ChatComposerShell>
+      <div className="flex min-h-16 items-center px-4 text-s fg-secondary">
+        {children ?? 'Ask anything, or type / for commands'}
+      </div>
+    </ChatComposerShell>
   );
 }
 
@@ -613,9 +616,11 @@ function QueueCard({
 }): JSX.Element {
   return (
     <div className="px-4">
-      <div className="relative flex items-center gap-2 rounded-t-xl bg-depth px-3 py-2 pb-5 text-s fg-secondary">
-        {children}
-      </div>
+      <Surface variant="group" className="relative">
+        <div className="flex items-center gap-2 px-3 py-2 pb-5 text-s fg-secondary">
+          {children}
+        </div>
+      </Surface>
     </div>
   );
 }
@@ -643,7 +648,6 @@ function ComposerTraySheet(): JSX.Element {
                   <QueueCard>2 messages queued</QueueCard>
                 </ComposerTray>
                 <ComposerTrayHost active>
-                  <ComposerTraySlot />
                   <ComposerBox />
                 </ComposerTrayHost>
               </div>
@@ -688,7 +692,6 @@ function ComposerTraySheet(): JSX.Element {
                 </ComposerTray>
               </ComposerTrayProvider>
               <ComposerTrayHost active>
-                <ComposerTraySlot />
                 <ComposerBox />
               </ComposerTrayHost>
             </ComposerTrayProvider>
@@ -705,7 +708,6 @@ function ComposerTraySheet(): JSX.Element {
                 </QueueCard>
               </ComposerTray>
               <ComposerTrayHost active>
-                <ComposerTraySlot />
                 <ComposerBox />
               </ComposerTrayHost>
             </ComposerTrayProvider>

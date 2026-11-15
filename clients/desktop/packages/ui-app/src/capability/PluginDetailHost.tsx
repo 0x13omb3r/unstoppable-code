@@ -63,6 +63,7 @@ import {
   PluginAlternatives,
   PluginVariantDifferences,
 } from './PluginAlternatives';
+import { trackCustomizeInstall } from './customizeTelemetry';
 import {
   McpServerHealthSection,
   type McpServerHealthSectionProps,
@@ -367,7 +368,16 @@ function useBuiltInInstall(
     setInstalling(providers);
     setMessage(null);
     try {
-      const result = await onInstall({ kind: 'providers', providers });
+      const request: PluginDetailInstallRequest = {
+        kind: 'providers',
+        providers,
+      };
+      const result = await trackCustomizeInstall(
+        plugin,
+        request,
+        () => onInstall(request),
+        providerOutcomes,
+      );
       onPluginUpdated?.(installedPlugin(result));
       const outcomes = providerOutcomes(result);
       const failures = providers.filter(
@@ -522,7 +532,13 @@ export function PluginDetailHost({
     setInstalling(true);
     setInstallError('');
     try {
-      const result = await onInstall({ kind: 'external' });
+      const request: PluginDetailInstallRequest = { kind: 'external' };
+      const result = await trackCustomizeInstall(
+        plugin,
+        request,
+        () => onInstall(request),
+        () => undefined,
+      );
       onPluginUpdated?.(installedPlugin(result));
     } catch (installFailure) {
       setInstallError(errorMessage(installFailure));

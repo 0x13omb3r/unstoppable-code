@@ -305,18 +305,29 @@ export function WorktreeKanbanBoard({
             data-testid={`worktree-kanban-column-${status}`}
             aria-label={`${meta.label} column`}
           >
-            <header className="flex items-center justify-between gap-2 border-b px-2.5 py-2">
+            <Surface
+              as="header"
+              variant="section"
+              boundary="bottom"
+              gap="inline"
+              direction="row"
+              padding="board-header"
+              className="items-center justify-between"
+            >
               <div className="flex items-center gap-1.5">
-                <span
-                  className={`inline-block h-1.5 w-6 rounded-full bg-current ${meta.columnAccent}`}
+                <svg
+                  viewBox="0 0 24 6"
+                  className={`h-1.5 w-6 ${meta.columnAccent}`}
                   aria-hidden="true"
-                />
+                >
+                  <rect width="24" height="6" rx="3" fill="currentColor" />
+                </svg>
                 <span className={`text-2xs font-semibold ${meta.columnAccent}`}>
                   {meta.label}
                 </span>
               </div>
               <Count value={visibleCards.length} />
-            </header>
+            </Surface>
             <div
               className={`flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto px-1.5 pb-1.5 [&>*]:shrink-0 ${visibleCards.length === 0 && hiddenCards.length > 0 ? 'pt-2.5' : 'pt-1.5'}`}
             >

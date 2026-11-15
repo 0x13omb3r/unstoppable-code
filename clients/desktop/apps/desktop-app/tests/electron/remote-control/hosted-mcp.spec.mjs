@@ -1639,7 +1639,7 @@ test('the desktop refuses expired, overlong and unpinned delegations and ends a 
   }
 });
 
-test('a plan downgrade refuses the next call on a pooled session, and restoring it reuses the pool', async () => {
+test('an expired trial refuses neither the next call on a pooled session nor a pairing, and the pool is reused', async () => {
   test.setTimeout(120_000);
   const read = () =>
     agentA.call('project_list', { host: target.host, limit: 50 });
@@ -1650,6 +1650,8 @@ test('a plan downgrade refuses the next call on a pooled session, and restoring 
   expect(pooled?.purpose).toBe('control');
   expect(relay.connectedDeviceIds().has(pooled.relay_device_id)).toBe(true);
 
+  // Remote control no longer depends on subscription state, so a trial that
+  // ended in tier mode refuses nothing.
   await withPortalDbClient((client) =>
     client.query(
       `UPDATE users SET trial_ends_at = clock_timestamp() - interval '1 day' WHERE id = $1`,
@@ -1657,18 +1659,26 @@ test('a plan downgrade refuses the next call on a pooled session, and restoring 
     ),
   );
   try {
-    expectToolError(
-      await read(),
-      'failed_precondition',
-      'entitlement_required',
-    );
+    expect((await read()).isError).toBe(false);
     const pairing = await startHostedPairing(userA, desktop.deviceId);
-    expect(pairing).toMatchObject({
-      ok: false,
-      status: 403,
-      body: { error: 'entitlement_denied' },
-    });
-    // The pooled session was not torn down by the refusal.
+    expect(pairing.ok, JSON.stringify(pairing.body)).toBe(true);
+    const first = await pairing.next();
+    expect(first.event).toBe('code');
+    pairing.abort();
+    await waitForRemoteControlState(
+      desktop.window,
+      (state) => state.incomingPairings.length === 0,
+      { label: 'the pairing request to end on the desktop' },
+    );
+    await expect
+      .poll(
+        async () =>
+          (await readHostedLeases(userA.userId)).filter(
+            (lease) => lease.purpose === 'pair',
+          ).length,
+        POLL,
+      )
+      .toBe(0);
     expect(relay.connectedDeviceIds().has(pooled.relay_device_id)).toBe(true);
   } finally {
     await withPortalDbClient((client) =>

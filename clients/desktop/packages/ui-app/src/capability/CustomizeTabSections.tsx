@@ -75,9 +75,20 @@ import {
   type PluginsDiscoverySectionId,
   type UnifiedPluginEntry,
   type InstalledEntryStatusState,
+  customizeDiscoveryFilterCount,
+  customizeDiscoverySourceOptions,
+  DEFAULT_CUSTOMIZE_DISCOVERY_FILTERS,
 } from '@canopy/ui-shared/lib';
 import {
+  useCustomizeDiscoveryEnabled,
+  useCustomizeDiscoveryFilters,
+  useCustomizeSharedWithMe,
+  usePublishCustomizeDiscoverySourceOptions,
+  usePublishCustomizeSharedWithMe,
+} from './CustomizeDiscoveryProvider';
+import {
   buildCustomizeTabModel,
+  entryHasUpdate,
   customizeTabHasInstalledStatuses,
   effectiveInstalledStatusFilter,
   extendInstalledStatusSnapshot,
@@ -98,6 +109,7 @@ import {
 } from './customizeWorkflowActions';
 import { CustomizeWorkflowRowControls } from './CustomizeWorkflowRowControls';
 import { bundledServerStandsBehindPlugin } from './unifiedPluginEntries';
+import { useCustomizeResultsTelemetry } from './customizeTelemetry';
 
 export interface CustomizeUpdateFailure {
   readonly entry: UnifiedPluginEntry;
@@ -427,11 +439,51 @@ export function CustomizeTabSections(
     controlledInstalledExpanded === true ||
     (expansion.scope === expansionScope && expansion.expanded);
 
-  const statusFilter = effectiveInstalledStatusFilter(
-    tab,
-    installedStatusFilter,
-    supportedUpdateKinds,
+  // New Customize (CAN-6809): its filter menu narrows the list, and its
+  // Status filter replaces the Installed status filter, which then applies
+  // nowhere. Off, both read as before.
+  const discoveryEnabled = useCustomizeDiscoveryEnabled();
+  const { filters: currentDiscoveryFilters, setFilters: setDiscoveryFilters } =
+    useCustomizeDiscoveryFilters();
+  const discoveryFilters = discoveryEnabled
+    ? currentDiscoveryFilters
+    : undefined;
+  usePublishCustomizeDiscoverySourceOptions(
+    useMemo(
+      () =>
+        discoveryEnabled ? customizeDiscoverySourceOptions(entries) : null,
+      [discoveryEnabled, entries],
+    ),
   );
+  // Shared with me (CAN-6810): the toggle narrows the list, and the counter
+  // reads every share from others, whatever the tab.
+  const { active: sharedWithMeActive, setActive: setSharedWithMeActive } =
+    useCustomizeSharedWithMe();
+  const sharedWithMeOnly = discoveryEnabled && sharedWithMeActive;
+  // The counter counts only kinds this host lists. Entries may be a search
+  // result or one page of shares; the provider's registry only adds them.
+  usePublishCustomizeSharedWithMe(
+    useMemo(
+      () =>
+        discoveryEnabled
+          ? entries.filter(
+              (entry) =>
+                (entry.kind !== 'agent' || agentsAvailable === true) &&
+                (entry.kind !== 'blueprint' ||
+                  projectTemplatesAvailable === true),
+            )
+          : null,
+      [discoveryEnabled, entries, agentsAvailable, projectTemplatesAvailable],
+    ),
+    contextKey,
+  );
+  const statusFilter = discoveryEnabled
+    ? undefined
+    : effectiveInstalledStatusFilter(
+        tab,
+        installedStatusFilter,
+        supportedUpdateKinds,
+      );
   // Applying a status filter expands Installed: a filter that only changed a
   // hidden count would not be discoverable (CAN-4838).
   const [appliedFilter, setAppliedFilter] = useState(statusFilter);
@@ -531,8 +583,12 @@ export function CustomizeTabSections(
         agentsAvailable,
         projectTemplatesAvailable,
         mcpSharedEntryIds,
+        ...(discoveryFilters ? { discoveryFilters } : {}),
+        ...(sharedWithMeOnly ? { sharedWithMeOnly } : {}),
       }),
     [
+      discoveryFilters,
+      sharedWithMeOnly,
       tab,
       entries,
       query,
@@ -552,6 +608,47 @@ export function CustomizeTabSections(
       projectTemplatesAvailable,
       mcpSharedEntryIds,
     ],
+  );
+
+  // Analytics only (CAN-6806): no visible effect.
+  const { trackPick } = useCustomizeResultsTelemetry({
+    tab,
+    query,
+    filters: {
+      installedStatusFilter: statusFilter,
+      pipelineCategory,
+      pipelineFilters,
+    },
+    model,
+    loading,
+    browseGroupsCollapse: onExpandBrowseGroup !== undefined,
+  });
+  const selectTrackedEntry = useCallback(
+    (entry: UnifiedPluginEntry): void => {
+      trackPick(entry, 'open');
+      onSelectEntry(entry);
+    },
+    [trackPick, onSelectEntry],
+  );
+  const addTrackedEntry = useMemo(
+    () =>
+      onAddEntry
+        ? (entry: UnifiedPluginEntry): void => {
+            trackPick(entry, 'add');
+            onAddEntry(entry);
+          }
+        : undefined,
+    [trackPick, onAddEntry],
+  );
+  const connectTrackedEntry = useMemo(
+    () =>
+      onConnectEntry
+        ? (entry: UnifiedPluginEntry): void => {
+            trackPick(entry, 'connect');
+            onConnectEntry(entry);
+          }
+        : undefined,
+    [trackPick, onConnectEntry],
   );
 
   // Refs guard against double submission before React re-renders.
@@ -716,11 +813,7 @@ export function CustomizeTabSections(
   ]);
 
   // Preserve the bound callbacks when filtering leaves update membership unchanged.
-  const updateIdKey = (
-    model.sections
-      .find((section) => section.id === 'updates')
-      ?.entries.map((entry) => entry.id) ?? []
-  ).join('\0');
+  const updateIdKey = model.updateEntryIds.join('\0');
   const updateIds = useMemo(
     () => new Set(updateIdKey ? updateIdKey.split('\0') : []),
     [updateIdKey],
@@ -1242,7 +1335,10 @@ export function CustomizeTabSections(
       const signIn = onConnectEntry ? signInTarget(entry) : undefined;
       const connect =
         onConnectEntry && signIn
-          ? (): void => onConnectEntry(signIn)
+          ? (): void => {
+              trackPick(entry, 'connect');
+              onConnectEntry(signIn);
+            }
           : undefined;
       const statusState =
         entryStatus?.states[entry.installedEntryId ?? entry.id];
@@ -1446,13 +1542,11 @@ export function CustomizeTabSections(
           }
           selected={entry.id === selectedEntryId}
           showEntryType={section.showEntryTypes}
-          onSelect={(selected) =>
-            providerPlugin
-              ? openPlugin(providerPlugin)
-              : missingProvider
-                ? undefined
-                : onSelectEntry(selected)
-          }
+          onSelect={(selected) => {
+            if (!missingProvider) trackPick(selected, 'open');
+            if (providerPlugin) openPlugin(providerPlugin);
+            else if (!missingProvider) onSelectEntry(selected);
+          }}
           href={
             missingProvider
               ? undefined
@@ -1518,7 +1612,10 @@ export function CustomizeTabSections(
               </span>
             ) : section.id === 'browse' && !installed && onAddEntry ? (
               <span className="flex w-36 shrink-0 justify-end">
-                <MarketplaceInstallButton entry={entry} onAdd={onAddEntry} />
+                <MarketplaceInstallButton
+                  entry={entry}
+                  onAdd={addTrackedEntry ?? onAddEntry}
+                />
               </span>
             ) : (
               (renderStatus?.(entry) ??
@@ -1537,6 +1634,13 @@ export function CustomizeTabSections(
             section.id === 'installed' &&
             dimmingState?.kind === 'ready' &&
             dimmingState.item.status === 'disabled'
+          }
+          skillMatch={model.skillMatches.get(entry.id)}
+          // New Customize has no Updates section (CAN-6810).
+          updateBadge={
+            discoveryEnabled &&
+            section.id === 'installed' &&
+            entryHasUpdate(entry, supportedUpdateKinds)
           }
           actions={
             section.id === 'browse' &&
@@ -1560,6 +1664,8 @@ export function CustomizeTabSections(
     },
     [
       onConnectEntry,
+      trackPick,
+      addTrackedEntry,
       signInTarget,
       entryStatus,
       entries,
@@ -1581,6 +1687,9 @@ export function CustomizeTabSections(
       onUpdateEntry,
       renderUpdateAction,
       renderSharedActions,
+      discoveryEnabled,
+      supportedUpdateKinds,
+      model.skillMatches,
     ],
   );
 
@@ -1723,11 +1832,11 @@ export function CustomizeTabSections(
           sections={sections}
           renderEntry={renderBrowseEntry}
           selectedEntryId={selectedEntryId}
-          onSelectEntry={onSelectEntry}
-          onAddEntry={onAddEntry}
+          onSelectEntry={selectTrackedEntry}
+          onAddEntry={addTrackedEntry}
           entryShareStates={entryShareStates}
           onShareEntry={onShareEntry}
-          onConnectEntry={onConnectEntry}
+          onConnectEntry={connectTrackedEntry}
           onOpenEntryId={onOpenEntryId}
           emptyMessage={
             section.emptyReason === 'pipeline-filters'
@@ -1750,6 +1859,41 @@ export function CustomizeTabSections(
       ? browseActions
       : null;
   if (model.sections.length === 0) {
+    const discoveryFiltered =
+      discoveryFilters !== undefined &&
+      customizeDiscoveryFilterCount(discoveryFilters) > 0;
+    if (sharedWithMeOnly && !searchActive && !discoveryFiltered)
+      return (
+        <div data-testid="customize-sections" data-result-count={0}>
+          {remainingBrowseActions}
+          <SearchEmptyState
+            testId="customize-sections-empty"
+            title={
+              tab === 'all'
+                ? 'Nothing has been shared with you yet.'
+                : 'Nothing on this tab has been shared with you.'
+            }
+            actionLabel="Show everything"
+            onAction={(): void => setSharedWithMeActive(false)}
+            actionTestId="customize-sections-clear-shared"
+          />
+        </div>
+      );
+    if (discoveryFiltered && !searchActive)
+      return (
+        <div data-testid="customize-sections" data-result-count={0}>
+          {remainingBrowseActions}
+          <SearchEmptyState
+            testId="customize-sections-empty"
+            title="Nothing matches these filters."
+            actionLabel="Clear filters"
+            onAction={(): void =>
+              setDiscoveryFilters(DEFAULT_CUSTOMIZE_DISCOVERY_FILTERS)
+            }
+            actionTestId="customize-sections-clear-filters"
+          />
+        </div>
+      );
     const filtered =
       searchActive ||
       !!pipelineCategory ||
@@ -1809,6 +1953,12 @@ export function CustomizeTabSections(
               : section.count
           }
           footnote={tab === 'collection' ? section.footnote : undefined}
+          // New Customize's section hints (CAN-6810, Sergii's design).
+          description={
+            discoveryEnabled && section.id === 'installed'
+              ? 'Needs attention first, then recently used.'
+              : undefined
+          }
           actions={
             section.id === 'updates' && model.showUpdateAll && onUpdateEntry ? (
               <Button
@@ -1836,6 +1986,16 @@ export function CustomizeTabSections(
                   </Button>
                 )}
               </div>
+            ) : section.id === 'browse' && discoveryEnabled ? (
+              <div className="flex items-center gap-2">
+                {tab === 'workflow' && browseActions}
+                <span
+                  data-testid="customize-browse-order"
+                  className="text-xs fg-tertiary"
+                >
+                  Sorted by relevance
+                </span>
+              </div>
             ) : section.id === 'browse' && tab === 'workflow' ? (
               browseActions
             ) : undefined
@@ -1854,6 +2014,19 @@ export function CustomizeTabSections(
           )}
         </CustomizeSection>
       ))}
+      {discoveryEnabled &&
+        searchActive &&
+        model.skillMatches.size > 0 &&
+        model.skillMatches.size === model.resultCount && (
+          // The Customize search design (CAN-6812): every result is a plugin a
+          // skill matched, so say where the skills went.
+          <p
+            data-testid="customize-skill-match-hint"
+            className="text-s fg-tertiary"
+          >
+            No other matches. Skills inside plugins are shown with their plugin.
+          </p>
+        )}
       {remainingBrowseActions}
       {deleteTarget && (
         <UninstallConfirmDialog

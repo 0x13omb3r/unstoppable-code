@@ -9,6 +9,7 @@ import {
 import { pipelineSupportsExecutionScope } from '@/lib/pipelineExecutionScope';
 import {
   Stack,
+  DialogActionFooter,
   ErrorBanner,
   ErrorState,
   FieldError,
@@ -2470,7 +2471,7 @@ export function PipelineTriggerModal({
               </>
             )}
           </div>
-          <div className="flex justify-end gap-2">
+          <DialogActionFooter padding="none" separated={false}>
             <Button
               size="compact"
               onClick={onClose}
@@ -2526,7 +2527,7 @@ export function PipelineTriggerModal({
                 {isRunning ? runLoadingLabel : runLabel}
               </Button>
             )}
-          </div>
+          </DialogActionFooter>
         </div>
       </Surface>
     </DialogModal>

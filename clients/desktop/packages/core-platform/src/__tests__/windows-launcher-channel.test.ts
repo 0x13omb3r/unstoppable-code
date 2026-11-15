@@ -15,6 +15,7 @@ import {
   type OwnedChildLaunch,
   windowsChannelPeer,
 } from '../supervision/owned-child';
+import { loadOwnedChildProbe } from './fixtures/owned-child-probe';
 
 // CAN-5843 W1, plan §6/§9: native custody only, never migration admission.
 // host.launch / loaded.launch retain their ordinary execution behavior; W1
@@ -44,33 +45,6 @@ const diagnostics = new WeakMap<
 >();
 let native: object = {};
 let probe: object = {};
-
-async function loadProbe(): Promise<object> {
-  let file = process.env.CANOPY_OWNED_CHILD_PROBE;
-  if (!file) {
-    if (process.env.CANOPY_OWNED_CHILD_ACCEPTANCE === '1')
-      throw new Error(
-        'Owned-child acceptance requires CANOPY_OWNED_CHILD_PROBE',
-      );
-    // Loaded addons stay mapped on Windows; keep local builds private to this run.
-    const scratch = await mkdtemp(path.join(tmpdir(), 'w1-probe-'));
-    file = path.join(scratch, 'owned-child-probe.node');
-    await run(
-      process.execPath,
-      [
-        path.join(root, 'scripts/build-owned-child.mjs'),
-        '--out',
-        path.join(scratch, OWNED_CHILD_FILE),
-        '--probe-out',
-        file,
-      ],
-      { cwd: root, windowsHide: true, timeout: 540_000, maxBuffer: 1 << 24 },
-    );
-  }
-  const loaded = { exports: {} };
-  process.dlopen(loaded, path.resolve(root, file));
-  return loaded.exports;
-}
 
 function handleCount(): number {
   const method: unknown = Reflect.get(probe, 'handleCount');
@@ -335,7 +309,7 @@ suite('Windows private launcher channel (W1)', () => {
     const loaded = { exports: {} };
     process.dlopen(loaded, addon); // Missing/old addon fails qualification, never skips.
     native = loaded.exports;
-    probe = await loadProbe();
+    probe = await loadOwnedChildProbe();
   }, 600_000);
 
   afterEach(async () => {

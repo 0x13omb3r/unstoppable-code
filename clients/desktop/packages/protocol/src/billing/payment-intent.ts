@@ -1,4 +1,3 @@
-import { isPaidBillingPlanKey, type PaidBillingPlanKey } from './plan-keys';
 import { isBillingRequestId, isBillingWebReturnPath } from './top-up-intent';
 
 /**
@@ -10,11 +9,16 @@ export type SettingsPaymentOwner =
   | { readonly kind: 'personal' }
   | { readonly kind: 'organization'; readonly organizationId: string };
 
-/** The financial modals a billing page can open on arrival. */
+/**
+ * The financial modals a billing page can open on arrival.
+ *
+ * `subscription` was retired with subscription tiers. Shipped desktop builds
+ * can still open `?paymentModal=subscription&plan=…`; it is no longer a known
+ * modal, so it parses as no intent and the page loads without a modal.
+ */
 export const BILLING_PAYMENT_MODALS = [
   'payment-method',
   'auto-top-up',
-  'subscription',
 ] as const;
 
 export type BillingPaymentModal = (typeof BILLING_PAYMENT_MODALS)[number];
@@ -26,18 +30,17 @@ export type BillingPaymentModal = (typeof BILLING_PAYMENT_MODALS)[number];
  */
 export type BillingPaymentModalIntent =
   | { modal: 'payment-method'; requestId: string }
-  | { modal: 'auto-top-up'; requestId: string }
-  | { modal: 'subscription'; requestId: string; plan?: PaidBillingPlanKey };
+  | { modal: 'auto-top-up'; requestId: string };
 
 export const BILLING_PAYMENT_MODAL_PARAM = 'paymentModal';
 export const BILLING_PAYMENT_REQUEST_ID_PARAM = 'paymentRequestId';
+// compat: the retired subscription intent carried `plan`. A link that still
+// carries it parses as no intent, so it is never consumed and stays in the URL;
+// it is kept in the strip list only for intents that are consumed.
 const PLAN_PARAM = 'plan';
 const TOP_UP_PARAM = 'topUp';
 
-/** Parameters a consumed modal intent strips from the URL. `plan` is
- * included because a subscription intent carries it; a plan-only URL (the
- * existing `/subscribe` handoff) is not a modal intent and keeps its own
- * consumer. */
+/** Parameters a consumed modal intent strips from the URL. */
 export const BILLING_PAYMENT_MODAL_INTENT_PARAMS: readonly string[] = [
   BILLING_PAYMENT_MODAL_PARAM,
   BILLING_PAYMENT_REQUEST_ID_PARAM,
@@ -53,9 +56,9 @@ export function isBillingPaymentModal(
 /**
  * Parse a modal intent from billing page query parameters. Returns `null`
  * when no intent is present and for every malformed or conflicting intent:
- * duplicate parameters, an unknown modal, an invalid request id, a plan on a
- * modal other than `subscription`, an unpaid plan, or a `topUp` intent
- * alongside `paymentModal`.
+ * duplicate parameters, an unknown modal (including the retired
+ * `subscription`), an invalid request id, a `plan` parameter, or a `topUp`
+ * intent alongside `paymentModal`.
  */
 export function parseBillingPaymentModalIntent(
   params: URLSearchParams,
@@ -71,13 +74,7 @@ export function parseBillingPaymentModalIntent(
   if (params.has(TOP_UP_PARAM)) return null;
   const requestId = params.get(BILLING_PAYMENT_REQUEST_ID_PARAM);
   if (!isBillingRequestId(requestId)) return null;
-  const plan = params.get(PLAN_PARAM);
-  if (modal === 'subscription') {
-    if (plan === null) return { modal, requestId };
-    if (!isPaidBillingPlanKey(plan)) return null;
-    return { modal, requestId, plan };
-  }
-  if (plan !== null) return null;
+  if (params.has(PLAN_PARAM)) return null;
   return { modal, requestId };
 }
 
@@ -85,8 +82,8 @@ export function parseBillingPaymentModalIntent(
  * Append a modal intent to an owner-specific billing path such as
  * `accountBillingPath()` or `organizationBillingPath(id)`, retaining unrelated
  * query parameters and the hash. Throws when the result would not parse back
- * to the same intent (for example a path that already carries `topUp`, or a
- * plan on a non-subscription intent).
+ * to the same intent (for example a path that already carries `topUp` or
+ * `plan`).
  */
 export function buildBillingPaymentModalIntentPath(
   billingPath: string,
@@ -99,16 +96,11 @@ export function buildBillingPaymentModalIntentPath(
   url.searchParams.delete(BILLING_PAYMENT_REQUEST_ID_PARAM);
   url.searchParams.set(BILLING_PAYMENT_MODAL_PARAM, intent.modal);
   url.searchParams.set(BILLING_PAYMENT_REQUEST_ID_PARAM, intent.requestId);
-  if (intent.modal === 'subscription' && intent.plan !== undefined)
-    url.searchParams.set(PLAN_PARAM, intent.plan);
   const parsed = parseBillingPaymentModalIntent(url.searchParams);
   if (
     parsed === null ||
     parsed.modal !== intent.modal ||
-    parsed.requestId !== intent.requestId ||
-    (parsed.modal === 'subscription' &&
-      intent.modal === 'subscription' &&
-      parsed.plan !== intent.plan)
+    parsed.requestId !== intent.requestId
   )
     throw new Error('Invalid payment modal intent');
   return url.pathname + url.search + url.hash;

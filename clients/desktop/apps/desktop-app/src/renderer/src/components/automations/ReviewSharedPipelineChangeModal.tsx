@@ -1,5 +1,6 @@
 import { type JSX, useEffect, useState } from 'react';
 import {
+  Divider,
   Stack,
   Button,
   CenteredLoadingSpinner,
@@ -208,9 +209,9 @@ export function ReviewSharedPipelineChangeModal({
       </div>
 
       <div className="relative flex justify-end gap-2 px-6 pb-6 pt-4">
-        <div
-          aria-hidden="true"
-          className="absolute inset-x-0 top-0 h-[var(--border-hairline)] bg-line-base"
+        <Divider
+          aria-hidden
+          className="absolute inset-x-0 top-0"
           data-testid="shared-pipeline-review-footer-separator"
         />
         {approvedRunError ? (

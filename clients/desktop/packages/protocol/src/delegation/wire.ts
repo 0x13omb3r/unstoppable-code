@@ -230,6 +230,7 @@ export const AgentDelegationSnapshotSchema = z.object({
   status: AgentDelegationStatusSchema,
   routeSnapshot: PersistedAgentRouteSnapshotSchema.optional(),
   requestedModelId: text.optional(),
+  requestedModelLabel: text.optional(),
   control: z
     .object({
       operationId: text,

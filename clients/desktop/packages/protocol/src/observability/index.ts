@@ -671,13 +671,16 @@ export type AgentTranscriptApplicationCondition =
   // Hidden `<system_instruction>` that resumes the interrupted turn after a
   // deferred-tools (Search/Load) reload enabled new skills/plugins/MCP servers.
   | 'deferred_tools_reload_continuation'
-  | 'org_memory_enabled_for_turn';
+  | 'org_memory_enabled_for_turn'
+  | 'local_memory_enabled_for_turn'
+  | 'local_memory_withheld_for_turn';
 
 export interface AgentTranscriptInjectedPrompt {
   kind:
     | 'system_prompt_append'
     | 'plan_mode_developer_instructions'
-    | 'org_memory';
+    | 'org_memory'
+    | 'local_memory';
   provider: AgentProviderType;
   applicationCondition: AgentTranscriptApplicationCondition;
   text: string;

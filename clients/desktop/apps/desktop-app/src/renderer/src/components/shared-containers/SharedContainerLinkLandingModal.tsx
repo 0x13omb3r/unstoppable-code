@@ -1,3 +1,4 @@
+import { DialogActionFooter } from '@canopy/ui-shared/components';
 import { type JSX, useCallback, useEffect, useRef, useState } from 'react';
 import type { SharedContainerLinkLanding } from '@canopy/protocol/shared-containers';
 import { CANOPY_CLOUD_ACCOUNT_CHANGED_EVENT } from '@canopy/desktop-shared/constants/canopy-cloud';
@@ -295,7 +296,7 @@ export function SharedContainerLinkLandingModal({
       dataTestId={TEST_ID}
     >
       <div className="px-6 py-4">{body}</div>
-      <div className="flex justify-end gap-2 border-t px-6 py-3">
+      <DialogActionFooter>
         {primary ?? (
           <Button
             variant="ghost"
@@ -306,7 +307,7 @@ export function SharedContainerLinkLandingModal({
             {CLOSE_LABEL}
           </Button>
         )}
-      </div>
+      </DialogActionFooter>
     </DialogModal>
   );
 }

@@ -32,6 +32,7 @@ export function projectNewTaskControls(
   owner: WorkOwner | undefined,
   /** See `resolveCatalogAgentDefaultModel`. */
   agentDefaultModel: string | undefined,
+  projectId?: string,
 ): PortalEntityEnvelope[] {
   const availableModels = buildProjectedModelCatalog(undefined, {
     cursor: true,
@@ -40,6 +41,7 @@ export function projectNewTaskControls(
     copilot: true,
     opencode: true,
     agentDefaultModel,
+    projectId,
   });
   const providerAvailability = peekPortalProviderAvailability();
   const modelRoutingSupported = isDesktopModelRoutingSupported();

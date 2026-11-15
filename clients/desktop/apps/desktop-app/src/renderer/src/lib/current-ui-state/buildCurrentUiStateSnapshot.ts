@@ -671,6 +671,9 @@ export function buildCurrentUiStateSnapshot(
       localMemory: {
         loaded: readBoolean(localMemorySlice.loaded) ?? false,
         enabled: readBoolean(localMemorySlice.enabled) ?? false,
+        learnFromChats: readBoolean(localMemorySlice.learnFromChats) ?? false,
+        learningAvailable:
+          readBoolean(localMemorySlice.learningAvailable) ?? false,
       },
     };
   }
@@ -2515,6 +2518,8 @@ export function buildCurrentUiStateSnapshot(
               readBoolean(mcpManagementSlice.deleteConfirmOpen) ?? false,
             promoteDialogOpen:
               readBoolean(mcpManagementSlice.promoteDialogOpen) ?? false,
+            copyDialogOpen:
+              readBoolean(mcpManagementSlice.copyDialogOpen) ?? false,
             credentialDialogOpen:
               readBoolean(mcpManagementSlice.credentialDialogOpen) ?? false,
             deviceServer: readBoolean(mcpManagementSlice.deviceServer) ?? false,
@@ -4094,9 +4099,10 @@ function buildPanelsSlice(
         const chatId =
           tab.kind === 'chat'
             ? instance?.chatTabId
-            : tab.kind === 'chat-visuals'
+            : tab.kind === 'chat-visuals' || tab.kind === 'mod-pane'
               ? instance?.chatId
               : undefined;
+        const paneId = tab.kind === 'mod-pane' ? instance?.paneId : undefined;
         return {
           panelId: tab.panelId,
           kind: tab.kind,
@@ -4105,6 +4111,7 @@ function buildPanelsSlice(
           ...(tab.title !== tab.kind ? { title: tab.title } : {}),
           ...(planId !== undefined ? { planId } : {}),
           ...(chatId !== undefined ? { chatId } : {}),
+          ...(paneId !== undefined ? { paneId } : {}),
         };
       }),
       ...(group.activePanelId !== null

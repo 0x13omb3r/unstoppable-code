@@ -369,7 +369,7 @@ export function BranchPicker({
   };
 
   return (
-    <div className="w-full rounded-lg bg-card shadow-lg">
+    <Surface variant="product-preview" className="w-full">
       {view === 'list' && (
         <>
           {/* Search input */}
@@ -426,27 +426,29 @@ export function BranchPicker({
 
           {/* Error display */}
           {(loadError || error) && (
-            <div className="flex flex-col gap-1.5 border-t px-2 py-1.5">
-              <DesktopErrorBanner
-                errorSource="branch-picker-load"
-                className=""
-                error={loadError?.error}
-                details={loadError?.details}
-                onRetry={() => setLoadAttempt((n) => n + 1)}
-              />
-              <DesktopErrorBanner
-                errorSource="branch-picker"
-                className=""
-                error={error?.error}
-                details={error?.details}
-                blockMessageFromReplay
-                onDismiss={() => setError(null)}
-              />
-            </div>
+            <Surface variant="section" boundary="top">
+              <div className="flex flex-col gap-1.5 px-2 py-1.5">
+                <DesktopErrorBanner
+                  errorSource="branch-picker-load"
+                  className=""
+                  error={loadError?.error}
+                  details={loadError?.details}
+                  onRetry={() => setLoadAttempt((n) => n + 1)}
+                />
+                <DesktopErrorBanner
+                  errorSource="branch-picker"
+                  className=""
+                  error={error?.error}
+                  details={error?.details}
+                  blockMessageFromReplay
+                  onDismiss={() => setError(null)}
+                />
+              </div>
+            </Surface>
           )}
 
           {/* New branch option */}
-          <div className="border-t p-1">
+          <Surface variant="section" boundary="top" padding="menu-inset">
             <ListRow
               disabled={
                 loading || creating || switching !== null || loadError !== null
@@ -472,7 +474,7 @@ export function BranchPicker({
             >
               New branch…
             </ListRow>
-          </div>
+          </Surface>
         </>
       )}
 
@@ -646,6 +648,6 @@ export function BranchPicker({
           </Stack>
         </div>
       )}
-    </div>
+    </Surface>
   );
 }

@@ -24,6 +24,7 @@
  * header. No PrStatusBar / WorktreeLaunchButton: cowork workspaces have no
  * git branches, PRs, or worktree scripts.
  */
+import { Surface } from '@canopy/ui-shared/components';
 import { memo, useState, type JSX, type ReactNode } from 'react';
 import { useProjectsStore } from '@/stores/projectsStore';
 import { useShallow } from 'zustand/shallow';
@@ -85,9 +86,12 @@ export const CoworkTopBar = memo(function CoworkTopBar({
   // a defensive guard for the transition frames around entry switches.
   if (readOnlyContent !== undefined) {
     return (
-      <div
+      <Surface
         data-testid="cowork-top-bar"
-        className="@container/prbar flex min-h-11.5 shrink-0 items-stretch border-b bg-secondary"
+        variant="well"
+        boundary="bottom"
+        extent="cowork-toolbar"
+        className="@container/prbar flex shrink-0 items-stretch"
       >
         {readOnlyContent.leadingAccessory}
         <div
@@ -97,7 +101,7 @@ export const CoworkTopBar = memo(function CoworkTopBar({
         </div>
         {readOnlyContent.launchControl}
         {readOnlyContent.trailingAccessory}
-      </div>
+      </Surface>
     );
   }
 
@@ -106,7 +110,7 @@ export const CoworkTopBar = memo(function CoworkTopBar({
   }
 
   return (
-    <div
+    <Surface
       data-testid="cowork-top-bar"
       // `min-h-[46px]` matches the worktree top bar's height (9px breathing
       // room around the 28px titlebar icon buttons, control centers level
@@ -119,7 +123,10 @@ export const CoworkTopBar = memo(function CoworkTopBar({
       // The surface lives on the ROOT so the background and bottom border run
       // the full width, including the leading spacer that reserves the
       // collapsed titlebar corner (mirrors the worktree top bar).
-      className="@container/prbar flex min-h-11.5 shrink-0 items-stretch border-b bg-secondary"
+      variant="well"
+      boundary="bottom"
+      extent="cowork-toolbar"
+      className="@container/prbar flex shrink-0 items-stretch"
     >
       <CollapsedTitlebarToggle />
       <div
@@ -177,6 +184,6 @@ export const CoworkTopBar = memo(function CoworkTopBar({
         onSave={updateChatProject}
         onDelete={deleteChatProject}
       />
-    </div>
+    </Surface>
   );
 });

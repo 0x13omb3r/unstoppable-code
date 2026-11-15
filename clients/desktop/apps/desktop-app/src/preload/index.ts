@@ -25,6 +25,7 @@ import {
 import type { OpenCodeConnectionStatus } from '@canopy/desktop-shared/types/opencode-connection';
 import type { AccountProxyStatus } from '@canopy/desktop-shared/types/account-proxy';
 import { isSidebarItemGroupId } from '@canopy/protocol/sidebar';
+import type { ClaudeModSurfacePushEvent } from '@canopy/protocol/extension-ui';
 import { createSkillShareNudgeAPI } from './api/skill-share-nudge-api';
 import { createSkillSuggestionsAPI } from './api/skill-suggestions-api';
 import { createCanopyCoreRelayApi } from './api/canopy-core-relay-api';
@@ -61,6 +62,7 @@ import type {
   ManagedDelegationExtendLifetimeLimitRequest,
   ManagedDelegationExtendLifetimeLimitResult,
   ManagedDelegationLifetimeStatusRequest,
+  ManagedDelegationPolicyCatalogResult,
   ManagedDelegationLifetimeStatus,
   ManagedDelegationLifetimeChangedEvent,
   NativeSubagentInterruptRequest,
@@ -2392,6 +2394,20 @@ const canopyApi: CanopyApi = {
   getClaudeMods: (args) => ipcRenderer.invoke(IPC_CHANNELS.claudeModsGet, args),
   updateClaudeMods: (update) =>
     ipcRenderer.invoke(IPC_CHANNELS.claudeModsUpdate, update),
+  sendClaudeModSurfaceCommand: (args) =>
+    ipcRenderer.invoke(IPC_CHANNELS.claudeModSurfaceCommand, args),
+  onClaudeModSurfacePush: (cb) => {
+    const handler = (
+      _event: Electron.IpcRendererEvent,
+      payload: ClaudeModSurfacePushEvent,
+    ): void => {
+      cb(payload);
+    };
+    ipcRenderer.on(IPC_CHANNELS.claudeModSurfacePush, handler);
+    return (): void => {
+      ipcRenderer.removeListener(IPC_CHANNELS.claudeModSurfacePush, handler);
+    };
+  },
   setApprovalDefaultPreference: (request) =>
     ipcRenderer.invoke(IPC_CHANNELS.preferencesSetApprovalDefault, request),
   createPrimaryDataDir: () =>
@@ -5782,6 +5798,8 @@ const canopyApi: CanopyApi = {
       req: ManagedDelegationWorktreeSummaryRequest,
     ): Promise<ManagedDelegationWorktreeSummaryResult> =>
       ipcRenderer.invoke(IPC_CHANNELS.managedDelegationWorktreeSummary, req),
+    getModelPolicyCatalog: (): Promise<ManagedDelegationPolicyCatalogResult> =>
+      ipcRenderer.invoke(IPC_CHANNELS.managedDelegationModelPolicyCatalog),
     getLifetimeStatus: (
       req: ManagedDelegationLifetimeStatusRequest,
     ): Promise<ManagedDelegationLifetimeStatus> =>
@@ -5931,6 +5949,8 @@ const canopyApi: CanopyApi = {
       ipcRenderer.invoke(IPC_CHANNELS.cloudChatsUploadAttachment, target, file),
     downloadFile: (target, file) =>
       ipcRenderer.invoke(IPC_CHANNELS.cloudChatsDownloadFile, target, file),
+    wakeFiles: (target) =>
+      ipcRenderer.invoke(IPC_CHANNELS.cloudChatsWakeFiles, target),
   },
   cloudCopy: {
     analyze: (request) =>

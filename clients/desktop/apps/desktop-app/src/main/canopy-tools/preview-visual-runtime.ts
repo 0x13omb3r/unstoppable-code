@@ -97,7 +97,7 @@ export async function executePreviewVisual(
     result.image
       ? `Screenshot: ${result.image.mime}, ${result.image.width}×${result.image.height}, ${result.image.bytes} bytes.`
       : options.imageBudgetBytes === VISUAL_PREVIEW_BUDGETS.acpImageBytes
-        ? "A screenshot isn't available in Cursor or OpenCode chats."
+        ? "A screenshot isn't available for this model."
         : `Screenshot omitted: ${result.imageOmittedReason ?? 'no image was captured'}.`,
     ...inlined.value.unresolvedImagePaths.map(
       (path) => `Unresolved image path: ${boundedLine(path)}`,

@@ -1,4 +1,4 @@
-import type { JSX } from 'react';
+import type { HTMLAttributes, JSX } from 'react';
 
 export type ResizeRailLine = 'vertical' | 'horizontal';
 
@@ -36,6 +36,31 @@ export function ResizeRailIndicator({
       className={`${LINE_SHAPE_CLASS_NAMES[line]} rounded-full transition-[scale,background-color] ${
         active ? 'bg-accent/80' : 'bg-line-base/70 group-hover:bg-accent/60'
       }`}
+    />
+  );
+}
+
+/** Enlarged hit region around the rail, with an optional pane edge. */
+export function ResizeRailHandle({
+  axis,
+  edge,
+  className,
+  ...props
+}: HTMLAttributes<HTMLDivElement> & {
+  readonly axis: 'horizontal' | 'vertical';
+  readonly edge?: boolean;
+}): JSX.Element {
+  const shape =
+    axis === 'horizontal'
+      ? 'h-full w-2 cursor-col-resize items-stretch justify-center'
+      : 'h-2 w-full cursor-row-resize flex-col items-center justify-stretch';
+  const boundary = edge && (axis === 'horizontal' ? 'border-l' : 'border-t');
+  return (
+    <div
+      {...props}
+      className={['group flex shrink-0', shape, boundary, className]
+        .filter(Boolean)
+        .join(' ')}
     />
   );
 }

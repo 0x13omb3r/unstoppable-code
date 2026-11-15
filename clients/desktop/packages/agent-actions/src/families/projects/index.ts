@@ -1,3 +1,4 @@
+import { THINKING_LEVELS } from '@canopy/protocol/thinking';
 import {
   agentActionIdempotencyKey,
   agentActionToolResult,
@@ -141,6 +142,27 @@ export const projectDispatchJsonSchema: AgentActionFamilyJsonSchema = {
       type: 'string',
       description:
         'projects.steer_queued_message: the queued input ID from a queued send receipt.',
+    },
+    thinkingLevel: {
+      type: 'string',
+      enum: [...THINKING_LEVELS],
+      description:
+        'projects.create_task and create_task_chat: a thinking level the chosen or default model lists in models.list.',
+    },
+    branchName: {
+      type: 'string',
+      description:
+        'projects.create_task on a code project: the new branch name. Default: generated.',
+    },
+    baseBranch: {
+      type: 'string',
+      description:
+        'projects.create_task on a code project: the branch to start from. Not with baseTaskId.',
+    },
+    baseTaskId: {
+      type: 'string',
+      description:
+        "projects.create_task on a code project: start from this task's current branch. Not with baseBranch.",
     },
     runAt: {
       type: 'string',

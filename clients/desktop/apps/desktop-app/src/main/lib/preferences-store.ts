@@ -15,6 +15,16 @@ import { readFile, stat } from 'node:fs/promises';
 import { trackDetachedWork } from '@canopy/desktop-shared/node/lib/detached-work';
 import { dirname } from 'node:path';
 import {
+  USAGE_DATA_KEYS,
+  type UsageDataKey,
+} from '@canopy/desktop-shared/types';
+import {
+  withUsageDataConsentJournal,
+  recordUsageDataRevocations,
+  type ConsentJournal,
+} from './usage-data-consent-document';
+import { getUsageDataPolicy } from './usage-data-policy';
+import {
   type PreferencesData,
   type PreferencesLoadErrorDetails,
   type PreferencesLoadResult,
@@ -22,6 +32,7 @@ import {
 } from '@canopy/desktop-shared/types';
 import { getPreferencesFilePath } from '../lib/paths';
 import {
+  createUsageDataDenialsPath,
   createPreferencesBackupPath,
   createPreferencesGenerationPath,
   createPreferencesLastGoodPath,
@@ -29,6 +40,7 @@ import {
 import { getResolvedCanopyDataDir } from '@canopy/execution-engine/canopy-paths';
 import { pruneDamagedCopies } from '@canopy/execution-engine/node/lib/damaged-copies';
 import { commitSuggestionsGate } from './suggestions-gate';
+import { publishCommittedPreferences } from './preferences-committed';
 import { hostOperatingSystem } from '@canopy/core-platform/host-platform';
 import { toShortcutPlatform } from '@canopy/desktop-shared/lib/global-shortcut-accelerator';
 import { installPreferencesNormalizationEnvironment } from '@canopy/desktop-shared/node/preferences/normalization-environment';
@@ -76,7 +88,7 @@ function slotFilePath(filePath: string, slot: PreferencesDocumentSlot): string {
 }
 function createDesktopPreferencesDocument(): PreferencesDocumentPort {
   const filePath = getPreferencesFilePath();
-  return {
+  const document: PreferencesDocumentPort = {
     key: filePath,
     readText: (slot) => readFile(slotFilePath(filePath, slot), 'utf8'),
     exists: (slot) =>
@@ -114,6 +126,44 @@ function createDesktopPreferencesDocument(): PreferencesDocumentPort {
         suffix: '.json',
         uniqueTail: true,
       });
+    },
+  };
+  return withUsageDataConsentJournal(
+    document,
+    createUsageDataConsentJournal(filePath),
+  );
+}
+
+function createUsageDataConsentJournal(filePath: string): ConsentJournal {
+  const journalPath = createUsageDataDenialsPath(filePath);
+  return {
+    async read(): Promise<readonly UsageDataKey[]> {
+      try {
+        const value: unknown = JSON.parse(await readFile(journalPath, 'utf8'));
+        if (
+          !Array.isArray(value) ||
+          value.some((key) => !USAGE_DATA_KEYS.some((known) => known === key))
+        )
+          return USAGE_DATA_KEYS;
+        return USAGE_DATA_KEYS.filter((key) => value.includes(key));
+      } catch (error) {
+        return isMissingFileError(error) ? [] : USAGE_DATA_KEYS;
+      }
+    },
+    write: async (denied): Promise<void> => {
+      await createPreferencesFolderDurably(filePath);
+      await writeFileAtomically(journalPath, JSON.stringify(denied), {
+        encoding: 'utf8',
+        mode: 0o600,
+        durable: true,
+        admittedWriter: PREFERENCES_WRITER,
+      });
+    },
+    deny: (denied): void => {
+      const policy = getUsageDataPolicy();
+      const preferences = policy.getUsageDataPolicySnapshot().preferences;
+      for (const key of denied) preferences[key] = false;
+      policy.setPreferences(preferences);
     },
   };
 }
@@ -182,6 +232,12 @@ function approvalChange({
   };
 }
 const preferencesHooks: PreferencesRepositoryHooks<PreferencesData> = {
+  beforeSave: async ({ next }, document): Promise<void> => {
+    await recordUsageDataRevocations(
+      createUsageDataConsentJournal(document.key),
+      next.usageData,
+    );
+  },
   trackSave: (save, change) =>
     approvalChange(change).authorityChanged
       ? trackPreferencesAuthoritySave(save, {
@@ -237,7 +293,11 @@ const preferencesHooks: PreferencesRepositoryHooks<PreferencesData> = {
       notifyInstalledItemsChanged();
     }
   },
-  onCommitted: (next) => commitSuggestionsGate(next),
+  onCommitted: (next) => {
+    commitSuggestionsGate(next);
+    publishCommittedPreferences(next);
+    getUsageDataPolicy().setPreferences(next.usageData);
+  },
   onRecoveryLatched: () => {
     markGlobalApprovalRulesChanged();
     invalidateRendererPreferencesCache();

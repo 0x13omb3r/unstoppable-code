@@ -151,7 +151,7 @@ export function FileCommentsDrawer({
                       role="img"
                       aria-label="Comment from diff view"
                       tabIndex={0}
-                      className="focus-ring inline-flex rounded-full"
+                      className="focus-ring inline-flex"
                     >
                       <StatusPill>
                         <ChangesIcon size={12} aria-hidden="true" />

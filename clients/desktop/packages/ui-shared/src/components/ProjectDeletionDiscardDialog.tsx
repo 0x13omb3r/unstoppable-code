@@ -24,6 +24,7 @@ export interface ProjectDeletionDiscardDialogItem {
 
 export interface ProjectDeletionDiscardDialogProps {
   readonly projectName: string;
+  readonly pendingRecovery?: boolean;
   readonly items: readonly ProjectDeletionDiscardDialogItem[];
   readonly interruptedDeletion: boolean;
   readonly earlierDiscarded: readonly string[];
@@ -51,6 +52,7 @@ function discardable(progress: ProjectDeletionDiscardItemProgress): boolean {
  */
 export function ProjectDeletionDiscardDialog({
   projectName,
+  pendingRecovery = false,
   items,
   interruptedDeletion,
   earlierDiscarded,
@@ -68,6 +70,7 @@ export function ProjectDeletionDiscardDialog({
     })),
     interruptedDeletion,
     earlierDiscarded,
+    pendingRecovery,
   });
   const testId = PROJECT_DELETION_DISCARD_DIALOG_TEST_ID;
   return (

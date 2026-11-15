@@ -1,3 +1,4 @@
+import { RepositoryReadinessMark } from '@canopy/ui-shared/components';
 import { workspaceReadinessIssueKey } from '@/lib/workspaceReadinessIssueKey';
 import {
   useCallback,
@@ -297,15 +298,9 @@ export function WorkspaceReadinessRecommendations({
       data-testid="workspace-readiness-recommendations"
     >
       <div className="flex items-start gap-3">
-        <span
-          className={`mt-0.5 inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full ${
-            ready
-              ? 'bg-success-subtle fg-success'
-              : 'bg-accent-subtle fg-accent-strong'
-          }`}
-        >
+        <RepositoryReadinessMark ready={ready}>
           {ready ? <CheckIcon size="sm" /> : <WrenchIcon size="sm" />}
-        </span>
+        </RepositoryReadinessMark>
         <Stack gap="inline" className="min-w-0 flex-1">
           <Stack gap="tight">
             <Heading level={3} variant="title">

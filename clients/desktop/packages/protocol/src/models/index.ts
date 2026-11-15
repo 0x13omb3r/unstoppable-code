@@ -1,3 +1,5 @@
+import { resolveModelSelectionMetadata } from './selection-metadata';
+export * from './selection-metadata';
 // ---------------------------------------------------------------------------
 
 import type { AiGatewayHarness } from '../ai-gateway-models';
@@ -23,11 +25,13 @@ import type { AiGatewayHarness } from '../ai-gateway-models';
 
 import {
   THINKING_UI_LEVELS,
-  providerFallbackThinkingLevels,
   type ThinkingLevel,
   type ThinkingUiLevel,
 } from '../thinking/index';
 
+export * from './agent-selection';
+import type { AgentCatalogSelection } from './agent-selection';
+export * from './cloud-model-catalog';
 export * from './guest-model-access';
 export * from './model-library-access';
 
@@ -157,6 +161,8 @@ export interface ModelCatalogOption {
   supportsFastMode?: boolean;
   /** `'model'` for a plain provider model, `'agent'` for a custom Agent. */
   kind: ModelCatalogOptionKind;
+  /** Omitted on legacy peers; explicit empty support is authoritative. */
+  agentSelection?: AgentCatalogSelection;
   /**
    * Whether the row is selectable on its own merits. Plain models are always
    * `true` (provider-level auth gating is applied separately from the projected
@@ -236,6 +242,15 @@ export interface ModelCatalogOption {
  */
 export type ModelCatalog = ModelCatalogOption[];
 
+/** Explicit route, Agent preference or row, then destination default; never a second stored field. */
+export function resolveModelCatalogSelectionId(
+  catalog: ModelCatalog | undefined,
+  selection: string | undefined,
+): string | undefined {
+  const metadata = resolveModelSelectionMetadata({ catalog, selection });
+  return metadata.concreteModelId ?? selection;
+}
+
 /** Resolve capabilities for the explicitly chosen runtime without changing source identity. */
 export function resolveModelCatalogHarnessChoice(
   option: ModelCatalogOption,
@@ -247,7 +262,7 @@ export function resolveModelCatalogHarnessChoice(
   if (!choice) return option;
   return {
     ...option,
-    provider: choice.provider,
+    provider: option.provider === 'ollama' ? option.provider : choice.provider,
     harness: choice.harness,
     ...(choice.funding ? { funding: choice.funding } : {}),
     ...(choice.supportedThinkingLevels !== undefined
@@ -306,24 +321,12 @@ export function resolveModelCatalogThinkingLevels(
   modelId: string | undefined,
   providerHint: string | undefined,
 ): readonly ThinkingLevel[] {
-  const selected =
-    catalog?.find((option) => option.id === modelId) ??
-    (modelId === undefined
-      ? catalog?.find((option) => option.isDefault === true)
-      : undefined);
-  const declared = selected
-    ? resolveModelCatalogHarnessChoice(selected, providerHint)
-        .supportedThinkingLevels
-    : undefined;
-  if (declared !== undefined) return declared;
-  // When the default row stood in for an absent `modelId`, resolve the legacy
-  // field against that row's id so it is not skipped for undefined.
-  const legacy = getModelCatalogThinkingLevels(
+  return resolveModelSelectionMetadata({
     catalog,
-    selected?.id ?? modelId,
-  );
-  if (legacy !== undefined) return legacy;
-  return providerFallbackThinkingLevels(providerHint);
+    selection: modelId,
+    executionHarness: providerHint,
+    providerHint,
+  }).thinkingLevels;
 }
 
 /**

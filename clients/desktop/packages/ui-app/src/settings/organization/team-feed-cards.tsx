@@ -1,5 +1,10 @@
 'use client';
 
+import {
+  OrganizationFeedActivityMark,
+  OrganizationFeedCard,
+  Surface,
+} from '@canopy/ui-shared/components';
 import { Badge } from '@canopy/ui-shared/components/Badge';
 import {
   createContext,
@@ -20,6 +25,7 @@ import {
   DelayedLoadingPlaceholder,
   ErrorBanner,
   Markdown,
+  DocumentProse,
   Skeleton,
   TextLinkButton,
   Tooltip,
@@ -259,30 +265,14 @@ function FeedCardShell({
   const actorLinked =
     useContext(FeedActorProfileLinksContext) && item.actor.displayName !== null;
   const { blockClassName } = useSettingsPrivacy();
-  const toneClasses =
-    tone === 'danger'
-      ? 'border-line-destructive/40 bg-destructive/5'
-      : 'bg-card';
-  const highlightClasses = highlighted
-    ? 'ring-2 ring-line-accent ring-offset-2 ring-offset-base'
-    : '';
-  // `content-visibility:auto` skips layout/paint for off-screen cards so the
-  // feed stays responsive as the list grows. Known trade-off: Chromium's
-  // find-in-page (Ctrl/Cmd+F) can't match text inside a card until it has been
-  // laid out, so a search may miss content in cards that are still off-screen.
-  // Accepted here over the sustained render cost; revisit if full-feed text
-  // search becomes a hard requirement (it would need true virtualization).
-  // `contain-intrinsic-size: auto 280px` caches each card's real height after
-  // first paint and only estimates for never-rendered cards; 280px is a closer
-  // guess for tall summary cards than 200px, which reduces first-paint scroll
-  // drift when the permalink anchor scrolls into view.
   return (
-    <article
+    <OrganizationFeedCard
+      tone={tone}
+      highlighted={highlighted}
       id={`feed-item-${item.id}`}
       data-testid="feed-item"
       data-feed-item-id={item.id}
       data-feed-item-type={item.type}
-      className={`scroll-mt-24 rounded-xl border p-4 [content-visibility:auto] [contain-intrinsic-size:auto_280px] ${toneClasses} ${highlightClasses}`}
     >
       <div className="flex items-start gap-3">
         <span
@@ -309,16 +299,9 @@ function FeedCardShell({
               size="lg"
             />
           )}
-          <span
-            className={`absolute -bottom-1 -right-1 flex h-5 w-5 items-center justify-center rounded-full ring-2 ring-card [&>svg]:h-3 [&>svg]:w-3 ${
-              tone === 'danger'
-                ? 'bg-destructive fg-emphasis'
-                : 'bg-secondary fg-accent'
-            }`}
-            aria-hidden="true"
-          >
+          <OrganizationFeedActivityMark tone={tone}>
             {icon}
-          </span>
+          </OrganizationFeedActivityMark>
         </span>
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-s">
@@ -384,7 +367,7 @@ function FeedCardShell({
           <CopyPermalinkButton orgId={orgId} itemId={item.id} />
         </div>
       </div>
-    </article>
+    </OrganizationFeedCard>
   );
 }
 
@@ -740,9 +723,6 @@ function WorktreeStartedCard({
   );
 }
 
-const WORKTREE_SUMMARY_PROSE_CLASSES =
-  'prose prose-sm [--tw-prose-body:var(--fg-primary)] dark:prose-invert max-w-none break-words prose-p:my-0.5 prose-pre:my-1.5 prose-pre:overflow-x-auto prose-pre:bg-fg-primary/[0.06] prose-pre:fg-primary/80 prose-code:fg-accent prose-code:before:content-none prose-code:after:content-none prose-headings:fg-primary prose-a:fg-accent prose-strong:fg-primary prose-li:my-0.5';
-
 /**
  * The desktop flattens structured `WorktreeSummaryData` into a single string via
  * `mapWorktreeSummaryToText()` in `packages/desktop-shared/src/lib/telemetry-mapping.ts`,
@@ -806,14 +786,9 @@ function WorktreeUpdatedCard({
       {title && <p className="mt-1.5 font-semibold fg-primary">{title}</p>}
       {body && (
         <>
-          <div
-            ref={bodyRef}
-            className={`mt-1 ${WORKTREE_SUMMARY_PROSE_CLASSES} ${
-              expanded ? '' : 'line-clamp-3'
-            }`}
-          >
+          <DocumentProse variant="summary" ref={bodyRef} collapsed={!expanded}>
             {renderedBody}
-          </div>
+          </DocumentProse>
           {(overflows || expanded) && (
             <div className="mt-1 text-xs">
               <TextLinkButton onClick={() => setExpanded((prev) => !prev)}>
@@ -981,7 +956,12 @@ function WorktreeSummaryHistory({
         {open ? 'Hide history' : 'History'}
       </Button>
       {open && (
-        <div data-testid="feed-summary-history-panel" className="border-l pl-3">
+        <Surface
+          data-testid="feed-summary-history-panel"
+          variant="section"
+          boundary="left"
+          padding="nested-compact"
+        >
           {status === 'loading' && (
             <DelayedLoadingPlaceholder>
               <Skeleton
@@ -1027,7 +1007,7 @@ function WorktreeSummaryHistory({
               error="Couldn't load more. Try again."
             />
           )}
-        </div>
+        </Surface>
       )}
     </Stack>
   );

@@ -22,6 +22,7 @@ import type {
   ChatState,
   ChatQueueSlice,
   QueuedMessageEditFailure,
+  UnsavedQueuedEdit,
 } from '../state';
 import {
   chatBackendFor,
@@ -54,6 +55,39 @@ export function queuedMessageEditFailureKey(
 }
 
 type ChatSet = Parameters<StateCreator<ChatState, [], [], ChatQueueSlice>>[0];
+
+/**
+ * The chat whose open editor holds `message`, found by the message's
+ * identity when the editor opens (CAN-6799); undefined for a message with
+ * no identity, such as a scheduled send.
+ */
+export function findQueuedEditScope(
+  state: Pick<ChatState, 'worktreeChats'>,
+  message: QueuedChatMessage,
+): QueuedEditScope | undefined {
+  const id = queuedMessageEditFailureKey(message);
+  if (id === undefined) return undefined;
+  for (const [worktreeKey, chats] of Object.entries(state.worktreeChats)) {
+    const tab = chats?.tabs.find(
+      (candidate) =>
+        candidate.editingQueuedMessageIndex !== undefined &&
+        candidate.queuedMessages.some(
+          (row) => queuedMessageEditFailureKey(row) === id,
+        ),
+    );
+    if (tab) return { worktreeKey, chatId: tab.id };
+  }
+  return undefined;
+}
+
+function sameUnsavedQueuedEdit(
+  a: Omit<UnsavedQueuedEdit, 'text'>,
+  b: Omit<UnsavedQueuedEdit, 'text'>,
+): boolean {
+  return (
+    a.worktreeKey === b.worktreeKey && a.chatId === b.chatId && a.id === b.id
+  );
+}
 
 interface QueuedEditScope {
   worktreeKey: string;
@@ -108,6 +142,43 @@ export const createQueueSlice: StateCreator<
   ChatQueueSlice
 > = (set, get, api) => ({
   queuedMessageEditFailures: {},
+  unsavedQueuedEdits: [],
+
+  keepUnsavedQueuedEdit: (edit): void => {
+    // Only a malformed call is skipped: a cleared edit keeps its empty text.
+    if (typeof edit?.id !== 'string' || typeof edit.text !== 'string') return;
+    set((state) => ({
+      unsavedQueuedEdits: [
+        ...state.unsavedQueuedEdits.filter(
+          (kept) => !sameUnsavedQueuedEdit(kept, edit),
+        ),
+        edit,
+      ],
+    }));
+  },
+
+  keepQueuedEditIfRowLeft: (openedIn, message, text): void => {
+    const id = queuedMessageEditFailureKey(message);
+    if (id === undefined || text.trim() === message.text.trim()) return;
+    const stillQueued = get()
+      .worktreeChats[openedIn.worktreeKey]?.tabs.find(
+        (tab) => tab.id === openedIn.chatId,
+      )
+      ?.queuedMessages.some((row) => queuedMessageEditFailureKey(row) === id);
+    if (stillQueued) return;
+    get().keepUnsavedQueuedEdit({ ...openedIn, id, text });
+  },
+
+  dismissUnsavedQueuedEdit: (edit): void => {
+    set((state) => {
+      const kept = state.unsavedQueuedEdits.filter(
+        (candidate) => !sameUnsavedQueuedEdit(candidate, edit),
+      );
+      return kept.length === state.unsavedQueuedEdits.length
+        ? state
+        : { unsavedQueuedEdits: kept };
+    });
+  },
 
   dismissQueuedMessageEditFailure: (entryKey): void => {
     if (get().queuedMessageEditFailures[entryKey] === undefined) return;
@@ -603,9 +674,20 @@ export const createQueueSlice: StateCreator<
               candidate.hostQueueEntryId === expected.hostQueueEntryId),
         ) ?? -1)
       : requestedIndex;
+    const edited = activeTab?.queuedMessages[index];
+    // Keeps the text the save didn't store (CAN-6799), unless it's unchanged.
+    const keepUnsaved = (row: QueuedChatMessage | undefined): void => {
+      const id =
+        row === undefined ? undefined : queuedMessageEditFailureKey(row);
+      if (row === undefined || id === undefined || row.text === text) return;
+      get().keepUnsavedQueuedEdit({ ...scope, id, text });
+    };
     // The edited row already left the queue: nothing is left to save to.
-    if (index < 0 || !activeTab?.queuedMessages[index]) return;
-    const hostQueueEntryId = activeTab.queuedMessages[index]?.hostQueueEntryId;
+    if (index < 0 || !edited) {
+      keepUnsaved(expected);
+      return;
+    }
+    const hostQueueEntryId = edited.hostQueueEntryId;
     if (hostQueueEntryId) {
       pendingEditLocks.delete(editLockKey(key, chatId, ''));
       // Close the editor before the host round-trip. Queue refreshes preserve
@@ -646,6 +728,7 @@ export const createQueueSlice: StateCreator<
           ...(inputMode ? { inputMode } : {}),
         })
         .catch((error: unknown) => {
+          keepUnsaved(edited);
           const appError = toAppError(resolveClientAppError(error));
           if (appError)
             setQueuedEditFailure(
@@ -761,7 +844,10 @@ export const createQueueSlice: StateCreator<
       })
       .then(
         () => applyLocalEdit(true),
-        () => applyLocalEdit(false),
+        () => {
+          keepUnsaved(edited);
+          applyLocalEdit(false);
+        },
       );
   },
 
@@ -770,12 +856,19 @@ export const createQueueSlice: StateCreator<
     set((state) => removeWorktreeRuntimeState(state, projectId, worktreeId));
     set((state) => {
       const failures = Object.entries(state.queuedMessageEditFailures);
-      if (!failures.some(([, failure]) => failure.worktreeKey === key))
+      const unsaved = state.unsavedQueuedEdits.filter(
+        (edit) => edit.worktreeKey !== key,
+      );
+      if (
+        !failures.some(([, failure]) => failure.worktreeKey === key) &&
+        unsaved.length === state.unsavedQueuedEdits.length
+      )
         return state;
       return {
         queuedMessageEditFailures: Object.fromEntries(
           failures.filter(([, failure]) => failure.worktreeKey !== key),
         ),
+        unsavedQueuedEdits: unsaved,
       };
     });
 

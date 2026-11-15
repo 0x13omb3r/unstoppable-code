@@ -1,3 +1,4 @@
+import { ProjectDeletionDiscardDescriptionSchema } from '../project-deletion-discard-schemas';
 import { parsePortalWatcher } from '../index';
 import { openCodeAccountSnapshotSchema } from '../opencode-accounts';
 import {
@@ -6,6 +7,7 @@ import {
   PORTAL_CAPABILITY_INVOCABLE_INVENTORY,
   PORTAL_CAPABILITY_PIPELINE_CHAT_FOLLOW_UP,
   PORTAL_CAPABILITY_CLAUDE_MOD_ADMISSION,
+  PORTAL_CAPABILITY_CLAUDE_MOD_SURFACE,
   PORTAL_CAPABILITY_PIPELINE_CONTENT,
   PORTAL_PIPELINE_CONTENT_PAGE_MAX_CHARS,
   PORTAL_CAPABILITY_SIDEBAR_ACTIVITY_INVENTORY,
@@ -2595,6 +2597,24 @@ describe('pipeline content reads (CAN-3717)', () => {
   });
 });
 
+describe('Claude Mod surface relay', () => {
+  it('pins the capability key, the command and the event type', () => {
+    expect(PORTAL_CAPABILITY_CLAUDE_MOD_SURFACE).toBe('claude_mod_surface_v1');
+    expect(PORTAL_COMMAND_TYPES).toContain(
+      'portal.claude_mods.surface_command',
+    );
+    expect(
+      PORTAL_SMALL_RPC_COMMAND_TYPES.has('portal.claude_mods.surface_command'),
+    ).toBe(true);
+    expect(
+      PORTAL_DESTRUCTIVE_COMMAND_TYPES.has(
+        'portal.claude_mods.surface_command',
+      ),
+    ).toBe(false);
+    expect(PORTAL_EVENT_TYPES).toContain('portal.claude_mods.surface');
+  });
+});
+
 describe('Claude Mod admission controls', () => {
   const digest = `sha256:${'a'.repeat(64)}`;
 
@@ -2965,4 +2985,51 @@ describe('OpenCode account usage wire compatibility', () => {
       status: 'unavailable',
     });
   });
+});
+
+describe('project deletion recovery confirmation wire contract', () => {
+  const legacy = {
+    version: 1,
+    workspaceId: 'project',
+    status: 'discardable',
+    items: [],
+  };
+  const pending = {
+    operationId: '00000000-0000-4000-8000-000000006479',
+    confirmation: 'a'.repeat(64),
+  };
+
+  it('retains exact pending recovery confirmations without projecting host paths', () => {
+    expect(
+      ProjectDeletionDiscardDescriptionSchema.parse({
+        ...legacy,
+        pendingRecovery: [{ ...pending, path: '/host-only/recovery' }],
+        path: '/host-only/project',
+      }),
+    ).toEqual({ ...legacy, pendingRecovery: [pending] });
+  });
+
+  it('keeps older descriptions readable without inventing a pending confirmation', () => {
+    expect(ProjectDeletionDiscardDescriptionSchema.parse(legacy)).toEqual(
+      legacy,
+    );
+  });
+
+  it.each([
+    null,
+    [{ ...pending, operationId: '/host-only/recovery' }],
+    [{ ...pending, confirmation: 'not-a-reviewed-digest' }],
+    [{ operationId: pending.operationId }],
+    Array.from({ length: 501 }, () => pending),
+  ])(
+    'refuses invalid pending evidence instead of dropping its confirmation',
+    (pendingRecovery) => {
+      expect(
+        ProjectDeletionDiscardDescriptionSchema.safeParse({
+          ...legacy,
+          pendingRecovery,
+        }).success,
+      ).toBe(false);
+    },
+  );
 });

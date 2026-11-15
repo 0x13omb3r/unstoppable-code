@@ -1,3 +1,4 @@
+import { Badge } from '@canopy/ui-shared/components';
 import {
   useCallback,
   useEffect,
@@ -164,9 +165,9 @@ function WorktreeHealthAlert({
       // line.
       actions={
         <>
-          <span className="rounded bg-warning-subtle px-1.5 py-0.5 text-xs font-medium fg-primary">
+          <Badge size="compact" tone="warning">
             Broken
-          </span>
+          </Badge>
           <NoticeButton variant="primary" onClick={onRetry} disabled={retrying}>
             {retrying && <LoadingSpinner />}
             <span>{retrying ? 'Trying again' : 'Try again'}</span>

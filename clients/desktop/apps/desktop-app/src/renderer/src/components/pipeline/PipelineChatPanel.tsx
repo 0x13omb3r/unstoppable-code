@@ -1,3 +1,4 @@
+import { Surface } from '@canopy/ui-shared/components';
 import { useEffect, useMemo, useRef, useState, type JSX } from 'react';
 import {
   PIPELINE_EDITOR_PROJECT_ID,
@@ -191,17 +192,17 @@ export function PipelineChatPanel({
 
   const inEditView = placement === 'start';
   return (
-    <section
+    <Surface
+      as="section"
+      variant={inEditView ? 'worktree-panel-group' : 'panel'}
+      boundary={inEditView ? 'none' : 'left'}
+      extent={inEditView ? 'content' : 'parent'}
       aria-label="Workflow assistant"
       data-testid="pipeline-chat-panel"
       // In the edit view the assistant is a panel card like a worktree's
       // (CAN-4319): the panel group frame, its tab row on top. Beside the
       // list it is a bordered drawer with a titled header.
-      className={
-        inEditView
-          ? 'canopy-panel-group'
-          : 'flex h-full min-h-0 w-full flex-col border-l bg-card'
-      }
+      className={inEditView ? undefined : 'flex min-h-0 w-full flex-col'}
       data-placement={placement}
       // The tab row reads as part of the card, as a worktree chat's does
       // above a conversation's start.
@@ -221,7 +222,13 @@ export function PipelineChatPanel({
               app-region, so only a computed-region assertion catches this.
               The title keeps dragging the window, matching the band beside
               it. */}
-          <div className="flex h-10 shrink-0 items-center justify-between border-b px-3">
+          <Surface
+            variant="section"
+            boundary="bottom"
+            extent="portal-toolbar"
+            padding="toolbar-compact"
+            className="flex shrink-0 items-center justify-between"
+          >
             <span className="select-none text-s font-semibold fg-primary">
               Workflow Assistant
             </span>
@@ -234,7 +241,7 @@ export function PipelineChatPanel({
                 data-testid="pipeline-chat-collapse"
               />
             ) : null}
-          </div>
+          </Surface>
 
           {/* Reuse the shared chat tab bar (provider icons, right-click
               context menu with pin / close-others, drag-reorder, and
@@ -319,6 +326,6 @@ export function PipelineChatPanel({
           }}
         />
       </div>
-    </section>
+    </Surface>
   );
 }

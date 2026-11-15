@@ -1,5 +1,7 @@
 'use client';
 
+import { PaymentHandoffNotice } from '@canopy/ui-shared/components';
+
 import {
   createContext,
   useCallback,
@@ -14,20 +16,19 @@ import {
 import {
   accountBillingPath,
   organizationBillingPath,
-  type PaidBillingPlanKey,
   type SettingsPaymentOwner,
 } from '@canopy/protocol/billing';
 import type {
   SettingsPaymentHandoffFailure,
   SettingsPaymentHandoffIntent,
 } from '@canopy/protocol/settings/payment-handoff';
-import type { BillingSummary } from '@canopy/protocol/settings/billing';
-import { Button } from '@canopy/ui-shared/components';
+import type { CreditsPurchaseMode } from '@canopy/app-state/billing/credits';
 import {
-  useSettingsHost,
-  useSettingsNavigation,
-  useSettingsPaymentHandoffAvailable,
-} from '../host';
+  AI_CREDITS_PURCHASE_LABEL,
+  Button,
+} from '@canopy/ui-shared/components';
+import { useCreditsPurchase } from '../../credits/CreditsPurchaseProvider';
+import { useSettingsHost, useSettingsNavigation } from '../host';
 import {
   useBillingSettingsSlots,
   type BillingSettingsSlots,
@@ -41,8 +42,9 @@ import {
  * - A host with inline checkout (web) renders its inline financial UI from
  *   the billing slots, unchanged.
  * - A host without it (desktop) renders CTAs that open the owner's web
- *   billing page with the intended modal already open, through
- *   `openPaymentHandoff`. Opening the browser never means a payment
+ *   billing page with the intended modal already open, through the shared
+ *   AI Credits purchase action (`useCreditsPurchase`) and the client's
+ *   `creditsHandoff`. Opening the browser never means a payment
  *   succeeded: the area offers "Check again" and refreshes the authoritative
  *   wallet, card and activity when the window regains focus.
  *
@@ -60,11 +62,7 @@ export const PAYMENT_HANDOFF_BROWSER_FAILED_COPY =
 export const PAYMENT_AREA_FOCUS_REFRESH_DELAY_MS = 250;
 
 /** What a payment CTA opens. */
-export type PaymentAreaAction =
-  | 'payment-method'
-  | 'top-up'
-  | 'auto-top-up'
-  | 'subscription';
+export type PaymentAreaAction = 'payment-method' | 'top-up' | 'auto-top-up';
 
 /** The payment UI this host can show. */
 export type PaymentAreaMode =
@@ -72,21 +70,35 @@ export type PaymentAreaMode =
   | { readonly kind: 'handoff'; readonly available: boolean | null };
 
 /**
- * The host's payment mode. Inline checkout uses the mounted billing slots
- * (none mounted means no payment UI); otherwise the handoff, whose
- * availability is `null` while the host checks.
+ * The payment mode for a purchase mode. Inline checkout uses the mounted
+ * billing slots (none mounted means no payment UI); every other host gets
+ * the handoff CTAs, whose availability is `null` while the host checks and
+ * `false` when no handoff can open.
+ */
+function usePaymentAreaModeFor(
+  purchaseMode: CreditsPurchaseMode | null,
+): PaymentAreaMode {
+  const slots = useBillingSettingsSlots();
+  return useMemo<PaymentAreaMode>(() => {
+    switch (purchaseMode) {
+      case 'inline':
+        return { kind: 'inline', slots };
+      case 'handoff':
+        return { kind: 'handoff', available: true };
+      case 'unavailable':
+        return { kind: 'handoff', available: false };
+      case null:
+        return { kind: 'handoff', available: null };
+    }
+  }, [purchaseMode, slots]);
+}
+
+/**
+ * The host's payment mode, from the shared AI Credits purchase action: one
+ * source for whether this host checks out inline or hands off.
  */
 export function usePaymentAreaMode(): PaymentAreaMode {
-  const { inlineCheckout } = useSettingsHost();
-  const slots = useBillingSettingsSlots();
-  const available = useSettingsPaymentHandoffAvailable();
-  return useMemo<PaymentAreaMode>(
-    () =>
-      inlineCheckout
-        ? { kind: 'inline', slots }
-        : { kind: 'handoff', available },
-    [available, inlineCheckout, slots],
-  );
+  return usePaymentAreaModeFor(useCreditsPurchase(null).mode);
 }
 
 /**
@@ -106,18 +118,15 @@ export function paymentAreaActionLabel(
     case 'payment-method':
       return options.hasCard === true ? 'Manage payment method' : 'Add card';
     case 'top-up':
-      return 'Buy credits';
+      return AI_CREDITS_PURCHASE_LABEL;
     case 'auto-top-up':
       return 'Manage automatic top-up';
-    case 'subscription':
-      return 'Manage billing on web';
   }
 }
 
 /** The typed handoff intent an action opens. */
 export function paymentAreaHandoffIntent(
   action: PaymentAreaAction,
-  plan?: PaidBillingPlanKey,
 ): SettingsPaymentHandoffIntent {
   switch (action) {
     case 'payment-method':
@@ -126,10 +135,6 @@ export function paymentAreaHandoffIntent(
       return { kind: 'top-up', reason: 'credits' };
     case 'auto-top-up':
       return { kind: 'modal', modal: 'auto-top-up' };
-    case 'subscription':
-      return plan === undefined
-        ? { kind: 'modal', modal: 'subscription' }
-        : { kind: 'modal', modal: 'subscription', plan };
   }
 }
 
@@ -138,53 +143,6 @@ export function paymentOwnerBillingPath(owner: SettingsPaymentOwner): string {
   return owner.kind === 'personal'
     ? accountBillingPath()
     : organizationBillingPath(owner.organizationId);
-}
-
-function isTrialing(summary: BillingSummary): boolean {
-  return summary.status === 'TRIALING' || (summary.trial?.active ?? false);
-}
-
-/**
- * Whether the plan summary needs a working payment method: a past-due
- * subscription, or a trial that converts without a card on file.
- */
-export function billingSummaryNeedsPaymentMethod(
-  summary: BillingSummary,
-): boolean {
-  if (summary.status === 'PAST_DUE') return true;
-  if (summary.lapseReason === 'payment_failed') return true;
-  return isTrialing(summary) && summary.paymentMethod === null;
-}
-
-/**
- * The subscription recovery a handoff can offer, or `null` when the summary
- * reports nothing to recover. A failed payment opens the update-card flow
- * (no plan); a trial converting without a card or a lapsed plan opens the
- * plan's checkout for `plan`. A pending cancellation is resumed from the
- * plan menu, never from here.
- */
-export function subscriptionRecoveryIntent(
-  summary: BillingSummary,
-  plan: PaidBillingPlanKey,
-): { readonly plan?: PaidBillingPlanKey } | null {
-  if (summary.complimentary === true) return null;
-  if ((summary.pendingCancellation ?? null) !== null) return null;
-  if (
-    summary.status === 'PAST_DUE' ||
-    summary.lapseReason === 'payment_failed'
-  ) {
-    return {};
-  }
-  if (isTrialing(summary) && summary.paymentMethod === null) {
-    return { plan };
-  }
-  if (
-    summary.lapseReason === 'trial_ended' ||
-    summary.lapseReason === 'subscription_ended'
-  ) {
-    return { plan };
-  }
-  return null;
 }
 
 /* -------------------------------------------------------------------------- */
@@ -248,7 +206,8 @@ export function PaymentArea({
   refresh,
   children,
 }: PaymentAreaProps): JSX.Element {
-  const mode = usePaymentAreaMode();
+  const purchase = useCreditsPurchase(owner);
+  const mode = usePaymentAreaModeFor(purchase.mode);
   const navigation = useSettingsNavigation();
   const host = useSettingsHost();
   const key = ownerKey(owner);
@@ -291,11 +250,13 @@ export function PaymentArea({
   const start = useCallback(
     (action: PaymentAreaAction, intent: SettingsPaymentHandoffIntent): void => {
       if (mode.kind !== 'handoff' || unavailable || pending !== null) return;
+      const begun = purchase.start(intent);
+      if (begun.mode !== 'handoff') return;
       const generation = generationRef.current;
       lastRef.current = { action, intent };
       setPending(action);
       setOutcome(null);
-      void navigation.openPaymentHandoff(owner, intent).then(
+      void begun.opened.then(
         (result) => {
           if (generationRef.current !== generation) return;
           setPending(null);
@@ -314,7 +275,7 @@ export function PaymentArea({
         },
       );
     },
-    [mode.kind, navigation, owner, pending, unavailable],
+    [mode.kind, pending, purchase, unavailable],
   );
 
   const retry = useCallback((): void => {
@@ -401,16 +362,8 @@ export interface PaymentAreaCtaProps {
   readonly action: PaymentAreaAction;
   /** The host's inline UI for this CTA (web billing slots), when inline. */
   readonly inline?: ReactNode;
-  /** Subscription intents may name the plan the web checkout opens. */
-  readonly plan?: PaidBillingPlanKey;
   /** Payment-method CTAs read "Manage payment method" when a card exists. */
   readonly hasCard?: boolean;
-  /**
-   * Whether the handoff offers this CTA at all (for example, "Manage billing
-   * on web" only while the summary reports something to recover). Inline
-   * hosts are unaffected.
-   */
-  readonly offered?: boolean;
   readonly testId: string;
 }
 
@@ -422,21 +375,19 @@ export interface PaymentAreaCtaProps {
 export function PaymentAreaCta({
   action,
   inline,
-  plan,
   hasCard,
-  offered = true,
   testId,
 }: PaymentAreaCtaProps): JSX.Element | null {
   const area = usePaymentArea();
   if (area.mode.kind === 'inline') return <>{inline ?? null}</>;
-  if (!area.canManage || !offered) return null;
+  if (!area.canManage) return null;
   const busy = area.pending === action;
   return (
     <Button
       size="compact"
       disabled={area.unavailable || area.pending !== null}
       aria-busy={busy}
-      onClick={() => area.start(action, paymentAreaHandoffIntent(action, plan))}
+      onClick={() => area.start(action, paymentAreaHandoffIntent(action))}
       data-testid={testId}
     >
       {busy ? 'Opening…' : paymentAreaActionLabel(action, { hasCard })}
@@ -505,15 +456,11 @@ export function PaymentAreaNotice({
   }
 
   return (
-    <div
-      className="flex items-center justify-between gap-3 rounded-lg bg-muted px-4 py-3"
-      data-testid={testId}
-      role="status"
-    >
+    <PaymentHandoffNotice testId={testId}>
       <p className={`min-w-0 text-s ${tone}`} data-testid={`${testId}-message`}>
         {message}
       </p>
       {action}
-    </div>
+    </PaymentHandoffNotice>
   );
 }

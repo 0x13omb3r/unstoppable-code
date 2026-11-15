@@ -347,6 +347,7 @@ import {
   installFeatureFlagRecoveryTriggers,
 } from './feature-flags';
 import { getLastBuiltFeatureFlagIdentity } from './feature-flags/context';
+import { installChatLearningFlagSource } from './memory/local/transcript-learning-gate';
 import { subscribeTurnFeedbackFlush } from './feedback/turn-feedback-client';
 import { getClaudeTerminalSessionService } from './integration/claude-terminal-session-service';
 import { getClaudeWorkerSessionService } from './integration/claude-worker-session-service';
@@ -1691,6 +1692,14 @@ function installE2eChatEventIngestor(): void {
       getChatStateService,
       isWorkspaceTargetRuntimeStartReserved,
       getBrowserProfileService,
+    },
+  });
+  Object.defineProperty(globalThis, '__CANOPY_E2E_RUN_CHAT_LEARNING__', {
+    configurable: true,
+    value: async (input: unknown): Promise<void> => {
+      const { runChatLearningPassForE2e } =
+        await import('./memory/local/transcript-learning-e2e');
+      await runChatLearningPassForE2e(input);
     },
   });
   // Ledger panel specs seed entries through the desktop dispatcher.
@@ -5389,6 +5398,14 @@ void app.whenReady().then(async (): Promise<void> => {
   });
   // Seed the durable account/local state before Early access consumers start.
   getLabsExperimentsService();
+  installChatLearningFlagSource({
+    isEnabled: () =>
+      getFeatureFlagService().isEnabled(
+        CLIENT_FEATURE_FLAGS.canopyDesktopMemoryLearnFromChats.key,
+      ),
+    subscribe: (listener) =>
+      getFeatureFlagService().onSnapshotChanged(listener),
+  });
   await initializeFeatureFlagService();
   installClaudeModAdmissionHost();
   void initializeLabsExperimentsService();

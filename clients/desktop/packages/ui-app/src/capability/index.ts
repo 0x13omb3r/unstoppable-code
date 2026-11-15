@@ -54,6 +54,7 @@ export * from './SkillSuggestionsList';
 export { unifiedEntryIdForRef } from './unified-entry-id';
 export * from './useOpenCreatedCustomItem';
 export * from './customizeSections';
+export * from './customizeTelemetry';
 export * from './collectionUpdateSummary';
 export * from './useCollectionUpdateSummaries';
 export * from './CustomizeTabSections';
@@ -65,9 +66,13 @@ export {
 export * from './customizeWorkflowActions';
 export * from './CustomizeWorkflowRowControls';
 export * from './CustomizeSearchRow';
+export * from './CustomizeTypeTabs';
+export * from './CustomizeDiscoveryFilterMenu';
+export * from './CustomizeDiscoveryProvider';
 
 export * from './MarketplaceOwnerRow';
 export * from './marketplaceCopyLinkMenuItem';
 export * from './claude-mods';
 export { githubRepoRef } from './pluginProvenance';
+export * from './CopyMcpServerDialog';
 export * from './CloudCopyConsentDialog';

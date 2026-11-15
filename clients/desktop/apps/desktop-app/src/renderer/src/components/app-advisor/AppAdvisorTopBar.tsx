@@ -23,6 +23,7 @@
  * No `CollapsedTitlebarToggle` (the popout has no collapsible main-window
  * titlebar) and no PrStatusBar/git chrome.
  */
+import { Surface } from '@canopy/ui-shared/components';
 import { ORCHESTRATOR_LABEL } from '@canopy/protocol';
 import { memo, type JSX } from 'react';
 import { AppAdvisorIcon } from '@canopy/ui-shared/icons/AppIcons';
@@ -59,14 +60,17 @@ export const AppAdvisorTopBar = memo(function AppAdvisorTopBar({
     : 0;
 
   return (
-    <div
+    <Surface
       data-testid="app-advisor-top-bar"
       // `@container/prbar` on the root: OpenDropdown's compact-mode label
       // (`@[560px]/prbar:`) resolves only against an ancestor container —
       // same wiring as the worktree and cowork top bars.
       // The 43px row height is fixed by the titlebar corner overlay
       // (`APP_ADVISOR_TITLEBAR_ROW_HEIGHT_PX`), not the cowork bar's 46px.
-      className="@container/prbar flex min-h-10.75 shrink-0 items-stretch border-b bg-secondary"
+      variant="well"
+      boundary="bottom"
+      extent="advisor-toolbar"
+      className="@container/prbar flex shrink-0 items-stretch"
     >
       <div
         className="electron-drag shrink-0 self-stretch overflow-hidden transition-[width] duration-150 ease-out"
@@ -89,6 +93,6 @@ export const AppAdvisorTopBar = memo(function AppAdvisorTopBar({
           worktreeId={activeWorkEntryId}
         />
       </div>
-    </div>
+    </Surface>
   );
 });

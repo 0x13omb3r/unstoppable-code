@@ -76,7 +76,7 @@ export function CreditLedgerTable({
     <div>
       <DataTable
         className="hidden sm:block"
-        caption="Credit activity"
+        caption="AI Credits activity"
         rows={entries}
         rowKey={(entry) => entry.id}
         rowAttributes={(entry) => ({
@@ -98,7 +98,7 @@ export function CreditLedgerTable({
           },
           {
             key: 'credits',
-            header: 'Credits',
+            header: 'AI Credits',
             align: 'right',
             render: (entry) => (
               <span

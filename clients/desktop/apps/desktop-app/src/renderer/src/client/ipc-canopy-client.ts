@@ -6,8 +6,15 @@ import type {
 } from '@canopy/desktop-shared/types';
 import { getPortalChatToolFamily } from '@canopy/desktop-shared/lib/portal-tool-family';
 import type { CanopyCapabilities, CanopyClient } from '@canopy/app-core';
-import type { MarketplaceSourcesClient } from '@canopy/app-core/client';
+import type {
+  CreditsHandoffClient,
+  MarketplaceSourcesClient,
+} from '@canopy/app-core/client';
 import type { AccountOrganizationSettingsClient } from '@canopy/app-core/settings';
+import type {
+  SettingsPaymentHandoffAvailability,
+  SettingsPaymentHandoffResult,
+} from '@canopy/protocol/settings/payment-handoff';
 import { createIpcCanopyClient } from '@canopy/ipc-canopy-client';
 import { reportClientAppError } from '@canopy/desktop-instrumentation/client';
 import { scopedFileOperationsFor } from '@/lib/files/workspace-file-source';
@@ -91,6 +98,7 @@ export function createDesktopCapabilities(
     // Tip dismissals live in the desktop preferences (CAN-4904).
     onboardingTips: true,
     claudeModAdmission: true,
+    claudeModSurface: true,
     // Device-to-device windows have no suggestions capability negotiation.
     // Their local preload method cannot prove an older controlled host supports it.
     suggestions:
@@ -206,6 +214,7 @@ export function createDesktopCapabilities(
     // `worktree:discard-describe` / `worktree:discard` (CAN-5334).
     worktreeDiscard: true,
     worktreeRecovery: true,
+    worktreeRecoveryResolution: true,
     // `workspace:delete-discard-describe` and the supersede field (CAN-5337).
     projectDeletionDiscard: true,
     // Observed cost reads over the `cost:*` IPC.
@@ -305,6 +314,60 @@ function createHostedSettings(
 }
 
 /**
+ * AI Credits purchases hand off to the owner's web billing page over the
+ * preload's existing `account-organization-settings:payment-handoff` and
+ * `…:payment-handoff-availability` channels; main mints the signed-in link
+ * and opens the browser. A window without the settings bridge reports the
+ * hand-off unavailable. A caller's `accountId` is sent as-is, so main
+ * refuses a hand-off for an account that is no longer signed in; without
+ * one, the current account's id is read the way the hosted settings client
+ * reads it.
+ */
+function createDesktopCreditsHandoff(): CreditsHandoffClient {
+  let accountIds: ReturnType<typeof createCanopyCloudAccountIdSource> | null =
+    null;
+  const currentAccountId = (): Promise<string | null> => {
+    accountIds ??= createCanopyCloudAccountIdSource(() =>
+      window.api.loadCanopyCloudAccount(),
+    );
+    return accountIds.get();
+  };
+  return {
+    open: async (request): Promise<SettingsPaymentHandoffResult> => {
+      const settingsBridge = resolveSettingsBridge();
+      if (settingsBridge === null) return { ok: false, reason: 'unavailable' };
+      const accountId = request.accountId ?? (await currentAccountId());
+      if (accountId === null) return { ok: false, reason: 'unavailable' };
+      try {
+        return await settingsBridge.paymentHandoff({
+          accountId,
+          owner: request.owner,
+          intent: request.intent,
+        });
+      } catch (error) {
+        // A transport rejection may follow a launch: report it, never retry.
+        reportClientAppError(error);
+        return { ok: false, reason: 'failed' };
+      }
+    },
+    availability: async (
+      request = {},
+    ): Promise<SettingsPaymentHandoffAvailability> => {
+      const settingsBridge = resolveSettingsBridge();
+      if (settingsBridge === null) return { available: false };
+      const accountId = request.accountId ?? (await currentAccountId());
+      if (accountId === null) return { available: false };
+      try {
+        return await settingsBridge.paymentHandoffAvailability({ accountId });
+      } catch (error) {
+        reportClientAppError(error);
+        return { available: false };
+      }
+    },
+  };
+}
+
+/**
  * The desktop's `CanopyClient`: the portable adapter
  * (`@canopy/ipc-canopy-client`) over the preload's channel-limited transport,
  * with the renderer stores and host slices as its ports. Shared feature
@@ -360,6 +423,8 @@ export function createDesktopCanopyClient(
     ...(settings ? { settings } : {}),
   });
   return Object.assign(client, {
+    // Payment forms stay in the browser: purchases hand off to it.
+    creditsHandoff: createDesktopCreditsHandoff(),
     autoDeleteAttentionReceipts: {
       hasShown: (incidentId: string): boolean => {
         try {
@@ -402,6 +467,7 @@ export function createDesktopCanopyClient(
       window.api.workEntryAutoDelete.resolveBranch(request),
   } satisfies Pick<
     CanopyClient,
+    | 'creditsHandoff'
     | 'autoDeleteAttentionReceipts'
     | 'capabilitiesFor'
     | 'listWorkEntryAutoDelete'

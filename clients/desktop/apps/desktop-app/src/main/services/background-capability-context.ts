@@ -11,12 +11,22 @@ import {
 } from '@canopy/execution-engine/lib/resource-context-policy';
 import type { ChatTabPluginSelections } from '@canopy/desktop-shared/types';
 import type { AgentModelDefinition } from '@canopy/execution-engine/types/agent-models';
-import { normalizeMcpServerFile } from '@canopy/execution-engine/types/mcp-servers';
+import {
+  normalizeMcpServerFile,
+  type AccountMcpConnection,
+  type McpServerRef,
+} from '@canopy/execution-engine/types/mcp-servers';
+import {
+  accountMcpConnectionForRef,
+  isCustomAccountMcpServerKey,
+  legacyAccountMcpConnectionId,
+} from '@canopy/desktop-shared/lib/effective-plugin-selections';
 import { normalizePluginSelections } from '@canopy/execution-engine/lib/plugin-selections-normalization';
 import { getPipelinePluginDefaultKey } from '@canopy/execution-engine/pipelines/plugin-collections';
 import type { ShareablePluginCatalog } from '../plugins/shareable-plugin-resolution';
 import { getAgentModelsFilePath, getMcpServerFilePath } from '../lib/paths';
 import { readCanopyCloudAccountWithStatus } from '../lib/canopy-cloud-account-store';
+import { accountMcpConnectionUnusableReason } from '../canopy-cloud/mcp-connection-usable';
 import { createResourceInstallReceiptsStore } from '../lib/resource-install-receipts';
 
 type Resource = ResourceContextInput['resource'];
@@ -111,6 +121,72 @@ export function createBackgroundCapabilityResolver(
         marketplaces: marketplaces.data.marketplaces,
       };
     })());
+  }
+
+  let accountConnectionsPromise:
+    | Promise<AccountMcpConnection[] | ResourceContextDecision>
+    | undefined;
+  function accountConnections(): Promise<
+    AccountMcpConnection[] | ResourceContextDecision
+  > {
+    return (accountConnectionsPromise ??= (async (): Promise<
+      AccountMcpConnection[] | ResourceContextDecision
+    > => {
+      // Defer cloud MCP inventory until a selection names an account server.
+      const { accountMcpConnectionsEnabled } =
+        await import('../mcp/account-catalog');
+      if (!accountMcpConnectionsEnabled()) return missing;
+      const { listAccountMcpConnections } =
+        await import('../canopy-cloud/mcp-connections');
+      try {
+        return await listAccountMcpConnections();
+      } catch (error) {
+        const { isTransientCanopyCloudFailure } =
+          await import('../canopy-cloud/client');
+        if (isTransientCanopyCloudFailure(error)) return unavailable;
+        throw error;
+      }
+    })());
+  }
+
+  /**
+   * The display name of a selected MCP server, or why it can't run. Resolves
+   * refs the way chat sessions do: account servers are selected by server key
+   * (a curated key or `custom:<uuid>`) or a legacy `account:<connectionId>`,
+   * and a device server file with the ref's id wins over an account server.
+   */
+  async function mcpServerName(
+    ref: McpServerRef,
+  ): Promise<string | ResourceContextDecision> {
+    const accountOnly =
+      legacyAccountMcpConnectionId(ref.serverId) !== undefined ||
+      isCustomAccountMcpServerKey(ref.serverId);
+    if (!accountOnly) {
+      let file: ReturnType<typeof normalizeMcpServerFile> | undefined;
+      try {
+        file = normalizeMcpServerFile(
+          JSON.parse(
+            await readFile(getMcpServerFilePath(ref.serverId), 'utf8'),
+          ),
+          ref.serverId,
+        );
+      } catch {
+        // No readable device server; the ref may name an account server.
+        file = undefined;
+      }
+      if (file)
+        return file.server.configs.some(
+          (row) => row.id === ref.configId && row.enabled,
+        )
+          ? file.server.definition.name
+          : missing;
+    }
+    const connections = await accountConnections();
+    if (!Array.isArray(connections)) return connections;
+    const connection = accountMcpConnectionForRef(ref, connections);
+    return connection && accountMcpConnectionUnusableReason(connection) === null
+      ? connection.displayName
+      : missing;
   }
 
   async function authorize(
@@ -336,36 +412,8 @@ export function createBackgroundCapabilityResolver(
       if (!result.allow) return result;
     }
     for (const ref of value.mcpServerRefs ?? []) {
-      let subjectName: string;
-      if (ref.serverId.startsWith('account:')) {
-        // Defer cloud MCP inventory for local MCP selections.
-        const { listAccountMcpConnections } =
-          await import('../canopy-cloud/mcp-connections');
-        const connections = await listAccountMcpConnections();
-        const connection = connections.find(
-          (row) =>
-            `account:${row.id}` === ref.serverId &&
-            row.configId === ref.configId &&
-            row.status === 'CONNECTED' &&
-            row.enabled !== false,
-        );
-        if (!connection) return missing;
-        subjectName = connection.displayName;
-      } else {
-        const file = normalizeMcpServerFile(
-          JSON.parse(
-            await readFile(getMcpServerFilePath(ref.serverId), 'utf8'),
-          ),
-          ref.serverId,
-        );
-        if (
-          !file.server.configs.some(
-            (row) => row.id === ref.configId && row.enabled,
-          )
-        )
-          return missing;
-        subjectName = file.server.definition.name;
-      }
+      const subjectName = await mcpServerName(ref);
+      if (typeof subjectName !== 'string') return subjectName;
       const result = await authorize({
         ...local,
         subject: { kind: 'mcp', name: subjectName },

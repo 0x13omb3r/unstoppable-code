@@ -6,8 +6,9 @@ import {
 import { mcpPlacementLabel, mcpRowHealthModel } from '../lib/mcp-row-health';
 import { formatDateOrEmpty } from '../lib/format-date';
 import { ClaudeLogo, CodexLogo } from '../icons';
-import { PersonIcon, RefreshIcon } from '../icons/AppIcons';
+import { PersonIcon, RefreshIcon, SkillIcon } from '../icons/AppIcons';
 import { curatedLogoKey } from '../lib/curated-logo-key';
+import type { CustomizeSkillMatch } from '../lib/customize-discovery';
 import { createdByViewer, pendingSignInLabel } from '../lib/customize-row-copy';
 import { displayVersion } from '../lib/display-version';
 import { INSTALLED_SHARE_UPDATE_AVAILABLE_LABEL } from '../lib/installed-share-copy';
@@ -133,11 +134,13 @@ function CompactMetadata({
   metadata,
   health,
   attentionLabel,
+  updateBadge = false,
 }: {
   entry: UnifiedPluginEntry;
   metadata: ReturnType<typeof compactMetadata>;
   health?: ReactNode;
   attentionLabel?: string;
+  updateBadge?: boolean;
 }): JSX.Element | null {
   const { version, tooltip, visibleCounts, triggerSummary } = metadata;
   const source = metadata.source
@@ -170,7 +173,7 @@ function CompactMetadata({
     entry.bundledBy ||
     hasSourceMark ||
     entry.marketplaceProviders?.length ||
-    entry.shareUpdateAvailable,
+    (entry.shareUpdateAvailable && !updateBadge),
   );
   // An unreachable check and a pending sign-in can describe separate bindings.
   const hasIndependentSignIn =
@@ -229,7 +232,8 @@ function CompactMetadata({
           <Badge>{provider}</Badge>
         </Tooltip>
       ))}
-      {entry.shareUpdateAvailable === true && (
+      {/* The name line's Update badge already says so. */}
+      {entry.shareUpdateAvailable === true && !updateBadge && (
         <Badge
           tone="info"
           icon={RefreshIcon}
@@ -415,7 +419,50 @@ export interface CustomizeInstalledRowProps {
    * ring, status, actions and menu keep full ink.
    */
   readonly dimmed?: boolean;
+  /**
+   * New Customize (CAN-6810): an Update badge beside the name replaces the
+   * Updates section, and the subtitle's share update badge.
+   */
+  readonly updateBadge?: boolean;
+  /**
+   * New Customize search (CAN-6812): a plugin row a search reached through
+   * its skills names them on an "Includes" line.
+   */
+  readonly skillMatch?: CustomizeSkillMatch;
   readonly McpServerLogoComponent?: ComponentType<McpServerLogoProps>;
+}
+
+/** The "Includes" line of the Customize search design (CAN-6812). */
+function SkillMatchLine({
+  entryId,
+  match,
+}: {
+  entryId: string;
+  match: CustomizeSkillMatch;
+}): JSX.Element {
+  // Inline text, not flex items: in a narrow grid column the names wrap
+  // like a sentence instead of each dropping onto its own line.
+  return (
+    <span
+      data-testid={`customize-row-skill-match-${entryId}`}
+      className="pointer-events-none relative z-10 block min-w-0 text-xs leading-5 fg-secondary"
+    >
+      <span className="inline-flex align-text-bottom">
+        <SkillIcon size="xs" ariaHidden />
+      </span>{' '}
+      Includes
+      {match.names.map((name) => (
+        <span key={name}>
+          {' '}
+          <mark className="box-decoration-clone rounded bg-accent-subtle px-1 font-medium fg-primary">
+            {name}
+          </mark>
+        </span>
+      ))}
+      {match.moreCount > 0 &&
+        ` +${match.moreCount} more ${match.moreCount === 1 ? 'skill' : 'skills'}`}
+    </span>
+  );
 }
 
 function HarnessIcons({
@@ -479,6 +526,8 @@ export function CustomizeInstalledRow({
   onConnect,
   connectName,
   dimmed = false,
+  updateBadge = false,
+  skillMatch,
   McpServerLogoComponent = McpServerLogo,
 }: CustomizeInstalledRowProps): JSX.Element {
   const domId = customizeRowDomId(sectionId, entry.id);
@@ -573,6 +622,15 @@ export function CustomizeInstalledRow({
           {entry.name}
         </span>
       </Tooltip>
+      {updateBadge && (
+        <Badge
+          tone="info"
+          className="shrink-0"
+          data-testid={`customize-row-update-badge-${entry.id}`}
+        >
+          Update
+        </Badge>
+      )}
       {showEntryType && entry.typeLabel && (
         <MarketplaceTypeLabel
           kind={entry.kind}
@@ -601,6 +659,15 @@ export function CustomizeInstalledRow({
         />
       )}
     </span>
+  );
+  const metadataLine = (
+    <CompactMetadata
+      entry={entry}
+      metadata={metadata}
+      health={health}
+      attentionLabel={attentionLabel}
+      updateBadge={updateBadge}
+    />
   );
   // Opacity on the control itself would dim its focus ring, so the content
   // wrapper carries it.
@@ -643,12 +710,14 @@ export function CustomizeInstalledRow({
             {title}
           </button>
         )}
-        <CompactMetadata
-          entry={entry}
-          metadata={metadata}
-          health={health}
-          attentionLabel={attentionLabel}
-        />
+        {skillMatch ? (
+          <span className="flex min-w-0 flex-col gap-1">
+            {metadataLine}
+            <SkillMatchLine entryId={entry.id} match={skillMatch} />
+          </span>
+        ) : (
+          metadataLine
+        )}
       </span>
     </span>
   );

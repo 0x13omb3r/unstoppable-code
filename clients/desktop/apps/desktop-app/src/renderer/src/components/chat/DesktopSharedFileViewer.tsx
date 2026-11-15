@@ -1,3 +1,5 @@
+import { Surface } from '@canopy/ui-shared/components';
+import { FileCommentPositionMarker } from '@canopy/ui-shared/components/chat';
 import {
   LoadingRegion,
   Button,
@@ -1587,8 +1589,7 @@ function DesktopSharedFileViewerImpl({
               }}
             >
               <Tooltip label={marker.title} className="h-full w-full">
-                <button
-                  type="button"
+                <FileCommentPositionMarker
                   aria-label={marker.title}
                   onClick={(event): void => {
                     const rect = event.currentTarget.getBoundingClientRect();
@@ -1598,7 +1599,6 @@ function DesktopSharedFileViewerImpl({
                       openAnnotation(marker.id, rect);
                     }
                   }}
-                  className="focus-ring h-full w-full min-h-1 rounded-full bg-accent shadow-sm hover:opacity-80"
                 />
               </Tooltip>
             </span>
@@ -1693,94 +1693,99 @@ function DesktopSharedFileViewerImpl({
                 data-testid="file-panel-diff"
               >
                 {diffContext && (
-                  <div
-                    className="flex flex-wrap items-center gap-2 px-3 py-1 text-xs fg-secondary ring-1 ring-inset ring-line-base"
+                  <Surface
+                    variant="section"
+                    boundary="frame"
                     data-testid="file-diff-toolbar"
                   >
-                    {diffContext.source === 'turn' ? (
-                      <span>Historical turn comparison</span>
-                    ) : (
-                      <SettingsSelect
-                        width="fit"
-                        aria-label="Diff source"
-                        value={diffContext.source}
-                        onValueChange={(source): void => {
-                          if (!isSelectableDiffSource(source)) return;
-                          setFileTabViewMode(
-                            tabId,
-                            'diff',
-                            { projectId, worktreeId },
-                            { ...diffContext, source },
-                          );
-                        }}
-                        options={[
-                          ...(!availableDiffSources ||
-                          availableDiffSources.includes('uncommitted')
-                            ? [{ value: 'uncommitted', label: 'Uncommitted' }]
-                            : []),
-                          ...(!availableDiffSources ||
-                          availableDiffSources.includes('committed')
-                            ? [{ value: 'committed', label: 'Committed' }]
-                            : []),
-                          { value: 'combined', label: 'All branch changes' },
-                        ]}
-                      />
-                    )}
-                    {availableAnnotations.length > 0 &&
-                      (diffContext.source === 'combined' ? (
-                        <span>{availableAnnotations.length} annotations</span>
+                    <div className="flex flex-wrap items-center gap-2 px-3 py-1 text-xs fg-secondary">
+                      {diffContext.source === 'turn' ? (
+                        <span>Historical turn comparison</span>
                       ) : (
-                        <Button
-                          variant="link"
-                          onClick={() =>
+                        <SettingsSelect
+                          width="fit"
+                          aria-label="Diff source"
+                          value={diffContext.source}
+                          onValueChange={(source): void => {
+                            if (!isSelectableDiffSource(source)) return;
                             setFileTabViewMode(
                               tabId,
                               'diff',
                               { projectId, worktreeId },
-                              { ...diffContext, source: 'combined' },
-                            )
-                          }
-                        >
-                          View {availableAnnotations.length} annotations in all
-                          changes
-                        </Button>
-                      ))}
-                    <div className="ml-auto flex items-center gap-2">
-                      {diffContext.startTree && diffContext.endTree && (
-                        <DiffComparisonToggle
-                          value={diffContext.source === 'turn' ? 'turn' : 'all'}
-                          onChange={(comparison) =>
-                            setFileTabViewMode(
-                              tabId,
-                              'diff',
-                              { projectId, worktreeId },
-                              {
-                                ...diffContext,
-                                source:
-                                  comparison === 'turn' ? 'turn' : 'combined',
-                              },
-                            )
-                          }
-                          dataTestId="file-diff-comparison"
+                              { ...diffContext, source },
+                            );
+                          }}
+                          options={[
+                            ...(!availableDiffSources ||
+                            availableDiffSources.includes('uncommitted')
+                              ? [{ value: 'uncommitted', label: 'Uncommitted' }]
+                              : []),
+                            ...(!availableDiffSources ||
+                            availableDiffSources.includes('committed')
+                              ? [{ value: 'committed', label: 'Committed' }]
+                              : []),
+                            { value: 'combined', label: 'All branch changes' },
+                          ]}
                         />
                       )}
-                      <DiffViewModeToggle
-                        value={diffSplit ? 'split' : 'unified'}
-                        onChange={(mode) => setDiffSplit(mode === 'split')}
-                        dataTestId="file-diff-layout"
-                      />
+                      {availableAnnotations.length > 0 &&
+                        (diffContext.source === 'combined' ? (
+                          <span>{availableAnnotations.length} annotations</span>
+                        ) : (
+                          <Button
+                            variant="link"
+                            onClick={() =>
+                              setFileTabViewMode(
+                                tabId,
+                                'diff',
+                                { projectId, worktreeId },
+                                { ...diffContext, source: 'combined' },
+                              )
+                            }
+                          >
+                            View {availableAnnotations.length} annotations in
+                            all changes
+                          </Button>
+                        ))}
+                      <div className="ml-auto flex items-center gap-2">
+                        {diffContext.startTree && diffContext.endTree && (
+                          <DiffComparisonToggle
+                            value={
+                              diffContext.source === 'turn' ? 'turn' : 'all'
+                            }
+                            onChange={(comparison) =>
+                              setFileTabViewMode(
+                                tabId,
+                                'diff',
+                                { projectId, worktreeId },
+                                {
+                                  ...diffContext,
+                                  source:
+                                    comparison === 'turn' ? 'turn' : 'combined',
+                                },
+                              )
+                            }
+                            dataTestId="file-diff-comparison"
+                          />
+                        )}
+                        <DiffViewModeToggle
+                          value={diffSplit ? 'split' : 'unified'}
+                          onChange={(mode) => setDiffSplit(mode === 'split')}
+                          dataTestId="file-diff-layout"
+                        />
+                      </div>
+                      <HeaderActionButton
+                        iconOnly
+                        tone="neutral"
+                        aria-label="Refresh diff"
+                        onClick={() => setDiffRevision((value) => value + 1)}
+                      >
+                        <RefreshSpinner
+                          spinning={!snapshot && !diffError && !turnUnavailable}
+                        />
+                      </HeaderActionButton>
                     </div>
-                    <HeaderActionButton
-                      iconOnly
-                      tone="neutral"
-                      aria-label="Refresh diff"
-                      onClick={() => setDiffRevision((value) => value + 1)}
-                    >
-                      <RefreshSpinner
-                        spinning={!snapshot && !diffError && !turnUnavailable}
-                      />
-                    </HeaderActionButton>
-                  </div>
+                  </Surface>
                 )}
 
                 <SkippedCommentThreadsNotice
@@ -1910,9 +1915,6 @@ function DesktopSharedFileViewerImpl({
           renderRichDocument={renderRichDocument}
           supportedDocumentKinds={SUPPORTED_DOCUMENT_KINDS}
           documentRecoveryHint={pt(uiText.officePreview.parseFailedRecovery)}
-          documentDisplayName={
-            filePath.replace(/\\/g, '/').split('/').pop() ?? filePath
-          }
         />
         {!rendersAsDocument && viewMode !== 'diff' && richAnnotationMarkers}
       </div>

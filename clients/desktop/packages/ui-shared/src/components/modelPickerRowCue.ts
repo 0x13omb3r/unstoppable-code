@@ -16,11 +16,11 @@ export const MODEL_PICKER_ROW_CUE_COPY = {
     `Connect ${provider} to use this model.`,
   /**
    * A built-in model this account can't bill: its harness is signed out and
-   * AI Credits can't pay (CAN-6444). The row shows only the lock; this is the
-   * hint.
+   * AI Credits can't pay (CAN-6444). The row's cue is `needsProviderSignIn`,
+   * the shorter remedy every viewer can take; this hint names both.
    */
   needsBillingSourceHint: (provider: string): string =>
-    `Connect ${provider} or add AI Credits to use this model.`,
+    `Connect ${provider} or buy AI Credits to use this model.`,
 } as const;
 
 /** A settled yes or no, or `unknown` while loading, after a failure, or unread. */

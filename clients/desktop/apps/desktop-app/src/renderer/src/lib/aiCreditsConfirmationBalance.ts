@@ -1,3 +1,4 @@
+import type { CreditsBalanceReading } from '@canopy/app-state/billing/credits';
 import { resolveAiCreditsFundingSource } from '@canopy/desktop-shared/lib/ai-credits-funding';
 import type {
   AiCreditsScopeRequest,
@@ -72,19 +73,12 @@ export async function readAiCreditsConfirmationBalance(
 }
 
 /**
- * A comparable reading of the buyer's own wallet: the balance plus the
- * source and email that make two readings comparable. `null` for anything
- * that is not a personal balance, including a zero one behind pool metadata.
- * Unlike `usable`, a zero balance is a reading: it is the usual starting
- * point of a first purchase.
+ * A comparable reading of the buyer's own wallet. `personalBalanceReading`
+ * answers `null` for anything that is not a personal balance, including a
+ * zero one behind pool metadata. Unlike `usable`, a zero balance is a
+ * reading: it is the usual starting point of a first purchase.
  */
-export interface PersonalBalanceReading {
-  readonly credits: number;
-  readonly source: string;
-  readonly email: string;
-  /** The read itself minted the daily drip. */
-  readonly reportedGrant: boolean;
-}
+export type PersonalBalanceReading = CreditsBalanceReading;
 
 export function personalBalanceReading(
   response: CanopyCloudAiCreditsState | null,

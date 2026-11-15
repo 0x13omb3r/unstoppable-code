@@ -150,7 +150,9 @@ export async function freezeInternalRootArchiveRecovery(
           // Tombstones are historical evidence and confer no repository deletion rights.
           if (receipt.retention !== 'deleted')
             for (const repo of receipt.repositories.filter(
-              (repo) => receipt.cancelled || repo.refs.length > 0,
+              (repo) =>
+                classifyArchiveRecovery(receipt).disposition === 'cancelled' ||
+                repo.refs.length > 0,
             ))
               if (
                 `${repo.commonDir}:${await canonicalDirectory(repo.commonDir)}` !==
@@ -164,18 +166,21 @@ export async function freezeInternalRootArchiveRecovery(
           const names = (await statIfPresent(journals))
             ? [...(await readdir(journals))].sort()
             : [];
+          const retiredCopies = receipt.cancelled
+            ? receipt.retention
+              ? receipt.copies.filter((copy) => names.includes(copy.name))
+              : []
+            : receipt.copies;
           if (
             !isDeepStrictEqual(
               names,
-              receipt.cancelled
-                ? []
-                : receipt.copies.map((copy) => copy.name).sort(),
+              retiredCopies.map((copy) => copy.name).sort(),
             )
           )
             refuse(
               `withdrawn journal membership changed for ${receipt.operationId}`,
             );
-          for (const copy of receipt.cancelled ? [] : receipt.copies) {
+          for (const copy of retiredCopies) {
             const path = join(journals, copy.name);
             const info = await lstat(path);
             if (
@@ -269,18 +274,20 @@ export async function relocateInternalRootArchiveRecovery(
       const payload = await inventoryArchiveRecoveryTree(
         copiedStore.payloadPath(original),
       );
-      const live = original.cancelled
+      const cancelledIntent =
+        classifyArchiveRecovery(original).disposition === 'cancelled';
+      const live = cancelledIntent
         ? await inventoryArchiveRecoveryTree(copiedStore.stagingPath(original))
         : payload;
       if (
-        original.cancelled &&
+        cancelledIntent &&
         !isDeepStrictEqual(
           live?.entries ?? null,
           original.staging?.entries ?? null,
         )
       )
         refuse(`changed cancelled staging ${original.operationId}`);
-      if (original.cancelled && live)
+      if (cancelledIntent && live)
         await canonicalDirectory(copiedStore.stagingPath(original));
       const staging =
         original.staging && original.retention !== 'deleted' && live
@@ -289,7 +296,7 @@ export async function relocateInternalRootArchiveRecovery(
       const copies: ArchiveRecoveryReceipt['copies'] = [];
       let sourceRecord = original.sourceRecord;
       const revision = createHash('sha256');
-      for (const copy of original.cancelled ? original.copies : []) {
+      for (const copy of cancelledIntent ? original.copies : []) {
         const evidence = lifecycleJournals.find(
           (entry) => entry.name === copy.name,
         );
@@ -325,14 +332,14 @@ export async function relocateInternalRootArchiveRecovery(
       const projected: ArchiveRecoveryReceipt = {
         ...original,
         staging,
-        ...(original.cancelled
+        ...(cancelledIntent
           ? { copies, sourceRecord, revision: revision.digest('hex') }
           : {}),
         repositories: await Promise.all(
           original.repositories.map(async (repo) => {
             if (
               original.retention === 'deleted' ||
-              (!original.cancelled && repo.refs.length === 0)
+              (!cancelledIntent && repo.refs.length === 0)
             )
               return repo;
             const path = movedOwnedPath(transition, repo.commonDir);
@@ -360,7 +367,7 @@ export async function relocateInternalRootArchiveRecovery(
           }),
         ),
       };
-      if (original.cancelled) {
+      if (cancelledIntent) {
         if (payload !== null)
           refuse(`cancelled receipt ${original.operationId} has a payload`);
       } else await checkPayload(workingRoot, projected);

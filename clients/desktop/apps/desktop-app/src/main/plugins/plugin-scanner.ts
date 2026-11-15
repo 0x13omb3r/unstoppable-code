@@ -263,6 +263,7 @@ function flattenHooksConfig(config: Record<string, unknown>): PluginHookInfo[] {
           event,
           matcher: typeof e.matcher === 'string' ? e.matcher : undefined,
           hookType: typeof h.type === 'string' ? h.type : 'command',
+          ...(typeof h.async === 'boolean' ? { async: h.async } : {}),
           command: typeof h.command === 'string' ? h.command : undefined,
         });
       }
@@ -330,7 +331,7 @@ export function scanPluginMods(
   return results;
 }
 
-function resolveHooks(
+export function resolveHooks(
   pluginDir: string,
   manifest: PluginManifest | null,
 ): PluginHookInfo[] {

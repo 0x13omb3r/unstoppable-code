@@ -990,6 +990,56 @@ export const WORKER_PIPELINE_HOST_PATH_OUTPUTS = [
   'reply_file',
 ] as const;
 
+/** The host-path outputs each host action declares (CAN-6780). */
+export const WORKER_PIPELINE_HOST_PATH_OUTPUTS_BY_ACTION: Readonly<
+  Partial<
+    Record<
+      (typeof WORKER_PIPELINE_HOST_ACTIONS)[number],
+      readonly (typeof WORKER_PIPELINE_HOST_PATH_OUTPUTS)[number][]
+    >
+  >
+> = Object.freeze({
+  'create-worktree': ['path', 'setup_log_file', 'setup_results_file'],
+  'wait-for-agent-reply': ['reply_file'],
+});
+
+/** The most files one host result carries, and the longest file text. */
+export const WORKER_PIPELINE_HOST_FILES_MAX = 16;
+export const WORKER_PIPELINE_HOST_FILE_TEXT_MAX = 256 * 1024;
+
+/** A file name in the step's host folder: one segment, never `.` or `..`. */
+export const WORKER_PIPELINE_HOST_FILE_NAME_PATTERN =
+  /^(?!\.{1,2}$)[A-Za-z0-9._-]{1,128}$/;
+
+/**
+ * A file an owner that can't name host paths (the cloud, CAN-6780) returns
+ * with a host step's result. The worker writes it into the step's host
+ * folder and, when `output` names one, sets that host-path output to it.
+ */
+export const WorkerPipelineHostFileSchema = z.strictObject({
+  /** Never `path`: that names a checkout, which no file stands for. */
+  output: z
+    .enum(['setup_log_file', 'setup_results_file', 'reply_file'])
+    .optional(),
+  name: z.string().regex(WORKER_PIPELINE_HOST_FILE_NAME_PATTERN),
+  text: z.string().max(WORKER_PIPELINE_HOST_FILE_TEXT_MAX),
+});
+
+const hostFiles = z
+  .array(WorkerPipelineHostFileSchema)
+  .min(1)
+  .max(WORKER_PIPELINE_HOST_FILES_MAX)
+  .refine(
+    (files) => new Set(files.map((file) => file.name)).size === files.length,
+    'Each file needs its own name.',
+  )
+  .refine((files) => {
+    const outputs = files.flatMap((file) =>
+      file.output === undefined ? [] : [file.output],
+    );
+    return new Set(outputs).size === outputs.length;
+  }, 'Each output names one file.');
+
 const hostRequestId = z.string().min(1).max(3072);
 /**
  * A name a step's inputs carry, such as a group or branch name. The step
@@ -1181,6 +1231,8 @@ export const WorkerPipelineHostResultSchema = z.discriminatedUnion('status', [
     status: z.literal('success'),
     outputs: hostOutputs,
     chatSend: WorkerPipelineChatSendRecordSchema.optional(),
+    /** Files the worker writes on its own host (CAN-6780). */
+    files: hostFiles.optional(),
   }),
   z.strictObject({
     status: z.literal('failure'),
@@ -1190,6 +1242,8 @@ export const WorkerPipelineHostResultSchema = z.discriminatedUnion('status', [
     outputs: hostOutputs,
     /** A message the step sent before it failed, such as a refused steer. */
     chatSend: WorkerPipelineChatSendRecordSchema.optional(),
+    /** Files the worker writes on its own host, such as a failed setup's log. */
+    files: hostFiles.optional(),
   }),
   z.strictObject({
     status: z.literal('owner'),
@@ -1239,6 +1293,9 @@ export type WorkerPipelineHostActionRequest = z.output<
 >;
 export type WorkerPipelineHostRequest = z.output<
   typeof WorkerPipelineHostRequestSchema
+>;
+export type WorkerPipelineHostFile = z.output<
+  typeof WorkerPipelineHostFileSchema
 >;
 export type WorkerPipelineHostResult = z.output<
   typeof WorkerPipelineHostResultSchema

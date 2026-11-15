@@ -1,3 +1,10 @@
+/**
+ * Consumption valuation: $0.15 of gateway cost per AI credit. Shared by
+ * billing debits, balance valuation and cost views; purchase pricing is
+ * resolved separately by the hosted billing credit-price module.
+ */
+export const AI_CREDIT_USD_PER_CREDIT: number = 0.15;
+
 import type { ModelLibraryAccess } from '../models/model-library-access';
 import type { WorkOwner } from '../llm-gateway';
 export type DailyDripBlockedReason = 'network_limit' | 'network_unidentified';
@@ -191,12 +198,16 @@ export interface Entitlements {
   modelLibrary?: ModelLibraryAccess;
   /** Authorized request work owner; never replaces personal `modelLibrary`. */
   workModelLibrary?: { owner: WorkOwner; access: ModelLibraryAccess };
-  /** Authoritative server free access; older servers omit this field. */
+  /**
+   * Authoritative server free access; older servers omit this field.
+   * @deprecated Retained for shipped clients, which require it; the server always sends `true`. Current clients do not read it.
+   */
   freeAccess?: boolean;
-  /** Primary plan by precedence (subscription > trial > org_seat > none). */
+  /** @deprecated Retained for shipped clients, which require it; the server always sends `null`: subscription tiers are retired. */
   plan: { key: string; displayName: string } | null;
+  /** @deprecated Retained for shipped clients, which require it; the server always sends `'none'`. */
   source: EntitlementSource;
-  /** Trial state, or null when there is no trial. `active` indicates whether that trial is currently running (`false` once it has ended). */
+  /** @deprecated Retained for shipped clients, which require it; the server always sends `null`. */
   trial: { active: boolean; endsAt: string } | null;
   /** De-duped UNION of capabilities across all grant sources. */
   capabilities: BillingCapability[];

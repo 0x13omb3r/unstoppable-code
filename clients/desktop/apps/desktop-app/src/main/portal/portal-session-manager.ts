@@ -14,6 +14,7 @@ import {
   PORTAL_CAPABILITY_SUGGESTIONS,
   PORTAL_CAPABILITY_ONBOARDING_TIPS,
   PORTAL_CAPABILITY_CLAUDE_MOD_ADMISSION,
+  PORTAL_CAPABILITY_CLAUDE_MOD_SURFACE,
   PORTAL_CAPABILITY_SCRIPT_ACTIONS,
   readAutoResumeMetadata,
   readToolInterruption,
@@ -84,6 +85,7 @@ import {
   PORTAL_CAPABILITY_INSTALLED_ITEMS,
   PORTAL_CAPABILITY_WORKTREE_DISCARD,
   PORTAL_CAPABILITY_WORKTREE_RECOVERY,
+  PORTAL_CAPABILITY_WORKTREE_RECOVERY_RESOLUTION,
   PORTAL_CAPABILITY_PROJECT_DELETION_DISCARD,
   PORTAL_CAPABILITY_MCP_MANAGEMENT,
   PORTAL_CAPABILITY_COLLECTION_MUTATIONS,
@@ -263,6 +265,7 @@ const PORTAL_SESSION_CAPABILITIES = {
   [PORTAL_CAPABILITY_PLUGIN_SHARE_PREFLIGHT]: true,
   [PORTAL_CAPABILITY_WORKTREE_DISCARD]: true,
   [PORTAL_CAPABILITY_WORKTREE_RECOVERY]: true,
+  [PORTAL_CAPABILITY_WORKTREE_RECOVERY_RESOLUTION]: true,
   [PORTAL_CAPABILITY_PROJECT_DELETION_DISCARD]: true,
   [PORTAL_CAPABILITY_MCP_MANAGEMENT]: true,
   // `portal.collections.save` (plugin-catalog-adapter, CAN-4847).
@@ -321,6 +324,15 @@ function portalSessionCapabilities(): Record<string, boolean> {
   const capabilities: Record<string, boolean> = {
     ...PORTAL_SESSION_CAPABILITIES,
   };
+  // A Mod surface reaches the web only while the desktop draws one; a flag
+  // turned on later takes effect when the Portal session next connects.
+  const flags = getFeatureFlagService();
+  if (
+    flags.isEnabled(CLIENT_FEATURE_FLAGS.canopyDesktopClaudeModSurface.key) &&
+    flags.isEnabled(CLIENT_FEATURE_FLAGS.canopyDesktopClaudeModAdmission.key)
+  ) {
+    capabilities[PORTAL_CAPABILITY_CLAUDE_MOD_SURFACE] = true;
+  }
   if (typeof __CANOPY_E2E__ === 'undefined' || !__CANOPY_E2E__) {
     return capabilities;
   }

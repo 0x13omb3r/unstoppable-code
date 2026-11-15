@@ -76,7 +76,8 @@ import {
   updatePreferencesFile,
 } from '../../lib/preferences-store';
 import { getWorkspaceContextService } from '../../lib/workspace-context-service';
-import { buildProjectedModelCatalog } from '../model-catalog-projection';
+// Bind the App Advisor destination here, leaving the retained settings handler's read contract untouched.
+import { buildProjectedAppAdvisorModelCatalog as buildProjectedModelCatalog } from '../model-catalog-projection';
 import { peekPortalProviderAvailability } from '../../auth/provider-auth-state';
 import { isCursorRuntimeAvailable } from '../../cursor/runtime-availability';
 import { assertUntrustedChatInput } from '../../agent-messaging/untrusted-input';

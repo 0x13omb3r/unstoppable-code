@@ -1,3 +1,5 @@
+import { Surface } from '@canopy/ui-shared/components';
+import { DialogActionFooter } from '@canopy/ui-shared/components';
 import {
   memo,
   useCallback,
@@ -1974,7 +1976,12 @@ function UsageLimitResumeModalContent(): JSX.Element | null {
             {effectDisclosure}
           </p>
         ) : null}
-        <div className="flex items-center justify-between border-b px-6 py-2">
+        <Surface
+          variant="section"
+          boundary="bottom"
+          padding="dialog-header"
+          className="flex items-center justify-between"
+        >
           {/* Pulled out by its own inset so the label stays on the rows'
               left edge. */}
           <Button
@@ -1996,7 +2003,7 @@ function UsageLimitResumeModalContent(): JSX.Element | null {
               {resumeReadinessSummaryText(readinessSummary)}
             </span>
           ) : null}
-        </div>
+        </Surface>
         <div
           className={`flex max-h-[50vh] flex-col gap-2 overflow-y-auto px-6 pt-2 [&>*]:shrink-0 ${groups.length > 0 ? 'pb-5' : error ? 'pb-4' : 'pb-2'}`}
         >
@@ -2099,7 +2106,7 @@ function UsageLimitResumeModalContent(): JSX.Element | null {
             </div>
           )}
         </div>
-        <div className="flex items-center justify-end gap-3 border-t px-6 py-3">
+        <DialogActionFooter center gap="item">
           <Button
             size="compact"
             data-testid="usage-limit-resume-cancel"
@@ -2128,7 +2135,7 @@ function UsageLimitResumeModalContent(): JSX.Element | null {
                 : resumeConfirmLabel(countInterruptedWork(selectedSessions))}
             </Button>
           )}
-        </div>
+        </DialogActionFooter>
       </div>
     </DialogModal>
   );

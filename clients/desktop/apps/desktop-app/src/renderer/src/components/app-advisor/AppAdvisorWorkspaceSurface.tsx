@@ -1,3 +1,4 @@
+import { Surface } from '@canopy/ui-shared/components';
 import { ORCHESTRATOR_LABEL } from '@canopy/protocol';
 import { draftHasContent } from '@/lib/chat-draft-content';
 import {
@@ -576,8 +577,10 @@ export function AppAdvisorWorkspaceSurface({
             />
           </>
         )}
-        <section
-          className="relative flex min-h-55 min-w-0 flex-1 flex-col overflow-hidden bg-card/50"
+        <Surface
+          as="section"
+          variant="workspace-panel"
+          className="relative flex min-w-0 flex-1 flex-col overflow-hidden"
           data-testid="app-advisor-content"
         >
           {ready ? (
@@ -603,7 +606,7 @@ export function AppAdvisorWorkspaceSurface({
               </div>
             </div>
           )}
-        </section>
+        </Surface>
       </main>
       {/* Rendered LAST so its drag region and buttons paint above the nav
           and top bar (later drag rects beat earlier ones in Electron). */}

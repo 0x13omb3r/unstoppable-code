@@ -130,6 +130,15 @@ export function forgetCloudTaskDeletion(scope: Scope): void {
   if (forgot) changed();
 }
 
+/**
+ * The task came back from the archive (CAN-6511): it is no longer deleted,
+ * but its chats deleted on their own stay deleted, as the web core restores
+ * only the task's own chats.
+ */
+export function forgetCloudTaskMark(scope: Scope): void {
+  if (deleted.delete(keyOf(scope))) changed();
+}
+
 /** Forgets every deleted task and chat: the connection that reported them is gone. */
 export function clearCloudTaskDeletions(): void {
   if (deleted.size === 0 && deletedChats.size === 0) return;

@@ -1,3 +1,4 @@
+import type { CapturedTranscriptPreview } from '../lib/chat-transcript-log';
 import { TrackedPlanImplementationInputSchema } from '@canopy/protocol/portal';
 import { supersedeToolInterruptions } from '@canopy/agent-transcript/settlement';
 import { readAutoResumeMetadata } from '@canopy/protocol/portal';
@@ -397,6 +398,8 @@ import {
   type VisualStagingTarget,
   type VisualToolIdentityResolver,
 } from '../lib/chat-visual-contracts';
+import { withChatAddressChangedInstruction } from '@canopy/desktop-shared/lib/chat-address-prompt';
+import { agentChatAddress } from '../lib/agent-chat-address';
 
 setTranscriptModelResolver({
   resolveModelAlias,
@@ -10249,6 +10252,7 @@ export class ChatStateService implements ChatStateCommandPort {
     ) => Promise<T>,
     isCurrent?: () => boolean,
     options?: TranscriptPreviewOptions,
+    consumePinned?: (preview: CapturedTranscriptPreview) => Promise<T>,
   ): Promise<T> {
     return this.repository.consumeTranscriptPreview(
       scope,
@@ -10256,6 +10260,7 @@ export class ChatStateService implements ChatStateCommandPort {
       consume,
       isCurrent,
       options,
+      consumePinned,
     );
   }
 
@@ -15414,6 +15419,13 @@ export class ChatStateService implements ChatStateCommandPort {
         delete fork.unreadMarkedManually;
         delete fork.codexReconstructionSeedId;
         delete fork.claudeTerminal;
+        // The provider conversation a fork continues can hold an earlier,
+        // already-sent address note; restate the fork's own address.
+        fork.pendingSystemInstructions = withChatAddressChangedInstruction(
+          fork.pendingSystemInstructions,
+          agentChatAddress(scope.projectId, scope.worktreeId, fork.id),
+          agentChatAddress(scope.projectId, scope.worktreeId, source.id),
+        );
         const providerType =
           source.providerType ??
           (source.model ? getProviderForModel(source.model) : 'claude');

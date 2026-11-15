@@ -1,3 +1,4 @@
+import { SidebarScrollThumb } from '@canopy/ui-shared/components';
 import {
   type HTMLAttributes,
   type JSX,
@@ -225,7 +226,7 @@ export function SidebarScrollArea({
     // layout sync too: its layout cache indexes those nodes, and the shared
     // surface seats its rows a commit after the workspace rows mount.
     const STICKY_RAIL_NODE_SELECTOR =
-      '[data-sidebar-sticky-slot-workspace-id], .sidebar-workspace-sticky-header, [data-sidebar-item-group-id], [data-sidebar-item-group-header]';
+      '[data-sidebar-sticky-slot-workspace-id], .sidebar-workspace-sticky-header, [data-sidebar-workspace-header], [data-sidebar-item-group-id], [data-sidebar-item-group-header]';
     const touchesStickyRail = (nodes: NodeList): boolean =>
       Array.from(nodes).some(
         (node) =>
@@ -414,11 +415,9 @@ export function SidebarScrollArea({
         }`}
         data-sidebar-scrollbar=""
       >
-        <div
+        <SidebarScrollThumb
           ref={thumbRef}
-          className={`absolute top-0 touch-none rounded-full bg-fg-quaternary/50 ${
-            isVisible ? 'pointer-events-auto' : 'pointer-events-none'
-          }`}
+          interactive={isVisible}
           data-sidebar-scrollbar-thumb=""
           onPointerDown={handleThumbPointerDown}
           onPointerMove={handleThumbPointerMove}

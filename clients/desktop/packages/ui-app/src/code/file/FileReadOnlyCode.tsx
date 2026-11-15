@@ -1,5 +1,7 @@
 'use client';
 
+import { FileLineRangeHighlight } from '@canopy/ui-shared/components';
+
 import { useCallback, useEffect, useMemo, useRef, type JSX } from 'react';
 import { REPLAY_BLOCK_CLASS } from '@canopy/ui-shared/lib/replay-privacy';
 import {
@@ -99,8 +101,7 @@ export function FileReadOnlyCode({
       ) : (
         <>
           {highlight.segments.before}
-          <span
-            className="-mx-4 block border-l-2 border-line-accent bg-accent-subtle pl-3.5 pr-4"
+          <FileLineRangeHighlight
             // A terminal newline creates an empty final source line, but
             // creates no final CSS line box. Reserve that row without text.
             style={{
@@ -119,7 +120,7 @@ export function FileReadOnlyCode({
               data-testid="file-viewer-line-target"
             />
             {highlight.segments.range}
-          </span>
+          </FileLineRangeHighlight>
           {highlight.segments.after}
         </>
       )}

@@ -1,17 +1,22 @@
 'use client';
 
+import {
+  portalAgentOptions,
+  portalAgentModelRows,
+} from './portal-agent-selection';
+
 import { useCallback, useMemo, type JSX, type RefObject } from 'react';
 import {
   getModelCatalogProviderLabel,
   MODEL_PICKER_AUTO_REASONS,
   managedOpenCodeAutoUnavailableReason,
   ModelPickerMenu,
+  modelLibraryRowLock,
   changeSelectedModel,
   selectedAgentId,
-  modelLibraryUnlockHint,
+  isConcreteSelectedModel,
   Notice,
   noticeButtonClassName,
-  modelLibraryUnlockLabel,
   preferredGatewayTabId,
   resolveModelPickerRowCue,
   type ModelCatalog,
@@ -29,6 +34,7 @@ import {
 } from '@canopy/ui-shared/components';
 import { parseAgentRouteModelId } from '@canopy/protocol/agents';
 import {
+  resolveModelSelectionMetadata,
   resolveModelCatalogHarnessChoice,
   type AgentExecutionHarness,
   type ModelLibraryAccess,
@@ -191,7 +197,24 @@ function optionHarness(
 
 /** Portal wiring for the browser-safe shared model picker. */
 export function PortalModelPicker(props: PortalModelPickerProps): JSX.Element {
-  const capability = props.agentSelection;
+  const selectedMetadata = resolveModelSelectionMetadata({
+    catalog: props.catalog,
+    selection: props.currentModel,
+    executionHarness: props.capturedHarness ?? props.selectedHarness,
+  });
+  const effectiveModel = selectedMetadata.concreteModelId;
+  const capability =
+    props.agentSelection ??
+    (props.allowLegacyAgentRows === true
+      ? {
+          agents: portalAgentOptions(
+            props.catalog,
+            props.currentModel,
+            effectiveModel,
+          ),
+          effectiveModel,
+        }
+      : undefined);
   const agentId = selectedAgentId(props.currentModel);
   const selectModel = (
     model: string,
@@ -209,23 +232,70 @@ export function PortalModelPicker(props: PortalModelPickerProps): JSX.Element {
       agentRoutesSupported={capability !== undefined}
       selection={props.currentModel}
       effectiveModel={capability?.effectiveModel}
+      agentRemovalModel={
+        props.catalog.find(
+          (row) =>
+            row.kind === 'model' &&
+            row.isDefault &&
+            row.available &&
+            isConcreteSelectedModel(row.id),
+        )?.id
+      }
       agents={capability?.agents ?? []}
       onAgentChange={(selection): void => {
-        if (selection) props.onSelect(selection);
+        if (!selection) return;
+        const next = resolveModelSelectionMetadata({
+          catalog: props.catalog,
+          selection,
+        });
+        const row = next.modelRow;
+        const support = next.agentRow?.agentSelection?.supportedModels.find(
+          (choice) => choice.modelId === next.concreteModelId,
+        );
+        const keepSelectedHarness =
+          row !== undefined &&
+          next.concreteModelId === effectiveModel &&
+          props.selectedHarness !== undefined &&
+          (support === undefined ||
+            support.harnesses.includes(props.selectedHarness)) &&
+          (optionHarness(row) === props.selectedHarness ||
+            row.harnessChoices?.some(
+              (choice) => choice.harness === props.selectedHarness,
+            ));
+        const metadata = resolveModelSelectionMetadata({
+          catalog: props.catalog,
+          selection,
+          executionHarness:
+            props.capturedHarness ??
+            (keepSelectedHarness ? props.selectedHarness : undefined),
+        });
+        props.onSelect(selection, metadata.executionHarness);
       }}
       disabled={props.disabled}
     >
       <PortalConcreteModelPicker
         {...props}
-        catalog={
-          capability || props.allowLegacyAgentRows === false
-            ? props.catalog.filter((option) => option.kind !== 'agent')
-            : props.catalog
-        }
+        catalog={(capability || props.allowLegacyAgentRows === false
+          ? portalAgentModelRows(props.catalog, props.currentModel)
+          : props.catalog
+        ).map((row) =>
+          row.id === selectedMetadata.modelRow?.id
+            ? {
+                ...row,
+                ...selectedMetadata.metadataRow,
+                available: row.available,
+                harnessChoices: row.harnessChoices,
+              }
+            : row,
+        )}
         {...(capability
           ? {
-              currentModel: capability.effectiveModel,
-              currentModelLabel: undefined,
+              currentModel:
+                capability.effectiveModel ?? (agentId ? '' : undefined),
+              currentModelLabel:
+                agentId && !capability.effectiveModel
+                  ? 'Choose a model'
+                  : undefined,
               ...(props.autoOption && agentId
                 ? {
                     autoOption: {
@@ -266,8 +336,8 @@ function PortalConcreteModelPicker({
   onSelect,
   gatewayNotice,
 }: PortalModelPickerProps): JSX.Element {
-  const unlockHint = modelLibraryUnlockHint(modelLibrary?.access);
-  const unlockLabel = modelLibraryUnlockLabel(modelLibrary?.access);
+  const rowLock = modelLibraryRowLock(modelLibrary?.access);
+  const unlockHint = rowLock?.hint;
   const onUnlock = modelLibrary?.onUnlock;
   // Only the desktop can establish model equivalence. Never merge by label:
   // two similarly named models or parameter variants may execute differently.
@@ -375,9 +445,20 @@ function PortalConcreteModelPicker({
       selection?: ModelPickerSelectionContext,
     ): ModelCatalogOption => {
       const routes = modelRoutes.get(option.id) ?? [option];
+      const keepSelectedHarness =
+        option.id === selectedModelId &&
+        routes.some(
+          (route) =>
+            optionHarness(route) === selectedHarness ||
+            route.harnessChoices?.some(
+              (choice) => choice.harness === selectedHarness,
+            ),
+        );
       const harness = selection?.harnessExplicitlyChosen
         ? selection.harness
-        : (capturedHarness ?? selection?.harness ?? selectedHarness);
+        : (capturedHarness ??
+          selection?.harness ??
+          (keepSelectedHarness ? selectedHarness : undefined));
       const route =
         (harness
           ? routes.find((route) => optionHarness(route) === harness)
@@ -387,7 +468,13 @@ function PortalConcreteModelPicker({
         option;
       return resolveModelCatalogHarnessChoice(route, harness);
     },
-    [capturedHarness, selectedHarness, modelRoutes, rawSelectedModelId],
+    [
+      capturedHarness,
+      selectedHarness,
+      selectedModelId,
+      modelRoutes,
+      rawSelectedModelId,
+    ],
   );
   const menuCatalog = useMemo<ModelCatalog>(
     () =>
@@ -543,11 +630,13 @@ function PortalConcreteModelPicker({
           unavailableReason:
             'Connect OpenCode in the desktop app to use it here.',
         };
-      if (option.kind === 'agent' && !option.available) {
+      if (!option.available) {
         return {
           disabled: true,
           unavailableReason:
-            'This agent is unavailable — its base model is not registered on the desktop app.',
+            option.kind === 'agent'
+              ? 'This agent is unavailable — its base model is not registered on the desktop app.'
+              : 'This model is unavailable for this selection.',
         };
       }
       if (
@@ -573,16 +662,15 @@ function PortalConcreteModelPicker({
       // Last on purpose: a provider or harness restriction is not something a
       // sign-in or purchase can clear, so it keeps its own reason.
       if (
-        unlockHint !== undefined &&
+        rowLock !== undefined &&
         onUnlock &&
         option.libraryEligibility === 'locked'
       ) {
         return {
           disabled: false,
           locked: {
-            hint: unlockHint,
-            ...(unlockLabel === undefined ? {} : { label: unlockLabel }),
-            onUnlock: (): void => {
+            lock: rowLock,
+            onActivate: (): void => {
               const harness =
                 selection?.harness === undefined
                   ? capturedHarness
@@ -621,9 +709,8 @@ function PortalConcreteModelPicker({
       modelLibrary?.access,
       onUnlock,
       providerAvailability,
+      rowLock,
       rowReadiness,
-      unlockHint,
-      unlockLabel,
     ],
   );
   const getOptionState = useCallback(

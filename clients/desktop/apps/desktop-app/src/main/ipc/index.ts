@@ -244,7 +244,7 @@ export function registerAllIpcHandlers(
     canopyRuntime.dispatcher,
     canopyRuntime.resolveCaller,
   );
-  const closeRendererRelay = registerCanopyCoreRelayHandlers(
+  const rendererRelay = registerCanopyCoreRelayHandlers(
     canopyRuntime.dispatcher,
     canopyRuntime.resolveRelaySurface,
   );
@@ -482,7 +482,10 @@ export function registerAllIpcHandlers(
   registerNativeSubagentHandlers();
   registerOrgProjectsHandlers();
   registerCloudProjectsHandlers();
-  registerCloudChatsHandlers(canopyRuntime.resolveRelaySurface);
+  registerCloudChatsHandlers(
+    canopyRuntime.resolveRelaySurface,
+    rendererRelay.followsCloudChat,
+  );
   registerCloudCopyHandlers(canopyRuntime.resolveRelaySurface);
   registerCloudReachBackHandlers(canopyRuntime.resolveRelaySurface);
   registerSharedMultiRepoHandlers(canopyRuntime);
@@ -503,7 +506,7 @@ export function registerAllIpcHandlers(
   registerLocalMemoryHandlers();
   registerMemorySyncHandlers();
   return () => {
-    closeRendererRelay();
+    rendererRelay.close();
     relayBridgeClosed = true;
     uninstallRelayBridgeLifecycle?.();
     closeSkillShareNudge();

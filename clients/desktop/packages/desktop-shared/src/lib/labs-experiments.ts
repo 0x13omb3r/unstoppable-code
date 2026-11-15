@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import {
+  CUSTOMIZE_DISCOVERY_EXPERIMENT,
   EARLY_ACCESS_EXPERIMENT_ID,
   isLabsExperimentId,
   isLabsExperimentAvailability,
@@ -107,6 +108,17 @@ export const LABS_EXPERIMENTS: readonly LabsExperiment[] = [
     pages: ['audit'],
     sidebarKeys: ['audit'],
     flagKey: CLIENT_FEATURE_FLAGS.canopyDesktopLabsAuditTrailPage.key,
+    requiresEarlyAccess: false,
+  },
+  {
+    // Portal follows the account's choice (WEB_FOLLOWED_LABS_EXPERIMENTS)
+    // without listing it in web Labs.
+    id: CUSTOMIZE_DISCOVERY_EXPERIMENT.id,
+    name: CUSTOMIZE_DISCOVERY_EXPERIMENT.name,
+    description: CUSTOMIZE_DISCOVERY_EXPERIMENT.description,
+    pages: [],
+    sidebarKeys: [],
+    flagKey: CLIENT_FEATURE_FLAGS.canopyDesktopLabsCustomizeDiscovery.key,
     requiresEarlyAccess: false,
   },
 ];

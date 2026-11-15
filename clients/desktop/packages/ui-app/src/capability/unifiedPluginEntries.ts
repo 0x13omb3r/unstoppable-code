@@ -127,6 +127,11 @@ import {
   shareRefCatalogKey,
 } from './pluginProvenance';
 import { normalizeShareContentHash } from './share-content-hash';
+import {
+  groupCatalogIntegrations,
+  type CatalogIntegration,
+  type CatalogIntegrationSource,
+} from './catalogIntegrationKey';
 
 export type {
   UnifiedEntryKind,
@@ -1599,6 +1604,69 @@ function bundledSkillsOf(
   return [...byName.values()];
 }
 
+/** A marketplace plugin's skill names, as its skill rows are named. */
+function bundledSkillNamesOf(
+  plugin: UnifiedMarketplacePluginInput,
+): readonly string[] {
+  return [
+    ...new Set(
+      bundledSkillsOf(plugin).map((skill) => marketplaceTitleCase(skill.name)),
+    ),
+  ];
+}
+
+/**
+ * Records on every plugin, installed or not, the names of the skills its
+ * marketplace row lists (CAN-6812). Curated plugins read their curated
+ * marketplace row, the same join `buildPluginSkillEntries` uses, else the
+ * skills their catalog entry lists. A plugin whose sources list no skills
+ * gets nothing; nothing is fetched.
+ */
+function withBundledSkillNames(
+  entries: readonly UnifiedPluginEntry[],
+  marketplaces: readonly UnifiedMarketplaceInput[],
+  curatedPlugins: readonly CuratedPluginEntry[],
+): UnifiedPluginEntry[] {
+  const byEntryId = new Map<string, readonly string[]>();
+  const byCuratedKey = new Map<string, readonly string[]>();
+  for (const marketplace of marketplaces) {
+    const curated = isCuratedMarketplace(marketplace);
+    for (const plugin of marketplace.plugins) {
+      const names = bundledSkillNamesOf(plugin);
+      if (names.length === 0) continue;
+      if (curated) {
+        if (!byCuratedKey.has(plugin.name))
+          byCuratedKey.set(plugin.name, names);
+      } else {
+        byEntryId.set(`mkt:${marketplace.id}/${plugin.name}`, names);
+      }
+    }
+  }
+  for (const plugin of curatedPlugins) {
+    if (byCuratedKey.has(plugin.key)) continue;
+    const names = [
+      ...new Set(
+        plugin.skills.map((skill) => marketplaceTitleCase(skill.name)),
+      ),
+    ];
+    if (names.length > 0) byCuratedKey.set(plugin.key, names);
+  }
+  if (byEntryId.size === 0 && byCuratedKey.size === 0) return [...entries];
+  return entries.map((entry) => {
+    // A curated plugin folded into its integration card (REG-3033) lends
+    // the card its skills, so a skill search still finds it.
+    const folded = entry.integration?.plugin;
+    if (entry.kind !== 'plugin' && folded === undefined) return entry;
+    const names =
+      folded !== undefined
+        ? byCuratedKey.get(folded.key)
+        : entry.ref.type === 'curated-plugin'
+          ? byCuratedKey.get(entry.ref.key)
+          : byEntryId.get(entry.id);
+    return names ? { ...entry, bundledSkillNames: names } : entry;
+  });
+}
+
 /**
  * The skills each installed marketplace plugin bundles, as Installed rows
  * that follow the plugin's status (CAN-4844). They have no status, update or
@@ -2269,9 +2337,23 @@ function ownerDisplayName(owner: ResourceOwner): string | undefined {
 
 function buildLocalAgentEntries(
   agents: UnifiedLocalAgentInput[],
+  /** Shares from other people by id, whose local copies Shared with me lists. */
+  othersShares: ReadonlyMap<string, SharedAgentSummary> = new Map(),
 ): UnifiedPluginEntry[] {
-  return agents.map(
-    (agent): UnifiedPluginEntry => ({
+  return agents.map((agent): UnifiedPluginEntry => {
+    const share =
+      agent.sharedRemoteId === undefined
+        ? undefined
+        : othersShares.get(agent.sharedRemoteId);
+    return {
+      ...(share
+        ? {
+            copyOfSharedWithViewer: {
+              shareEntryId: sharedAgentEntryId(share.id),
+              sharedSince: share.createdAt,
+            },
+          }
+        : {}),
       id: localAgentEntryId(agent.id),
       kind: 'agent',
       origin: 'installed-standalone',
@@ -2286,8 +2368,12 @@ function buildLocalAgentEntries(
       state: 'installed',
       recommended: false,
       ref: { type: 'local-agent', agentId: agent.id },
-    }),
-  );
+    };
+  });
+}
+
+function sharedAgentEntryId(agentId: string): string {
+  return `agent:shared:${agentId}`;
 }
 
 const LOCAL_AGENT_ENTRY_PREFIX = localAgentEntryId('');
@@ -2371,7 +2457,7 @@ function buildSharedAgentEntries(
     const linked = index === undefined ? undefined : local[index];
     const installedEntryId = linked ? localAgentEntryId(linked.id) : undefined;
     return {
-      id: `agent:shared:${agent.id}`,
+      id: sharedAgentEntryId(agent.id),
       kind: 'agent',
       origin: 'shared',
       name: agent.name,
@@ -2468,6 +2554,8 @@ function buildSharedPluginEntries(
     const listingId = listing
       ? `mkt:${listing.marketplace.id}/${listing.plugin.name}`
       : undefined;
+    // The listing a share names supplies its skills (CAN-6812).
+    const skillNames = listing ? bundledSkillNamesOf(listing.plugin) : [];
     const installedEntryId =
       viewerId &&
       plugin.createdBy.id === viewerId &&
@@ -2494,6 +2582,7 @@ function buildSharedPluginEntries(
       providerSupport: NEUTRAL_PROVIDER_SUPPORT,
       state: installedEntryId ? 'installed' : 'available',
       ...(installedEntryId ? { installedEntryId } : {}),
+      ...(skillNames.length > 0 ? { bundledSkillNames: skillNames } : {}),
       recommended: false,
       ref: { type: 'shared-plugin', pluginId: plugin.externalId },
     };
@@ -3056,6 +3145,19 @@ function marketplaceBundledServers(
   return servers;
 }
 
+/** Entry id → marketplace row for every marketplace plugin. */
+function marketplacePluginsById(
+  marketplaces: readonly UnifiedMarketplaceInput[],
+): Map<string, UnifiedMarketplacePluginInput> {
+  const plugins = new Map<string, UnifiedMarketplacePluginInput>();
+  for (const marketplace of marketplaces) {
+    for (const plugin of marketplace.plugins) {
+      plugins.set(`mkt:${marketplace.id}/${plugin.name}`, plugin);
+    }
+  }
+  return plugins;
+}
+
 /** Entry id → package key for every marketplace plugin. */
 function marketplacePackageKeys(
   marketplaces: readonly UnifiedMarketplaceInput[],
@@ -3424,6 +3526,144 @@ function attachPluginProvenance(
   );
 }
 
+/** What integration grouping reads that the entries do not carry. */
+interface IntegrationFacts extends ProvenanceFacts {
+  /** Marketplace plugin entry id → its marketplace row. */
+  marketplacePlugins: ReadonlyMap<string, UnifiedMarketplacePluginInput>;
+}
+
+function definedStrings(values: readonly (string | undefined)[]): string[] {
+  return values.filter(
+    (value): value is string => value !== undefined && value !== '',
+  );
+}
+
+/**
+ * How one catalog entry reads to integration grouping, or nothing for an
+ * entry that is not an integration copy (skills, workflows, shares, …).
+ */
+function integrationSource(
+  entry: UnifiedPluginEntry,
+  facts: IntegrationFacts,
+): CatalogIntegrationSource | undefined {
+  const catalogUrl = (key: string | undefined): string[] => {
+    const url = key === undefined ? undefined : facts.curatedMcp.get(key)?.url;
+    return url === undefined ? [] : [url];
+  };
+  switch (entry.ref.type) {
+    case 'marketplace-plugin': {
+      const listings = entry.marketplaceListings?.length
+        ? entry.marketplaceListings
+        : [entry];
+      const plugins = listings.flatMap((listing) => {
+        const plugin = facts.marketplacePlugins.get(listing.id);
+        return plugin === undefined ? [] : [{ id: listing.id, plugin }];
+      });
+      return {
+        id: entry.id,
+        kind: 'marketplace-plugin',
+        names: definedStrings([
+          entry.name,
+          ...plugins.flatMap(({ plugin }) => [plugin.name, plugin.displayName]),
+        ]),
+        publisherUrls: definedStrings(
+          plugins.map(({ plugin }) => plugin.homepage),
+        ),
+        mcpEndpoints: definedStrings(
+          plugins.flatMap(({ id }) =>
+            (facts.bundledServers.get(id) ?? []).map((server) => server.url),
+          ),
+        ),
+      };
+    }
+    case 'curated-plugin': {
+      const plugin = facts.curatedPlugins.get(entry.ref.key);
+      return {
+        id: entry.id,
+        kind: 'curated-plugin',
+        names: definedStrings([entry.name, plugin?.name]),
+        publisherUrls: definedStrings([plugin?.authorUrl, plugin?.docsUrl]),
+        mcpEndpoints: (plugin?.mcpServers ?? []).flatMap(catalogUrl),
+      };
+    }
+    case 'curated-mcp': {
+      const catalog = facts.curatedMcp.get(entry.ref.key);
+      return {
+        id: entry.id,
+        kind: 'mcp-catalog',
+        names: definedStrings([entry.name, catalog?.name]),
+        publisherUrls: definedStrings([catalog?.authorUrl, catalog?.docsUrl]),
+        mcpEndpoints: catalogUrl(entry.ref.key),
+      };
+    }
+    case 'provider-connector':
+      return {
+        id: entry.id,
+        kind: 'connector',
+        names: definedStrings([entry.name, entry.ref.displayName]),
+        publisherUrls: [],
+        mcpEndpoints: catalogUrl(entry.ref.curatedKey),
+      };
+    case 'local-mcp': {
+      const server = facts.mcpServers.get(entry.ref.serverId);
+      return {
+        id: entry.id,
+        kind: 'installed',
+        names: definedStrings([entry.name, server?.name]),
+        publisherUrls: [],
+        mcpEndpoints: [
+          ...definedStrings([server?.urlHost]),
+          ...catalogUrl(entry.ref.curatedKey),
+        ],
+      };
+    }
+    default:
+      return undefined;
+  }
+}
+
+/**
+ * Stamps `integrationKey` and `integrationEndpoint` on every integration copy
+ * (CAN-6808), including the listings behind a grouped marketplace row. Only
+ * adds optional fields: ids, order and every other field stay as they were.
+ */
+function withIntegrationKeys(
+  entries: readonly UnifiedPluginEntry[],
+  facts: IntegrationFacts,
+): UnifiedPluginEntry[] {
+  const sources = entries.flatMap((entry) => {
+    const source = integrationSource(entry, facts);
+    return source === undefined ? [] : [source];
+  });
+  const byId = new Map<string, CatalogIntegration>();
+  for (const integration of groupCatalogIntegrations(sources)) {
+    for (const id of integration.memberIds) byId.set(id, integration);
+  }
+  const stamp = (
+    entry: UnifiedPluginEntry,
+    integration: CatalogIntegration,
+  ): UnifiedPluginEntry => ({
+    ...entry,
+    integrationKey: integration.key,
+    ...(integration.preferredEndpoint !== undefined
+      ? { integrationEndpoint: integration.preferredEndpoint }
+      : {}),
+  });
+  return entries.map((entry) => {
+    const integration = byId.get(entry.id);
+    if (integration === undefined) return entry;
+    const stamped = stamp(entry, integration);
+    return entry.marketplaceListings
+      ? {
+          ...stamped,
+          marketplaceListings: entry.marketplaceListings.map((listing) =>
+            stamp(listing, integration),
+          ),
+        }
+      : stamped;
+  });
+}
+
 /**
  * The installed MCP rows hidden behind one marketplace plugin, for a plugin
  * page that loaded that plugin on its own (the web Portal's detail route).
@@ -3633,7 +3873,16 @@ export function buildUnifiedPluginEntries(
       inputs.sharedCollections ?? [],
       inputs.viewerId,
     ),
-    ...buildLocalAgentEntries(inputs.localAgents ?? []),
+    ...buildLocalAgentEntries(
+      inputs.localAgents ?? [],
+      new Map(
+        (inputs.sharedAgents ?? []).flatMap((agent) =>
+          inputs.viewerId != null && agent.createdBy.id === inputs.viewerId
+            ? []
+            : [[agent.id, agent] as const],
+        ),
+      ),
+    ),
     ...buildSharedAgentEntries(
       sharedAgentsWithoutLocalCopies(
         inputs.sharedAgents ?? [],
@@ -3658,14 +3907,25 @@ export function buildUnifiedPluginEntries(
     ),
     ...buildCuratedPipelineEntries(inputs.curatedPipelines ?? []),
   ];
-  const entries = attachPluginProvenance(linkSameAppPlugins(assembled), {
+  const provenanceFacts: ProvenanceFacts = {
     bundledServers: marketplaceBundledServers(inputs.marketplaces),
     curatedPlugins: new Map(
       inputs.curatedPlugins.map((plugin) => [plugin.key, plugin]),
     ),
     curatedMcp: curatedMcpByKey,
     mcpServers: new Map(inputs.mcpServers.map((server) => [server.id, server])),
-  });
+  };
+  const entries = withBundledSkillNames(
+    withIntegrationKeys(
+      attachPluginProvenance(linkSameAppPlugins(assembled), provenanceFacts),
+      {
+        ...provenanceFacts,
+        marketplacePlugins: marketplacePluginsById(inputs.marketplaces),
+      },
+    ),
+    inputs.marketplaces,
+    inputs.curatedPlugins,
+  );
   const creators = new Map<string, string>();
   const publications = new Map<string, boolean>();
   // Rebuilt from the current summaries on every projection, so a removed

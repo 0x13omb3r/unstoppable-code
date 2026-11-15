@@ -531,6 +531,8 @@ export interface McpServerManagementActionsProps {
     | 'device-retaining-cloud';
   /** Connect or disconnect the cloud account connection. */
   readonly account?: McpAccountActionPort;
+  /** Copies the server to the cloud account; it stays on this device. */
+  readonly copyToCloud?: McpAction<() => Promise<void>>;
   readonly moveToCloud?: McpAction<() => Promise<void>>;
   readonly moveToDevice?: McpAction<() => Promise<void>>;
   readonly deleteServer?: McpAction<() => Promise<void>>;
@@ -543,7 +545,12 @@ export interface McpServerManagementActionsProps {
   readonly registerErrorClearer?: (clear: () => void) => () => void;
 }
 
-type ManagementActionId = 'account' | 'move-cloud' | 'move-device' | 'delete';
+type ManagementActionId =
+  | 'account'
+  | 'copy-cloud'
+  | 'move-cloud'
+  | 'move-device'
+  | 'delete';
 
 interface ActionRowSpec {
   readonly id: ManagementActionId;
@@ -572,6 +579,7 @@ function McpServerManagementActionsForTarget({
   placement,
   deleteScope,
   account,
+  copyToCloud,
   moveToCloud,
   moveToDevice,
   deleteServer,
@@ -674,6 +682,13 @@ function McpServerManagementActionsForTarget({
       label: account.label,
       pendingLabel: 'Working…',
       action: account.action,
+    });
+  if (copyToCloud)
+    rows.push({
+      id: 'copy-cloud',
+      label: 'Add to cloud',
+      pendingLabel: 'Adding…',
+      action: copyToCloud,
     });
   if (moveToCloud)
     rows.push({

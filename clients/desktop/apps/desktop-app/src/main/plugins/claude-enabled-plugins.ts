@@ -81,26 +81,7 @@ function configuredSources(
   return settingSources ?? ['user', 'project', 'local'];
 }
 
-/** User-scope disables apply to explicit selections as well as provider carryover. */
-export function readClaudeDisabledInstalledPlugins(
-  claudeConfigDir: string,
-): string[] {
-  const installed = claudeInstalledPluginsMap(
-    readJson(path.join(claudeConfigDir, 'plugins', 'installed_plugins.json')),
-  );
-  const settings = enabledPluginsOf(
-    readJson(path.join(claudeConfigDir, 'settings.json')),
-  );
-  return Object.entries(installed ?? {}).flatMap(([id, entry]) => {
-    const candidates = Array.isArray(entry) ? entry : [entry];
-    return settings[id] === false &&
-      candidates.some(
-        (candidate) => isRecord(candidate) && isUserScopedInstall(candidate),
-      )
-      ? [id]
-      : [];
-  });
-}
+export { readClaudeDisabledInstalledPlugins } from '@canopy/execution-engine/node/plugins/claude-disabled-plugins';
 
 /** One spelling of a repository path, so two references to it compare equal. */
 function canonicalPath(target: string): string {

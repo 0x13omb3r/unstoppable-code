@@ -1,3 +1,7 @@
+import {
+  ChatModeControlThumb,
+  ChatModeControlTrack,
+} from '@canopy/ui-shared/components/chat';
 import type { JSX } from 'react';
 import { CHAT_LABEL } from '@canopy/protocol';
 import { Button } from '@canopy/ui-shared/components/Button';
@@ -67,22 +71,11 @@ export function ChatInterfaceModeToggle({
   const claudeCodeTitle = claudeCode?.busyReason ?? TOOLTIP_CLAUDE_CODE;
 
   return (
-    <div
-      className={`electron-no-drag relative flex h-8 shrink-0 items-center gap-0 rounded-full p-0.5 ${
-        floating
-          ? 'bg-card/95 opacity-60 shadow-sm backdrop-blur hover:opacity-100 focus-within:opacity-100'
-          : 'bg-muted'
-      }`}
-      role="group"
-      aria-label={`${CHAT_LABEL} interface mode`}
-      data-testid="chat-interface-mode-toggle"
+    <ChatModeControlTrack
+      floating={floating === true}
+      label={`${CHAT_LABEL} interface mode`}
     >
-      <span
-        aria-hidden="true"
-        className="pointer-events-none absolute left-0.5 top-0.5 h-7 w-7 rounded-full bg-quaternary shadow-sm transition-[transform] duration-200 ease-out motion-reduce:transition-none"
-        style={{ transform: `translateX(${selectedIndex * 28}px)` }}
-        data-testid="chat-interface-mode-toggle-selector"
-      />
+      <ChatModeControlThumb index={selectedIndex} />
       <Tooltip label={canopyTitle}>
         <Button
           variant="ghost-overlay"
@@ -146,7 +139,7 @@ export function ChatInterfaceModeToggle({
           <TerminalBorderedIcon size={16} aria-hidden="true" />
         </Button>
       </Tooltip>
-    </div>
+    </ChatModeControlTrack>
   );
 }
 

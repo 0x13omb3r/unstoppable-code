@@ -1,3 +1,7 @@
+import type {
+  WorktreeRecoveryFinishResult,
+  WorktreeRecoveryResolveResult,
+} from '@canopy/protocol/canopy-core';
 import {
   formatWorktreeRecoveryReason,
   type WorktreeRecoveryAsset,
@@ -234,4 +238,76 @@ export function worktreeRecoveryRetainedFact(
   return key === 'checkout'
     ? 'Working files are still in place.'
     : 'Chats are still saved.';
+}
+
+/** Preservation and withdrawal never promise to undo earlier scripts or stopped sessions. */
+export function worktreeRecoveryResultCopy(
+  result: WorktreeRecoveryFinishResult | WorktreeRecoveryResolveResult,
+  action?: 'keep-worktree' | 'release' | 'finish' | 'delete-hold',
+): string {
+  const verb = action
+    ? RECOVERY_ACTION_VERBS[action]
+    : 'continue archive recovery';
+  switch (result.status) {
+    case 'worktree-kept':
+      return (
+        'Worktree kept. Earlier cleanup scripts and stopped sessions have not been reversed.' +
+        retainedRecoveryCopy(result)
+      );
+    case 'attempt-withdrawn':
+      return (
+        'Archive attempt withdrawn. No worktree was restored.' +
+        retainedRecoveryCopy(result)
+      );
+    case 'hold-deleted':
+      return 'Retained recovery material deleted.';
+    case 'finished':
+    case 'cleanup-pending':
+      if (
+        !result.cleanupRequired &&
+        !result.gitCleanupPending &&
+        result.status === 'finished'
+      )
+        return 'Archive finished. The worktree has been removed.';
+      return (
+        'Archive saved. The worktree has been removed. ' +
+        (result.gitCleanupPending
+          ? 'Git cleanup is still pending.' +
+            (result.cleanupRequired ? ' Other cleanup is also pending.' : '')
+          : 'Separate cleanup is still pending.')
+      );
+    case 'refused':
+      return `Couldn't ${verb}. Check again to review the current options. No completion has been confirmed.`;
+    case 'interrupted':
+      return `The attempt to ${verb} was interrupted. Check again before continuing; some changes may already have been applied.`;
+  }
+}
+
+const RECOVERY_ACTION_VERBS = {
+  'keep-worktree': 'keep the worktree',
+  release: 'withdraw the archive attempt',
+  finish: 'finish the archive',
+  'delete-hold': 'delete recovery material',
+};
+
+function retainedRecoveryCopy(result: {
+  retainedSnapshots: number;
+  retainedPayload: boolean;
+}): string {
+  return result.retainedSnapshots > 0 || result.retainedPayload
+    ? ' Saved recovery material is retained separately. You can delete it later.'
+    : ' No saved recovery material remains.';
+}
+
+/** Unknown delivery is not a refusal or completion, and is never retried automatically. */
+export function worktreeRecoveryUnconfirmedCopy(
+  action: 'keep-worktree' | 'release' | 'finish' | 'delete-hold',
+): string {
+  const subject = {
+    'keep-worktree': 'Keeping the worktree',
+    release: 'Withdrawing the archive attempt',
+    finish: 'Finishing the archive',
+    'delete-hold': 'Deleting recovery material',
+  }[action];
+  return `${subject} hasn't been confirmed. Check again before continuing.`;
 }

@@ -11,6 +11,7 @@ import type { PipelinePackageAnalysisSummary } from '@canopy/protocol/pipelines'
 import {
   CloudCopyConsentDialog,
   type CloudCopyConsentAudience,
+  type CloudCopyConsentChoice,
 } from '../CloudCopyConsentDialog';
 
 (
@@ -87,17 +88,19 @@ describe('adding a desktop skill or plugin to the cloud account (CAN-6176 9c)', 
   let container: HTMLDivElement;
   let root: Root;
   let added: number;
+  let choices: CloudCopyConsentChoice[];
 
   const render = (
     analysis: PipelinePackageAnalysisSummary | null,
     loading = false,
     analysisError: string | null = null,
     audience: CloudCopyConsentAudience = 'private',
+    kind: 'skill' | 'plugin' = 'plugin',
   ): void => {
     act(() => {
       root.render(
         <CloudCopyConsentDialog
-          subject={{ kind: 'plugin', name: 'notes' }}
+          subject={{ kind, name: 'notes' }}
           replacing={false}
           audience={audience}
           analysis={analysis}
@@ -106,8 +109,9 @@ describe('adding a desktop skill or plugin to the cloud account (CAN-6176 9c)', 
           selectedOptionalResourceIds={[]}
           onToggleOptionalResource={(): void => undefined}
           onRetry={(): void => undefined}
-          onAdd={(): Promise<void> => {
+          onAdd={(choice): Promise<void> => {
             added += 1;
+            choices.push(choice);
             return Promise.resolve();
           }}
           onClose={(): void => undefined}
@@ -121,6 +125,7 @@ describe('adding a desktop skill or plugin to the cloud account (CAN-6176 9c)', 
     document.body.appendChild(container);
     root = createRoot(container);
     added = 0;
+    choices = [];
   });
 
   afterEach(() => {
@@ -214,5 +219,83 @@ describe('adding a desktop skill or plugin to the cloud account (CAN-6176 9c)', 
       await Promise.resolve();
     });
     expect(added).toBe(1);
+  });
+
+  const keepInStep = (): HTMLInputElement | null => {
+    const found = query('cloud-copy-consent-keep-in-step');
+    return found instanceof HTMLInputElement
+      ? found
+      : (found?.querySelector('input') ?? null);
+  };
+  const add = async (): Promise<void> => {
+    await act(async () => {
+      addButton().click();
+      await Promise.resolve();
+    });
+  };
+
+  it('offers a skill "Keep the cloud copy up to date", unticked, saying later changes upload without asking, to the same account and audience', () => {
+    render(READY, false, null, 'private', 'skill');
+    const box = keepInStep();
+    expect(box?.checked).toBe(false);
+    const body = query('cloud-copy-consent-body')?.textContent ?? '';
+    expect(body).toContain('Keep the cloud copy up to date');
+    expect(body).toContain('upload without asking you again');
+    expect(body).toContain('only to this cloud account and its private copy');
+    expect(body).toContain('only the files listed here');
+    for (const [audience, who] of [
+      ['team', 'the copy your team sees'],
+      ['organization', 'the copy your organization sees'],
+      ['public_link', 'the copy anyone with its public link sees'],
+    ] as const) {
+      render(READY, false, null, audience, 'skill');
+      expect(query('cloud-copy-consent-body')?.textContent).toContain(
+        `only to this cloud account and ${who}`,
+      );
+    }
+    // A plugin's copy is never kept in step.
+    render(READY);
+    expect(keepInStep()).toBeNull();
+  });
+
+  it('sends the choice with Add: off unless ticked, and never for a plugin', async () => {
+    render(READY, false, null, 'private', 'skill');
+    await add();
+    act(() => keepInStep()?.click());
+    expect(keepInStep()?.checked).toBe(true);
+    await add();
+    render(READY);
+    await add();
+    expect(choices).toEqual([
+      { keepInStep: false },
+      { keepInStep: true },
+      { keepInStep: false },
+    ]);
+  });
+
+  it('explains a refused add, as the cloud words it, when a same-named plugin from another marketplace is there already (CAN-6725)', async () => {
+    const taken =
+      'A plugin named notes from Team tools is already in your cloud marketplace. Remove it first or rename this one.';
+    act(() => {
+      root.render(
+        <CloudCopyConsentDialog
+          subject={{ kind: 'plugin', name: 'notes' }}
+          replacing={false}
+          audience="private"
+          analysis={READY}
+          loading={false}
+          analysisError={null}
+          selectedOptionalResourceIds={[]}
+          onToggleOptionalResource={(): void => undefined}
+          onRetry={(): void => undefined}
+          onAdd={(): Promise<void> => Promise.reject(new Error(taken))}
+          onClose={(): void => undefined}
+        />,
+      );
+    });
+    await add();
+    expect(document.body.textContent).toContain(taken);
+    // Add stays available, so the person can try again once it's resolved.
+    expect(addButton().disabled).toBe(false);
   });
 });

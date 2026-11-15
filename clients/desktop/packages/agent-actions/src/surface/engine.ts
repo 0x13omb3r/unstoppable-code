@@ -203,19 +203,44 @@ function unavailable(key: AgentActionToolKey): AgentActionToolResult {
   };
 }
 
+const FIND_IDS =
+  "This chat's own address is in its system prompt or hidden context, and projects.list_task_chats lists the others.";
+
+/** Retired actions and what replaces each; dispatching one names it. */
+const RETIRED_AGENT_ACTIONS: Readonly<Record<string, string>> = {
+  'chat.create': `chat.create was removed. Use projects.create_task for a new task, or projects.create_task_chat with projectId and taskId for a chat in an existing task. ${FIND_IDS}`,
+  'chat.send_message': `chat.send_message was removed. Use projects.send_message with projectId, taskId and chatId. ${FIND_IDS}`,
+  'workspace.get':
+    'workspace.get was removed. Use projects.list to find projects and their IDs.',
+  'worktree.list':
+    "worktree.list was removed. Use projects.list_tasks with the project's projectId.",
+  'chat.list': `chat.list was removed. Use projects.list_task_chats with projectId and taskId. ${FIND_IDS}`,
+  'chat.get':
+    'chat.get was removed. Use projects.get_last_agent_response with projectId, taskId and chatId.',
+};
+
+/** Whether `type` names a retired action, which every host refuses. */
+export function isRetiredAgentActionType(type: string): boolean {
+  return Object.prototype.hasOwnProperty.call(RETIRED_AGENT_ACTIONS, type);
+}
+
 function unsupportedAction(
   type: string,
   availableTypes: readonly string[],
 ): AgentActionToolResult {
+  const retired = isRetiredAgentActionType(type)
+    ? RETIRED_AGENT_ACTIONS[type]
+    : undefined;
   const response = {
     requestId: '',
     ok: false,
     error: {
       code: 'unsupported_action',
       message:
-        availableTypes.length > 0
+        retired ??
+        (availableTypes.length > 0
           ? `${type} is not available here. Available actions: ${availableTypes.join(', ')}.`
-          : `${type} is not available here.`,
+          : `${type} is not available here.`),
     },
   };
   return { text: JSON.stringify(response, null, 2), isError: true };
@@ -653,6 +678,18 @@ export function createAgentActionSurface<H, THook extends string = string>(
     rawArgs: unknown,
     call: AgentActionCall<H>,
   ): Promise<AgentActionToolResult> {
+    // A retired type is refused with its replacement before its payload is
+    // validated, so a stale call learns what replaced it.
+    const rawType =
+      typeof rawArgs === 'object' && rawArgs !== null && 'action' in rawArgs
+        ? actionTypeOf(rawArgs.action)
+        : undefined;
+    if (
+      typeof rawType === 'string' &&
+      Object.prototype.hasOwnProperty.call(RETIRED_AGENT_ACTIONS, rawType) &&
+      !actionTypes.includes(rawType)
+    )
+      return unsupportedAction(rawType, actionTypes);
     const parsed = dispatchActionInputSchema.safeParse(rawArgs);
     if (!parsed.success) {
       return invalidAgentActionArguments(

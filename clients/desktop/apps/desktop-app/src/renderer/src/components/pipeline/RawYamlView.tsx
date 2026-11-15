@@ -1,3 +1,4 @@
+import { AttachedNotice } from '@canopy/ui-shared/components';
 import { type JSX, useCallback } from 'react';
 import { POSTHOG_REPLAY_BLOCK_CLASS } from '@canopy/desktop-instrumentation/posthog-replay-privacy';
 
@@ -49,12 +50,12 @@ export function RawYamlView({
       className={`${POSTHOG_REPLAY_BLOCK_CLASS} flex-1 flex flex-col overflow-hidden`}
     >
       {error && (
-        <div
+        <AttachedNotice
           data-testid="pipeline-raw-yaml-error"
-          className="px-4 py-2 bg-destructive-subtle border-b border-line-destructive/30 fg-destructive text-xs shrink-0"
+          variant="yaml-error"
         >
           {error}
-        </div>
+        </AttachedNotice>
       )}
       <textarea
         data-testid="pipeline-raw-yaml-textarea"

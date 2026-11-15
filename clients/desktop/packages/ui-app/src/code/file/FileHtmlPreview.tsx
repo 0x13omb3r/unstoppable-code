@@ -10,7 +10,7 @@ import {
   useState,
   type JSX,
 } from 'react';
-import { REPLAY_BLOCK_CLASS } from '@canopy/ui-shared/lib/replay-privacy';
+import { FileHtmlPreviewFrame } from '@canopy/ui-shared/components';
 import { PreviewSearchContext } from './FilePreviewSearch';
 import { buildSearchableHtmlSrcDoc } from './html-preview-search';
 
@@ -283,7 +283,7 @@ function FileHtmlPreviewImpl({
     return (): void => window.clearTimeout(timer);
   }, [postSearch, searchable, search?.query, search?.index]);
   return (
-    <iframe
+    <FileHtmlPreviewFrame
       // Replace the browsing context when async assets produce a new document.
       // Updating srcdoc in place can leave Chromium's opaque frame unpainted.
       key={previewDocument.frameKey}
@@ -295,7 +295,6 @@ function FileHtmlPreviewImpl({
       sandbox={searchable ? 'allow-scripts' : ''}
       referrerPolicy="no-referrer"
       // File content: session replay keeps a same-size placeholder.
-      className={`${REPLAY_BLOCK_CLASS} min-h-0 flex-1 border-0 bg-white`}
       data-testid="html-file-preview-frame"
     />
   );

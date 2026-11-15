@@ -4,6 +4,7 @@ import {
   QueuedMessageReasonSpecimen,
   QueuedMessageRowSpecimen,
   QueuedMessageSettingsHeldWarningSpecimen,
+  UnsavedMessageEditsSpecimen,
 } from './componentsLabChatQueueRows';
 import { StepWordsSpecimen } from './componentsLabChatStepWords';
 import {
@@ -18,6 +19,15 @@ const CHAT = 'packages/ui-shared/src/components/chat';
 
 /** Queued messages, steering, steps and task controls in chat. */
 export const CHAT_QUEUE_LAB_ENTRIES: readonly ComponentsLabEntry[] = [
+  {
+    id: 'chat-unsaved-message-edits',
+    name: 'UnsavedMessageEdits',
+    group: 'Unified',
+    note: "A queued message's edit that wasn't saved, kept read-only with Copy and Dismiss until dismissed (CAN-6799). Desktop also offers Restore into the chat's composer.",
+    source: `${CHAT}/MessageEditEntry.tsx`,
+    prs: [],
+    View: UnsavedMessageEditsSpecimen,
+  },
   {
     id: 'chat-queued-message-row',
     name: 'QueuedMessageRow',

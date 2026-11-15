@@ -1,3 +1,7 @@
+import {
+  StickyTurnBacking,
+  RevertedTurnSurface,
+} from '@canopy/ui-shared/components/chat';
 import { ORCHESTRATOR_LABEL } from '@canopy/protocol';
 import { useScopeCapabilities } from '@/hooks/useScopeCapabilities';
 import { BrandLogo } from '@/components/BrandLogo';
@@ -539,14 +543,7 @@ function RevertedTurnWrapper({
 }: {
   children: ReactNode;
 }): JSX.Element {
-  return (
-    <div
-      className="flex flex-col -ml-3 border-l-2 border-line-attention/40 pl-3 opacity-60 gap-2"
-      aria-label="Reverted turn"
-    >
-      {children}
-    </div>
-  );
+  return <RevertedTurnSurface>{children}</RevertedTurnSurface>;
 }
 
 // ---------------------------------------------------------------------------
@@ -1947,9 +1944,7 @@ export const TurnGroupRenderer = memo(function TurnGroupRenderer({
           // Pinned like the finished turn's header, in the same wrapper, so
           // finishing only changes its words.
           <StickyTurnSummary>
-            <div className="relative bg-base before:absolute before:inset-x-0 before:-top-2 before:h-2 before:bg-base">
-              {liveHeader}
-            </div>
+            <StickyTurnBacking>{liveHeader}</StickyTurnBacking>
           </StickyTurnSummary>
         ) : (
           liveHeader
@@ -1973,7 +1968,7 @@ export const TurnGroupRenderer = memo(function TurnGroupRenderer({
                   them. It deliberately stops at the row's bottom edge: a band
                   running past the last banner is what read as a black bar
                   sitting on the transcript. */}
-              <div className="relative bg-base before:absolute before:inset-x-0 before:-top-2 before:h-2 before:bg-base">
+              <StickyTurnBacking>
                 <DesktopCollapsedTurnSummary
                   counts={summary}
                   outcomes={outcomes}
@@ -1986,7 +1981,7 @@ export const TurnGroupRenderer = memo(function TurnGroupRenderer({
                   timer={timerBlock ?? undefined}
                   outcome={headerOutcome}
                 />
-              </div>
+              </StickyTurnBacking>
             </StickyTurnSummary>
           ) : (
             <DesktopCollapsedTurnSummary

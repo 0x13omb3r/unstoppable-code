@@ -349,6 +349,7 @@ export function createProviderProcessHostClient(
         cwd: request.cwd,
         env: environmentOf(request.env),
         owner: { kind: request.owner.kind, id: request.owner.id },
+        windowsVerbatimArguments: request.windowsVerbatimArguments,
         ...(request.stdin ? { stdin: request.stdin } : {}),
       });
     } catch {

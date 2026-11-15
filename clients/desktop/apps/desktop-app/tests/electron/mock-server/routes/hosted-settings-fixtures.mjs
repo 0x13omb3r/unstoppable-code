@@ -307,7 +307,7 @@ export function organizationBootstrap(org) {
     digestsEnabled: true,
     projectsEnabled: true,
     canViewUsageStats,
-    freeAccess: false,
+    freeAccess: true,
     githubConnected: org.githubConnection?.connected ?? false,
     lapse: lapsed ? clone(org.lapsed) : null,
   };
@@ -333,7 +333,7 @@ export function bootstrapPayload(state, organizationId) {
       // `hostedSettings.integrationsEnabled: false` models a server with the
       // Cloud Git (Integrations) page off.
       integrationsEnabled: state.integrationsEnabled !== false,
-      freeAccess: false,
+      freeAccess: true,
     },
     organizations: state.orgOrder.map((id) => {
       const entry = state.organizations[id];
@@ -378,7 +378,7 @@ export function teamPageData(state, org) {
     digestsEnabled: true,
     projectsEnabled: true,
     billingNeedsAttention: org.lapsed !== null,
-    freeAccess: false,
+    freeAccess: true,
     lapsed: clone(org.lapsed),
     mobileBrowser: false,
   };
@@ -1107,7 +1107,7 @@ function accountPageData(state, kind, route) {
             trial: null,
             hasPaymentMethod: true,
           },
-          freeAccess: false,
+          freeAccess: true,
         },
       };
     case 'account.invoice':

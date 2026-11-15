@@ -24,7 +24,6 @@ import type {
 } from '@canopy/protocol/sharing';
 import type { WorkspaceContext } from '@canopy/protocol/workspace-context';
 import type { PersonalOrganizationUpgradePort } from '@canopy/app-state/personal-organization-upgrade';
-import { orgsWithoutActivePlanClause } from '@canopy/ui-shared/lib/org-lapse-sentence';
 import {
   Stack,
   Button,
@@ -77,10 +76,6 @@ import {
   shareFailureRecovery,
   type ShareFailureRecovery,
 } from './share-errors';
-import {
-  resolveSelectedDestinationAccess,
-  type ShareDestinationAccess,
-} from './share-destination-access';
 import { useShareAudience } from './useShareAudience';
 import { useShareTargetSearch } from './useShareTargetSearch';
 import {
@@ -153,13 +148,10 @@ export interface ShareResourceAccount {
    */
   readonly hasTeam?: boolean;
   /**
-   * Advisory sharing access per organization. An organization known to lack
-   * its plan shows a notice before any upload; an absent list or entry is
-   * unknown and never blocks. The server decides every share.
+   * Advisory sharing access per organization, sent by the host for shipped
+   * builds. Every organization may share, so the dialog does not read it.
    */
   readonly organizationAccess?: readonly ShareOrganizationAccess[];
-  /** Server-reported free access. Overrides the `freeAccess` prop when set. */
-  readonly freeAccess?: boolean;
 }
 
 /** What a completed share produced. */
@@ -362,29 +354,19 @@ function capitalize(value: string): string {
   return `${value.charAt(0).toUpperCase()}${value.slice(1)}`;
 }
 
-/** Host state that changes the default copy without naming the host. */
-export interface ShareResourceCopyOptions {
-  /** See {@link ShareResourceDialogProps.freeAccess}. */
-  readonly freeAccess?: boolean;
-}
-
 /** Default copy for a resource, derived from its noun. */
-export function shareResourceCopy(
-  noun: string,
-  options: ShareResourceCopyOptions = {},
-): ShareResourceCopy {
+export function shareResourceCopy(noun: string): ShareResourceCopy {
   const Noun = capitalize(noun);
   return {
     accountLoading: 'Loading account…',
     emptyState: `Connect a cloud account to share this ${noun}.`,
     emptyAction: 'Open account settings',
     guestState: `Create a free account to share this ${noun}.`,
-    // With free access there is no trial to start: signing in is the whole
-    // step, so the action says that.
-    guestAction: options.freeAccess === true ? 'Sign in' : 'Start free trial',
+    // There is no trial to start: signing in is the whole step.
+    guestAction: 'Sign in',
     missingCapability: `This account does not support shared ${noun}s.`,
     upgradeHint:
-      'This account must be upgraded before team or organization sharing is available.',
+      "Team and organization sharing isn't available for this account.",
     scopeLegend: 'Sharing scope',
     publicDescription: shareAudienceHelper(noun, 'public', {
       includesDependencies: false,
@@ -426,52 +408,9 @@ const TEAMS_CAPABILITY = 'teams-v1';
 const ORGANIZATIONS_CAPABILITY = 'organizations-v1';
 const PACKAGE_RECHECK_MESSAGE =
   'Review the updated dependencies, then share again.';
-const ACCESS_CHECK_FAILED_MESSAGE =
-  "Couldn't check access. Check your connection and try again.";
-/** A refresh this recent stands in for the pre-publication check. */
-const ACCESS_REFRESH_FRESH_MS = 30_000;
-/** The pre-publication check never holds a share longer than this. */
-const ACCESS_REFRESH_TIMEOUT_MS = 5_000;
-
-function withTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<T> {
-  return new Promise<T>((resolve, reject) => {
-    const timer = setTimeout(() => {
-      reject(new Error('Timed out'));
-    }, timeoutMs);
-    promise.then(
-      (value) => {
-        clearTimeout(timer);
-        resolve(value);
-      },
-      (error: unknown) => {
-        clearTimeout(timer);
-        reject(error instanceof Error ? error : new Error(String(error)));
-      },
-    );
-  });
-}
 
 function sharePendingMessage(noun: string): string {
   return `Your ${noun} is still being shared. Check its sharing status in a moment.`;
-}
-
-/** Organization ids the server refused for a missing plan, as access facts. */
-function withRefusedOrganizations(
-  access: readonly ShareOrganizationAccess[] | undefined,
-  refused: readonly string[],
-): readonly ShareOrganizationAccess[] | undefined {
-  if (refused.length === 0) return access;
-  const known = access ?? [];
-  return [
-    ...known.map((entry) =>
-      refused.includes(entry.organizationId)
-        ? { ...entry, teamsEntitled: false }
-        : entry,
-    ),
-    ...refused
-      .filter((id) => !known.some((entry) => entry.organizationId === id))
-      .map((organizationId) => ({ organizationId, teamsEntitled: false })),
-  ];
 }
 
 /** The dependency review, when the host can analyze locally. */
@@ -530,12 +469,6 @@ export interface ShareResourceDialogProps {
   readonly requiredCapability: string;
   /** Overrides over {@link shareResourceCopy}'s noun-derived defaults. */
   readonly copy?: Partial<ShareResourceCopy>;
-  /**
-   * The host's last known server-reported free app access: every capability
-   * is granted without a subscription. Guest prompts then ask the guest to
-   * sign in instead of offering a trial. Omitted or false keeps the trial copy.
-   */
-  readonly freeAccess?: boolean;
   /** Audiences this resource offers. A single audience hides the selector. */
   readonly scopes: readonly ShareResourceScope[];
   /** Navigation context supplies defaults and filtering, never authorization. */
@@ -626,16 +559,6 @@ export interface ShareResourceDialogProps {
     assertCurrent?: () => void,
   ) => Promise<ShareResourcePreflightResult>;
   readonly loadAccount: () => Promise<ShareResourceAccount | null>;
-  /**
-   * Re-reads the account's access facts before a share and on Try again.
-   * Defaults to `loadAccount`.
-   */
-  readonly refreshAccount?: () => Promise<ShareResourceAccount | null>;
-  /**
-   * Opens plan selection for an organization without an active plan. Shown
-   * only to an account that can choose one.
-   */
-  readonly onChooseOrganizationPlan?: (organizationId: string) => void;
   /** Optional account-change subscription; returns its unsubscribe. */
   readonly subscribeAccountChanged?: (listener: () => void) => () => void;
   readonly listTeams: (query: string) => Promise<readonly ShareTargetSummary[]>;
@@ -777,7 +700,6 @@ export function ShareResourceDialog({
   ownerDocument,
   requiredCapability,
   copy: copyOverrides,
-  freeAccess = false,
   scopes,
   context,
   contextOrganizations = NO_CONTEXT_ORGANIZATIONS,
@@ -800,8 +722,6 @@ export function ShareResourceDialog({
   keepsOrganizationOwnership = false,
   preflight,
   loadAccount,
-  refreshAccount,
-  onChooseOrganizationPlan,
   subscribeAccountChanged,
   listTeams,
   listOrganizations,
@@ -858,9 +778,8 @@ export function ShareResourceDialog({
           target: { ...rawExistingShare.target, name: 'Personal' },
         }
       : rawExistingShare;
-  const effectiveFreeAccess = account?.freeAccess ?? freeAccess;
   const copy: ShareResourceCopy = {
-    ...shareResourceCopy(resourceNoun, { freeAccess: effectiveFreeAccess }),
+    ...shareResourceCopy(resourceNoun),
     ...(marketplace
       ? {
           scopeLegend: 'General access',
@@ -909,16 +828,8 @@ export function ShareResourceDialog({
     preflight ? { status: 'checking' } : { status: 'ready' },
   );
   const [preflightAttempt, setPreflightAttempt] = useState(0);
-  // Organizations the server refused for a missing plan since the last
-  // account refresh; they read as known-lapsed until facts say otherwise.
-  const [refusedOrganizationIds, setRefusedOrganizationIds] = useState<
-    readonly string[]
-  >([]);
-  // The binding whose access check failed, and the binding whose publication
-  // ended uncertain. Each applies only while that binding stays selected.
-  const [accessCheckFailedBinding, setAccessCheckFailedBinding] = useState<
-    string | null
-  >(null);
+  // The binding whose publication ended uncertain. It applies only while that
+  // binding stays selected.
   const [uncertainBinding, setUncertainBinding] = useState<string | null>(null);
   const mutationLifecycle = useRef({ active: true, generation: 0 });
   const loadedAccountIdentity = useRef<string | null>(null);
@@ -926,7 +837,6 @@ export function ShareResourceDialog({
   const accountReadPending = useRef(false);
   const accountReadSucceeded = useRef(false);
   const mutationPending = useRef(false);
-  const lastAccountRefreshRef = useRef(0);
 
   const existingTarget = existingShare?.target ?? null;
   // The audience the existing target belongs to. A team or organization share
@@ -990,8 +900,6 @@ export function ShareResourceDialog({
             setPreflightAttempt((attempt) => attempt + 1);
           }
           setAccount(next);
-          lastAccountRefreshRef.current = Date.now();
-          setRefusedOrganizationIds([]);
         })
         // A failed read leaves the account as it was: a first read stays
         // unavailable, and a failed re-read keeps the form the author is
@@ -1662,94 +1570,6 @@ export function ShareResourceDialog({
     selectedOrg,
     selectedTeam,
   ]);
-  const resolveAccess = useCallback(
-    (
-      facts: ShareResourceAccount | null,
-      refused: readonly string[],
-    ): ShareDestinationAccess => {
-      const organizationAccess = withRefusedOrganizations(
-        facts?.organizationAccess,
-        refused,
-      );
-      return resolveSelectedDestinationAccess(
-        {
-          ...(organizationAccess !== undefined ? { organizationAccess } : {}),
-          freeAccess: facts?.freeAccess ?? freeAccess,
-        },
-        scope,
-        selectedTeam,
-        selectedOrg,
-      );
-    },
-    [freeAccess, scope, selectedOrg, selectedTeam],
-  );
-  const destinationAccess = resolveAccess(account, refusedOrganizationIds);
-  const reportsAccessFacts = account?.organizationAccess !== undefined;
-  const refreshAccountRef = useRef(refreshAccount ?? loadAccount);
-  refreshAccountRef.current = refreshAccount ?? loadAccount;
-
-  /**
-   * Re-reads the account's access facts for the current binding. Resolves the
-   * fresh account, or `null` when the check failed, timed out, or the author
-   * moved on to another binding meanwhile. A failure never blocks a share.
-   */
-  const refreshDestinationAccess = useCallback(
-    async (
-      reason: 'target' | 'retry' | 'publish',
-    ): Promise<ShareResourceAccount | null> => {
-      const binding = bindingRef.current;
-      const initiatingAccount = accountIdentityRef.current;
-      let next: ShareResourceAccount | null;
-      try {
-        const request = refreshAccountRef.current();
-        next = await (reason === 'publish'
-          ? withTimeout(request, ACCESS_REFRESH_TIMEOUT_MS)
-          : request);
-      } catch {
-        if (reason !== 'publish' && bindingRef.current === binding) {
-          setAccessCheckFailedBinding(binding);
-        }
-        return null;
-      }
-      if (
-        bindingRef.current !== binding ||
-        next === null ||
-        (next.id ?? null) !== initiatingAccount
-      ) {
-        return null;
-      }
-      lastAccountRefreshRef.current = Date.now();
-      setAccount(next);
-      setRefusedOrganizationIds([]);
-      setAccessCheckFailedBinding(null);
-      return next;
-    },
-    [],
-  );
-
-  // A newly selected destination whose access the facts don't cover gets one
-  // fresh read. Hosts that report no facts at all have nothing to refresh.
-  const destinationUnknownOrganizationId =
-    destinationAccess.status === 'unknown'
-      ? destinationAccess.organizationId
-      : undefined;
-  useEffect(() => {
-    if (
-      !accountReady ||
-      !reportsAccessFacts ||
-      destinationUnknownOrganizationId === undefined
-    ) {
-      return;
-    }
-    void refreshDestinationAccess('target');
-  }, [
-    accountReady,
-    bindingKey,
-    destinationUnknownOrganizationId,
-    refreshDestinationAccess,
-    reportsAccessFacts,
-  ]);
-
   const onStateChangeRef = useRef(onStateChange);
   onStateChangeRef.current = onStateChange;
   useEffect(() => {
@@ -1838,10 +1658,7 @@ export function ShareResourceDialog({
 
   const handleShare = useCallback(async (): Promise<void> => {
     if (!accountReady || scope === null || accountReadPending.current) return;
-    let isCurrent = captureMutation();
-    const initiatingContext = mutationContextRef.current;
-    const initiatingAccount = loadedAccountIdentity.current;
-    const initiatingBinding = bindingRef.current;
+    const isCurrent = captureMutation();
     if (scope === 'public' && publicOwnerLockedRef.current) {
       setValidationError(copy.publicLockedHint);
       return;
@@ -1872,45 +1689,6 @@ export function ShareResourceDialog({
     pkg.resetProgress();
     const wasUpdate = updateModeRef.current;
     setState({ status: 'sharing' });
-    // Re-read the destination's access unless a recent read covers it. A
-    // known missing plan stops here, before any upload; a failed or slow
-    // check proceeds and the server decides.
-    if (
-      (scope === 'team' || scope === 'organization') &&
-      reportsAccessFacts &&
-      Date.now() - lastAccountRefreshRef.current > ACCESS_REFRESH_FRESH_MS
-    ) {
-      const refreshed = await refreshDestinationAccess('publish');
-      await accountReload.current;
-      if (!isCurrent()) {
-        if (
-          !mutationLifecycle.current.active ||
-          !accountReadSucceeded.current ||
-          initiatingAccount !== loadedAccountIdentity.current ||
-          initiatingContext !== mutationContextRef.current ||
-          initiatingBinding !== bindingRef.current
-        ) {
-          if (
-            mutationLifecycle.current.active &&
-            initiatingContext === mutationContextRef.current &&
-            initiatingBinding === bindingRef.current &&
-            !mutationPending.current
-          )
-            setState({ status: 'idle' });
-          return;
-        }
-        isCurrent = captureMutation();
-        setState({ status: 'sharing' });
-      }
-      if (
-        refreshed !== null &&
-        resolveAccess(refreshed, []).status === 'lapsed'
-      ) {
-        mutationPending.current = false;
-        setState({ status: 'idle' });
-        return;
-      }
-    }
     mutationPending.current = true;
     let outcome: ShareResourceOutcome;
     try {
@@ -1948,34 +1726,6 @@ export function ShareResourceDialog({
         error instanceof ShareConflictError
           ? null
           : classifyShareFailure(error);
-      // The destination notice explains a missing plan only for the selected
-      // destination's own organization; any other refusal stays an error.
-      const governingOrganizationId =
-        scope === 'organization'
-          ? selectedOrg?.id
-          : scope === 'team'
-            ? selectedTeam?.organizationId
-            : undefined;
-      const refusedOrganizationId =
-        failure?.kind === 'organization-plan' &&
-        governingOrganizationId !== undefined &&
-        // Free access never renders the notice, so the error must say it.
-        !effectiveFreeAccess &&
-        (failure.organizationId === undefined ||
-          failure.organizationId === governingOrganizationId)
-          ? governingOrganizationId
-          : undefined;
-      if (refusedOrganizationId !== undefined) {
-        // The destination notice explains a missing plan and offers the
-        // recovery; repeating it as an error would say it twice.
-        setRefusedOrganizationIds((current) =>
-          current.includes(refusedOrganizationId)
-            ? current
-            : [...current, refusedOrganizationId],
-        );
-        setState({ status: 'idle' });
-        return;
-      }
       if (
         failure?.commitState === 'unknown' ||
         failure?.commitState === 'committed'
@@ -2051,7 +1801,6 @@ export function ShareResourceDialog({
     copy.publicLockedHint,
     copy.teamValidationError,
     describeError,
-    effectiveFreeAccess,
     keepsOrganizationOwnership,
     marketplace,
     onClose,
@@ -2060,9 +1809,6 @@ export function ShareResourceDialog({
     pkg,
     publicOwnerLocked,
     rawExistingShare?.audience,
-    refreshDestinationAccess,
-    reportsAccessFacts,
-    resolveAccess,
     resourceNoun,
     scope,
     selectedOrg,
@@ -2233,14 +1979,12 @@ export function ShareResourceDialog({
   }, [complete, finishing, onClose, scope, state]);
 
   const packageGate = pkg.active && !pkg.ready;
-  const destinationLapsed = destinationAccess.status === 'lapsed';
   const publicationUncertain = uncertainBinding === bindingKey;
   const submitDisabled =
     isBusy ||
     scope === null ||
     shareDisabled ||
     packageGate ||
-    destinationLapsed ||
     publicationUncertain ||
     !accountReady ||
     !preflightReady ||
@@ -2672,37 +2416,6 @@ export function ShareResourceDialog({
           }}
         />
       )}
-      {destinationAccess.status === 'lapsed' && (
-        <DestinationPlanNotice
-          access={destinationAccess}
-          testIdPrefix={p}
-          {...(onChooseOrganizationPlan !== undefined
-            ? { onChoosePlan: onChooseOrganizationPlan }
-            : {})}
-          onCheckAgain={(): void => {
-            void refreshDestinationAccess('retry');
-          }}
-        />
-      )}
-      {accessCheckFailedBinding === bindingKey &&
-        destinationAccess.status !== 'lapsed' && (
-          <Notice
-            data-testid={`${p}-destination-access-error`}
-            actions={
-              <NoticeButton
-                data-testid={`${p}-destination-access-retry`}
-                onClick={(): void => {
-                  setAccessCheckFailedBinding(null);
-                  void refreshDestinationAccess('retry');
-                }}
-              >
-                Try again
-              </NoticeButton>
-            }
-          >
-            {ACCESS_CHECK_FAILED_MESSAGE}
-          </Notice>
-        )}
       {validationError && state.status !== 'error' && (
         <ErrorBanner
           errorSource="share-resource-dialog-validation"
@@ -3133,60 +2846,6 @@ export function ShareResourceDialog({
         />
       )}
     </ShareDialogFrame>
-  );
-}
-
-/**
- * The selected organization has no active plan. An account that can choose
- * one gets the action; anyone else is pointed at an owner. The other
- * audiences stay usable.
- */
-function DestinationPlanNotice({
-  access,
-  testIdPrefix,
-  onChoosePlan,
-  onCheckAgain,
-}: {
-  access: Extract<ShareDestinationAccess, { status: 'lapsed' }>;
-  testIdPrefix: string;
-  onChoosePlan?: (organizationId: string) => void;
-  /** Re-reads access, so a plan chosen elsewhere unlocks Share. */
-  onCheckAgain: () => void;
-}): JSX.Element {
-  const name = access.organizationName;
-  const helper =
-    access.canChoosePlan === true
-      ? `Choose a plan to share with ${name ?? 'this organization'}.`
-      : access.canChoosePlan === false
-        ? `Ask an owner of ${name ?? 'this organization'} to choose a plan.`
-        : `An owner of ${name ?? 'this organization'} needs to choose a plan before you can share with it.`;
-  return (
-    <Notice
-      intent="attention"
-      data-testid={`${testIdPrefix}-destination-access`}
-      title={orgsWithoutActivePlanClause([name ?? 'This organization'])}
-      actions={
-        <>
-          {access.canChoosePlan === true && onChoosePlan !== undefined && (
-            <NoticeButton
-              variant="primary"
-              data-testid={`${testIdPrefix}-choose-plan`}
-              onClick={(): void => onChoosePlan(access.organizationId)}
-            >
-              Choose a plan
-            </NoticeButton>
-          )}
-          <NoticeButton
-            data-testid={`${testIdPrefix}-destination-access-check`}
-            onClick={onCheckAgain}
-          >
-            Try again
-          </NoticeButton>
-        </>
-      }
-    >
-      {helper}
-    </Notice>
   );
 }
 

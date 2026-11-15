@@ -1,3 +1,4 @@
+import type { MemoryConsolidationMetrics } from '@canopy/protocol/local-memory';
 /**
  * Host port for the Memory panel: the personal memories agents save on this
  * computer, in a user scope (every project) and a workspace scope (one
@@ -52,6 +53,7 @@ export interface LocalMemoryFileDocument {
 
 export interface LocalMemoryStatus {
   readonly pendingNotes: number;
+  readonly metrics?: MemoryConsolidationMetrics | null;
   readonly running: boolean;
   readonly rebuilding: boolean;
   readonly lastRunAt: string | null;

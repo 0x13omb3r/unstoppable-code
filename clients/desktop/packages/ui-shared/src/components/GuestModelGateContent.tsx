@@ -34,28 +34,28 @@ export interface GuestModelGateContentProps {
    * `className` is the shared primary styling; apply it as given.
    */
   readonly renderSignIn: (label: string, className: string) => ReactNode;
-  readonly onDismiss: () => void;
   readonly busy?: boolean;
   readonly error?: string | null;
   /** Neutral progress, announced, and kept when the fallback is withdrawn. */
   readonly status?: string | null;
   readonly dataTestId: string;
   readonly bodyTestId?: string;
-  readonly dismissTestId?: string;
 }
 
-/** The same guest gate body and ordered actions on every supported host. */
+/**
+ * The same guest gate body and ordered actions on every supported host. It
+ * offers only the ways forward; the dialog's close button and a click
+ * outside it dismiss the gate.
+ */
 export function GuestModelGateContent({
   subject,
   fallback,
   renderSignIn,
-  onDismiss,
   busy = false,
   error,
   status,
   dataTestId,
   bodyTestId = `${dataTestId}-body`,
-  dismissTestId = `${dataTestId}-dismiss`,
 }: GuestModelGateContentProps): JSX.Element {
   const actionableFallback = 'copy' in subject ? undefined : fallback;
   const copy: GuestModelGateCopy =
@@ -106,16 +106,6 @@ export function GuestModelGateContent({
             {copy.fallbackAction}
           </Button>
         )}
-        <Button
-          variant="ghost"
-          size="lg"
-          className="w-full"
-          data-testid={dismissTestId}
-          disabled={busy}
-          onClick={onDismiss}
-        >
-          {copy.dismissAction}
-        </Button>
       </div>
     </div>
   );

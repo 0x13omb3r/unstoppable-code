@@ -161,6 +161,11 @@ export interface CanopyClient<
   readonly runtime: CoreRuntimeInitializeResult['runtime'];
   readonly identity: CanopyRuntimeIdentity;
   readonly manifest: CanopyEffectiveManifest;
+  /**
+   * The account the runtime serves this connection as, from
+   * `core.runtime.initialize`'s `authentication.principal` (CAN-6828).
+   */
+  readonly principal?: { readonly userId: string };
   /** Aborts when the client closes or its connection drops. */
   readonly signal: AbortSignal;
   /** Authenticated binding lifecycle notification; never a domain-event subscription. */

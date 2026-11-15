@@ -1,9 +1,11 @@
 import {
+  CORE_CHAT_MESSAGE_SEND_ACCOUNT_BOUND_REVISION,
   CoreChatCommandReceiptSchema,
   CoreChatSnapshotGetResultSchema,
   CoreChatSendReceiptResultSchema,
   CoreChatTranscriptSearchResultSchema,
   type CanopyErrorPayload,
+  type CoreChatSandbox,
 } from '@canopy/protocol/canopy-core';
 import {
   CoreCoworkRequestError,
@@ -53,7 +55,10 @@ import type {
   ChatBackendCancelRequest,
   ChatBackendCancelResult,
 } from '../backend';
-import type { ModelCatalogOption } from '@canopy/protocol/models';
+import type {
+  AgentExecutionHarness,
+  ModelCatalogOption,
+} from '@canopy/protocol/models';
 import {
   CLOUD_ATTACHMENTS_MAX_PER_MESSAGE,
   type CloudAttachmentMediaType,
@@ -70,6 +75,7 @@ import type {
 } from '@canopy/agent-transcript/transcript-storage';
 import { isWebCoreScope, webCoreLocalId } from '@/lib/chat-authority';
 import {
+  foldChatUsage,
   parseAgentTaskRows,
   type AgentTaskRow,
 } from '@canopy/protocol/cloud-session';
@@ -114,10 +120,13 @@ import {
   translateEvent,
   translateSnapshot,
   translateTranscriptPage,
+  chatTabUsage,
+  meteredAnswer,
   isTurnRunningStatus,
   isServedThinkingLevel,
   turnRuntimeStatus,
   sendModelConfig,
+  snapshotChatHarness,
   withTabChoices,
   withTabSettings,
   withTranscriptPages,
@@ -126,8 +135,18 @@ import {
   type TabChoices,
   type TabReadChoice,
   type TabSettingsChoice,
+  type MeteredAnswer,
   type WebCoreIds,
 } from './translate';
+import { useWebCoreModelCatalogStore } from './model-catalog';
+import { releaseWebCoreSend, webCoreSendBinding } from './send-binding';
+import {
+  claimCloudSend,
+  nextCloudSendSequence,
+  settleCloudSend,
+  whenCloudSendMayPost,
+  type CloudSendPress,
+} from './send-order';
 
 /**
  * The chat store's I/O for chats the web core serves (CAN-6175 R3), over the
@@ -219,6 +238,8 @@ interface StopInFlight {
  * that can't name a starting turn.
  */
 interface SendClaim {
+  /** The send's place in its chat's order: claims are kept in this order. */
+  readonly order: number;
   /** Turn ids the chat's runtime reported while the send was in flight. */
   readonly reported: Set<string>;
   /** Called once, as the send settles; a Stop sets it. */
@@ -256,10 +277,91 @@ function applyQuestionChange(
   else shown.delete(change.requestId);
 }
 
+/** A chat's answer, with the version it was written at (CAN-6755). */
+interface HeldAnswer {
+  readonly answer: MeteredAnswer;
+  readonly version: number;
+}
+
+/**
+ * The answers events, and pages read later, wrote while a chat's page read
+ * was in flight.
+ */
+interface EventAnswerWrites {
+  cleared?: number;
+  readonly writes: Map<
+    string,
+    { readonly version: number; readonly answer: MeteredAnswer | null }
+  >;
+}
+
+/** A tab the store holds with no usage. */
+const NO_USAGE_SHOWN: ReadonlySet<string> = new Set(['null']);
+
 const scopeKey = (scope: Scope): string =>
   `${scope.projectId}/${scope.worktreeId}`;
 
 /** A cloud tab's model and the provider that runs it. */
+type ListedChats = ReturnType<typeof parseChatList>['items'];
+
+/**
+ * An opened chat's first page, asked for once the task snapshot answered,
+ * and the scope's change count then (CAN-6774).
+ */
+interface PageAhead {
+  readonly chatId: string;
+  readonly changesAt: number;
+  /** The page, or FAILED_READ when the read failed: the tab reads again. */
+  readonly read: Promise<unknown>;
+}
+
+/** An early read that failed, recorded, and read again when it is needed. */
+const FAILED_READ: unique symbol = Symbol('failed early read');
+
+interface KeptPage extends PageAhead {
+  readonly timer: ReturnType<typeof setTimeout>;
+}
+
+/**
+ * A scope's reads in flight, and what the window knew when it sent them:
+ * nothing of them is installed until a finish takes them (CAN-6774).
+ */
+interface StateRead {
+  readonly reportsAtRead: ReadonlyMap<string, number>;
+  readonly sendsAtRead: number;
+  readonly taskEventsAtRead: ReadonlyMap<string, number>;
+  /** The event harness writes made before the snapshot was sent (CAN-6777). */
+  readonly harnessEventsAtRead: number;
+  readonly opened: Promise<unknown>;
+  /** Null when the early list failed: the finish reads it again. */
+  readonly listed: Promise<ListedChats | null>;
+  readonly page: Promise<PageAhead | null>;
+}
+
+interface QuestionWatch {
+  readonly during: AppliedQuestionChange[];
+  readonly stop: () => void;
+}
+
+/** A task's reads sent ahead of its open, waiting for it (CAN-6774). */
+interface ReadAhead {
+  readonly read: StateRead;
+  readonly questions: QuestionWatch;
+  readonly settled: Promise<void>;
+  readonly timer: ReturnType<typeof setTimeout>;
+}
+
+/** A read-ahead as its asker holds it: when it settles, and how to drop it. */
+export interface WebCoreReadAhead {
+  readonly settled: Promise<void>;
+  readonly discard: () => void;
+}
+
+const NO_READ_AHEAD: WebCoreReadAhead = {
+  settled: Promise.resolve(),
+  discard: () => undefined,
+};
+
 export interface CloudTabModel {
   readonly model: ChatModel | undefined;
   readonly providerType: AgentProviderType | undefined;
@@ -312,6 +414,12 @@ interface ChatTurns {
    * chat's running turn, or Stop's target, again (CAN-6733).
    */
   readonly ended: Map<string, Set<string>>;
+  /**
+   * A turn whose cancel the web core refused as not found, by bare chat id,
+   * until the chat's next report: its end then still marks it ended
+   * (CAN-6770).
+   */
+  readonly refused: Map<string, string>;
   /**
    * The running turn the chat's events reported, by bare chat id, with the
    * send sequence when they did. It outranks a send in flight as Stop's
@@ -423,6 +531,12 @@ const ECHO_WAIT_MS = 10_000;
 
 /** Pages of `core.chat.list` read for one task. */
 const CHAT_LIST_PAGE_LIMIT = 10;
+/**
+ * How long a task's first read, sent ahead of an open, waits for that open
+ * before it is dropped: a hover's reads, or a first page the tab has not
+ * asked for yet (CAN-6774).
+ */
+const READ_AHEAD_TTL_MS = 20_000;
 
 const isSnapshotRequired = (error: unknown): boolean =>
   isRecord(error) && error.code === 'core.chat.snapshotRequired';
@@ -444,6 +558,8 @@ interface ScopeStream {
   cursor: unknown;
   reopenTimer: ReturnType<typeof setTimeout> | null;
   closed: boolean;
+  /** An open of the stream is in flight. */
+  opening: boolean;
 }
 
 export interface WebCoreChatBackendOptions {
@@ -458,6 +574,24 @@ export interface WebCoreChatBackendOptions {
    * `liveReplyKey`: Stop applies to it before Core names it (CAN-6592).
    */
   readonly publishTurnStarting?: (key: string, starting: boolean) => void;
+  /**
+   * Publishes a chat's sandbox state as the web core reports it, by
+   * `liveReplyKey` (CAN-6766): from each snapshot of the chat and each
+   * `sandbox.changed`.
+   */
+  readonly publishSandbox?: (
+    key: string,
+    sandbox: CoreChatSandbox,
+    revision: number,
+  ) => void;
+  /**
+   * Whether the task's events carry `sandbox.changed`, which keeps a
+   * published sandbox state current (CAN-6841). While they don't, a
+   * snapshot's sandbox state is held, never published, so it reads unknown
+   * rather than go stale; `releaseSandboxStates` publishes what is held once
+   * they do. Absent: always.
+   */
+  readonly sandboxStatesServed?: () => boolean;
   /**
    * Whether the store holds a runtime that runs the chat's turn, by the
    * store's ids. A sent turn reads starting until it does (CAN-6677); with
@@ -521,6 +655,11 @@ export interface WebCoreAttachmentFile {
 
 export interface WebCoreChatBackendCore {
   readonly getState: (req: ChatGetStateRequest) => Promise<ChatStateSnapshot>;
+  /**
+   * Reads a task ahead of a likely open, with chat reads only, installing
+   * and following nothing; its open takes the reads (CAN-6774).
+   */
+  readonly readAhead: (scope: Scope) => WebCoreReadAhead;
   readonly setStateScopes: (
     declaration: ChatStateScopesDeclaration,
   ) => Promise<void>;
@@ -604,10 +743,20 @@ export interface WebCoreChatBackendCore {
   /** Ends every stream: the web core went offline or the window closes. */
   readonly closeAll: () => void;
   /**
+   * A task deleted elsewhere was restored (CAN-6511): its stream, closed when
+   * it was deleted, follows it again.
+   */
+  readonly taskRestored: (scope: Scope) => void;
+  /**
    * The store's chat runtimes changed: a sent turn whose runtime the store
    * now runs stops reading starting (CAN-6677).
    */
   readonly storeRuntimesChanged: () => void;
+  /**
+   * The task's events now carry `sandbox.changed`: publishes the sandbox
+   * states snapshots reported while they didn't (CAN-6841).
+   */
+  readonly releaseSandboxStates: () => void;
   /**
    * Uploads a file to a chat and answers the pending attachment that names
    * it, which its send carries; a refused upload answers its reason.
@@ -713,6 +862,41 @@ export function createWebCoreChatBackendCore(
    * change, and no change shows a model older than the newest known.
    */
   const tabModels = new Map<string, Map<string, TabModelState>>();
+  /**
+   * Each chat's answers this window read, by message id, keyed by scope and
+   * store chat id, for its usage meter (CAN-6755). Only a chat whose
+   * transcript was read is metered; its events then keep it current.
+   * Each answer keeps the version it was written at, so an older read
+   * never replaces a newer write: newer data always wins.
+   */
+  const answers = new Map<string, Map<string, HeldAnswer>>();
+  /**
+   * Moves on each event that writes answers and on each page read that
+   * starts, which takes its own version: an event, or a read, after it is
+   * newer than its copy (CAN-6830).
+   */
+  let answerVersion = 0;
+  /** Each chat's transcript page reads in flight, by the version they started at. */
+  const pageReads = new Map<string, number[]>();
+  /**
+   * The answers events wrote, or removed (null), while a chat's page read
+   * was in flight, also for a chat whose first page is still being read;
+   * `cleared` is when the chat itself was removed. Dropped once no read
+   * that started before them is in flight.
+   */
+  const eventWrites = new Map<string, EventAnswerWrites>();
+  /**
+   * The usage values, as JSON, the store may hold for each chat's tab. Set
+   * only from changes this backend published: a usage patch or a tab with
+   * its usage pins one value; a snapshot it returned, which the store may
+   * install or set aside, adds the value it carried. A chat absent holds
+   * none. So usage is never taken as delivered unless it was published.
+   */
+  const usageShown = new Map<string, ReadonlySet<string>>();
+  /** The scopes whose chats `answers` holds, by scope key. */
+  const meteredScopes = new Map<string, Scope>();
+  /** Stops following the model catalog, while a chat is metered. */
+  let unfollowCatalog: (() => void) | null = null;
   /** The newest web core revision each scope reported, unshifted. */
   const coreHeads = new Map<string, number>();
   /** The web core revision of each snapshot `readState` returned, unshifted. */
@@ -816,6 +1000,18 @@ export function createWebCoreChatBackendCore(
    * across `closeAll`: the store keeps their rows through a reconnect.
    */
   const readChats = new Map<string, Set<string>>();
+  /**
+   * Scopes the store opened and still follows: a store read of one is a
+   * refresh, not an open (CAN-6774). A cursor alone says nothing of it: the
+   * cowork page's archive sweep reads every task once.
+   */
+  const openedScopes = new Set<string>();
+  /** Tasks read ahead of an open, by scope (CAN-6774). */
+  const readAheads = new Map<string, ReadAhead>();
+  /** Opened chats' first pages, read ahead of the tab's load (CAN-6774). */
+  const pagesAhead = new Map<string, KeptPage>();
+  /** Changes applied to each scope's chats, by scope (CAN-6774). */
+  const scopeChanges = new Map<string, number>();
   /** Chats whose agent tasks this window has read, by scope. */
   const taskReads = new Map<string, Set<string>>();
   /** Task changes the events reported, by scope and chat. */
@@ -831,12 +1027,172 @@ export function createWebCoreChatBackendCore(
     );
   }
 
-  /** The chat's own snapshot, for its tasks: a task snapshot holds one chat's. */
+  /**
+   * The harness each chat is known to run on, by scope and the store's chat
+   * id: from its own snapshot (CAN-6761), the task's snapshot, or an event
+   * that names it (CAN-6777). The task's snapshot opens only the task's chat,
+   * so another chat's harness comes from here and lies over later snapshots,
+   * and a tab the web core sends again keeps it.
+   */
+  const chatHarnesses = new Map<string, Map<string, AgentExecutionHarness>>();
+
+  /**
+   * Counts the harnesses events named, and the count at each chat's latest,
+   * by scope and the store's chat id: a snapshot read before one never
+   * overrides it (CAN-6777).
+   */
+  let harnessEventVersion = 0;
+  const harnessEventAt = new Map<string, number>();
+
+  /** Whether an event named the chat's harness after `at` (CAN-6777). */
+  function eventHarnessSince(
+    scope: Scope,
+    storeChatId: string,
+    at: number,
+  ): boolean {
+    return (harnessEventAt.get(answersKey(scope, storeChatId)) ?? 0) > at;
+  }
+
+  function knownHarnesses(scope: Scope): Map<string, AgentExecutionHarness> {
+    const key = scopeKey(scope);
+    const known =
+      chatHarnesses.get(key) ?? new Map<string, AgentExecutionHarness>();
+    chatHarnesses.set(key, known);
+    return known;
+  }
+
+  /**
+   * Records the harnesses a task snapshot names. It speaks for the chat it
+   * opens: naming none there lifts that chat's harness. A chat an event named
+   * a harness for after the snapshot was sent keeps that newer one.
+   */
+  function recordSnapshotHarnesses(
+    scope: Scope,
+    snapshot: ChatStateSnapshot,
+    harnessEventsAtRead: number,
+  ): void {
+    const known = knownHarnesses(scope);
+    for (const tab of snapshot.tabsFile.tabs) {
+      if (eventHarnessSince(scope, tab.id, harnessEventsAtRead)) continue;
+      if (tab.capturedHarness !== undefined)
+        known.set(tab.id, tab.capturedHarness);
+      else if (tab.id === snapshot.tabsFile.activeTabId) known.delete(tab.id);
+    }
+  }
+
+  /**
+   * An event's changes with the harnesses they name recorded, and a tab the
+   * web core sends again given the harness held for it (CAN-6777). An event
+   * never lifts a harness.
+   */
+  function withEventHarnesses(
+    scope: Scope,
+    changes: readonly ChatStateChange[],
+  ): ChatStateChange[] {
+    const known = knownHarnesses(scope);
+    return changes.map((change) => {
+      if (
+        change.type === 'tab.metadata_patched' &&
+        typeof change.patch.capturedHarness === 'string'
+      ) {
+        known.set(change.tabId, change.patch.capturedHarness);
+        harnessEventVersion += 1;
+        harnessEventAt.set(
+          answersKey(scope, change.tabId),
+          harnessEventVersion,
+        );
+        return change;
+      }
+      if (change.type !== 'tab.upserted') return change;
+      const held = known.get(change.tab.id);
+      if (change.tab.capturedHarness !== undefined) {
+        known.set(change.tab.id, change.tab.capturedHarness);
+        return change;
+      }
+      return held === undefined
+        ? change
+        : { ...change, tab: { ...change.tab, capturedHarness: held } };
+    });
+  }
+
+  /**
+   * A snapshot whose tabs carry the harness known for them. The snapshot
+   * names the harness of the chat it opens, or lifts it, unless an event
+   * named that chat's harness after the snapshot was sent (CAN-6777).
+   */
+  function withChatHarnesses(
+    scope: Scope,
+    harnessEventsAtRead: number,
+    snapshot: ChatStateSnapshot,
+  ): ChatStateSnapshot {
+    const known = chatHarnesses.get(scopeKey(scope));
+    if (known === undefined || known.size === 0) return snapshot;
+    return {
+      ...snapshot,
+      tabsFile: {
+        ...snapshot.tabsFile,
+        tabs: snapshot.tabsFile.tabs.map((tab) => {
+          const harness = known.get(tab.id);
+          const opened = tab.id === snapshot.tabsFile.activeTabId;
+          return harness === undefined ||
+            (opened && !eventHarnessSince(scope, tab.id, harnessEventsAtRead))
+            ? tab
+            : { ...tab, capturedHarness: harness };
+        }),
+      },
+    };
+  }
+
+  /**
+   * Records the harness a chat's own snapshot named and gives it to the
+   * store's tab, so its picker offers only models on it, as the web's does.
+   */
+  function publishChatHarness(
+    scope: Scope,
+    chatId: string,
+    harness: AgentExecutionHarness | undefined,
+  ): void {
+    const key = scopeKey(scope);
+    const storeChatId = ids.chatToStore(chatId);
+    const known =
+      chatHarnesses.get(key) ?? new Map<string, AgentExecutionHarness>();
+    if (known.get(storeChatId) === harness) return;
+    if (harness === undefined) known.delete(storeChatId);
+    else known.set(storeChatId, harness);
+    chatHarnesses.set(key, known);
+    const base = revisions.get(key);
+    // No state given for the scope yet: its first snapshot carries it.
+    if (base === undefined) return;
+    offsets.set(key, (offsets.get(key) ?? 0) + 1);
+    revisions.set(key, base + 1);
+    emit({
+      schemaVersion: 1,
+      eventId: `web-core-harness:${key}:${base + 1}:${newId()}`,
+      occurredAt: new Date().toISOString(),
+      projectId: scope.projectId,
+      worktreeId: scope.worktreeId,
+      baseRevision: base,
+      revision: base + 1,
+      changes: [
+        {
+          type: 'tab.metadata_patched',
+          tabId: storeChatId,
+          patch: { capturedHarness: harness ?? null },
+        },
+      ],
+    });
+  }
+
+  /**
+   * The chat's own snapshot, for its tasks and its harness: a task snapshot
+   * holds one chat's.
+   */
   async function readChatTasks(scope: Scope, chatId: string): Promise<void> {
     const reads = taskReads.get(scopeKey(scope)) ?? new Set<string>();
     if (reads.has(chatId)) return;
     taskReads.set(scopeKey(scope), reads.add(chatId));
     const eventsAtRead = taskEvents.get(taskEventKey(scope, chatId)) ?? 0;
+    const harnessAtRead = harnessEventVersion;
     try {
       const snapshot = await request('core.chat.snapshot.get', {
         scope: bareScope(scope),
@@ -848,6 +1204,13 @@ export function createWebCoreChatBackendCore(
         (taskEvents.get(taskEventKey(scope, chatId)) ?? 0) === eventsAtRead
       )
         publishTasks(scope, chatId, snapshot.tasks);
+      // A harness an event named while it was read is newer (CAN-6777).
+      if (!eventHarnessSince(scope, ids.chatToStore(chatId), harnessAtRead))
+        publishChatHarness(
+          scope,
+          chatId,
+          snapshotChatHarness(snapshot, chatId),
+        );
       // The tab's own snapshot carries its queue (CAN-6644).
       for (const event of takeSnapshotQueues(scope, snapshot))
         for (const listener of queueListeners) listener(event);
@@ -877,7 +1240,11 @@ export function createWebCoreChatBackendCore(
    * whether it was requested before or after (CAN-6592).
    */
   let sendSequence = 0;
-  /** Each chat's claimed sends in flight, oldest first, by scope and bare chat id. */
+  /**
+   * Each chat's claimed sends in flight, by scope and bare chat id, in the
+   * order they post: their pressed order (CAN-6828), so a Stop's oldest claim
+   * is the send that posts first, whichever reached this backend first.
+   */
   const claims = new Map<string, SendClaim[]>();
   /**
    * Each chat's Stops in flight, by what they stop: a press at the same turn
@@ -890,14 +1257,22 @@ export function createWebCoreChatBackendCore(
     return `${scopeKey(scope)}\u0000${chatId}`;
   }
 
-  function openClaim(scope: Scope, chatId: string): SendClaim {
+  function openClaim(scope: Scope, chatId: string, order: number): SendClaim {
     const claim: SendClaim = {
+      order,
       reported: new Set(),
       onTurn: null,
       closed: false,
     };
     const key = claimKey(scope, chatId);
-    claims.set(key, [...(claims.get(key) ?? []), claim]);
+    const open = claims.get(key) ?? [];
+    const after = open.findIndex((each) => each.order > order);
+    claims.set(
+      key,
+      after === -1
+        ? [...open, claim]
+        : [...open.slice(0, after), claim, ...open.slice(after)],
+    );
     refreshStarting(scope);
     return claim;
   }
@@ -907,6 +1282,72 @@ export function createWebCoreChatBackendCore(
     string,
     { readonly scope: Scope; readonly chatIds: ReadonlySet<string> }
   >();
+
+  /**
+   * The task revision each chat's published sandbox state came from, by
+   * `liveReplyKey`: a snapshot read before a newer `sandbox.changed` lands
+   * after it must not bring the older state back (CAN-6766).
+   */
+  const sandboxRevisions = new Map<string, number>();
+  /**
+   * Each chat's newest snapshot sandbox state, by `liveReplyKey`, held while
+   * the task's events carry no `sandbox.changed` (CAN-6841).
+   */
+  const heldSandboxes = new Map<
+    string,
+    {
+      readonly scope: Scope;
+      readonly chatId: string;
+      readonly sandbox: CoreChatSandbox;
+      readonly revision: number;
+    }
+  >();
+
+  /** A snapshot's sandbox state, published or, while unserved, held. */
+  function takeSnapshotSandbox(
+    scope: Scope,
+    chatId: string,
+    sandbox: CoreChatSandbox,
+    revision: number,
+  ): void {
+    if (options.sandboxStatesServed?.() ?? true) {
+      publishSandbox(scope, chatId, sandbox, revision);
+      return;
+    }
+    const key = liveReplyKey({
+      projectId: scope.projectId,
+      worktreeId: scope.worktreeId,
+      chatId: ids.chatToStore(chatId),
+    });
+    const held = heldSandboxes.get(key);
+    if (held === undefined || revision >= held.revision)
+      heldSandboxes.set(key, { scope, chatId, sandbox, revision });
+  }
+
+  function releaseSandboxStates(): void {
+    if (!(options.sandboxStatesServed?.() ?? true)) return;
+    const held = [...heldSandboxes.values()];
+    heldSandboxes.clear();
+    for (const each of held)
+      publishSandbox(each.scope, each.chatId, each.sandbox, each.revision);
+  }
+
+  function publishSandbox(
+    scope: Scope,
+    chatId: string,
+    sandbox: CoreChatSandbox,
+    revision: number,
+  ): void {
+    const key = liveReplyKey({
+      projectId: scope.projectId,
+      worktreeId: scope.worktreeId,
+      chatId: ids.chatToStore(chatId),
+    });
+    const held = sandboxRevisions.get(key);
+    if (held !== undefined && revision < held) return;
+    sandboxRevisions.set(key, revision);
+    options.publishSandbox?.(key, sandbox, revision);
+  }
 
   function publishStarting(
     scope: Scope,
@@ -1103,22 +1544,6 @@ export function createWebCoreChatBackendCore(
   };
 
   /**
-   * The attachments each sent message carried, by store message id. The web
-   * core's transcript does not carry a message's attachments yet (CAN-6116),
-   * so its copy of a sent message keeps them from here.
-   */
-  const sentAttachments = new Map<string, string[]>();
-
-  function withSentAttachments(
-    message: PersistedChatMessage,
-  ): PersistedChatMessage {
-    const paths = sentAttachments.get(message.id);
-    return paths === undefined || (message.attachmentPaths?.length ?? 0) > 0
-      ? message
-      : { ...message, attachmentPaths: paths };
-  }
-
-  /**
    * The result of each question call this window answered, by tool call id,
    * and the call of each question it answered, by question id. Core records
    * no result for its question tool's call, so the web core's transcript
@@ -1306,6 +1731,7 @@ export function createWebCoreChatBackendCore(
       pendingAt: new Map(),
       ended: new Map(),
       live: new Map(),
+      refused: new Map(),
       uncertain: new Map(),
       status: new Map(),
       reports: new Map(),
@@ -1366,15 +1792,52 @@ export function createWebCoreChatBackendCore(
     return unwrap(await invoker().request(method, params));
   }
 
+  function requestPage(
+    scope: Scope,
+    chatId: string,
+    paging: Record<string, unknown> = {},
+  ): Promise<unknown> {
+    return request('core.chat.transcript.page', {
+      scope: { ...bareScope(scope), chatId },
+      ...paging,
+    });
+  }
+
+  /**
+   * A transcript page, from `read` when one was sent ahead (CAN-6774). The
+   * read is stamped now: a page read ahead is used only when no change
+   * reached its scope since it was sent (`takePageAhead`), so no event wrote
+   * the chat's answers in between (CAN-6755).
+   */
   async function readPage(
     scope: Scope,
     chatId: string,
     paging: Record<string, unknown> = {},
+    read?: Promise<unknown>,
   ): Promise<TranscriptPage> {
-    const page = await request('core.chat.transcript.page', {
-      scope: { ...bareScope(scope), chatId },
-      ...paging,
-    });
+    const metered = answersKey(scope, ids.chatToStore(chatId));
+    const stamp = startPageRead(metered);
+    try {
+      return await readPageAt(
+        scope,
+        chatId,
+        paging,
+        stamp,
+        read ?? requestPage(scope, chatId, paging),
+      );
+    } finally {
+      endPageRead(metered, stamp);
+    }
+  }
+
+  async function readPageAt(
+    scope: Scope,
+    chatId: string,
+    paging: Record<string, unknown>,
+    stamp: number,
+    read: Promise<unknown>,
+  ): Promise<TranscriptPage> {
+    const page = await read;
     if (isRecord(page) && Array.isArray(page.messages))
       await sendsSettled(
         scope,
@@ -1383,19 +1846,28 @@ export function createWebCoreChatBackendCore(
     const translated = translateTranscriptPage(page, ids);
     if (translated.turnEnds !== undefined)
       recordTimerEnds(scope, ids.chatToStore(chatId), translated.turnEnds);
+    if (isRecord(page) && Array.isArray(page.messages))
+      recordAnswers(
+        scope,
+        ids.chatToStore(chatId),
+        page.messages,
+        {
+          newest: paging.before === undefined,
+          fromStart: translated.before === undefined,
+        },
+        stamp,
+      );
     return {
       ...translated,
       messages: translated.messages.map((message) =>
-        withQuestionResults(withSentAttachments(message)),
+        withQuestionResults(message),
       ),
     };
   }
 
   /** Every chat of a task, a page at a time. */
-  async function listChats(
-    scope: Scope,
-  ): Promise<ReturnType<typeof parseChatList>['items']> {
-    const items: ReturnType<typeof parseChatList>['items'][number][] = [];
+  async function listChats(scope: Scope): Promise<ListedChats> {
+    const items: ListedChats[number][] = [];
     let cursor: string | null = null;
     for (let page = 0; page < CHAT_LIST_PAGE_LIMIT; page += 1) {
       const listed = parseChatList(
@@ -1451,30 +1923,55 @@ export function createWebCoreChatBackendCore(
     return withTabChoices(snapshot, tabChoices.get(scopeKey(req)));
   }
 
+  /**
+   * The store's read of a scope. Its first while the store does not follow
+   * the scope opens the task: it takes a read-ahead's reads and reads the
+   * opened chat's first page as soon as the snapshot answers (CAN-6774).
+   */
   async function getState(
     req: ChatGetStateRequest,
   ): Promise<ChatStateSnapshot> {
+    const key = scopeKey(req);
+    const state = await stateOf(req, !openedScopes.has(key));
+    openedScopes.add(key);
+    return state;
+  }
+
+  async function stateOf(
+    req: ChatGetStateRequest,
+    opening: boolean,
+  ): Promise<ChatStateSnapshot> {
     if (isTaskBeingCreated(req)) return taskInCreation(req);
     if (isCloudTaskDeleted(req)) throw taskGone();
-    const snapshot = await readState(req).catch((error: unknown) => {
+    const snapshot = await readState(req, opening).catch((error: unknown) => {
       if (isNotFound(error)) taskDeleted(req);
       throw error;
     });
     const shown = snapshot.tabsFile.tabs
       .map((tab) => tab.id)
       .filter((id) => readChats.get(scopeKey(req))?.has(id) === true);
-    const pages = await Promise.all(
+    const reads = await Promise.allSettled(
       shown.map(
         async (id) => [id, await readPage(req, ids.chatToCore(id))] as const,
       ),
     );
+    const pages = reads.flatMap((read) =>
+      read.status === 'fulfilled' ? [read.value] : [],
+    );
+    const failed = reads.find((read) => read.status === 'rejected');
+    if (failed !== undefined) {
+      // No snapshot carries what the pages read did record: publish it
+      // before the read fails (CAN-6755).
+      publishUsageChanges(req, usageChanges(req));
+      throw failed.reason;
+    }
     // A choice made while the pages loaded is newer than the snapshot's
     // overlay, so the window's choices are laid over it again (CAN-6324),
     // and so is a model pick made meanwhile (CAN-6345).
     return withTabModels(
       req,
       withTabChoices(
-        withTranscriptPages(snapshot, new Map(pages)),
+        withUsage(req, withTranscriptPages(snapshot, new Map(pages))),
         tabChoices.get(scopeKey(req)),
       ),
       coreRevisionOf.get(snapshot) ?? 0,
@@ -1482,34 +1979,273 @@ export function createWebCoreChatBackendCore(
     );
   }
 
-  async function readState(req: Scope): Promise<ChatStateSnapshot> {
+  async function readState(
+    req: Scope,
+    opening = false,
+  ): Promise<ChatStateSnapshot> {
     if (isTaskBeingCreated(req)) return taskInCreation(req);
     if (isCloudTaskDeleted(req)) throw taskGone();
-    const during: AppliedQuestionChange[] = [];
-    const reads = questionReads.get(scopeKey(req)) ?? new Set();
-    questionReads.set(scopeKey(req), reads.add(during));
+    // An open takes the reads a hover sent for it, as its own (CAN-6774).
+    const ahead = opening ? await takeReadAhead(req) : null;
+    const questionWatch = ahead?.questions ?? watchQuestions(req);
     try {
-      return await readStateFrom(req, during);
+      return await readStateFrom(
+        req,
+        ahead?.read ?? startStateRead(req, opening),
+        questionWatch.during,
+      );
     } finally {
-      reads.delete(during);
-      if (reads.size === 0) questionReads.delete(scopeKey(req));
+      questionWatch.stop();
     }
+  }
+
+  /**
+   * Records the question changes applied while a snapshot read is in flight:
+   * those newer than the snapshot are replayed onto what it read.
+   */
+  function watchQuestions(req: Scope): QuestionWatch {
+    const key = scopeKey(req);
+    const during: AppliedQuestionChange[] = [];
+    const reads = questionReads.get(key) ?? new Set();
+    questionReads.set(key, reads.add(during));
+    return {
+      during,
+      stop: () => {
+        reads.delete(during);
+        if (reads.size === 0 && questionReads.get(key) === reads)
+          questionReads.delete(key);
+      },
+    };
+  }
+
+  /**
+   * Sends a scope's reads and notes what the window knew when it did, with
+   * no other effect: nothing is installed, published or followed until
+   * {@link readStateFrom} finishes the read. The chat list goes with the
+   * snapshot, since it needs nothing the snapshot answers; the finish keeps
+   * it only when it is no older than the snapshot. An open also reads the
+   * opened chat's first page as soon as the snapshot answers (CAN-6774).
+   */
+  function startStateRead(req: Scope, firstPage: boolean): StateRead {
+    // A scope no read has touched holds no turns: read without making some.
+    const reportsAtRead = new Map(turnsByScope.get(scopeKey(req))?.reports);
+    // A snapshot requested before a send's uncertainty was marked can't
+    // settle that send (CAN-6592).
+    const sendsAtRead = sendSequence;
+    const taskEventsAtRead = new Map(taskEvents);
+    const harnessEventsAtRead = harnessEventVersion;
+    const opened = request('core.chat.snapshot.get', {
+      scope: bareScope(req),
+    });
+    // A failed early list is recorded, and read again after the snapshot.
+    const listed = listChats(req).catch((error: unknown) => {
+      reportClientAppError(error);
+      return null;
+    });
+    // The page is read after the snapshot answered, so it holds every
+    // change before the snapshot's cursor: a page read earlier could miss
+    // one, which no event replays (CAN-6774).
+    const page = firstPage
+      ? opened.then(
+          (value) => readPageAhead(req, value),
+          () => null,
+        )
+      : Promise.resolve(null);
+    return {
+      reportsAtRead,
+      sendsAtRead,
+      taskEventsAtRead,
+      harnessEventsAtRead,
+      opened,
+      listed,
+      page,
+    };
+  }
+
+  /** The opened chat's first page, read once the task snapshot answered. */
+  function readPageAhead(req: Scope, opened: unknown): PageAhead | null {
+    const chatId =
+      isRecord(opened) &&
+      isRecord(opened.tabs) &&
+      typeof opened.tabs.activeTabId === 'string' &&
+      opened.tabs.activeTabId.length > 0
+        ? opened.tabs.activeTabId
+        : null;
+    if (chatId === null) return null;
+    // A failed early page is recorded, and the tab reads its page again.
+    const read = requestPage(req, chatId).catch((error: unknown) => {
+      reportClientAppError(error);
+      return FAILED_READ;
+    });
+    return { chatId, changesAt: changesOf(req), read };
+  }
+
+  /**
+   * The task's chats, no older than its snapshot (CAN-6774). The list was
+   * sent with the snapshot, so the web core may have read it first; it
+   * names, on every item, the task's feed revision it read before the chats
+   * (`core.chat.list`). A list at the snapshot's revision or later holds
+   * every change the snapshot's cursor does not replay. An older list, or
+   * one that failed, is read again now, after the snapshot, as every open
+   * read it before.
+   */
+  async function listedSince(
+    req: Scope,
+    opened: unknown,
+    early: Promise<ListedChats | null>,
+  ): Promise<ListedChats> {
+    const at =
+      isRecord(opened) && typeof opened.revision === 'number'
+        ? opened.revision
+        : null;
+    const items = await early;
+    if (
+      items !== null &&
+      at !== null &&
+      items.length > 0 &&
+      items.every((item) => item.revision >= at)
+    )
+      return items;
+    return listChats(req);
+  }
+
+  /**
+   * Changes this window applied to a scope's chats, from its events or its
+   * own sends: a page read before one may not show it (CAN-6774).
+   */
+  function changesOf(scope: Scope): number {
+    return scopeChanges.get(scopeKey(scope)) ?? 0;
+  }
+
+  function noteScopeChange(scope: Scope): void {
+    scopeChanges.set(scopeKey(scope), changesOf(scope) + 1);
+  }
+
+  /**
+   * Keeps the opened chat's first page for the tab's first page load. It is
+   * dropped once it waited READ_AHEAD_TTL_MS, or when another read replaces
+   * it.
+   */
+  function keepPageAhead(req: Scope, ahead: PageAhead | null): void {
+    if (ahead === null) return;
+    const key = claimKey(req, ahead.chatId);
+    const previous = pagesAhead.get(key);
+    if (previous !== undefined) clearTimeout(previous.timer);
+    const kept: KeptPage = {
+      ...ahead,
+      timer: setTimeout(() => {
+        if (pagesAhead.get(key) === kept) pagesAhead.delete(key);
+      }, READ_AHEAD_TTL_MS),
+    };
+    pagesAhead.set(key, kept);
+  }
+
+  /**
+   * The chat's first page read ahead, when nothing changed the chat since it
+   * was asked for: an event or a send applied meanwhile may not be in it, so
+   * the tab reads afresh (CAN-6774). A failed read is read again.
+   */
+  function takePageAhead(
+    scope: Scope,
+    chatId: string,
+  ): Promise<unknown> | undefined {
+    const key = claimKey(scope, chatId);
+    const kept = pagesAhead.get(key);
+    if (kept === undefined) return undefined;
+    pagesAhead.delete(key);
+    clearTimeout(kept.timer);
+    if (kept.changesAt !== changesOf(scope)) return undefined;
+    return kept.read.then((page) =>
+      page === FAILED_READ ? requestPage(scope, chatId) : page,
+    );
+  }
+
+  /**
+   * Reads a task ahead of a likely open, as resting the pointer on its row
+   * asks (CAN-6774): its snapshot, its chat list and its opened chat's first
+   * page. Chat reads only, which never wake a sandbox; nothing is installed,
+   * published or followed, and main is told nothing. The open's first
+   * `getState` finishes them as its own read; `discard`, or
+   * READ_AHEAD_TTL_MS without an open, drops them.
+   */
+  function readAhead(scope: Scope): WebCoreReadAhead {
+    const key = scopeKey(scope);
+    if (
+      !isWebCoreScope(scope.projectId) ||
+      !isWebCoreScope(scope.worktreeId) ||
+      isTaskBeingCreated(scope) ||
+      isCloudTaskDeleted(scope) ||
+      // A scope the store opened or follows needs no read ahead.
+      openedScopes.has(key) ||
+      streams.has(key)
+    )
+      return NO_READ_AHEAD;
+    const ahead = readAheads.get(key) ?? startReadAhead(scope);
+    return {
+      settled: ahead.settled,
+      discard: () => {
+        if (readAheads.get(key) === ahead) dropReadAhead(key, ahead);
+      },
+    };
+  }
+
+  function startReadAhead(scope: Scope): ReadAhead {
+    const key = scopeKey(scope);
+    const read = startStateRead(scope, true);
+    const ahead: ReadAhead = {
+      read,
+      // Questions applied while it waits are replayed onto it, as onto any
+      // read in flight.
+      questions: watchQuestions(scope),
+      settled: Promise.allSettled([
+        read.opened,
+        read.listed,
+        read.page.then((page) => page?.read),
+      ]).then(() => undefined),
+      timer: setTimeout(() => {
+        if (readAheads.get(key) === ahead) dropReadAhead(key, ahead);
+      }, READ_AHEAD_TTL_MS),
+    };
+    readAheads.set(key, ahead);
+    return ahead;
+  }
+
+  function dropReadAhead(key: string, ahead: ReadAhead): void {
+    readAheads.delete(key);
+    clearTimeout(ahead.timer);
+    ahead.questions.stop();
+  }
+
+  /**
+   * The scope's read-ahead, for its open. One whose snapshot failed is
+   * dropped: the open reads afresh, as it would have.
+   */
+  async function takeReadAhead(req: Scope): Promise<ReadAhead | null> {
+    const key = scopeKey(req);
+    const ahead = readAheads.get(key);
+    if (ahead === undefined) return null;
+    readAheads.delete(key);
+    clearTimeout(ahead.timer);
+    if (
+      await ahead.read.opened.then(
+        () => true,
+        () => false,
+      )
+    )
+      return ahead;
+    ahead.questions.stop();
+    return null;
   }
 
   async function readStateFrom(
     req: Scope,
+    sent: StateRead,
     during: readonly AppliedQuestionChange[],
   ): Promise<ChatStateSnapshot> {
     const turns = turnsFor(req);
-    const reportsAtRead = new Map(turns.reports);
-    // A snapshot requested before a send's uncertainty was marked can't
-    // settle that send (CAN-6592).
-    const sendsAtRead = sendSequence;
+    const { reportsAtRead, sendsAtRead, taskEventsAtRead } = sent;
     // The snapshot first: its revision and cursor cover every later change.
-    const taskEventsAtRead = new Map(taskEvents);
-    const opened = await request('core.chat.snapshot.get', {
-      scope: bareScope(req),
-    });
+    const opened = await sent.opened;
     // The task snapshot carries its opened chat's tasks; another chat's are
     // read when it is shown.
     const openedChatId =
@@ -1532,7 +2268,7 @@ export function createWebCoreChatBackendCore(
       publishTasks(req, openedChatId, opened.tasks);
     const translated = translateSnapshot(
       opened,
-      await listChats(req),
+      await listedSince(req, opened, sent.listed),
       req,
       ids,
     );
@@ -1671,10 +2407,11 @@ export function createWebCoreChatBackendCore(
     }
     refreshFollowers();
     sawCoreRevision(req, translated.snapshot.revision);
+    recordSnapshotHarnesses(req, translated.snapshot, sent.harnessEventsAtRead);
     const state = withTabChoices(
       withTabModels(
         req,
-        {
+        withChatHarnesses(req, sent.harnessEventsAtRead, {
           ...translated.snapshot,
           revision,
           tabsFile: {
@@ -1682,18 +2419,352 @@ export function createWebCoreChatBackendCore(
             revision,
             ...(pendingQuestions.length === 0 ? {} : { pendingQuestions }),
           },
-        },
+        }),
         translated.snapshot.revision,
         true,
       ),
       tabChoices.get(scopeKey(req)),
     );
     coreRevisionOf.set(state, translated.snapshot.revision);
+    keepPageAhead(req, await sent.page);
     return state;
   }
 
   function emit(event: ChatStateChangedEvent): void {
+    markPublishedUsage(event);
     for (const listener of listeners) listener(event);
+  }
+
+  function answersKey(scope: Scope, storeChatId: string): string {
+    return `${scopeKey(scope)}\n${storeChatId}`;
+  }
+
+  /** The store's tab usage as the published changes leave it (CAN-6755). */
+  function markPublishedUsage(event: ChatStateChangedEvent): void {
+    const scope = { projectId: event.projectId, worktreeId: event.worktreeId };
+    for (const change of event.changes)
+      if (
+        change.type === 'tab.metadata_patched' &&
+        change.patch.usage !== undefined
+      )
+        usageShown.set(
+          answersKey(scope, change.tabId),
+          new Set([JSON.stringify(change.patch.usage ?? null)]),
+        );
+      else if (change.type === 'tab.upserted')
+        usageShown.set(
+          answersKey(scope, change.tab.id),
+          new Set([JSON.stringify(change.tab.usage ?? null)]),
+        );
+      else if (change.type === 'tab.removed')
+        usageShown.delete(answersKey(scope, change.tabId));
+  }
+
+  /**
+   * A chat's page read starts: the version its copy is as new as, its own,
+   * so of two overlapping reads the later one is the newer (CAN-6830).
+   */
+  function startPageRead(key: string): number {
+    answerVersion += 1;
+    pageReads.set(key, [...(pageReads.get(key) ?? []), answerVersion]);
+    return answerVersion;
+  }
+
+  /** Drops the event writes no read in flight is older than. */
+  function endPageRead(key: string, stamp: number): void {
+    const reads = [...(pageReads.get(key) ?? [])];
+    const at = reads.indexOf(stamp);
+    if (at !== -1) reads.splice(at, 1);
+    if (reads.length === 0) {
+      pageReads.delete(key);
+      eventWrites.delete(key);
+      return;
+    }
+    pageReads.set(key, reads);
+    const oldest = Math.min(...reads);
+    const log = eventWrites.get(key);
+    if (log === undefined) return;
+    for (const [id, write] of log.writes)
+      if (write.version <= oldest) log.writes.delete(id);
+    if (log.cleared !== undefined && log.cleared <= oldest) delete log.cleared;
+  }
+
+  /**
+   * A page's answers, read as of `stamp`: the newest page replaces every
+   * answer from its first row on, all of them when it starts the
+   * transcript, and an older page adds its own. An answer written after
+   * the read started, by a newer page or an event, stays (CAN-6755).
+   */
+  function recordAnswers(
+    scope: Scope,
+    storeChatId: string,
+    rows: readonly unknown[],
+    page: { readonly newest: boolean; readonly fromStart: boolean },
+    stamp: number,
+  ): void {
+    const key = answersKey(scope, storeChatId);
+    // A read the backend stopped following (closeAll) records nothing.
+    if (!(pageReads.get(key) ?? []).includes(stamp)) return;
+    const log = eventWrites.get(key);
+    // The chat was removed after this read started.
+    if (log?.cleared !== undefined && log.cleared > stamp) return;
+    const first = rows.find(
+      (row): row is { timestamp: number } =>
+        isRecord(row) && typeof row.timestamp === 'number',
+    )?.timestamp;
+    const held = new Map<string, HeldAnswer>();
+    for (const [id, each] of answers.get(key) ?? []) {
+      const covered =
+        page.newest &&
+        (page.fromStart ||
+          (first !== undefined && each.answer.timestamp >= first));
+      if (!covered || each.version > stamp) held.set(id, each);
+    }
+    for (const row of rows) {
+      const answer = meteredAnswer(row);
+      if (answer === null) continue;
+      const current = held.get(answer.id);
+      if (current === undefined || current.version <= stamp)
+        held.set(answer.id, { answer, version: stamp });
+    }
+    for (const [id, write] of log?.writes ?? [])
+      if (write.version > stamp)
+        if (write.answer === null) held.delete(id);
+        else held.set(id, { answer: write.answer, version: write.version });
+    logPageWrites(key, held, stamp);
+    answers.set(key, held);
+    meteredScopes.set(scopeKey(scope), scope);
+    followCatalog();
+  }
+
+  /**
+   * A page's writes, answers it set and answers it dropped, kept for each
+   * older read of the chat still in flight, which replays them as it
+   * replays an event's: a read that started earlier never undoes a newer
+   * page (CAN-6830).
+   */
+  function logPageWrites(
+    key: string,
+    held: ReadonlyMap<string, HeldAnswer>,
+    stamp: number,
+  ): void {
+    if (!(pageReads.get(key) ?? []).some((other) => other < stamp)) return;
+    const log: EventAnswerWrites = eventWrites.get(key) ?? {
+      writes: new Map(),
+    };
+    const keep = (id: string, answer: MeteredAnswer | null): void => {
+      // A newer write, from an event, stays.
+      if ((log.writes.get(id)?.version ?? 0) > stamp) return;
+      log.writes.set(id, { version: stamp, answer });
+    };
+    for (const id of answers.get(key)?.keys() ?? [])
+      if (!held.has(id)) keep(id, null);
+    for (const [id, each] of held)
+      if (each.version === stamp) keep(id, each.answer);
+    eventWrites.set(key, log);
+  }
+
+  /**
+   * A meter folded before the web core model catalog loaded has no context
+   * window when its answers name only their model; the catalog's arrival
+   * refolds each metered chat of its project (CAN-6755).
+   */
+  function followCatalog(): void {
+    if (unfollowCatalog !== null) return;
+    unfollowCatalog = useWebCoreModelCatalogStore.subscribe(
+      (state, previous) => {
+        for (const scope of meteredScopes.values())
+          if (
+            state.byProject[scope.projectId] !==
+            previous.byProject[scope.projectId]
+          )
+            publishUsageChanges(scope, usageChanges(scope));
+      },
+    );
+  }
+
+  /**
+   * An event's rows into the answers of each chat this window read, and of
+   * each chat whose page read is in flight, at one version newer than every
+   * read started before it.
+   */
+  function recordAnswerChanges(
+    scope: Scope,
+    changes: ReturnType<typeof parseEventItem>['changes'],
+  ): void {
+    answerVersion += 1;
+    const version = answerVersion;
+    const write = (
+      chatId: string,
+      id: string,
+      answer: MeteredAnswer | null,
+    ): void => {
+      const key = answersKey(scope, ids.chatToStore(chatId));
+      const held = answers.get(key);
+      if (answer === null) held?.delete(id);
+      else held?.set(id, { answer, version });
+      if (!pageReads.has(key)) return;
+      const log = eventWrites.get(key) ?? { writes: new Map() };
+      log.writes.set(id, { version, answer });
+      eventWrites.set(key, log);
+    };
+    const upsert = (chatId: string, rows: readonly unknown[]): void => {
+      for (const row of rows) {
+        const answer = meteredAnswer(row);
+        if (answer !== null) write(chatId, answer.id, answer);
+      }
+    };
+    for (const change of changes)
+      if (change.type === 'message.upserted')
+        upsert(change.chatId, [change.message]);
+      else if (change.type === 'message.removed')
+        write(change.chatId, change.messageId, null);
+      else if (change.type === 'messages.replaced') {
+        for (const id of change.removedMessageIds)
+          write(change.chatId, id, null);
+        upsert(change.chatId, change.messages);
+      } else if (change.type === 'tab.upserted')
+        upsert(change.tab.id, change.tab.messages);
+      else if (change.type === 'tab.removed') {
+        const key = answersKey(scope, ids.chatToStore(change.tabId));
+        answers.delete(key);
+        if (pageReads.has(key))
+          eventWrites.set(key, { cleared: version, writes: new Map() });
+      }
+  }
+
+  /**
+   * The chat's usage meter, folded from its answers' meters as the web's
+   * composer folds them (`foldChatUsage`); undefined for a chat this window
+   * has not read or whose answers carry no meter (CAN-6755).
+   */
+  function usageOf(
+    scope: Scope,
+    storeChatId: string,
+  ): PersistedChatTab['usage'] {
+    const held = answers.get(answersKey(scope, storeChatId));
+    if (held === undefined) return undefined;
+    const catalog =
+      useWebCoreModelCatalogStore.getState().byProject[scope.projectId];
+    return chatTabUsage(
+      foldChatUsage(
+        [...held.values()]
+          .map((each) => each.answer)
+          .sort((left, right) => left.timestamp - right.timestamp)
+          .map((each) => each.answer),
+        {
+          catalogContextWindow: (modelId) =>
+            catalog?.get(modelId)?.contextWindow,
+        },
+      ),
+    );
+  }
+
+  /**
+   * A usage patch for the chat's tab, or null when the store holds this
+   * meter for certain.
+   */
+  function usageChange(
+    scope: Scope,
+    storeChatId: string,
+  ): ChatStateChange | null {
+    const key = answersKey(scope, storeChatId);
+    if (!answers.has(key)) return null;
+    const usage = usageOf(scope, storeChatId);
+    const value = JSON.stringify(usage ?? null);
+    const held = usageShown.get(key) ?? NO_USAGE_SHOWN;
+    // Marked shown only once a change carrying it is published (`emit`).
+    if (held.size === 1 && held.has(value)) return null;
+    return {
+      type: 'tab.metadata_patched',
+      tabId: storeChatId,
+      patch: { usage: usage ?? null },
+    };
+  }
+
+  /** The usage patches of every chat of the scope this window read. */
+  function usageChanges(scope: Scope): ChatStateChange[] {
+    const prefix = `${scopeKey(scope)}\n`;
+    return [...answers.keys()].flatMap((key) =>
+      key.startsWith(prefix)
+        ? (usageChange(scope, key.slice(prefix.length)) ?? [])
+        : [],
+    );
+  }
+
+  /**
+   * A read chat's tab as the web core sends it, with its usage meter: the
+   * web core's tab carries none, and the store replaces the whole tab, so a
+   * tab sent again would otherwise drop the meter it showed (CAN-6755).
+   */
+  function withTabUsage(scope: Scope, tab: PersistedChatTab): PersistedChatTab {
+    if (!answers.has(answersKey(scope, tab.id))) return tab;
+    const usage = usageOf(scope, tab.id);
+    if (usage !== undefined) return { ...tab, usage };
+    const rest = { ...tab };
+    delete rest.usage;
+    return rest;
+  }
+
+  /** A snapshot whose read chats' tabs carry their usage meter. */
+  function withUsage(
+    scope: Scope,
+    snapshot: ChatStateSnapshot,
+  ): ChatStateSnapshot {
+    return {
+      ...snapshot,
+      tabsFile: {
+        ...snapshot.tabsFile,
+        tabs: snapshot.tabsFile.tabs.map((tab) => {
+          const carried = withTabUsage(scope, tab);
+          const key = answersKey(scope, tab.id);
+          // The store may install this snapshot or set it aside: either
+          // value may be what its tab holds, until a patch pins one.
+          if (answers.has(key))
+            usageShown.set(
+              key,
+              new Set([
+                ...(usageShown.get(key) ?? NO_USAGE_SHOWN),
+                JSON.stringify(carried.usage ?? null),
+              ]),
+            );
+          return carried;
+        }),
+      },
+    };
+  }
+
+  /**
+   * The chat's usage after a page read the store asked for, as a revision of
+   * this backend's own, as a late echo's repair is (CAN-6755).
+   */
+  function publishUsage(scope: Scope, storeChatId: string): void {
+    // No state given for the scope yet: its first snapshot carries it.
+    if (revisions.get(scopeKey(scope)) === undefined) return;
+    const change = usageChange(scope, storeChatId);
+    if (change !== null) publishUsageChanges(scope, [change]);
+  }
+
+  /** Usage patches as one revision of this backend's own. */
+  function publishUsageChanges(
+    scope: Scope,
+    changes: readonly ChatStateChange[],
+  ): void {
+    const key = scopeKey(scope);
+    const base = revisions.get(key);
+    if (base === undefined || changes.length === 0) return;
+    offsets.set(key, (offsets.get(key) ?? 0) + 1);
+    revisions.set(key, base + 1);
+    emit({
+      schemaVersion: 1,
+      eventId: `web-core-usage:${key}:${base + 1}:${newId()}`,
+      occurredAt: new Date().toISOString(),
+      projectId: scope.projectId,
+      worktreeId: scope.worktreeId,
+      baseRevision: base,
+      revision: base + 1,
+      changes: [...changes],
+    });
   }
 
   /**
@@ -1781,8 +2852,13 @@ export function createWebCoreChatBackendCore(
       const reports = turnsFor(scope).reports;
       const reportsAtRead = reports.get(chatId) ?? 0;
       const snapshot = await getState(scope);
+      // The snapshot goes to no store: any meter its pages moved is
+      // published here, with the runtime or on its own (CAN-6755).
       // The read reports the chat once; any other report came from an event.
-      if ((reports.get(chatId) ?? 0) !== reportsAtRead + 1) return;
+      if ((reports.get(chatId) ?? 0) !== reportsAtRead + 1) {
+        publishUsageChanges(scope, usageChanges(scope));
+        return;
+      }
       const runtime = snapshot.runtimeByChatId[storeChatId];
       const key = scopeKey(scope);
       const base = revisions.get(key);
@@ -1791,8 +2867,10 @@ export function createWebCoreChatBackendCore(
         base === undefined ||
         isTurnRunningStatus(runtime.status) ||
         runtime.status === 'awaiting_input'
-      )
+      ) {
+        publishUsageChanges(scope, usageChanges(scope));
         return;
+      }
       offsets.set(key, (offsets.get(key) ?? 0) + 1);
       revisions.set(key, base + 1);
       emit({
@@ -1803,7 +2881,10 @@ export function createWebCoreChatBackendCore(
         worktreeId: scope.worktreeId,
         baseRevision: base,
         revision: base + 1,
-        changes: [{ type: 'runtime.patched', chatId: storeChatId, runtime }],
+        changes: [
+          { type: 'runtime.patched', chatId: storeChatId, runtime },
+          ...usageChanges(scope),
+        ],
       });
       options.onWorkspaceFilesChanged?.(scope);
     } catch (error) {
@@ -1813,6 +2894,8 @@ export function createWebCoreChatBackendCore(
 
   async function apply(entry: ScopeStream, item: unknown): Promise<void> {
     const parsed = parseEventItem(item);
+    // As it arrives: a page this event makes the backend read is newer.
+    recordAnswerChanges(entry.scope, parsed.changes);
     // The task's own chat is gone, and the task with it: the store keeps
     // that tab and hears nothing more. Any other chat removed while holding
     // a draft or attachments is kept too, read-only, whatever the order of
@@ -1871,17 +2954,23 @@ export function createWebCoreChatBackendCore(
         turns.pending.has(chatId) ||
         isTurnRunningStatus(turns.status.get(chatId));
       const ends = turnId === null && startingUnnamed.get(chatId) !== true;
+      const refused = turns.refused.get(chatId);
+      // Kept through a starting report that names no turn: that report
+      // neither ends the refused turn nor names its replacement.
+      if (turnId !== null || ends) turns.refused.delete(chatId);
       // A turn the report ends, or replaces, ended: a lagging snapshot
-      // never names it running again (CAN-6733).
+      // never names it running again (CAN-6733). So did one whose cancel
+      // was refused as not found (CAN-6770).
       if (ends) {
         markTurnEnded(turns, chatId, previous);
         markTurnEnded(turns, chatId, turns.pending.get(chatId));
-      } else if (
-        turnId !== null &&
-        previous !== undefined &&
-        previous !== turnId
-      )
-        markTurnEnded(turns, chatId, previous);
+        markTurnEnded(turns, chatId, refused);
+      } else if (turnId !== null) {
+        if (previous !== undefined && previous !== turnId)
+          markTurnEnded(turns, chatId, previous);
+        if (refused !== undefined && refused !== turnId)
+          markTurnEnded(turns, chatId, refused);
+      }
       if (turnId !== null || startingUnnamed.get(chatId) !== true) {
         dropPending(turns, chatId);
         turns.uncertain.delete(chatId);
@@ -1907,6 +2996,13 @@ export function createWebCoreChatBackendCore(
     for (const change of parsed.changes)
       if (change.type === 'runtime.patched')
         turns.status.set(change.chatId, turnRuntimeStatus(change.runtime));
+      else if (change.type === 'sandbox.changed')
+        publishSandbox(
+          entry.scope,
+          change.chatId,
+          change.sandbox,
+          parsed.revision,
+        );
       else if (change.type === 'agent_tasks.replaced') {
         const key = taskEventKey(entry.scope, change.chatId);
         taskEvents.set(key, (taskEvents.get(key) ?? 0) + 1);
@@ -1949,9 +3045,11 @@ export function createWebCoreChatBackendCore(
     const event: ChatStateChangedEvent = {
       ...translated,
       changes: [
-        ...translated.changes,
+        ...withEventHarnesses(entry.scope, translated.changes),
         ...answeredMessages,
         ...timerEndPatches(entry.scope, translated.changes),
+        // Each read chat's usage meter after the answers this event wrote.
+        ...usageChanges(entry.scope),
       ].map((change) => {
         const record =
           change.type === 'pending_question.removed'
@@ -1962,7 +3060,10 @@ export function createWebCoreChatBackendCore(
         // A tab the web core sends again keeps the window's settings, and
         // shows its model in revision order (CAN-6345).
         if (change.type === 'tab.upserted') {
-          const tab = withTabSettings(change.tab, settings?.get(change.tab.id));
+          const tab = withTabUsage(
+            entry.scope,
+            withTabSettings(change.tab, settings?.get(change.tab.id)),
+          );
           return {
             ...change,
             tab: withTabModel(
@@ -1980,7 +3081,7 @@ export function createWebCoreChatBackendCore(
         if (change.type === 'message.upserted')
           return {
             ...change,
-            message: withQuestionResults(withSentAttachments(change.message)),
+            message: withQuestionResults(change.message),
           };
         if (
           change.type !== 'tab.metadata_patched' ||
@@ -2053,6 +3154,7 @@ export function createWebCoreChatBackendCore(
     frame: unknown,
   ): Promise<boolean> {
     if (!isRecord(frame) || frame.kind !== 'item') return false;
+    noteScopeChange(entry.scope);
     await apply(entry, frame.item);
     if (frame.cursor !== undefined) {
       entry.cursor = frame.cursor;
@@ -2101,7 +3203,8 @@ export function createWebCoreChatBackendCore(
     entry.cursor = null;
     cursors.delete(key);
     try {
-      const snapshot = await getState(entry.scope);
+      // A resync is no open: its scope was read before.
+      const snapshot = await stateOf(entry.scope, false);
       if (entry.closed || entry.epoch !== epoch) return;
       entry.cursor = cursors.get(key) ?? null;
       // The snapshot holds only its opened chat's tasks; every other chat
@@ -2139,14 +3242,19 @@ export function createWebCoreChatBackendCore(
     const previous = entry.stream;
     entry.stream = null;
     if (previous !== null) void previous.close();
+    entry.opening = true;
     try {
-      const opened = await invoker().openStream('core.chat.events', {
-        scope: {
-          projectId: bareId(entry.scope.projectId),
-          worktreeId: bareId(entry.scope.worktreeId),
-        },
-        cursor: entry.cursor ?? null,
-      });
+      const opened = await invoker()
+        .openStream('core.chat.events', {
+          scope: {
+            projectId: bareId(entry.scope.projectId),
+            worktreeId: bareId(entry.scope.worktreeId),
+          },
+          cursor: entry.cursor ?? null,
+        })
+        .finally(() => {
+          if (entry.epoch === epoch) entry.opening = false;
+        });
       if (entry.closed || entry.epoch !== epoch) {
         void opened.close();
         return;
@@ -2170,6 +3278,20 @@ export function createWebCoreChatBackendCore(
       )
         scheduleReopen(entry, epoch);
     }
+  }
+
+  function taskRestored(scope: Scope): void {
+    const entry = streams.get(scopeKey(scope));
+    if (entry === undefined) return;
+    // Closed when the task was deleted, or never opened because it was
+    // declared while deleted; one with a stream, an open or a reopen in
+    // flight already follows the task.
+    const following =
+      !entry.closed &&
+      (entry.stream !== null || entry.opening || entry.reopenTimer !== null);
+    if (following) return;
+    entry.closed = false;
+    void open(entry);
   }
 
   function closeStream(entry: ScopeStream): void {
@@ -2199,6 +3321,7 @@ export function createWebCoreChatBackendCore(
       if (keys.has(key)) continue;
       closeStream(entry);
       streams.delete(key);
+      openedScopes.delete(key);
     }
     for (const scope of wanted) {
       const key = scopeKey(scope);
@@ -2210,6 +3333,7 @@ export function createWebCoreChatBackendCore(
         cursor: cursors.get(key) ?? null,
         reopenTimer: null,
         closed: false,
+        opening: false,
       };
       streams.set(key, entry);
       void open(entry);
@@ -2263,13 +3387,28 @@ export function createWebCoreChatBackendCore(
       );
     if (req.before === undefined)
       void readChatTasks(req, ids.chatToCore(req.chatId));
+    const chatId = ids.chatToCore(req.chatId);
+    // The newest page an open read ahead serves the tab's first load
+    // (CAN-6774).
+    const ahead =
+      req.before === undefined && req.transcriptRevision === undefined
+        ? takePageAhead(req, chatId)
+        : undefined;
     // The web core serves the plain transcript only: no turn view.
-    return readPage(req, ids.chatToCore(req.chatId), {
-      ...(req.before === undefined ? {} : { before: req.before }),
-      ...(req.transcriptRevision === undefined
-        ? {}
-        : { transcriptRevision: req.transcriptRevision }),
-    });
+    const page = await readPage(
+      req,
+      chatId,
+      {
+        ...(req.before === undefined ? {} : { before: req.before }),
+        ...(req.transcriptRevision === undefined
+          ? {}
+          : { transcriptRevision: req.transcriptRevision }),
+      },
+      ahead,
+    );
+    // The page's answers move the chat's usage meter (CAN-6755).
+    publishUsage(req, req.chatId);
+    return page;
   }
 
   function setSettingsChoice(
@@ -2732,27 +3871,51 @@ export function createWebCoreChatBackendCore(
   async function sendMessage(
     req: ChatSendMessageRequest,
   ): Promise<ChatSendMessageResult> {
+    // Claimed on arrival, before any wait: its chat's later sends wait until
+    // this one posted or failed (CAN-6828).
+    const press = claimCloudSend(req.userMessageId);
+    try {
+      return await sendMessageInOrder(req, press);
+    } finally {
+      if (press !== undefined) settleCloudSend(press);
+    }
+  }
+
+  async function sendMessageInOrder(
+    req: ChatSendMessageRequest,
+    press: CloudSendPress | undefined,
+  ): Promise<ChatSendMessageResult> {
     if ((req.fileReferences?.length ?? 0) > 0)
       throw webCoreUnavailable('File mentions');
     const attachments = sendAttachments(req);
-    if (attachments !== undefined) {
-      sentAttachments.set(req.userMessageId, [...(req.attachmentPaths ?? [])]);
-      for (const oldest of sentAttachments.keys()) {
-        if (sentAttachments.size <= MESSAGE_ID_LIMIT) break;
-        sentAttachments.delete(oldest);
-      }
-    }
     // The web core's send carries no planning restriction: a plan request
     // must not start a turn that executes.
     if (req.planMode === true) throw webCoreUnavailable('Plan mode');
     const chatId = ids.chatToCore(req.chatId);
     const turns = turnsFor(req);
+    // A page read ahead before this send may not show it (CAN-6774).
+    noteScopeChange(req);
     // Claimed before any wait, so a Stop from here on cancels this send's
     // turn by its receipt (CAN-6592).
-    const claim = openClaim(req, chatId);
+    const claim = openClaim(
+      req,
+      chatId,
+      press?.sequence ?? nextCloudSendSequence(),
+    );
     const uncertain = { landed: false };
     let claimed: ClaimedTurn = { kind: 'none' };
     try {
+      // A send to a task this window is still creating, as one queued behind
+      // New task's first message is, posts once the web core holds the task;
+      // one whose create failed posts nothing (CAN-6098, CAN-6828).
+      const created = await taskCreationSettled(req).then(
+        () => true,
+        () => false,
+      );
+      if (!created)
+        throw new Error(
+          "The cloud task this message was sent to wasn't created.",
+        );
       // A selection the user just saved applies to this turn.
       await selectionSaveSettled(req.chatId);
       const modelConfig = sendModelConfig(
@@ -2762,6 +3925,7 @@ export function createWebCoreChatBackendCore(
       );
       const commandId = newId();
       const scope = bareScope(req);
+      const boundPrincipal = webCoreSendBinding(req.userMessageId);
       let settle = (): void => undefined;
       const settled = new Promise<void>((resolve) => {
         settle = resolve;
@@ -2770,6 +3934,7 @@ export function createWebCoreChatBackendCore(
       sending.set(chatId, inFlight.add(settled));
       let receipt: ReturnType<typeof CoreChatCommandReceiptSchema.parse>;
       try {
+        if (press !== undefined) await whenCloudSendMayPost(press);
         const parsed = CoreChatCommandReceiptSchema.safeParse(
           await sendOnce(
             { scope, chatId, commandId },
@@ -2784,6 +3949,14 @@ export function createWebCoreChatBackendCore(
               // chat.set_model. The thinking level the composer shows rides
               // the send, within the levels the model's catalog lists.
               ...(modelConfig === undefined ? {} : { modelConfig }),
+              // Bound to the account it was pressed under: the web core
+              // refuses it once its connection serves another (CAN-6828).
+              ...(boundPrincipal === undefined
+                ? {}
+                : {
+                    expectedPrincipalId: boundPrincipal,
+                    revision: CORE_CHAT_MESSAGE_SEND_ACCOUNT_BOUND_REVISION,
+                  }),
               _meta: { idempotencyKey: commandId },
             },
             uncertain,
@@ -2794,11 +3967,13 @@ export function createWebCoreChatBackendCore(
           throw new Error('The web core returned an invalid send receipt.');
         }
         receipt = parsed.data;
+        releaseWebCoreSend(req.userMessageId);
         if (receipt.messageId !== undefined) {
           remember(receipt.messageId, req.userMessageId);
           renameQueuedPrompt(req, receipt.messageId, req.userMessageId);
         }
       } finally {
+        if (press !== undefined) settleCloudSend(press);
         inFlight.delete(settled);
         if (inFlight.size === 0) sending.delete(chatId);
         settle();
@@ -3074,7 +4249,9 @@ export function createWebCoreChatBackendCore(
     } catch (error) {
       // The web core no longer knows the turn: it is over, or a web core
       // from before CAN-6393 could not find it by its conversation turn id.
-      // The snapshot is read again, so the chat shows whichever is true.
+      // The snapshot is read again, so the chat shows whichever is true. A
+      // refusal is no report of the turn's end: a snapshot that still names
+      // it running keeps it Stop's target.
       if (
         error instanceof CoreCoworkRequestError &&
         error.payload.kind === 'not_found'
@@ -3083,7 +4260,7 @@ export function createWebCoreChatBackendCore(
         if (turns.live.get(chatId)?.turnId === turnId)
           turns.live.delete(chatId);
         if (turns.pending.get(chatId) === turnId) dropPending(turns, chatId);
-        markTurnEnded(turns, chatId, turnId);
+        turns.refused.set(chatId, turnId);
         refreshStarting(req);
         void refreshEndedTurn(
           { projectId: req.projectId, worktreeId: req.worktreeId },
@@ -3100,10 +4277,24 @@ export function createWebCoreChatBackendCore(
   }
 
   function closeAll(): void {
+    sandboxRevisions.clear();
+    heldSandboxes.clear();
     live.closeAll();
     approvals.closeAll();
+    // Reads sent ahead over a connection that ended open nothing.
+    for (const [key, ahead] of [...readAheads]) dropReadAhead(key, ahead);
+    for (const kept of pagesAhead.values()) clearTimeout(kept.timer);
+    pagesAhead.clear();
+    answers.clear();
+    usageShown.clear();
+    pageReads.clear();
+    eventWrites.clear();
+    meteredScopes.clear();
+    unfollowCatalog?.();
+    unfollowCatalog = null;
     for (const entry of streams.values()) closeStream(entry);
     streams.clear();
+    openedScopes.clear();
     cursors.clear();
     turnsByScope.clear();
     sending.clear();
@@ -3240,6 +4431,16 @@ export function createWebCoreChatBackendCore(
   ): ChatQueueUpdatedEvent[] {
     const parsed = CoreChatSnapshotGetResultSchema.safeParse(value);
     if (!parsed.success) return [];
+    // The read's sandbox is its opened chat's (CAN-6766); every read of a
+    // snapshot comes through here.
+    const opened = parsed.data.tabs.activeTabId;
+    if (parsed.data.sandbox != null && opened.length > 0)
+      takeSnapshotSandbox(
+        scope,
+        opened,
+        parsed.data.sandbox,
+        parsed.data.revision,
+      );
     const changed: ChatQueueUpdatedEvent[] = [];
     for (const [coreChatId, runtime] of Object.entries(
       parsed.data.runtimeByChatId,
@@ -3692,6 +4893,7 @@ export function createWebCoreChatBackendCore(
 
   return {
     getState,
+    readAhead,
     setStateScopes,
     onStateChanged: (cb) => {
       listeners.add(cb);
@@ -3735,7 +4937,9 @@ export function createWebCoreChatBackendCore(
     },
     approvals,
     closeAll,
+    taskRestored,
     storeRuntimesChanged,
+    releaseSandboxStates,
     uploadAttachment,
   };
 }

@@ -1,5 +1,6 @@
 'use client';
 
+import { DialogActionFooter } from '@canopy/ui-shared/components';
 import { useCallback, type JSX } from 'react';
 import {
   Button,
@@ -127,7 +128,7 @@ export function PrMergeWarningDialog({
           </Button>
         )}
       </div>
-      <div className="flex items-center justify-end gap-2 border-t p-4">
+      <DialogActionFooter center padding="roomy">
         <Button size="compact" onClick={onClose} disabled={isSubmitting}>
           Cancel
         </Button>
@@ -140,7 +141,7 @@ export function PrMergeWarningDialog({
         >
           {isSubmitting ? 'Merging…' : 'Merge anyway'}
         </Button>
-      </div>
+      </DialogActionFooter>
     </DialogModal>
   );
 }

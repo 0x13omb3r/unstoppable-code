@@ -6,7 +6,7 @@ import { Notice, NoticeButton } from './Notice';
 import {
   MODEL_LIBRARY_UNLOCK_COPY,
   modelLibraryPendingBody,
-} from './modelLibraryLock';
+} from './creditsPromptCopy';
 
 /** The pending phases a composer notice narrates. */
 export type ModelUnlockPendingPhase = 'waiting' | 'timed-out';

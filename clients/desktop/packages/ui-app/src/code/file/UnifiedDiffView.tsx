@@ -1,7 +1,15 @@
 'use client';
 
 import { memo, useMemo, type JSX } from 'react';
-import type { DiffViewMode } from '@canopy/ui-shared/components';
+import {
+  DiffPatchRow,
+  DiffHunkCell,
+  DiffFileHeaderCell,
+  DiffSplitFillerCell,
+  DiffSplitLineNumberCell,
+  DiffSplitCodeCell,
+  type DiffViewMode,
+} from '@canopy/ui-shared/components';
 import { REPLAY_BLOCK_CLASS } from '@canopy/ui-shared/lib/replay-privacy';
 import {
   pairSplitRows,
@@ -14,22 +22,19 @@ import {
 
 const ROW_TONE: Record<
   PatchRowKind,
-  { readonly background: string; readonly ink: string; readonly marker: string }
+  { readonly ink: string; readonly marker: string }
 > = {
-  add: { background: 'bg-success-subtle', ink: 'fg-success', marker: '+' },
+  add: { ink: 'fg-success', marker: '+' },
   del: {
-    background: 'bg-destructive-subtle',
     ink: 'fg-destructive',
     marker: '-',
   },
-  context: { background: '', ink: 'fg-tertiary', marker: ' ' },
+  context: { ink: 'fg-tertiary', marker: ' ' },
 };
 
 const GUTTER =
   'select-none whitespace-nowrap px-2 text-right align-top tabular-nums';
 const CODE = 'whitespace-pre pr-4 align-top fg-primary';
-const SEPARATOR = 'bg-fg-primary/[0.04] px-3 fg-secondary';
-const FILLER = 'bg-fg-primary/[0.03]';
 
 /** Code text with its non-selectable `+`/`-` marker and no-newline hint. */
 function CodeText({ row }: { readonly row: PatchRow }): JSX.Element {
@@ -76,9 +81,7 @@ function UnifiedHunk({
     <>
       {hasSeparator(hunk, index) ? (
         <tr data-diff-row="hunk">
-          <td colSpan={3} className={SEPARATOR}>
-            {hunkLabel(hunk)}
-          </td>
+          <DiffHunkCell colSpan={3}>{hunkLabel(hunk)}</DiffHunkCell>
         </tr>
       ) : null}
       {hunk.rows.map((row, rowIndex) => {
@@ -86,17 +89,13 @@ function UnifiedHunk({
         const gutter = `${GUTTER} ${row.kind === 'context' ? 'fg-tertiary' : tone.ink}`;
         return (
           // Index key is safe: rows are recomputed atomically from `patch`.
-          <tr
-            key={rowIndex}
-            data-diff-row={row.kind}
-            className={tone.background}
-          >
+          <DiffPatchRow key={rowIndex} data-diff-row={row.kind} tone={row.kind}>
             <td className={gutter}>{lineNumber(row.oldLine)}</td>
             <td className={gutter}>{lineNumber(row.newLine)}</td>
             <td className={`${CODE} w-full`}>
               <CodeText row={row} />
             </td>
-          </tr>
+          </DiffPatchRow>
         );
       })}
     </>
@@ -116,30 +115,19 @@ function SplitSide({
   if (row === null) {
     return (
       <>
-        <td
-          className={`${FILLER} ${side === 'new' ? 'border-l' : ''}`}
-          data-diff-cell="empty"
-        />
-        <td className={`${FILLER} w-1/2`} data-diff-cell="empty" />
+        <DiffSplitFillerCell side={side} gutter data-diff-cell="empty" />
+        <DiffSplitFillerCell side={side} data-diff-cell="empty" />
       </>
     );
   }
-  const tone = ROW_TONE[row.kind];
   return (
     <>
-      <td
-        className={`${GUTTER} ${tone.background} ${
-          row.kind === 'context' ? 'fg-tertiary' : tone.ink
-        } ${side === 'new' ? 'border-l' : ''}`}
-      >
+      <DiffSplitLineNumberCell side={side} tone={row.kind}>
         {lineNumber(line)}
-      </td>
-      <td
-        className={`${CODE} w-1/2 ${tone.background}`}
-        data-diff-cell={row.kind}
-      >
+      </DiffSplitLineNumberCell>
+      <DiffSplitCodeCell data-diff-cell={row.kind} tone={row.kind}>
         <CodeText row={row} />
-      </td>
+      </DiffSplitCodeCell>
     </>
   );
 }
@@ -156,9 +144,7 @@ function SplitHunk({
     <>
       {hasSeparator(hunk, index) ? (
         <tr data-diff-row="hunk">
-          <td colSpan={4} className={SEPARATOR}>
-            {hunkLabel(hunk)}
-          </td>
+          <DiffHunkCell colSpan={4}>{hunkLabel(hunk)}</DiffHunkCell>
         </tr>
       ) : null}
       {pairs.map((pair, pairIndex) => (
@@ -197,17 +183,14 @@ function FileSection({
     <tbody>
       {showPath ? (
         <tr data-diff-row="file">
-          <td
-            colSpan={columns}
-            className="sticky top-0 border-y bg-base px-3 py-1 fg-primary"
-          >
+          <DiffFileHeaderCell colSpan={columns}>
             {file.path ?? 'Unknown file'}
             {file.notes.length > 0 ? (
               <span className="ml-3 fg-secondary">
                 {file.notes.join(' · ')}
               </span>
             ) : null}
-          </td>
+          </DiffFileHeaderCell>
         </tr>
       ) : (
         file.notes.map((note, index) => (

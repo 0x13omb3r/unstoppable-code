@@ -1,3 +1,4 @@
+import { Button, CostBreakdownEntry } from '@canopy/ui-shared/components';
 import { useId, type JSX } from 'react';
 import {
   costTokenCount,
@@ -116,32 +117,20 @@ export function AttributedCostRow({
       </span>
     </>
   );
-  const className =
-    'flex w-full items-center gap-3 rounded-md px-2 py-2 text-left text-xs pointer-coarse:min-h-11';
   const labelledBy = `${labelId} ${metadataId} ${amountId}`;
-
-  if (onOpen !== undefined) {
-    return (
-      <button
-        type="button"
-        data-testid={testId}
-        aria-labelledby={labelledBy}
-        onClick={onOpen}
-        className={`${className} focus-ring transition-colors hover:bg-subtle`}
-      >
-        {content}
-      </button>
-    );
-  }
-
-  return (
-    <div
-      role="group"
+  return onOpen ? (
+    <Button
+      type="button"
       data-testid={testId}
       aria-labelledby={labelledBy}
-      className={className}
+      onClick={onOpen}
+      variant="cost-row-inline"
     >
       {content}
-    </div>
+    </Button>
+  ) : (
+    <CostBreakdownEntry layout="inline" testId={testId} labelledBy={labelledBy}>
+      {content}
+    </CostBreakdownEntry>
   );
 }

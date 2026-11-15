@@ -16,6 +16,7 @@ import {
   BUBBLE_INFO_SURFACE_CLASS,
 } from '../bubble-badge';
 import { Button } from '../Button';
+import { CopyButton } from '../CopyButton';
 import { Notice } from '../Notice';
 import { Surface } from '../Surface';
 import { MessageEditCard } from './MessageEditCard';
@@ -319,12 +320,15 @@ export interface UnsavedMessageEdit {
 export interface UnsavedMessageEditsProps {
   readonly drafts: readonly UnsavedMessageEdit[];
   readonly onDismiss: (draft: UnsavedMessageEdit) => void;
+  /** Puts the text back in the composer, on hosts that can (CAN-6799). */
+  readonly onRestore?: (draft: UnsavedMessageEdit) => void;
 }
 
 /** Keeps each interrupted edit's text readable until the user dismisses it. */
 export function UnsavedMessageEdits({
   drafts,
   onDismiss,
+  onRestore,
 }: UnsavedMessageEditsProps): JSX.Element {
   return (
     <>
@@ -338,14 +342,33 @@ export function UnsavedMessageEdits({
           inputTestId="queued-message-unsaved-edit-text"
           value={draft.text}
           actions={
-            <Button
-              size="md"
-              variant="secondary"
-              onClick={(): void => onDismiss(draft)}
-              data-testid="queued-message-unsaved-edit-dismiss"
-            >
-              Dismiss
-            </Button>
+            <>
+              <CopyButton
+                value={draft.text}
+                label="Copy"
+                size="md"
+                variant="secondary"
+                dataTestId="queued-message-unsaved-edit-copy"
+              />
+              {onRestore && (
+                <Button
+                  size="md"
+                  variant="secondary"
+                  onClick={(): void => onRestore(draft)}
+                  data-testid="queued-message-unsaved-edit-restore"
+                >
+                  Restore
+                </Button>
+              )}
+              <Button
+                size="md"
+                variant="secondary"
+                onClick={(): void => onDismiss(draft)}
+                data-testid="queued-message-unsaved-edit-dismiss"
+              >
+                Dismiss
+              </Button>
+            </>
           }
         />
       ))}

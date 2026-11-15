@@ -73,7 +73,10 @@ export interface OrchestratorDeps {
   readonly randomId: () => string;
   readonly now: () => string;
   /** A concrete model's provider from the computer's registry, or null. */
-  readonly modelProvider: (model: string) => Promise<string | null>;
+  readonly modelProvider: (
+    model: string,
+    projectId?: string,
+  ) => Promise<string | null>;
   /** This client's `@` references as computer paths; null when one is unknown. */
   readonly resolveReferences: (
     refs: readonly PortalChatFileReference[] | undefined,
@@ -445,7 +448,8 @@ export function createOrchestratorHandlers(
       let providerType: string | undefined;
       if (payload.model !== undefined) {
         const provider =
-          payload.providerType ?? (await deps.modelProvider(payload.model));
+          payload.providerType ??
+          (await deps.modelProvider(payload.model, APP_ADVISOR_PROJECT_ID));
         if (provider === null) return refused(commandId, UNKNOWN_MODEL);
         providerType = provider;
       }
@@ -532,7 +536,10 @@ export function createOrchestratorHandlers(
       const commandId = randomId();
       const entryId = await findEntry(payload.chatId);
       if (entryId === null) return refused(commandId, CHAT_NOT_FOUND);
-      const providerType = await deps.modelProvider(payload.model);
+      const providerType = await deps.modelProvider(
+        payload.model,
+        APP_ADVISOR_PROJECT_ID,
+      );
       if (providerType === null) return refused(commandId, UNKNOWN_MODEL);
       const changed = await chatCommand(entryId, {
         type: 'chat.set_model',

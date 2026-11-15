@@ -241,6 +241,7 @@ export const accountBillingPageDataSchema = z.looseObject({
         })
         .nullable(),
     ),
+    /** @deprecated Retained for shipped clients, which require it; the server always sends `true`. */
     freeAccess: z.boolean(),
   }),
 });

@@ -242,6 +242,7 @@ export type ShareFailureCommitState =
  * dropped by {@link parseShareFailure}; the failure still parses.
  */
 export const SHARE_FAILURE_REASONS = [
+  // @deprecated compat: the server no longer sends it (no organization lapses).
   'org_teams_lapsed',
   'publisher_role_required',
 ] as const;

@@ -110,7 +110,7 @@ export function UpdatePrompt(): JSX.Element {
             label: linuxCopy.downloadLabel,
             ariaLabel: `${linuxCopy.downloadLabel} (${versionLabel}): open the official download`,
             title: state.info?.manualDownload
-              ? `${state.info.manualDownload.guidance} ${state.info.manualDownload.checksum.algorithm}: ${state.info.manualDownload.checksum.value}`
+              ? linuxCopy.downloadTooltip
               : undefined,
             onClick: state.info?.manualDownload
               ? (): void => {

@@ -1,3 +1,4 @@
+import { DocumentProse } from '@canopy/ui-shared/components/Markdown';
 /**
  * Generic markdown-item activity card shared by Notes and Prompts (they are
  * the same UX with different labels, storage kind, and mention semantics).
@@ -208,9 +209,7 @@ function ViewerModal({
       }
     >
       <div className="overflow-y-auto">
-        <div
-          className={`${POSTHOG_REPLAY_BLOCK_CLASS} prose prose-sm max-w-none fg-primary prose-headings:fg-primary prose-p:fg-primary/80 prose-a:fg-accent prose-strong:fg-primary prose-code:fg-primary/80 prose-pre:bg-fg-primary/[0.04]`}
-        >
+        <DocumentProse variant="workspace-item" replay="block">
           {content ? (
             <Markdown options={WORKSPACE_ITEM_MARKDOWN_OPTIONS}>
               {content}
@@ -218,7 +217,7 @@ function ViewerModal({
           ) : (
             <p className="italic fg-secondary">No {noun} content</p>
           )}
-        </div>
+        </DocumentProse>
       </div>
     </DialogModal>
   );

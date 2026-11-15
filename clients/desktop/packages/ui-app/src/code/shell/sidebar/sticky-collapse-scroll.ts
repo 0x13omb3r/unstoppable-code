@@ -22,7 +22,7 @@ export function scheduleStickyCollapseScrollAdjust(
     '[data-testid="sidebar-scroll-container"]',
   );
   const header = sectionRoot.querySelector<HTMLElement>(
-    '.sidebar-workspace-sticky-header',
+    '.sidebar-workspace-sticky-header, [data-sidebar-workspace-header]',
   );
   if (!viewport || !header) return;
 

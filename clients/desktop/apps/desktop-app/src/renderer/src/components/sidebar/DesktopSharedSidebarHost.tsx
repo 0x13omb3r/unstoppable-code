@@ -5,11 +5,7 @@ import {
   MoreRow,
   SidebarChatsSectionMenuItems,
 } from '@canopy/ui-shared/components';
-import {
-  noteChatIntent,
-  endChatIntent,
-  type ChatPrefetchTarget,
-} from '@/stores/chat/chat-prefetch';
+import { noteChatIntent, endChatIntent } from '@/stores/chat/chat-prefetch';
 import {
   useSidebarItemGroupsStore,
   overlaySidebarItemGroups,
@@ -22,7 +18,6 @@ import {
   useState,
   type JSX,
 } from 'react';
-import { workspaceContextLabel } from '@/lib/automationContextScope';
 import { useShallow } from 'zustand/shallow';
 import type {
   CanopyCapabilities,
@@ -52,7 +47,7 @@ import {
 import { ipcCanopyClient } from '@/client/ipc-canopy-client';
 import { useDesktopSidebarActivityHost } from './desktopSidebarActivityMode';
 import {
-  openCoworkWorkEntryFromSidebar,
+  openCoworkWorkEntryOnClick,
   selectCoworkWorkspaceFromSidebar,
 } from '@/lib/openCoworkWorkEntryFromSidebar';
 import { reportRendererConsoleError } from '@/lib/renderer-error-logging';
@@ -191,6 +186,7 @@ import { useCanopyProjectIdentityAvailable } from '@/hooks/useCanopyCloudConnect
 import { openNewCoworkTaskFromSidebar } from '@/lib/openNewCoworkTaskFromSidebar';
 import { SidebarCoworkWorkspaceRow } from './SidebarCoworkWorkspaceRow';
 import { CloudCoworkOfflineRow } from '@/cloud-chats/CloudCoworkOfflineRow';
+import { CloudArchivedNavLink } from '@/cloud-chats/CloudArchivedTasksPage';
 import {
   archiveCloudTask,
   CLOUD_TASK_ARCHIVE_FAILED,
@@ -203,7 +199,7 @@ import {
 import { useCloudCoworkSidebar } from '@/cloud-chats/useCloudCoworkSidebar';
 import { isWebCoreScope } from '@/lib/chat-authority';
 import { appendCloudSidebarRows } from '@/cloud-chats/append-cloud-sidebar-rows';
-import { shouldPrefetchWorktreeChat } from '@/cloud-chats/cloud-sidebar-intent';
+import { sidebarRowPrefetchTarget } from '@/cloud-chats/cloud-sidebar-intent';
 import { routeSidebarReorder } from '@/cloud-chats/route-sidebar-reorder';
 import { StickyWorkspaceControls } from './SidebarWorkspacesSection';
 import {
@@ -1016,14 +1012,6 @@ export function DesktopSharedSidebarHost({
     );
     return listed.length === 1 ? listed[0] : null;
   }, [model.visibleProjects]);
-  const scopingOrganizationName =
-    scopingContext?.kind === 'organization'
-      ? workspaceContextLabel(
-          scopingContext,
-          workspaceContextState.organizations,
-          'this organization',
-        )
-      : null;
   const [snapshot, setSnapshot] = useState<SessionViewModel | null>(null);
   const [snapshotFailures, setSnapshotFailures] = useState(0);
   // Branch Info stays desktop's git-aware dialog (rename, base branch, repo
@@ -1798,7 +1786,7 @@ export function DesktopSharedSidebarHost({
     () => ({
       navigate: useNavigationStore.getState().navigate,
       openStandaloneChat: (workspaceId, chatId): void => {
-        openCoworkWorkEntryFromSidebar(workspaceId, chatId);
+        openCoworkWorkEntryOnClick(workspaceId, chatId);
       },
       selectWorkspace: (workspaceId): void => {
         selectCoworkWorkspaceFromSidebar(workspaceId);
@@ -1953,17 +1941,7 @@ export function DesktopSharedSidebarHost({
         // explicit pointer, `variant` alone forced 44px touch rows on desktop.
         variant="drawer"
         context={scopingContext}
-        renderContextEmptyState={({ chatsListed }) => (
-          <SidebarContextEmptyState
-            chatsListed={chatsListed}
-            organizationName={scopingOrganizationName ?? 'this organization'}
-            organizationId={
-              scopingContext?.kind === 'organization'
-                ? scopingContext.organizationId
-                : undefined
-            }
-          />
-        )}
+        renderContextEmptyState={() => <SidebarContextEmptyState />}
         additionalRows={additionalRows}
         pendingProjects={pendingProjects}
         linkedPersonalWorkspaceIds={model.linkedPersonalWorkspaceIds}
@@ -2025,20 +2003,14 @@ export function DesktopSharedSidebarHost({
         ) => usePipelineRunsStore.subscribe(onChange)}
         onSelect={handleSelect}
         onWorktreeIntent={(projectId, worktreeId, phase, source): void => {
-          // Cloud rows read through their own path, not the local chat store.
-          if (
-            !shouldPrefetchWorktreeChat(
-              projectId,
-              worktreeId,
-              cloudWorktreeKeys,
-            )
-          )
-            return;
-          const target: ChatPrefetchTarget = {
-            kind: 'worktree',
+          // Cloud rows read ahead through the web core, never the local chat
+          // store (CAN-6774).
+          const target = sidebarRowPrefetchTarget(
             projectId,
             worktreeId,
-          };
+            cloudWorktreeKeys,
+          );
+          if (target === null) return;
           if (phase === 'start') noteChatIntent(target, source);
           else endChatIntent(target);
         }}
@@ -2843,8 +2815,10 @@ export function DesktopSharedSidebarHost({
           desktopArchivedCount(model.sortedProjects, workspaceId)
         }
         renderArchivedSection={(workspaceId, { hiddenWorktreeCount }) =>
-          // Archived local items only; a cloud project has none here.
-          isWebCoreScope(workspaceId) ? null : (
+          // A cloud project's archived tasks are the web core's (CAN-6511).
+          isWebCoreScope(workspaceId) ? (
+            <CloudArchivedNavLink projectId={workspaceId} />
+          ) : (
             <DesktopArchivedNavLink
               workspaceId={workspaceId}
               fallbackCount={

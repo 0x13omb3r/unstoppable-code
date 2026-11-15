@@ -1,3 +1,4 @@
+import { InlineCode } from '@canopy/ui-shared/components';
 import { useId, useState, type JSX } from 'react';
 import { Button } from '@canopy/ui-shared/components';
 import { formatRelativeTime } from '@canopy/ui-shared/lib';
@@ -74,12 +75,12 @@ function SkillSuggestionRow({
                 data-testid="skill-suggestions-row-chain"
               >
                 {suggestion.chainSkills.map((skill, index) => (
-                  <span
+                  <InlineCode
+                    variant="skill-chain"
                     key={`${String(index)}-${skill}`}
-                    className="rounded-md bg-secondary px-1.5 py-0.5 font-mono fg-secondary"
                   >
                     {skill}
-                  </span>
+                  </InlineCode>
                 ))}
               </span>
             ) : (

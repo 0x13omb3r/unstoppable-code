@@ -1,3 +1,7 @@
+import type {
+  WorktreeRecoveryFinishResult,
+  WorktreeRecoveryResolveResult,
+} from '@canopy/protocol/canopy-core';
 import { create, type StoreApi, type UseBoundStore } from 'zustand';
 import type { CanopyClient } from '@canopy/app-core';
 import type {
@@ -9,6 +13,7 @@ import type { WorktreeDiscardOffer } from './discard-offer';
 import { WorktreeRecoveryDescriptionSchema } from '@canopy/protocol/portal/worktree-discard-schemas';
 import {
   unavailableWorktreeRecovery,
+  worktreeRecoveryResolutionAction,
   type WorktreeRecoveryDescription,
 } from '@canopy/protocol/portal/worktree-recovery';
 import { offerLifecycleJournalQuarantine } from '../lifecycle-journal/quarantine-offer';
@@ -40,8 +45,19 @@ export type WorktreeDiscardView =
       readonly phase: 'recovery';
       readonly offer: WorktreeDiscardOffer;
       readonly recovery: WorktreeRecoveryDescription;
-      readonly busy: 'refresh' | 'retry' | 'finishArchive' | 'discard' | null;
+      readonly busy:
+        | 'refresh'
+        | 'retry'
+        | 'finishArchive'
+        | 'discard'
+        | 'keepWorktree'
+        | 'release'
+        | null;
+      readonly outcome?:
+        | WorktreeRecoveryFinishResult
+        | WorktreeRecoveryResolveResult;
       readonly error: 'transport-failed' | 'unconfirmed' | null;
+      readonly unconfirmedAction?: 'keep-worktree' | 'release' | 'finish';
     }
   | {
       readonly phase: 'open';
@@ -67,7 +83,7 @@ export interface WorktreeDiscardState {
    */
   readonly retry: () => void;
   readonly recover: (
-    action: 'retry' | 'finishArchive',
+    action: 'retry' | 'finishArchive' | 'keepWorktree' | 'release',
   ) => Promise<WorktreeDiscardFinished | null>;
   readonly confirmDiscard: () => Promise<void>;
   readonly refresh: () => Promise<void>;
@@ -157,6 +173,9 @@ function createWorktreeDiscardStore(
           recovery: {
             intent: view.recovery.intent,
             expectedCreatedAt: view.recovery.subject.createdAt,
+            ...(view.recovery.diagnosis
+              ? { operationId: view.recovery.diagnosis.operationId }
+              : {}),
           },
         })
         .catch(() => undefined);
@@ -322,7 +341,15 @@ function createWorktreeDiscardStore(
         const view = get().view;
         if (view.phase !== 'recovery' || view.busy) return;
         const current = generation;
-        set({ view: { ...view, busy: 'refresh' } });
+        set({
+          view: {
+            ...view,
+            busy: 'refresh',
+            outcome: undefined,
+            error: null,
+            unconfirmedAction: undefined,
+          },
+        });
         const description = await inspect(view);
         if (current !== generation) return;
         const recovery = admitted(view, description?.recovery);
@@ -331,6 +358,8 @@ function createWorktreeDiscardStore(
             view: {
               ...view,
               recovery,
+              outcome: undefined,
+              unconfirmedAction: undefined,
               busy: null,
               error: description?.recovery ? null : 'transport-failed',
             },
@@ -341,7 +370,8 @@ function createWorktreeDiscardStore(
         if (
           view.phase !== 'recovery' ||
           view.busy ||
-          !view.recovery.actions.discard.eligible
+          !view.recovery.actions.discard.eligible ||
+          view.outcome !== undefined
         )
           return;
         const current = generation;
@@ -380,9 +410,74 @@ function createWorktreeDiscardStore(
       },
       recover: async (action): Promise<WorktreeDiscardFinished | null> => {
         const view = get().view;
+        if (view.phase !== 'recovery' || view.busy || view.outcome) return null;
+        const resolution =
+          client.capabilities.worktreeRecoveryResolution === true
+            ? worktreeRecoveryResolutionAction(view.recovery)
+            : null;
+        const exact = view.recovery.diagnosis;
         if (
-          view.phase !== 'recovery' ||
-          view.busy ||
+          exact &&
+          ((action === 'keepWorktree' && resolution === 'keep-worktree') ||
+            (action === 'release' && resolution === 'release') ||
+            (action === 'finishArchive' && resolution === 'finish'))
+        ) {
+          const current = generation;
+          set({ view: { ...view, busy: action, error: null } });
+          try {
+            const target = {
+              workspaceId: view.offer.workspaceId,
+              operationId: exact.operationId,
+              revision: exact.revision,
+            };
+            const outcome =
+              action === 'finishArchive'
+                ? await client.command('worktree.recovery.finish', target)
+                : await client.command('worktree.recovery.resolve', {
+                    ...target,
+                    action:
+                      action === 'keepWorktree' ? 'keep-worktree' : 'release',
+                  });
+            if (current !== generation) return null;
+            set({ view: { ...view, busy: null, outcome, error: null } });
+            // Keep/Release preserve host panels. Only an actual removal reconciles them.
+            if (
+              outcome.status === 'finished' ||
+              outcome.status === 'cleanup-pending'
+            )
+              return {
+                warnings: [],
+                ...(view.recovery.subject.createdAt
+                  ? { expectedCreatedAt: view.recovery.subject.createdAt }
+                  : {}),
+              };
+          } catch {
+            if (current === generation)
+              set({
+                view: {
+                  ...view,
+                  recovery: {
+                    ...unavailable(view),
+                    evidence: view.recovery.evidence,
+                  },
+                  busy: null,
+                  error: 'unconfirmed',
+                  unconfirmedAction:
+                    action === 'keepWorktree'
+                      ? 'keep-worktree'
+                      : action === 'release'
+                        ? 'release'
+                        : 'finish',
+                },
+              });
+          }
+          return null;
+        }
+        if (
+          action === 'keepWorktree' ||
+          action === 'release' ||
+          (action === 'finishArchive' &&
+            client.capabilities.worktreeRecoveryResolution === true) ||
           !view.recovery.actions[action].eligible
         )
           return null;

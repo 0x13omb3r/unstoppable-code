@@ -1,5 +1,6 @@
 'use client';
 
+import { ChangedFileRowSurface } from '@canopy/ui-shared/components';
 import {
   useCallback,
   useEffect,
@@ -215,13 +216,9 @@ function FileRow({
     canRevert && onRevertFile ? (): void => onRevertFile(file) : undefined;
 
   return (
-    <div
+    <ChangedFileRowSurface
       ref={rowRef}
-      className={`group flex items-center gap-2 px-3 py-1 ${
-        select
-          ? 'cursor-pointer rounded-md transition-colors hover:bg-fg-primary/[0.06]'
-          : ''
-      }`}
+      selectable={isSelectable}
       data-testid="activity-changed-file"
       role={select ? 'button' : undefined}
       tabIndex={select ? 0 : undefined}
@@ -287,7 +284,7 @@ function FileRow({
           onClick={revert}
         />
       ) : null}
-    </div>
+    </ChangedFileRowSurface>
   );
 }
 

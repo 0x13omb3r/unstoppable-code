@@ -34,6 +34,7 @@ export function ProjectDeletionDiscardPanel({
   return (
     <ProjectDeletionDiscardDialog
       projectName={view.offer.projectName}
+      pendingRecovery={Boolean(view.description.pendingRecovery?.length)}
       items={view.rows}
       interruptedDeletion={
         view.description.interruptedDeletion !== undefined && !view.superseded

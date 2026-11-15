@@ -16,6 +16,24 @@
  */
 const MEMORY_CITATION_TAG_SOURCE = String.raw`</?memory_citation\b[^>]*>`;
 
+/** Read citation identities from assembled agent text before display stripping. */
+export function memoryCitationFiles(text: string): string[] {
+  const files = new Set<string>();
+  // A suffix with no closing delimiter contains no complete tag. Excluding
+  // it prevents retrying the rest of a malformed stream at every prefix.
+  const bounded = text.slice(0, text.lastIndexOf('>') + 1);
+  for (const tag of bounded.matchAll(/<memory_citation\b[^>]*>/gi)) {
+    const attribute = /\bfiles\s*=\s*["']([^"']*)["']/i.exec(tag[0]);
+    for (const value of (attribute?.[1] ?? '').split(/[,，]/)) {
+      const file = value.trim().replace(/\\/g, '/').replace(/^\.\//, '');
+      if (/^(?:MEMORY\.md|topics\/[^/]+\.md|inbox\/[^/]+\.md)$/i.test(file)) {
+        files.add(file);
+      }
+    }
+  }
+  return [...files];
+}
+
 export interface StripMemoryCitationTagsOptions {
   /**
    * Trim trailing whitespace once a tag was removed (default `true`). Pass

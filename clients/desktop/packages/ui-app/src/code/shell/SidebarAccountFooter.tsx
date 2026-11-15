@@ -1,5 +1,6 @@
 'use client';
 
+import { SidebarAccountRowSurface } from '@canopy/ui-shared/components';
 import { Dot, type DotTone } from '@canopy/ui-shared/components/Badge';
 import { useId, useRef, useState, type JSX, type ReactNode } from 'react';
 import {
@@ -197,11 +198,9 @@ export function SidebarAccountRow({
         ref={rowRef}
         className="group/sidebar-item flex w-full items-center gap-0"
       >
-        <div
+        <SidebarAccountRowSurface
           data-testid={testIds?.listItem ?? 'sidebar-account-list-item'}
-          className={`min-w-0 flex-1 focus-ring flex w-full items-center gap-2 overflow-hidden whitespace-nowrap rounded-row px-2 py-0 text-s font-normal fg-primary hover:bg-subtle pointer-coarse:min-h-11 ${
-            subtitle ? 'h-10' : 'h-8'
-          }`}
+          tall={Boolean(subtitle)}
         >
           <button
             ref={triggerRef}
@@ -266,7 +265,7 @@ export function SidebarAccountRow({
               {accessibleLabel}
             </span>
           )}
-        </div>
+        </SidebarAccountRowSurface>
         {railActions === undefined ? null : (
           // The rail's buttons line up 2px in from the edge, in the same
           // column as every sidebar row's controls.

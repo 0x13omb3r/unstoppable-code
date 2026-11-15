@@ -490,6 +490,10 @@ export function createDesktopCatalogMutationHost(
         undefined,
         options,
       ),
+    unpublishSkill: async (publicationId, expectedRemoteVersion) =>
+      (
+        await import('../skills/publish-skill-to-cloud')
+      ).unpublishSkillFromCloud(publicationId, expectedRemoteVersion),
     installPlugin: async (target, providers) => {
       let outcome: PluginCatalogService.PortalPluginInstallOutcome;
       try {

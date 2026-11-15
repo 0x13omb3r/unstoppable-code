@@ -42,17 +42,29 @@ const skillEntry = (
   availability: 'available',
 });
 
-const pluginEntry = (ref: {
-  marketplaceId: string;
-  pluginName: string;
-}): CatalogEntry => ({
+const pluginEntry = (
+  ref: {
+    marketplaceId: string;
+    pluginName: string;
+  },
+  cloudCopy?: {
+    readonly uploadedFromThisDesktop?: {
+      sourcePluginKey: string;
+      sourceMarketplaceId: string;
+    };
+  },
+): CatalogEntry => ({
   ...base,
   entryId: pluginEntryId(ref),
   kind: 'plugin',
   name: ref.pluginName,
-  source: 'plugin',
+  source: cloudCopy === undefined ? 'plugin' : 'remote',
   content: {
     kind: 'plugin',
+    selectionRef: ref,
+    ...(cloudCopy?.uploadedFromThisDesktop === undefined
+      ? {}
+      : { uploadedFromThisDesktop: cloudCopy.uploadedFromThisDesktop }),
     manifest: {
       name: ref.pluginName,
       version: '1',
@@ -135,6 +147,7 @@ const CLOUD_COPY = {
 };
 
 const local: LocalCatalog = {
+  bundledMarketplaceIds: new Set(),
   entries: [
     skillEntry(NEW),
     skillEntry(EDITED),
@@ -171,7 +184,11 @@ const cloud = [skillEntry(CLOUD_COPY, true)];
 
 describe('this computer’s items in a cloud chat’s picker (CAN-6176)', () => {
   it('offers a new custom skill and an edited one to update, never a plugin, a server or a skill it can’t copy', () => {
-    const items = localUploadRows(local, cloud, 'claude').map(localPickerItem);
+    // A web core that predates the uploads mark (CAN-6725) can't say which
+    // plugins this desktop copied, so none is offered.
+    const items = localUploadRows(local, cloud, 'claude', false).map(
+      localPickerItem,
+    );
     expect(items).toEqual([
       {
         key: skillEntryId(NEW),
@@ -197,8 +214,8 @@ describe('this computer’s items in a cloud chat’s picker (CAN-6176)', () => 
   });
 
   it('reads an unknown harness as Claude’s', () => {
-    expect(localUploadRows(local, cloud, 'not-a-harness')).toEqual(
-      localUploadRows(local, cloud, 'claude'),
+    expect(localUploadRows(local, cloud, 'not-a-harness', true)).toEqual(
+      localUploadRows(local, cloud, 'claude', true),
     );
   });
 
@@ -215,5 +232,98 @@ describe('this computer’s items in a cloud chat’s picker (CAN-6176)', () => 
         skillEntryId(CLOUD_COPY),
       ),
     ).toBeNull();
+  });
+});
+
+describe('this computer’s plugins, by what this desktop uploaded (CAN-6725)', () => {
+  const LOCAL = 'local-tools';
+  const OTHER_LOCAL = 'team-tools';
+  /** This desktop's cloud marketplace, and another desktop's. */
+  const MINE = 'marketplace:mine';
+  const THEIRS = 'marketplace:theirs';
+  const plugins: LocalCatalog = {
+    entries: [
+      pluginEntry({ marketplaceId: LOCAL, pluginName: 'copied' }),
+      pluginEntry({ marketplaceId: LOCAL, pluginName: 'fresh' }),
+      pluginEntry({ marketplaceId: 'builtin-tools', pluginName: 'builtin' }),
+      pluginEntry({ marketplaceId: 'curated-tools', pluginName: 'curated' }),
+      pluginEntry({ marketplaceId: LOCAL, pluginName: 'elsewhere' }),
+      pluginEntry({ marketplaceId: OTHER_LOCAL, pluginName: 'copied' }),
+      // A skill a plugin brings is copied as its plugin, never on its own.
+      {
+        ...skillEntry({ sourceId: LOCAL, skillName: 'review' }),
+        source: 'plugin',
+      },
+    ],
+    skills: [],
+    bundledMarketplaceIds: new Set(['builtin-tools', 'curated-tools']),
+  };
+  const uploaded = [
+    // This desktop's copy of `copied` from its `local-tools`.
+    pluginEntry(
+      { marketplaceId: MINE, pluginName: 'copied' },
+      {
+        uploadedFromThisDesktop: {
+          sourcePluginKey: 'copied',
+          sourceMarketplaceId: LOCAL,
+        },
+      },
+    ),
+    // Another desktop's plugin of the same name as this one's `elsewhere`.
+    pluginEntry({ marketplaceId: THEIRS, pluginName: 'elsewhere' }, {}),
+  ];
+  const offered = (thisDesktopUploads: boolean): string[] =>
+    localUploadRows(plugins, uploaded, 'claude', thisDesktopUploads).map(
+      (row) => row.localEntry.entryId,
+    );
+
+  it('offers a plugin this desktop never copied, and not one it did', () => {
+    expect(offered(true)).toContain(
+      pluginEntryId({ marketplaceId: LOCAL, pluginName: 'fresh' }),
+    );
+    expect(offered(true)).not.toContain(
+      pluginEntryId({ marketplaceId: LOCAL, pluginName: 'copied' }),
+    );
+    const fresh = localUploadRows(plugins, uploaded, 'claude', true).find(
+      (row) => row.name === 'fresh',
+    );
+    expect(fresh && localPickerItem(fresh)).toEqual({
+      key: pluginEntryId({ marketplaceId: LOCAL, pluginName: 'fresh' }),
+      name: 'fresh',
+      kind: 'plugin',
+      replacing: false,
+    });
+  });
+
+  it('never offers a built-in or curated plugin, which the cloud has already', () => {
+    expect(offered(true)).not.toContain(
+      pluginEntryId({ marketplaceId: 'builtin-tools', pluginName: 'builtin' }),
+    );
+    expect(offered(true)).not.toContain(
+      pluginEntryId({ marketplaceId: 'curated-tools', pluginName: 'curated' }),
+    );
+  });
+
+  it('offers a plugin another desktop uploaded under the same name, since this one never did', () => {
+    expect(offered(true)).toContain(
+      pluginEntryId({ marketplaceId: LOCAL, pluginName: 'elsewhere' }),
+    );
+  });
+
+  it('offers a same-named plugin from another of this computer’s marketplaces, whose add the cloud refuses with the reason', () => {
+    expect(offered(true)).toContain(
+      pluginEntryId({ marketplaceId: OTHER_LOCAL, pluginName: 'copied' }),
+    );
+  });
+
+  it('offers exactly those, and no plugin at all when the cloud doesn’t mark this desktop’s uploads', () => {
+    expect(offered(true).sort()).toEqual(
+      [
+        pluginEntryId({ marketplaceId: LOCAL, pluginName: 'fresh' }),
+        pluginEntryId({ marketplaceId: LOCAL, pluginName: 'elsewhere' }),
+        pluginEntryId({ marketplaceId: OTHER_LOCAL, pluginName: 'copied' }),
+      ].sort(),
+    );
+    expect(offered(false)).toEqual([]);
   });
 });

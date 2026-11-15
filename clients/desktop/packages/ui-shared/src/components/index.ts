@@ -1,3 +1,4 @@
+export * from './ActivityDonut';
 export * from './OpenCodeAccountCard';
 // Pure display components shared between the desktop renderer and the web
 // portal. Components in this barrel must be callback-driven and free of
@@ -6,6 +7,10 @@ export * from './OpenCodeAccountCard';
 export * from './StatusBlocks';
 export * from './Stack';
 export * from './Surface';
+export * from './BrowserInspectorSurfaces';
+export * from './CalendarMarks';
+export * from './ConnectionStatusStrip';
+export * from './ProductPreviewParts';
 export * from './AttachmentDropZone';
 export * from './AttachmentItemRow';
 export * from './PageColumn';
@@ -20,6 +25,9 @@ export * from './ErrorFallback';
 export * from './AnsiOutput';
 export * from './CodeBlock';
 export * from './InlineCode';
+export * from './AttachedNotice';
+export * from './ImageThumbnail';
+export * from './PlanExcerpt';
 export * from './Badge';
 export * from './PendingTurnSettingsHint';
 export * from './FactList';
@@ -40,8 +48,7 @@ export * from './AppErrorDetails';
 export * from './ClaudeAiCreditsFallbackErrorNotice';
 export * from './CodexAccountModelNotice';
 export * from './AiCreditsCheckFeedback';
-export * from './aiCreditsPurchaseCopy';
-export * from './usageLimitModelSwitchCopy';
+export * from './creditsPromptCopy';
 export * from './BillingHistoryTable';
 export * from './BillingStatusPill';
 export * from './CreditLedgerTable';
@@ -75,6 +82,7 @@ export * from './worktree-count-label';
 export * from './ResizeRailIndicator';
 export * from './Progress';
 export * from './ChartParts';
+export * from './ActivityHeatmapCell';
 export * from './UsageIndicator';
 export * from './CodexContextWindowControl';
 export * from './PageHeader';
@@ -174,6 +182,7 @@ export * from './ActivityActionCardButton';
 export * from './ActivityPingDot';
 export * from './RailTabBar';
 export * from './FileTreeRow';
+export * from './FileTreeFolderRows';
 export * from './FileRootGroupRow';
 export * from './TurnFeedbackControl';
 export * from './TurnFeedbackDialog';
@@ -246,6 +255,7 @@ export * from './MobileAppPromo';
 export * from './MobileAppQrPromo';
 export * from './CtaBanner';
 export * from './Notice';
+export * from './ModelSelectionNotice';
 export * from './UsageLimitNotice';
 export * from './StuckAgentNotice';
 export * from './CatchingUpNotice';
@@ -291,7 +301,6 @@ export * from './ChatPreviewPopover';
 export * from './StandaloneChatRow';
 export * from './SidebarPinMenuItem';
 export * from './SidebarPinnedBadge';
-export * from './SidebarTrialBadge';
 export * from './WorkEntryRow';
 export * from './AgentStateGlyph';
 export * from './WakeTurnBoundary';
@@ -314,13 +323,12 @@ export * from './tooltip-handoff';
 export * from '../icons/ModelProviderIcon';
 export * from './ModelPickerMenu';
 export * from './ModelUnavailableNotice';
-export * from './modelLibraryLock';
+export * from './LockedModelRow';
 export * from './modelPickerRowCue';
 export * from './ModelUnlockConfirmedNotice';
 export * from './aiCreditsArrival';
 export * from './AiCreditsArrivedNotice';
 export * from './ModelUnlockPendingNotice';
-export * from './creditsRecoveryCopy';
 export * from './CreditsRecoveryNotice';
 export * from './guestModelGate';
 export * from './GuestModelGateContent';
@@ -433,6 +441,11 @@ export * from './CuratedCatalogNotice';
 export * from './CuratedPipelinePreviewDialog';
 export * from './PipelineTemplatesSection';
 export * from './ArchivedChatsCard';
+export {
+  ArchivedChatsList,
+  type ArchivedChatsListItem,
+  type ArchivedChatsListProps,
+} from './ArchivedChatsList';
 export * from './ArchivedOverviewRow';
 export * from './ArchivedOverviewPage';
 export * from './SharedContainerAcceptSummary';
@@ -523,3 +536,35 @@ export * from './AgentAliasModelFields';
 export * from './AgentModelPicker';
 
 export * from './OrchestratorSettingsFooter';
+
+export * from './DialogActionFooter';
+export * from './MediaEditOverlay';
+export * from './OrganizationFeedCard';
+export * from './ScrollableTabFrame';
+export * from './SetupStepIndicator';
+export * from './SettingsFeatureSurfaces';
+export * from './MemoryEvidenceSurfaces';
+export * from './ActivityRunSurfaces';
+export * from './CodePanelSurfaces';
+export * from './BackgroundTraySurfaces';
+export * from './PullRequestHeaderSurfaces';
+export * from './SidebarContentSurfaces';
+export * from './CostDetailSurfaces';
+export * from './FeatureDetailSurfaces';
+export * from './SidebarWorkspaceSurfaces';
+export {
+  DiagramFieldRow,
+  DiagramNodeSurface,
+  WorkflowEditorJob,
+  WorkflowEditorJobHeader,
+  WorkflowNodeSection,
+  WorkflowNodeSurface,
+} from './DiagramNodeSurface';
+export { SourceLayerSurface } from './SourceLayerSurface';
+export * from './WorktreeControlSurfaces';
+export * from './DesktopSettingsSurfaces';
+export * from './TerminalTabSurfaces';
+export { DiffFileStatusMarker } from './diff/DiffFileTree';
+export { FileTreeEditorRow, WorkflowNavJobRow } from './DiagramNodeSurface';
+export * from './WorkflowSurfaces';
+export * from './FileDiffSurfaces';

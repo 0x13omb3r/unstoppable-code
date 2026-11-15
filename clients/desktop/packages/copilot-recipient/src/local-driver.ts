@@ -1,8 +1,14 @@
-import type { GitHubTokenProvider } from '@github/copilot-sdk';
+import type {
+  GitHubTokenProvider,
+  SessionEvent,
+  ToolResultObject,
+} from '@github/copilot-sdk';
 import { randomUUID } from 'node:crypto';
 import {
   COPILOT_RECIPIENT_REASONING_EFFORTS,
+  COPILOT_RECIPIENT_LIMITS,
   CopilotAssistantPatchSchema,
+  CopilotToolObservationSchema,
   type CopilotCallbackReply,
   type CopilotCallbackRequest,
   type CopilotRecipientResult,
@@ -15,15 +21,183 @@ import {
 import type { CopilotLocalExecution, CopilotLocalRuntime } from './local-host';
 import type { CopilotSessionPolicy } from './session-policy';
 import { runCopilotTurn, type CopilotTurnOptions } from './turn-driver';
+import { isCopilotRecord } from './tool-input';
+import {
+  CopilotObservationTextRedactor,
+  redactCopilotTextParts,
+  redactCopilotToolValue,
+} from './text-redaction';
+
+const PROJECTED_BYTES = COPILOT_RECIPIENT_LIMITS.frameBytes - 4096;
+function boundedToolText(value: string): string {
+  return value.length <= 65_536 &&
+    Buffer.byteLength(JSON.stringify(value), 'utf8') <= PROJECTED_BYTES
+    ? value
+    : value.slice(0, 16_384);
+}
+function toolObservation(
+  event: SessionEvent,
+  redactor: CopilotObservationTextRedactor,
+  maskOutput: (toolCallId: string, output: string) => void,
+):
+  | Extract<CopilotCallbackRequest, { kind: 'observation' }>['event']
+  | undefined {
+  try {
+    if (event.type === 'tool.execution_complete') {
+      const result = event.data.result;
+      const output =
+        result?.detailedContent ??
+        result?.content ??
+        event.data.error?.message ??
+        '';
+      redactor.beginEvent();
+      event = {
+        ...event,
+        data: {
+          ...event.data,
+          ...(result
+            ? {
+                result: {
+                  ...result,
+                  content: redactor.redact(result.content),
+                  ...(result.detailedContent === undefined
+                    ? {}
+                    : {
+                        detailedContent: redactor.redact(
+                          result.detailedContent,
+                        ),
+                      }),
+                  ...(result.contents === undefined
+                    ? {}
+                    : {
+                        contents: result.contents.map((block) =>
+                          block.type === 'text'
+                            ? {
+                                ...block,
+                                text: redactor.redact(block.text),
+                              }
+                            : block,
+                        ),
+                      }),
+                },
+              }
+            : {}),
+          ...(event.data.error
+            ? {
+                error: {
+                  ...event.data.error,
+                  message: redactor.redact(event.data.error.message),
+                },
+              }
+            : {}),
+        },
+      };
+      const maskedOutput =
+        event.data.result?.detailedContent ??
+        event.data.result?.content ??
+        event.data.error?.message ??
+        '';
+      if (maskedOutput !== output)
+        maskOutput(event.data.toolCallId, maskedOutput);
+    }
+    let candidate: unknown = event;
+    if (event.type === 'tool.execution_complete' && event.data.result) {
+      const result = event.data.result;
+      const bounded = {
+        ...event,
+        data: {
+          ...event.data,
+          // Omitted detail/blocks cannot acknowledge a truncated delivery receipt.
+          result: { content: result.content.slice(0, 16_384) },
+        },
+      };
+      if (
+        result.content.length > 65_536 ||
+        (result.detailedContent?.length ?? 0) > 65_536 ||
+        (result.contents?.length ?? 0) > 256 ||
+        result.contents?.some(
+          (block) => block.type === 'text' && block.text.length > 65_536,
+        )
+      )
+        candidate = bounded;
+      else {
+        candidate = {
+          ...event,
+          data: {
+            ...event.data,
+            result: {
+              ...result,
+              contents: result.contents?.some((block) => block.type !== 'text')
+                ? undefined
+                : result.contents,
+            },
+          },
+        };
+        if (
+          Buffer.byteLength(JSON.stringify(candidate), 'utf8') > PROJECTED_BYTES
+        )
+          candidate = bounded;
+      }
+    }
+    const projected = CopilotToolObservationSchema.safeParse(candidate);
+    if (
+      !projected.success ||
+      Buffer.byteLength(JSON.stringify(projected.data), 'utf8') >
+        PROJECTED_BYTES
+    )
+      return undefined;
+    return projected.data;
+  } catch {
+    // Observability is best effort; missing provenance still denies host approvals.
+    return undefined;
+  }
+}
+function boundedToolPatch(
+  event: Record<string, unknown>,
+  observedOutputs: ReadonlyMap<string, string>,
+): Record<string, unknown> {
+  const patches = event.patches;
+  if (!Array.isArray(patches)) return event;
+  const project = (compact: boolean): Record<string, unknown> => ({
+    ...event,
+    patches: patches.map((patch: unknown) => {
+      if (!isCopilotRecord(patch) || !isCopilotRecord(patch.block))
+        return patch;
+      const block = patch.block;
+      if (compact && block.type === 'tool_use')
+        return { ...patch, block: { ...block, display: undefined } };
+      if (block.type !== 'tool_result' || typeof block.output !== 'string')
+        return patch;
+      const output =
+        typeof block.toolUseId === 'string'
+          ? (observedOutputs.get(block.toolUseId) ?? block.output)
+          : block.output;
+      return {
+        ...patch,
+        block: {
+          ...block,
+          output: compact ? output.slice(0, 16_384) : boundedToolText(output),
+        },
+      };
+    }),
+  });
+  const projected = project(false);
+  // The final drain combines input, display and output into a single frame.
+  return Buffer.byteLength(JSON.stringify(projected), 'utf8') <= PROJECTED_BYTES
+    ? projected
+    : project(true);
+}
 
 /** These paths, server credentials and tool definitions are trusted host projections. */
 export interface CopilotLocalPolicy extends Pick<
-  CopilotSessionPolicy,
+  CopilotTurnOptions,
   | 'workingDirectory'
   | 'configDirectory'
   | 'systemPrompt'
   | 'mcpServers'
   | 'skillDirectories'
+  | 'secretValues'
+  | 'timeoutMs'
 > {
   readonly tools?: CopilotSessionPolicy['tools'];
 }
@@ -31,10 +205,10 @@ function unavailable(): never {
   throw new Error('Copilot recipient unavailable.');
 }
 async function notice(
-  context: CopilotLocalExecution,
+  callback: CopilotLocalExecution['callback'],
   request: Extract<CopilotCallbackRequest, { kind: 'notice' }>,
 ): Promise<void> {
-  const reply = await context.callback(request);
+  const reply = await callback(request);
   if (reply.kind !== 'notice' || !reply.accepted) unavailable();
 }
 function json(value: unknown): string {
@@ -156,6 +330,33 @@ export function bindCopilotLocalRuntime(
       const token = await context.token();
       context.admit();
       context.signal.throwIfAborted();
+      const secretValues = [...(policy.secretValues ?? []), token];
+      const observationRedactor = new CopilotObservationTextRedactor(
+        secretValues,
+      );
+      // The transcript selects only one field; it cannot see fragments in other fields.
+      const observedOutputs = new Map<string, string>();
+      const callbackAbort = new AbortController();
+      const callback: CopilotLocalExecution['callback'] = (request) => {
+        const decoded: unknown =
+          'argumentsJson' in request
+            ? JSON.parse(request.argumentsJson)
+            : 'requestJson' in request
+              ? JSON.parse(request.requestJson)
+              : request;
+        const payload = [request, decoded];
+        // Preserve P5's refusal of a different, redacted invocation.
+        if (
+          JSON.stringify(redactCopilotToolValue(payload, secretValues)) !==
+          JSON.stringify(payload)
+        ) {
+          // The SDK catches hook errors as denials; also stop this turn's admission.
+          callbackAbort.abort();
+          unavailable();
+        }
+        return context.callback(request);
+      };
+      let observations = Promise.resolve();
       const result = await runCopilotTurn({
         ...policy,
         deferSuccessfulClose: true,
@@ -167,8 +368,8 @@ export function bindCopilotLocalRuntime(
           context.audience.kind === 'resume'
             ? context.audience.sessionId
             : undefined,
-        signal: context.signal,
-        secretValues: [token],
+        signal: AbortSignal.any([context.signal, callbackAbort.signal]),
+        secretValues,
         runtime: {
           ...owned,
           tokenProviderForSession: (sessionId): GitHubTokenProvider => {
@@ -190,38 +391,81 @@ export function bindCopilotLocalRuntime(
         },
         tools: policy.tools?.map((tool) => ({
           ...tool,
-          handler: async (args, invocation): Promise<string> => {
-            const reply = await context.callback({
+          handler: async (
+            args,
+            invocation,
+          ): Promise<string | ToolResultObject> => {
+            const reply = await callback({
               kind: 'tool',
               toolCallId: invocation.toolCallId,
               toolName: tool.name,
               argumentsJson: json(args),
             });
             if (reply.kind !== 'tool') unavailable();
-            return reply.result;
+            return reply.structured ?? reply.result;
           },
         })),
+        onEvent: (event) => {
+          if (
+            !turn.observeTools ||
+            (event.type !== 'tool.execution_start' &&
+              event.type !== 'tool.execution_complete')
+          )
+            return;
+          const projected = toolObservation(
+            event,
+            observationRedactor,
+            (toolCallId, output) => {
+              observedOutputs.set(
+                `${context.audience.operationId}:${toolCallId}`,
+                boundedToolText(output),
+              );
+            },
+          );
+          if (!projected) return;
+          observations = observations.then(async () => {
+            const reply = await callback({
+              kind: 'observation',
+              event: projected,
+            });
+            if (reply.kind !== 'observation' || !reply.accepted) unavailable();
+          });
+          void observations.catch(() => undefined);
+        },
         authorize: async (input) => {
-          const reply = await context.callback({
+          await observations;
+          const reply = await callback({
             kind: 'approval',
             toolCallId: randomUUID(),
             toolName: input.toolName,
             argumentsJson: json(input.toolArgs),
           });
-          if (reply.kind !== 'approval' || !reply.allow)
-            return { decision: 'deny' };
+          if (reply.kind !== 'approval') return { decision: 'deny' };
+          const message =
+            reply.message === undefined
+              ? undefined
+              : redactCopilotTextParts(
+                  [reply.message],
+                  [
+                    ...secretValues,
+                    policy.workingDirectory,
+                    policy.configDirectory,
+                  ],
+                )[0];
+          if (!reply.allow) return { decision: 'deny', message };
           const modifiedArgs: unknown =
             reply.modifiedArgumentsJson === undefined
               ? undefined
               : JSON.parse(reply.modifiedArgumentsJson);
           return {
             decision: 'allow',
+            message,
             ...(modifiedArgs === undefined ? {} : { modifiedArgs }),
           };
         },
         requestManagedPermission: async (request) => ({
           kind: allowed(
-            await context.callback({
+            await callback({
               kind: 'permission',
               requestJson: json(request),
             }),
@@ -233,7 +477,7 @@ export function bindCopilotLocalRuntime(
         onUserInputRequest: async (
           request,
         ): Promise<{ answer: string; wasFreeform: boolean }> => {
-          const reply = await context.callback({
+          const reply = await callback({
             kind: 'input',
             question: request.question,
             choices: request.choices ?? [],
@@ -243,15 +487,15 @@ export function bindCopilotLocalRuntime(
           return { answer: reply.answer, wasFreeform: reply.wasFreeform };
         },
         onSession: (sessionId) =>
-          notice(context, { kind: 'notice', name: 'session', sessionId }),
+          notice(callback, { kind: 'notice', name: 'session', sessionId }),
         onPromptAccepted: (sessionId) =>
-          notice(context, {
+          notice(callback, {
             kind: 'notice',
             name: 'prompt-accepted',
             sessionId,
           }),
         onToolsReady: (snapshot, servers) =>
-          notice(context, {
+          notice(callback, {
             kind: 'notice',
             name: 'tools-ready',
             digest: snapshot.digest,
@@ -261,15 +505,15 @@ export function bindCopilotLocalRuntime(
             })),
           }),
         beforePrompt: () =>
-          notice(context, { kind: 'notice', name: 'before-prompt' }),
+          notice(callback, { kind: 'notice', name: 'before-prompt' }),
         preparePrompt: async (sessionId) => {
-          const reply = await context.callback({ kind: 'history', sessionId });
+          const reply = await callback({ kind: 'history', sessionId });
           if (reply.kind !== 'history') unavailable();
           return reply.prompt;
         },
         onSessionUnavailable: turn.recoverMissingSession
           ? async (): Promise<never> => {
-              await notice(context, {
+              await notice(callback, {
                 kind: 'notice',
                 name: 'session-unavailable',
               });
@@ -278,12 +522,17 @@ export function bindCopilotLocalRuntime(
             }
           : undefined,
         emit: (event): void => {
+          // A cancelled turn drains its projector after the lease has closed.
+          if (context.signal.aborted) return;
           context.emit({
             kind: 'patch',
-            patch: CopilotAssistantPatchSchema.parse(event),
+            patch: CopilotAssistantPatchSchema.parse(
+              boundedToolPatch(event, observedOutputs),
+            ),
           });
         },
       });
+      await observations;
       return { kind: 'turn', ...result };
     },
   };

@@ -114,6 +114,7 @@ export function createGitTabFailedLoadPreferences(): PreferencesData {
     branchNamingInstructions: '',
     pipelineAdvisorEnabled: true,
     orgMemoryInjectionEnabled: true,
+    localMemoryLearnFromChats: false,
     localMemoryEnabled: true,
     localMemoryEnabledSetByUser: false,
     skillSuggestionsEnabled: true,

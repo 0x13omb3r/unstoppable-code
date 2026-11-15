@@ -3,14 +3,19 @@ import type { AutomationAction } from '@canopy/desktop-shared/types';
 import { isSameDay, isToday } from './calendarDateUtils';
 import {
   calendarEventChipAttributes,
-  calendarEventToneClasses,
+  calendarEventInk,
+  isPausedOccurrence,
   formatGroupCount,
   formatGroupTimeRange,
   isCalendarEventClickable,
   type CalendarEvent,
   type CalendarEventGroup,
 } from './calendarEvents';
-import { ListRow, Surface } from '@canopy/ui-shared/components';
+import {
+  CalendarAgendaDot,
+  ListRow,
+  Surface,
+} from '@canopy/ui-shared/components';
 import { POSTHOG_REPLAY_BLOCK_CLASS } from '@canopy/desktop-instrumentation/posthog-replay-privacy';
 
 interface ScheduleAgendaProps {
@@ -91,7 +96,14 @@ export function ScheduleAgenda({
     >
       {days.map((agendaDay) => (
         <div key={agendaDay.day.getTime()} className="flex flex-col gap-1">
-          <div className="flex items-baseline gap-2 border-b pb-1">
+          <Surface
+            variant="section"
+            boundary="bottom"
+            gap="inline"
+            direction="row"
+            padding="underline-tight"
+            className="items-baseline"
+          >
             <span
               className={`text-s font-semibold ${
                 isToday(agendaDay.day, now) ? 'fg-destructive' : 'fg-primary'
@@ -103,7 +115,7 @@ export function ScheduleAgenda({
                 day: 'numeric',
               })}
             </span>
-          </div>
+          </Surface>
           {agendaDay.groups.map((group) => {
             const event = group.representative;
             const clickable = isCalendarEventClickable(event);
@@ -125,11 +137,9 @@ export function ScheduleAgenda({
                 }
                 disabled={!clickable}
                 icon={
-                  <span
-                    aria-hidden="true"
-                    className={`inline-flex h-2.5 w-2.5 shrink-0 rounded-full border ${calendarEventToneClasses(
-                      event,
-                    )}`}
+                  <CalendarAgendaDot
+                    statusClasses={calendarEventInk(event)}
+                    paused={isPausedOccurrence(event)}
                   />
                 }
               >

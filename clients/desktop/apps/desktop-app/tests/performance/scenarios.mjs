@@ -3,6 +3,12 @@ import {
   runSidebarReorder,
 } from './sidebar-reorder-scenario.mjs';
 import {
+  cleanupCloudCoworkFirstOpen,
+  cloudCoworkFirstOpenLaunchEnv,
+  prepareCloudCoworkFirstOpen,
+  runCloudCoworkFirstOpen,
+} from './cloud-cowork-first-open-scenario.mjs';
+import {
   measureProjectsRetention,
   prepareProjectsRetention,
   runProjectsRetention,
@@ -164,7 +170,10 @@ import {
   assertHeadlessWindowEvidence,
   HEADLESS_STUDY_MODE,
 } from './browser-profiles-evidence.mjs';
-import { assessResponsiveness } from './responsiveness.mjs';
+import {
+  assessResponsiveness,
+  scenarioResponsivenessThresholds,
+} from './responsiveness.mjs';
 import {
   prepareDiagnosticLaunch,
   startDiagnosticCapture,
@@ -18516,9 +18525,14 @@ export function scenarioClientFeatureFlags(name, env = process.env) {
     }
     pinned = parsed;
   }
-  const flags = Object.hasOwn(LEDGER_SCENARIO_FLAGS, name)
+  const ledger = Object.hasOwn(LEDGER_SCENARIO_FLAGS, name)
     ? { ...pinned, 'canopy-ledger-enabled': LEDGER_SCENARIO_FLAGS[name] }
     : pinned;
+  // The cloud cowork scenario needs desktop cloud chats (CAN-6838).
+  const flags =
+    name === 'cloud-cowork-first-open'
+      ? { ...ledger, 'canopy-desktop-cloud-chats': true }
+      : ledger;
   return Object.keys(flags).length > 0 ? flags : null;
 }
 
@@ -20717,6 +20731,12 @@ const W5_STORE = w5StoreScenarios({
 
 const SCENARIOS = {
   'sidebar-reorder': { prepare: prepareSidebarReorder, run: runSidebarReorder },
+  'cloud-cowork-first-open': {
+    prepare: prepareCloudCoworkFirstOpen,
+    launchEnv: cloudCoworkFirstOpenLaunchEnv,
+    run: runCloudCoworkFirstOpen,
+    cleanup: cleanupCloudCoworkFirstOpen,
+  },
   'projects-retention': {
     prepare: prepareProjectsRetention,
     beforeCapture: measureProjectsRetention,
@@ -21229,6 +21249,11 @@ async function runPerformanceScenarioAttempt(
     options.releaseLikeRoot,
   );
   assertE2eRootSupported(options.releaseLike === true, options.e2eRoot);
+  const livenessThresholds = scenarioResponsivenessThresholds(
+    name,
+    config.responsivenessThresholds,
+    { releaseLike: options.releaseLike === true },
+  );
   const scenarioShowWindow = definition.headlessOnly
     ? false
     : options.showWindow;
@@ -21579,7 +21604,7 @@ async function runPerformanceScenarioAttempt(
       diagnosticCapture = null;
       const responsiveness = assessResponsiveness(
         monitoring.summary,
-        config.responsivenessThresholds,
+        livenessThresholds,
         tasks,
       );
       // The scenario's own wall time; the startup journey below runs after
@@ -21711,7 +21736,7 @@ async function runPerformanceScenarioAttempt(
       if (error instanceof RendererPaintTimeoutError && monitoring) {
         const responsiveness = assessResponsiveness(
           monitoring.summary,
-          config.responsivenessThresholds,
+          livenessThresholds,
           tasks,
         );
         responsiveness.passed = false;

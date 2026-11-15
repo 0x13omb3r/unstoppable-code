@@ -48,12 +48,6 @@ export interface SettingsPageEntry {
   readonly revision: number;
 }
 
-/**
- * How an organization's Members invite runs on a host that confirms seat
- * charges on the web: `inline` (no paid seat can be added) or `handoff`.
- */
-export type SettingsSeatChargeMode = 'inline' | 'handoff';
-
 export interface SettingsStoreState {
   readonly accountId: string | null;
   /** Keyed by the requested organization id, `''` for none. */
@@ -65,12 +59,6 @@ export interface SettingsStoreState {
    * bootstrap membership. Never derived from membership order.
    */
   readonly selectedOrganizationId: string | null;
-  /**
-   * The last invite seat-charge check per organization id, so returning to
-   * Members does not swap its header action while billing is read again.
-   * Cleared by any member or billing change and by {@link refresh}.
-   */
-  readonly seatCharges: Readonly<Record<string, SettingsSeatChargeMode>>;
   /**
    * The last known detail per organization id, from any organization tab's
    * page data or a change a tab made, so a tab that is still loading can draw
@@ -110,13 +98,6 @@ export interface SettingsStoreState {
    * force-reloads the page on screen.
    */
   dropPrefetches(): void;
-  /** Remember an organization's invite seat-charge check. */
-  rememberSeatCharge(
-    organizationId: string,
-    mode: SettingsSeatChargeMode,
-  ): void;
-  /** Forget an organization's invite seat-charge check. */
-  forgetSeatCharge(organizationId: string): void;
   /** Remember changed detail in the header and any cached Members page. */
   rememberOrganizationDetail(
     organizationId: string,
@@ -414,7 +395,6 @@ export function createSettingsStore(
       bootstraps: accountId === null ? {} : seededBootstraps(initialBootstraps),
       pages: {},
       selectedOrganizationId: initialOrganizationId,
-      seatCharges: {},
       organizationDetails: {},
       refreshGeneration: 0,
       loadBootstrap,
@@ -464,7 +444,6 @@ export function createSettingsStore(
         // A prefetch sent before the refresh may carry stale data.
         get().dropPrefetches();
         set((state) => ({
-          seatCharges: {},
           refreshGeneration: state.refreshGeneration + 1,
         }));
         // Seeded bootstraps never requested this session stay as they are.
@@ -517,20 +496,6 @@ export function createSettingsStore(
           const pages = { ...state.pages };
           for (const key of dropped) delete pages[key];
           return { pages };
-        });
-      },
-      rememberSeatCharge(organizationId, mode): void {
-        if (disposed || get().seatCharges[organizationId] === mode) return;
-        set((state) => ({
-          seatCharges: { ...state.seatCharges, [organizationId]: mode },
-        }));
-      },
-      forgetSeatCharge(organizationId): void {
-        set((state) => {
-          if (!(organizationId in state.seatCharges)) return state;
-          const seatCharges = { ...state.seatCharges };
-          delete seatCharges[organizationId];
-          return { seatCharges };
         });
       },
       rememberOrganizationDetail(organizationId, detail): void {

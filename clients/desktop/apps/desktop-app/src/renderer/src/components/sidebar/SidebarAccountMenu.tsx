@@ -1,11 +1,9 @@
 import { Dot } from '@canopy/ui-shared/components/Badge';
-import { SidebarTrialBadge } from '@canopy/ui-shared/components/SidebarTrialBadge';
 import {
   AccountMenuComputersItem,
   SidebarMachinePicker,
 } from '@/components/remote-access/SidebarMachinePicker';
 import { useAiCreditsUsage } from '@/hooks/useAiCreditsUsage';
-import { usePersonalModelLibraryAccess } from '@/hooks/useModelLibraryAccess';
 import { useCanopyCloudAccountState } from '@/hooks/useCanopyCloudAccountState';
 import { isGuestAccount } from '@/hooks/useIsGuestCredential';
 import { useSubscriptionStatus } from '@/hooks/useSubscriptionStatus';
@@ -46,14 +44,12 @@ import {
   DropdownMenuDivider,
   DropdownMenuItem,
   DropdownMenuItemIcon,
-  DropdownMenuLabel,
   DropdownMenuStatusRow,
   RailIconButton,
   RichHoverTooltip,
-  SidebarAiCreditsMenuItem,
 } from '@canopy/ui-shared';
+import { BalanceSurface } from '@canopy/ui-app/credits';
 import {
-  ArrowUp,
   DataUsageIcon,
   LoginIcon,
   LogoutIcon,
@@ -241,27 +237,12 @@ export function SidebarAccountMenu({
   const liveRemoteControllers = useLiveRemoteControllers();
   const remoteControlLive = liveRemoteControllers.length > 0;
   const openRemoteControlSessions = useRemoteControlStatusUi((s) => s.setOpen);
-  const trialDaysLeft = subscription.status?.trialEndsAt
-    ? Math.max(
-        0,
-        Math.ceil(
-          (Date.parse(subscription.status.trialEndsAt) - Date.now()) /
-            86_400_000,
-        ),
-      )
-    : null;
-
   // Always the person's own wallet (CAN-4056), whatever context is selected:
   // an organization's pool is on the context switcher, for its OWNER. Unknown
   // stays unknown: a failed or still-loading read has no balance to show, and
   // a zero here would claim an empty wallet the server never reported. A
   // still-known balance from a failed same-account refresh is kept.
   const aiCreditsBalance = aiCreditsState?.balance?.credits ?? null;
-  // The row's label follows the same personal wallet's access, read only
-  // while the row can show.
-  const aiCreditsLibraryAccess = usePersonalModelLibraryAccess(
-    subscription.aiCreditsVisible && canSignOut,
-  );
 
   const handleItemClick = (action: () => void): void => {
     action();
@@ -432,46 +413,10 @@ export function SidebarAccountMenu({
                 image={accountInfo.image ?? null}
               />
             ) : null;
-          const subscriptionRows = subscription.visible &&
-            subscription.status && (
-              <>
-                <DropdownMenuLabel data-testid="sidebar-account-menu-subscription-header">
-                  <span className="flex min-w-0 items-center gap-1.5">
-                    <span className="min-w-0 truncate">
-                      {subscription.status.label}
-                    </span>
-                    {subscription.status.kind === 'trial' && (
-                      <SidebarTrialBadge />
-                    )}
-                  </span>
-                  {subscription.status.kind === 'trial' &&
-                    trialDaysLeft !== null && (
-                      <span
-                        data-testid="sidebar-subscription-trial-countdown"
-                        className="mt-0.5 block text-2xs font-normal fg-tertiary"
-                      >
-                        {trialDaysLeft} {trialDaysLeft === 1 ? 'day' : 'days'}{' '}
-                        left
-                      </span>
-                    )}
-                </DropdownMenuLabel>
-                <DropdownMenuItem
-                  onClick={() =>
-                    handleItemClick(subscription.openBillingAction)
-                  }
-                  data-testid="sidebar-account-menu-item-billing"
-                >
-                  <DropdownMenuItemIcon>
-                    <ArrowUp size="xl" aria-hidden="true" />
-                  </DropdownMenuItemIcon>
-                  {subscription.billingAction?.label ?? 'Upgrade'}
-                </DropdownMenuItem>
-              </>
-            );
           const aiCreditsRow = subscription.aiCreditsVisible && canSignOut && (
-            <SidebarAiCreditsMenuItem
+            <BalanceSurface
+              density="row"
               balanceCredits={aiCreditsBalance}
-              libraryAccess={aiCreditsLibraryAccess}
               onSelect={() =>
                 handleItemClick(() =>
                   subscription.openBillingPath(accountBillingPath()),
@@ -482,10 +427,9 @@ export function SidebarAccountMenu({
           // One divider closes the identity and billing block, so a menu
           // without either never opens on a separator.
           const topSection =
-            header || subscriptionRows || aiCreditsRow ? (
+            header || aiCreditsRow ? (
               <>
                 {header}
-                {subscriptionRows}
                 {aiCreditsRow}
                 <DropdownMenuDivider />
               </>

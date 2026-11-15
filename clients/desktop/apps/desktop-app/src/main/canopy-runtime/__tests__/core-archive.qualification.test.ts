@@ -307,6 +307,15 @@ describe('core.archive on the desktop dispatcher (CAN-6007)', () => {
     await expect(
       runtime.query('core.archive.container.list', {}, { caller: READ }),
     ).rejects.toMatchObject(unavailable('workspaceId'));
+    // List revision 2, an untitled task's empty name, is the web core's
+    // (CAN-6792): this desktop names every task.
+    await expect(
+      runtime.query(
+        'core.archive.container.list',
+        { workspaceId: 'ws', revision: 2 },
+        { caller: READ },
+      ),
+    ).rejects.toMatchObject(unavailable('revision'));
     // A per-container revision is the web core's; this desktop keeps none.
     await expect(
       runtime.instruction(
@@ -2075,3 +2084,36 @@ test('core.worktree.recovery.resolve grants no agent or remote resolution author
     }),
   ).rejects.toMatchObject({ payload: { kind: 'permission_denied' } });
 });
+
+test.each([
+  'core.worktree.recovery.resolve',
+  'core.worktree.recovery.finish',
+] as const)(
+  '%s refuses a granted remote bridge acting as the desktop interface',
+  async (operation) => {
+    const runtime = runtimeWith(fakeHost().host);
+    const remote: CanopyCallerDescriptor = {
+      principalId: 'remote-device:paired-controller',
+      clientInstanceId: 'remote-bridge:1',
+      authorityId: LOCAL_DESKTOP_AUTHORITY_ID,
+      interfaceKind: 'desktop',
+      grants: ['core.worktree.write'],
+    };
+    const target = {
+      workspaceId: 'ws',
+      operationId: '00000000-0000-4000-8000-000000006479',
+      revision: 'a'.repeat(64),
+    };
+    const result =
+      operation === 'core.worktree.recovery.resolve'
+        ? runtime.instruction(
+            operation,
+            { ...target, action: 'release' },
+            { caller: remote },
+          )
+        : runtime.instruction(operation, target, { caller: remote });
+    await expect(result).rejects.toMatchObject({
+      payload: { kind: 'permission_denied' },
+    });
+  },
+);

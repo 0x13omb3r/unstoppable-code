@@ -29,6 +29,7 @@ import { AgentSentSpecimen } from './componentsLabAgentSent';
 import { ComposerActionsSpecimen } from './componentsLabComposerActions';
 import { AgentAliasModelSpecimen } from './componentsLabAgentAliasModel';
 import { AgentModelPickerSpecimen } from './componentsLabAgentModelPicker';
+import { ModelSelectionSpecimen } from './componentsLabModelSelection';
 import { DisclosuresSpecimen } from './componentsLabDisclosures';
 import { HeadingsSpecimen } from './componentsLabHeadings';
 import { LoadingSpecimen } from './componentsLabLoading';
@@ -45,11 +46,18 @@ import { SharedCSpecimen } from './componentsLabSharedC';
 import { CustomizePartsSpecimen } from './componentsLabCustomize';
 import { CuratedWorkflowsSpecimen } from './componentsLabCurated';
 import { CreditsNoticesSpecimen } from './componentsLabCredits';
+import { TurnNoticesSpecimen } from './componentsLabTurnNotices';
+import { CopyMcpServerSpecimen } from './componentsLabCopyMcpServer';
 import {
   CloudReachBackPromptSpecimen,
   CloudReachBackSpecimen,
 } from './componentsLabCloudReachBack';
 import { W5RecoverySpecimen } from './componentsLabW5Recovery';
+import {
+  ArchiveRecoveryListSpecimen,
+  WorktreeRecoverySpecimen,
+  ProjectDeletionRecoverySpecimen,
+} from './componentsLabArchiveRecovery';
 import {
   CloudCopyGitUncheckedSpecimen,
   CloudCopyPluginSpecimen,
@@ -233,6 +241,15 @@ export const COMPONENTS_LAB_ENTRIES: readonly ComponentsLabEntry[] = [
     View: AgentAliasModelSpecimen,
   },
   {
+    id: 'model-selection-notice',
+    name: 'Model selection notice',
+    group: 'Unified',
+    note: 'A desktop refusal and an unconfirmed model change remain distinct, with short, long and empty explanations.',
+    source: 'packages/ui-shared/src/components/ModelSelectionNotice.tsx',
+    prs: [],
+    View: ModelSelectionSpecimen,
+  },
+  {
     id: 'icon-scale',
     name: 'Icon scale',
     group: 'Unified',
@@ -371,6 +388,24 @@ export const COMPONENTS_LAB_ENTRIES: readonly ComponentsLabEntry[] = [
     View: CreditsNoticesSpecimen,
   },
   {
+    id: 'cloud-turn-notices',
+    name: 'Cloud chat turn notices',
+    group: 'Unified',
+    note: "A host's note under a turn: a desktop cloud chat turn that used a skill's last published copy. Rendered from fixtures; no desktop page shows it yet (CAN-6605).",
+    source: 'packages/ui-app/src/code/TurnNotices.tsx',
+    prs: [8672],
+    View: TurnNoticesSpecimen,
+  },
+  {
+    id: 'cloud-copy-mcp-server',
+    name: 'Add an MCP server to the cloud account',
+    group: 'Unified',
+    note: "The MCP server page's Add to cloud beside Move to cloud, and its consent dialog: every saved secret is an unticked box naming it, never its value, and Add stays disabled until one is ticked. Rendered from fixtures.",
+    source: 'packages/ui-app/src/capability/CopyMcpServerDialog.tsx',
+    prs: [],
+    View: CopyMcpServerSpecimen,
+  },
+  {
     id: 'cloud-reach-back',
     name: 'Cloud chats on a desktop MCP server',
     group: 'Unified',
@@ -402,10 +437,38 @@ export const COMPONENTS_LAB_ENTRIES: readonly ComponentsLabEntry[] = [
     id: 'w5-recovery-notice',
     name: 'Workspace recovery notice',
     group: 'Unified',
-    note: 'Workspace recovery in every lifecycle and refusal state, with host and target capability gates, busy actions and bounded diagnostic entries.',
+    note: 'Workspace recovery in every lifecycle and refusal state, with host and target capability gates, live archive review alone or beside cold recovery, busy actions and bounded diagnostic entries.',
     source: 'packages/ui-shared/src/components/W5RecoveryNotice.tsx',
     prs: [7548],
     View: W5RecoverySpecimen,
+  },
+  {
+    id: 'archive-recovery-list',
+    name: 'Archive recovery list',
+    group: 'Unified',
+    note: 'Fixture-only live archive list: empty, checking, error, row-less entries, long names, retained material, interrupted resolution and deletion confirmation.',
+    source: 'packages/ui-app/src/worktree-discard/WorktreeRecoveryPanel.tsx',
+    prs: [9361],
+    View: ArchiveRecoveryListSpecimen,
+  },
+  {
+    id: 'worktree-recovery-dialog',
+    name: 'Worktree recovery dialog',
+    group: 'Unified',
+    note: 'Keep worktree, Release and Finish offers, busy actions and their individual confirmed, refused, interrupted and unconfirmed results. Callbacks only change fixtures.',
+    source: 'packages/ui-app/src/worktree-discard/WorktreeRecoveryDialog.tsx',
+    prs: [9361],
+    View: WorktreeRecoverySpecimen,
+  },
+  {
+    id: 'project-deletion-recovery',
+    name: 'Discard pending recovery before project deletion',
+    group: 'Unified',
+    note: 'The explicit project-deletion confirmation for pending recovery: default, busy, error and long project name, with fixture-only callbacks.',
+    source:
+      'packages/ui-shared/src/components/ProjectDeletionDiscardDialog.tsx',
+    prs: [9361],
+    View: ProjectDeletionRecoverySpecimen,
   },
   {
     id: 'cloud-copy-plugin',

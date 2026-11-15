@@ -1,5 +1,7 @@
 'use client';
 
+import { DigestRequestSurface } from '@canopy/ui-shared/components';
+
 import {
   useCallback,
   useState,
@@ -8,6 +10,7 @@ import {
   type JSX,
 } from 'react';
 import {
+  AI_CREDITS_PURCHASE_LABEL,
   Button,
   ErrorBanner,
   FormField,
@@ -253,10 +256,7 @@ export function DigestRequestForm({
     // use. This is a control, not a record: it sits recessed into the page on
     // `bg-depth` behind an explicit outline, so the raised, borderless digest
     // cards below read as a separate class of thing at a glance.
-    <section
-      className="rounded-xl border bg-depth p-5"
-      data-testid={`${testIdPrefix}-digest-request`}
-    >
+    <DigestRequestSurface testId={`${testIdPrefix}-digest-request`}>
       <Heading level={3} variant="title">
         Request a digest
       </Heading>
@@ -266,7 +266,7 @@ export function DigestRequestForm({
       >
         Generate a one-off report covering any range of up to 90 days. A report
         ending today covers everything so far today (dates are UTC). Reports are
-        billed to your AI credits based on usage.
+        billed to your AI Credits based on usage.
       </p>
 
       <ErrorBanner
@@ -352,17 +352,17 @@ export function DigestRequestForm({
           className="mt-3 text-xs fg-secondary"
           data-testid={`${testIdPrefix}-digest-request-credits`}
         >
-          You&rsquo;re out of AI credits, so reports cannot be generated right
-          now.{' '}
+          You&rsquo;re out of AI Credits, so reports can&rsquo;t be generated
+          right now.{' '}
           <SettingsLink
             href={BILLING_HREF}
             className="font-medium fg-accent hover:underline"
           >
-            Add AI credits
+            {AI_CREDITS_PURCHASE_LABEL}
           </SettingsLink>
           .
         </p>
       )}
-    </section>
+    </DigestRequestSurface>
   );
 }

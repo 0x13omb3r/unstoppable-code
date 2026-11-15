@@ -24,19 +24,50 @@ export type DiffFileStatus =
   | 'untracked'
   | 'unknown';
 
-/** Tailwind color class for each status dot. */
+/** Resolved theme paint for each change marker. */
 export const DIFF_STATUS_DOT_COLORS: Record<DiffFileStatus, string> = {
-  added: 'bg-success',
-  modified: 'bg-warning',
-  deleted: 'bg-destructive',
+  added: 'var(--bg-success)',
+  modified: 'var(--bg-warning)',
+  deleted: 'var(--bg-destructive)',
   // Copied shares the renamed identity: a file that came from another path.
-  renamed: 'bg-fg-info',
-  copied: 'bg-fg-info',
-  unmerged: 'bg-destructive',
-  'type-changed': 'bg-fg-special-strong',
-  untracked: 'bg-success',
-  unknown: 'bg-fg-primary/40',
+  renamed: 'var(--fg-info)',
+  copied: 'var(--fg-info)',
+  unmerged: 'var(--bg-destructive)',
+  'type-changed': 'var(--fg-special-strong)',
+  untracked: 'var(--bg-success)',
+  unknown: 'var(--fg-primary)',
 };
+
+/** Change marker for file trees. The review display uses stronger semantic inks. */
+export function DiffFileStatusMarker({
+  status,
+  review = false,
+}: {
+  readonly status: DiffFileStatus;
+  readonly review?: boolean;
+}): JSX.Element {
+  const color =
+    review && (status === 'added' || status === 'untracked')
+      ? 'var(--fg-success-strong)'
+      : review && status === 'deleted'
+        ? 'var(--fg-destructive-strong)'
+        : DIFF_STATUS_DOT_COLORS[status];
+  return (
+    <svg
+      aria-hidden="true"
+      viewBox="0 0 7 7"
+      className="h-1.75 w-1.75 shrink-0"
+    >
+      <circle
+        cx="3.5"
+        cy="3.5"
+        r="3.5"
+        fill={color}
+        opacity={status === 'unknown' ? 0.4 : undefined}
+      />
+    </svg>
+  );
+}
 
 /** Sentence-case label for each status, shown after the change counts. */
 const DIFF_STATUS_LABELS: Record<DiffFileStatus, string> = {
@@ -258,7 +289,6 @@ function DiffFileTreeRow({
   onSelect,
 }: DiffFileTreeRowProps): JSX.Element {
   const status = resolveStatus(file.status);
-  const dotClass = DIFF_STATUS_DOT_COLORS[status];
   const selectedClass = file.selected
     ? 'border-l-2 border-line-accent bg-accent/[0.08] fg-primary pl-1.5'
     : 'fg-primary/80 hover:bg-fg-primary/[0.06]';
@@ -281,7 +311,7 @@ function DiffFileTreeRow({
           aria-label={file.filePath}
           className={`flex w-full items-center gap-1.5 rounded-md px-2 py-1 text-xs transition-colors ${selectedClass}`}
         >
-          <span className={`h-1.75 w-1.75 shrink-0 rounded-full ${dotClass}`} />
+          <DiffFileStatusMarker status={status} />
           <span className="truncate font-mono">
             {file.label ?? file.filePath}
           </span>

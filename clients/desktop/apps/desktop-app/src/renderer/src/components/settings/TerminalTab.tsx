@@ -1,3 +1,4 @@
+import { ImageThumbnail } from '@canopy/ui-shared/components';
 import {
   useEffect,
   useMemo,
@@ -75,19 +76,19 @@ function presetIconPreview(preset: TerminalPreset): JSX.Element {
     return (
       <span className="flex items-center gap-1">
         {preset.icon.lightDataUrl ? (
-          <img
+          <ImageThumbnail
+            variant="terminal-icon"
             src={preset.icon.lightDataUrl}
             alt="Light mode preset icon"
             data-testid="terminal-preset-image-light"
-            className="h-6 w-6 rounded object-contain"
           />
         ) : null}
         {preset.icon.darkDataUrl ? (
-          <img
+          <ImageThumbnail
+            variant="terminal-icon"
             src={preset.icon.darkDataUrl}
             alt="Dark mode preset icon"
             data-testid="terminal-preset-image-dark"
-            className="h-6 w-6 rounded object-contain"
           />
         ) : null}
       </span>
@@ -156,11 +157,11 @@ function PresetImageModeRow({
       }
       control={
         <>
-          <img
+          <ImageThumbnail
+            variant="terminal-option"
             src={resolvedDataUrl}
             alt={`${modeLabel} mode preset icon preview`}
             data-testid={`terminal-preset-image-${colorMode}-preview`}
-            className="h-7 w-7 shrink-0 rounded object-contain"
           />
           <PresetImageButton
             inputLabel={`${modeLabel} mode image`}

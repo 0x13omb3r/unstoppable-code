@@ -1,3 +1,4 @@
+import { WorkflowNavJobRow } from '@canopy/ui-shared/components';
 import { useMemo, useRef, useState, type JSX } from 'react';
 import type {
   ExecutionState,
@@ -70,7 +71,6 @@ export type PipelineDetailsSelection =
  * materialize a couple hundred children, so the list scrolls rather than
  * growing the nav unboundedly.
  */
-const CHILD_LIST_MAX_HEIGHT = 240;
 
 /**
  * The selected row's left accent line: a painted element on the row's
@@ -295,11 +295,7 @@ function PipelineNavJob({
 
   return (
     <div>
-      <div
-        className={`relative flex w-full items-center transition-colors ${
-          isMatrix ? 'pl-1.5' : ''
-        } ${parentActive ? SELECTED_ROW_CLASS : UNSELECTED_ROW_CLASS}`}
-      >
+      <WorkflowNavJobRow active={parentActive} matrix={isMatrix}>
         {isMatrix && (
           <Button
             variant="ghost-quiet"
@@ -337,14 +333,18 @@ function PipelineNavJob({
           )}
         </button>
         {parentActive && <SelectionMarker />}
-      </div>
+      </WorkflowNavJobRow>
       {expanded && (
         // A neutral rail: the base `* { border-color }` rule paints
         // `--line-base` on any `border-<color>` (CAN-2734), so the rail
         // names no color utility of its own.
-        <ul
-          className="overflow-y-auto border-l pl-1"
-          style={{ maxHeight: CHILD_LIST_MAX_HEIGHT }}
+        <Surface
+          as="ul"
+          variant="section"
+          boundary="left"
+          padding="navigation-inset"
+          className="overflow-y-auto"
+          extent="workflow-navigation"
           data-testid={`pipeline-details-nav-children-${jobId}`}
         >
           {filteredChildren.map((child) => (
@@ -357,7 +357,7 @@ function PipelineNavJob({
               />
             </li>
           ))}
-        </ul>
+        </Surface>
       )}
     </div>
   );

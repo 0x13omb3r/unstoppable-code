@@ -12,7 +12,7 @@ import {
 /**
  * Names the current account page with the same label the settings rail marks
  * current, so the two cannot disagree. Detail routes keep their page's name
- * (`/account/billing/invoices/<id>` is "Billing"); a route the rail cannot
+ * (`/account/billing/invoices/<id>` is "AI Credits"); a route the rail cannot
  * place falls back to "Account".
  *
  * A page's sole action sits here, beside its name, so the content below holds
@@ -21,9 +21,7 @@ import {
  * The external-agent consent and confirmation pages name the action in their
  * own heading, so they render no account header.
  */
-export function AccountPageHeader({
-  freeAccess = false,
-}: { freeAccess?: boolean } = {}): JSX.Element | null {
+export function AccountPageHeader(): JSX.Element | null {
   const pathname = useSettingsPathname();
   if (
     pathname === '/account/external-agents/consent' ||
@@ -31,10 +29,7 @@ export function AccountPageHeader({
   ) {
     return null;
   }
-  const item = accountNavItem(
-    matchAccountNavKey(pathname) ?? 'account',
-    freeAccess,
-  );
+  const item = accountNavItem(matchAccountNavKey(pathname) ?? 'account');
   return (
     <PageHeader
       inset="none"

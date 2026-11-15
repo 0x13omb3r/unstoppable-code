@@ -1,3 +1,4 @@
+import { Surface } from '@canopy/ui-shared/components';
 import {
   ShareIcon,
   SettingsIcon as AppCatalogSettingsIcon,
@@ -206,7 +207,7 @@ export function PipelineToolbar({
   headerAction,
 }: PipelineToolbarProps): JSX.Element {
   return (
-    <div className="flex items-center gap-3 px-4 py-3 border-b bg-card shrink-0">
+    <Surface variant="workflow-toolbar">
       {/* Back button */}
       <Button
         variant="ghost"
@@ -308,6 +309,6 @@ export function PipelineToolbar({
           </Button>
         </>
       )}
-    </div>
+    </Surface>
   );
 }

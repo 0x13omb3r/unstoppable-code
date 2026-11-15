@@ -1553,6 +1553,25 @@ async function actorFor(
         signal,
         retainedRoute,
       ): Promise<AgentDelegationResult<ResolvedDelegationRoute>> => {
+        // Before route allocation: a model with no allowed route at all is
+        // refused here, so it never waits for routing capacity first.
+        const {
+          managedDelegationModelPolicyPrecheck,
+          readManagedDelegationModelPolicy,
+        } = await import('./model-policy');
+        const precheck = managedDelegationModelPolicyPrecheck(
+          await readManagedDelegationModelPolicy(),
+          retainedRoute?.runtimeModelId ?? task.modelId,
+        );
+        if (precheck)
+          return {
+            ok: false,
+            error: {
+              code: 'policy_blocked',
+              message: precheck,
+              retryable: false,
+            },
+          };
         const resolved = await runtime.resolve(
           parent,
           task,
@@ -1560,6 +1579,24 @@ async function actorFor(
           retainedRoute,
         );
         if (!resolved.ok) return resolved;
+        // Allowed models: checked against the exact captured route for every
+        // new invocation. The preference read is the linearization point; a
+        // save that commits after it applies from the next invocation, and an
+        // invocation already admitted keeps running.
+        // A running turn's later provider turns recheck through the runners'
+        // admitContinuation hook.
+        const refusal = await runtime.modelPolicyRefusal(resolved.value);
+        if (refusal) {
+          runtime.release(resolved.value);
+          return {
+            ok: false,
+            error: {
+              code: 'policy_blocked',
+              message: refusal,
+              retryable: false,
+            },
+          };
+        }
         if (signal.aborted) {
           runtime.release(resolved.value);
           return {

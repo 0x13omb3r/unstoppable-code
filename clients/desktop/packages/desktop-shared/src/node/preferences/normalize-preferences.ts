@@ -1,3 +1,4 @@
+import { CopilotHostSelectionSchema } from '@canopy/protocol/copilot-selection';
 import {
   migrateLegacyPlanModeHintRecord,
   normalizeGitHubStarPromptRecord,
@@ -20,6 +21,7 @@ import {
   normalizeManagedDelegationMaxDepth,
   normalizeManagedDelegationLifetimeLimit,
 } from '@canopy/protocol/delegation/discovery';
+import { normalizeManagedDelegationModelPolicy } from '@canopy/protocol/delegation/model-policy';
 import { normalizeCodexMaxConcurrentSubagents } from '@canopy/execution-engine/lib/codex-multi-agent';
 import { normalizeAppAdvisorProjectAgentAccess } from '../../lib/app-advisor-project-agent-access';
 import { normalizeCustomBrowserSearchEngines } from '../../lib/browser-search-engines';
@@ -241,6 +243,11 @@ export function normalizePreferences(
       data?.googleSubscriptionDisconnected !== undefined &&
       data.googleSubscriptionDisconnected !== false,
     copilotEnabled: data?.copilotEnabled === true,
+    copilotVaultSelection:
+      data?.copilotVaultSelection === undefined
+        ? undefined
+        : (CopilotHostSelectionSchema.safeParse(data.copilotVaultSelection)
+            .data ?? null),
     opencodeEnabled: data?.opencodeEnabled === true,
     accountProxyEnabled: data?.accountProxyEnabled === true,
     accountProxyConnection: normalizeAccountProxyConnection(
@@ -496,6 +503,7 @@ export function normalizePreferences(
       typeof data?.orgMemoryInjectionEnabled === 'boolean'
         ? data.orgMemoryInjectionEnabled
         : DEFAULT_PREFERENCES.orgMemoryInjectionEnabled,
+    localMemoryLearnFromChats: data?.localMemoryLearnFromChats === true,
     localMemoryEnabled:
       typeof data?.localMemoryEnabled === 'boolean'
         ? data.localMemoryEnabled
@@ -722,6 +730,13 @@ export function normalizePreferences(
     managedDelegationLifetimeLimit: normalizeManagedDelegationLifetimeLimit(
       data?.managedDelegationLifetimeLimit,
     ),
+    ...(data?.managedDelegationModelPolicy === undefined
+      ? {}
+      : {
+          managedDelegationModelPolicy: normalizeManagedDelegationModelPolicy(
+            data.managedDelegationModelPolicy,
+          ),
+        }),
     ...(data?.managedDelegationMode === undefined
       ? {}
       : {

@@ -1005,12 +1005,16 @@ function PanelWorkOperationRow({
   };
 
   return (
-    <li
+    <Surface
+      as="li"
       data-testid="feed-operations-row"
       data-layout="panel"
       data-status={view.status}
       data-entry-id={item.entryId}
-      className="flex flex-col gap-2 border-b border-line-base px-3 py-3"
+      variant="section"
+      boundary="bottom"
+      padding="compact"
+      gap="inline"
     >
       <div className="flex min-w-0 items-start gap-3">
         {/* Centred on the title's 32px row. */}
@@ -1121,7 +1125,7 @@ function PanelWorkOperationRow({
           <PanelWorkRowActions view={view} store={store} tree={tree} />
         </div>
       ) : null}
-    </li>
+    </Surface>
   );
 }
 

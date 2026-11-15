@@ -1,3 +1,4 @@
+import { Surface } from '@canopy/ui-shared/components';
 import { useCallback, type JSX } from 'react';
 import {
   Button,
@@ -46,11 +47,15 @@ export function HomeBelowComposerGallery(): JSX.Element {
 
   return (
     <>
-      <div
+      <Surface
+        variant="gallery-banner"
+        direction="row"
+        gap="item"
+        padding="section-default"
         data-testid="home-below-composer-gallery-banner"
-        className="flex w-full items-center justify-between gap-3 rounded-lg bg-depth px-4 py-2 text-xs fg-secondary"
+        className="w-full items-center justify-between"
       >
-        <span>
+        <span className="text-xs fg-secondary">
           Preview: all below-composer sections (dev only). Spacing uses the live
           Home stack gap.
         </span>
@@ -62,7 +67,7 @@ export function HomeBelowComposerGallery(): JSX.Element {
         >
           Hide preview
         </Button>
-      </div>
+      </Surface>
 
       <HomeSection
         sectionId="gallery-continue"
@@ -70,7 +75,7 @@ export function HomeBelowComposerGallery(): JSX.Element {
         testId="home-resume-card"
       >
         <ul className="flex flex-col">
-          <li className="group relative flex items-center rounded-full">
+          <li className="group relative flex items-center">
             <SuggestionRow
               icon={<WarningIcon size={16} aria-hidden="true" />}
               trailingControl

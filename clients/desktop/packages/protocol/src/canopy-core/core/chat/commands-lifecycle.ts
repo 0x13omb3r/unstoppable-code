@@ -294,6 +294,15 @@ export const CORE_CHAT_UPDATE_SCHEMA_REVISION = 2;
  */
 export const CORE_CHAT_MESSAGE_SEND_SCHEMA_REVISION = 2;
 
+/**
+ * Revision 3 of `core.chat.message.send` (CAN-6828): the send may carry
+ * `expectedPrincipalId`, the account it was pressed under, as the runtime's
+ * `core.runtime.initialize` names it. The runtime refuses it with
+ * `core.chat.message.accountChanged` when the connection serves another
+ * account, before it sends anything. Its output is revision 2's.
+ */
+export const CORE_CHAT_MESSAGE_SEND_ACCOUNT_BOUND_REVISION = 3;
+
 const capabilityBundleRef = z.strictObject({
   version: z.number().int(),
   digest: z.string().min(1),

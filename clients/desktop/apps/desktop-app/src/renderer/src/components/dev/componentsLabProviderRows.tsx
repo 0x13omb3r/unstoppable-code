@@ -1,6 +1,7 @@
 import { useContext, type JSX } from 'react';
 import { LabBrandDisplayNameContext } from './componentsLabStageContext';
 import {
+  Surface,
   ProviderRowLabel,
   ProviderStatusDot,
   RemoteControlMobileAppPromo,
@@ -159,13 +160,15 @@ function RailFrame({
 }): JSX.Element {
   // The 8px handle the indicator sits in; `group` drives its hover look.
   return (
-    <div
-      className={`group flex items-stretch justify-center bg-tertiary ${
-        line === 'vertical' ? 'h-24 w-2' : 'h-2 w-48 flex-col'
-      }`}
-    >
-      <ResizeRailIndicator line={line} active={active} />
-    </div>
+    <Surface variant="panel">
+      <div
+        className={`group flex items-stretch justify-center ${
+          line === 'vertical' ? 'h-24 w-2' : 'h-2 w-48 flex-col'
+        }`}
+      >
+        <ResizeRailIndicator line={line} active={active} />
+      </div>
+    </Surface>
   );
 }
 

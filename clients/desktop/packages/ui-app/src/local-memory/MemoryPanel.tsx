@@ -35,6 +35,7 @@ import {
   ErrorBanner,
   ErrorState,
   Markdown,
+  Notice,
   Skeleton,
   TextArea,
   TextInput,
@@ -984,7 +985,12 @@ export function MemoryPanel({
       ? null
       : (currentRebuildMessage ?? consolidationProblem(status));
     const waiting = status.pendingNotes;
-    if (!running && problem === null && waiting === 0) return null;
+    const metrics = status.metrics;
+    const health = metrics
+      ? `${metrics.brokenLinkCount} broken ${metrics.brokenLinkCount === 1 ? 'link' : 'links'} · ${metrics.orphanTopicCount} ${metrics.orphanTopicCount === 1 ? 'unlinked topic' : 'unlinked topics'}`
+      : null;
+    if (!running && problem === null && waiting === 0 && health === null)
+      return null;
     const message = running
       ? rebuildRunning
         ? 'Rebuilding memories…'
@@ -995,22 +1001,44 @@ export function MemoryPanel({
             ? ` · Consolidated ${formatRelativeTime(status.lastConsolidatedAt)}`
             : ''
         }`);
+    const action = (
+      <ConsolidateNowButton
+        available={client.consolidate !== undefined}
+        disabled={running || editing}
+        onClick={() => {
+          void consolidateNow();
+        }}
+      />
+    );
+    const healthMessage =
+      health === null ? null : (
+        <span data-testid="memory-link-health">{health}</span>
+      );
+    if (problem !== null)
+      return (
+        <Notice
+          intent="destructive"
+          errorSource="memory-consolidation-status"
+          surface="none"
+          data-testid="memory-consolidation-status"
+          data-state="problem"
+          actions={action}
+        >
+          {message}
+          {healthMessage !== null && <> · {healthMessage}</>}
+        </Notice>
+      );
     return (
       <p
-        className={`flex shrink-0 flex-wrap items-baseline gap-x-2 px-1 text-2xs ${problem === null ? 'fg-tertiary' : 'fg-destructive'}`}
+        className="flex shrink-0 flex-wrap items-baseline gap-x-2 px-1 text-2xs fg-tertiary"
         data-testid="memory-consolidation-status"
         data-state={
           running ? 'running' : problem !== null ? 'problem' : 'pending'
         }
       >
         <span className="min-w-0">{message}</span>
-        <ConsolidateNowButton
-          available={client.consolidate !== undefined}
-          disabled={running || editing}
-          onClick={() => {
-            void consolidateNow();
-          }}
-        />
+        {healthMessage}
+        {action}
       </p>
     );
   }

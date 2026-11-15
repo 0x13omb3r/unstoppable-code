@@ -20,16 +20,10 @@ import {
 import { CANOPY_CLOUD_ACCOUNT_CHANGED_EVENT } from '@canopy/desktop-shared/constants/canopy-cloud';
 import type { CanopyCloudAccountPublicState } from '@canopy/desktop-shared/types';
 import { isGuestAccount } from '@/hooks/useIsGuestCredential';
-import { useSubscriptionStatus } from '@/hooks/useSubscriptionStatus';
 import { brandText } from '@/lib/brand';
 import { isCanopyCloudConnected } from '@/lib/canopy-cloud';
-import {
-  announceCanopyCloudAccountChanged,
-  refreshAndAnnounceCanopyCloudAccount,
-  refreshCanopyCloudAccountData,
-} from '@/lib/canopyCloudAccountChange';
+import { refreshAndAnnounceCanopyCloudAccount } from '@/lib/canopyCloudAccountChange';
 import { openSettingsPathOrWebReported } from '@/lib/navigation/settings-destinations';
-import { openOrganizationBillingPage } from '@/lib/organizationPlan';
 import { desktopOrganizationAccess } from '@/lib/sharing/organization-access';
 import { copyTextToClipboard } from '@/lib/clipboard';
 import { GUEST_WORK_PRESERVED } from '@/lib/guest-cta-copy';
@@ -55,13 +49,8 @@ import { desktopPersonalOrganizationUpgradePort } from '@/lib/personal-organizat
 
 const CLOUD_ACCOUNT_NAME = `${brandText.appName} Cloud`;
 
-/**
- * Title of the sign-in gate a guest opens from the share dialog. With free
- * access there is no trial to start, so the title names the step instead.
- */
-function desktopShareGuestGateTitle(freeAccess: boolean): string {
-  return freeAccess ? 'Sign in to share' : 'Start your free trial';
-}
+/** Title of the sign-in gate a guest opens from the share dialog. */
+const DESKTOP_SHARE_GUEST_GATE_TITLE = 'Sign in to share';
 
 /** Desktop account copy: names the brand's cloud account. */
 export function desktopShareCopy(noun: string): Partial<ShareResourceCopy> {
@@ -71,7 +60,7 @@ export function desktopShareCopy(noun: string): Partial<ShareResourceCopy> {
     emptyAction: 'Open account settings',
     guestState: `Create a free account to share ${noun}s. ${GUEST_WORK_PRESERVED}`,
     missingCapability: `This ${CLOUD_ACCOUNT_NAME} account does not support shared ${noun}s.`,
-    upgradeHint: `This ${CLOUD_ACCOUNT_NAME} account must be upgraded before team or organization sharing is available.`,
+    upgradeHint: `Team and organization sharing isn't available for this ${CLOUD_ACCOUNT_NAME} account.`,
   };
 }
 
@@ -112,19 +101,6 @@ function toDesktopShareAccount(
 async function loadDesktopShareAccount(): Promise<DesktopShareAccount | null> {
   const account = await window.api.loadCanopyCloudAccount();
   return account ? toDesktopShareAccount(account) : null;
-}
-
-/**
- * Re-probes the account so access facts are current. Rejects when the probe
- * failed, which the dialog reports as information, never as a denial.
- */
-async function refreshDesktopShareAccount(): Promise<DesktopShareAccount | null> {
-  const outcome = await refreshCanopyCloudAccountData();
-  if (outcome.status !== 'refreshed') {
-    throw new Error('The account could not be refreshed.');
-  }
-  announceCanopyCloudAccountChanged(outcome.reason);
-  return toDesktopShareAccount(outcome.account);
 }
 
 /** The Organizations list, which creates an organization or accepts an invitation. */
@@ -182,8 +158,6 @@ export interface DesktopShareCapabilityPackage {
 export type DesktopShareResourceDialogProps = Omit<
   ShareResourceDialogProps,
   | 'loadAccount'
-  | 'refreshAccount'
-  | 'onChooseOrganizationPlan'
   | 'subscribeAccountChanged'
   | 'listTeams'
   | 'listOrganizations'
@@ -206,9 +180,6 @@ export function DesktopShareResourceDialog({
   ...props
 }: DesktopShareResourceDialogProps): JSX.Element {
   const context = useSidebarScopingContext();
-  // Server-reported free access. A guest's own entitlements carry it too, so
-  // the guest prompt can say "Sign in" rather than offer a trial.
-  const { freeAccess } = useSubscriptionStatus();
   const [contextOrganizations, setContextOrganizations] = useState<
     readonly ShareTargetSummary[]
   >([]);
@@ -221,18 +192,11 @@ export function DesktopShareResourceDialog({
       setUpgradeAccount(account);
       return account;
     }, []);
-  const refreshAccount =
-    useCallback(async (): Promise<ShareResourceAccount | null> => {
-      const account = await refreshDesktopShareAccount();
-      setContextOrganizations(account?.contextOrganizations ?? []);
-      setUpgradeAccount(account);
-      return account;
-    }, []);
   const requestConnect = useCloudConnectGateStore((s) => s.requestConnect);
   const handleConnect = useCallback((): void => {
     requestConnect(
       {
-        title: desktopShareGuestGateTitle(freeAccess),
+        title: DESKTOP_SHARE_GUEST_GATE_TITLE,
         subtitle: `Sign in to ${CLOUD_ACCOUNT_NAME} to share ${resourceNoun}s and unlock more.`,
         toastMessage: `You're all set. You can now share this ${resourceNoun}.`,
         guestBenefits: true,
@@ -241,13 +205,12 @@ export function DesktopShareResourceDialog({
       // the account (and its capabilities) in the dialog.
       () => {},
     );
-  }, [freeAccess, requestConnect, resourceNoun]);
+  }, [requestConnect, resourceNoun]);
 
   // Organization setup opened on the web finishes there. Once the page has
   // been opened, every return to the window re-probes the account, so a new
   // organization or team shows up even if the author came back before
-  // finishing setup. The listener lives until the dialog closes.
-  // Choosing a plan on the web re-probes the same way. Either one opened
+  // finishing setup. The listener lives until the dialog closes. Setup opened
   // inside Settings closes the dialog instead, since Settings covers it.
   const stopSetupRefresh = useRef<(() => void) | null>(null);
   useEffect(() => (): void => stopSetupRefresh.current?.(), []);
@@ -271,16 +234,6 @@ export function DesktopShareResourceDialog({
     if (opened === 'web') refreshOnEveryReturn();
     return opened !== 'failed';
   }, [onClose, refreshOnEveryReturn]);
-  const handleChooseOrganizationPlan = useCallback(
-    (organizationId: string): void => {
-      if (openOrganizationBillingPage(organizationId) === 'settings') {
-        onClose();
-        return;
-      }
-      refreshOnEveryReturn();
-    },
-    [onClose, refreshOnEveryReturn],
-  );
 
   const hostPort = capabilityPackage?.port ?? null;
   const port = useMemo((): CapabilityPackageSharePort | null => {
@@ -302,7 +255,6 @@ export function DesktopShareResourceDialog({
       {...props}
       resourceNoun={resourceNoun}
       copy={mergedCopy}
-      freeAccess={freeAccess}
       context={context}
       contextOrganizations={contextOrganizations}
       {...(capabilityPackage
@@ -328,8 +280,6 @@ export function DesktopShareResourceDialog({
           }
         : {})}
       loadAccount={loadAccount}
-      refreshAccount={refreshAccount}
-      onChooseOrganizationPlan={handleChooseOrganizationPlan}
       personalOrganizationUpgradePort={
         upgradeAccount?.id &&
         upgradeAccount.personalOrganizationId &&

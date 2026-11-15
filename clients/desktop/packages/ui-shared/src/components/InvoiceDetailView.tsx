@@ -234,7 +234,7 @@ function CreditsSection({
     >
       <div>
         <Heading level={2} variant="title">
-          AI credit activity
+          AI Credits activity
         </Heading>
         {/*
         Says WHY the credits are not in the total, not just THAT they aren't.
@@ -252,14 +252,14 @@ function CreditsSection({
         adding up the page knows these figures are not part of the arithmetic.
       */}
         <p className="mt-0.5 text-xs fg-tertiary">
-          How your AI credit balance moved during this period. Credits you
+          How your AI Credits balance moved during this period. AI Credits you
           bought are already billed above, so nothing here adds to the invoice
           total.
         </p>
       </div>
       {!hasActivity ? (
         <p className="text-s fg-secondary" data-testid="invoice-credits-empty">
-          No AI credit activity in this period.
+          No AI Credits activity in this period.
         </p>
       ) : (
         <div className="flex flex-col gap-4">

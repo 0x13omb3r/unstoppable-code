@@ -171,7 +171,20 @@ import { selectionSaveSettled } from '../web-core/selection-saves';
 import { taskCreationSettled } from '../web-core/task-creations';
 import { isWebCoreScope } from '@/lib/chat-authority';
 import { CoreCoworkRequestError } from '@canopy/app-state/core-cowork';
-import { WebCoreSendRefusedError } from '../web-core/send-refusal';
+import {
+  WebCoreSendRefusedError,
+  isAccountChangedRefusal,
+} from '../web-core/send-refusal';
+import {
+  bindWebCoreSend,
+  pressedWebCorePrincipal,
+} from '../web-core/send-binding';
+import {
+  attachCloudSendPress,
+  isCloudSendPressed,
+  pressCloudSend,
+  releaseUnclaimedCloudSend,
+} from '../web-core/send-order';
 import { useWebCoreStartingTurnStore } from '../web-core/starting-turns';
 import { liveReplyKey } from '../web-core/live-replies';
 
@@ -568,6 +581,16 @@ export const createMessagingSlice: StateCreator<
     if (!sel) {
       options?.onPreDispatchRejected?.();
       return;
+    }
+    // A cloud send is bound to the account it is pressed under, here, before
+    // anything waits (CAN-6828).
+    if (
+      isWebCoreScope(sel.projectId) &&
+      options?.webCorePrincipalId === undefined
+    ) {
+      const webCorePrincipalId = pressedWebCorePrincipal();
+      if (webCorePrincipalId !== undefined)
+        options = { ...options, webCorePrincipalId };
     }
     if (refuseRetiredPlanChatSend(sel.projectId, options)) return;
 
@@ -1154,7 +1177,11 @@ export const createMessagingSlice: StateCreator<
     // the terminal-event flush in `handleChatEvent` dispatches them after the
     // first turn finishes. Skip IPC, transcript writes, title generation, and
     // the save schedule — `toPersistedTabs` already filters placeholder tabs.
-    if (tab.queuedHookPlaceholder === true) {
+    // A cloud send is never parked in the renderer: the web core queues it,
+    // so it keeps its place in its chat's order (CAN-6828). Only local chats
+    // take the hook placeholder and terminal queues below.
+    const parksInRenderer = !isWebCoreScope(sel.projectId);
+    if (parksInRenderer && tab.queuedHookPlaceholder === true) {
       if (options?.terminalPlanImplementation) {
         options.onPreDispatchRejected?.();
         return;
@@ -1201,7 +1228,10 @@ export const createMessagingSlice: StateCreator<
     const effectiveInterfaceMode = getEffectiveClaudeChatInterfaceMode(
       tab.interfaceMode,
     );
-    if (isTerminalBackedInterfaceMode(effectiveInterfaceMode)) {
+    if (
+      parksInRenderer &&
+      isTerminalBackedInterfaceMode(effectiveInterfaceMode)
+    ) {
       // Keep Home's echo and title ownership while terminal preparation waits.
       // A queue row or the terminal transcript takes over atomically below.
       const terminalSubmittedAt =
@@ -2297,6 +2327,10 @@ export const createMessagingSlice: StateCreator<
       }
       const streamingProviderType = resolveTabProviderType(latestTabForSend);
       let authDependencyRefusalError: Error | undefined;
+      if (options?.webCorePrincipalId !== undefined)
+        bindWebCoreSend(userMessageId, options.webCorePrincipalId);
+      if (options?.webCoreSendPress !== undefined)
+        attachCloudSendPress(userMessageId, options.webCoreSendPress);
       const hostQueueDispatch = chatBackendFor(sel)
         .chat.sendMessage({
           ...(options?.assistantMode
@@ -3076,6 +3110,10 @@ export const createMessagingSlice: StateCreator<
 
       hostDispatchStarted = true;
       preparation.dispatched = true;
+      if (options?.webCorePrincipalId !== undefined)
+        bindWebCoreSend(userMsg.id, options.webCorePrincipalId);
+      if (options?.webCoreSendPress !== undefined)
+        attachCloudSendPress(userMsg.id, options.webCoreSendPress);
       const sendResult = await chatBackendFor(sel).chat.sendMessage({
         projectId: sel.projectId,
         worktreeId: sel.worktreeId,
@@ -3332,9 +3370,12 @@ export const createMessagingSlice: StateCreator<
         !cancelledSendNotified
       ) {
         cancelledSendNotified = true;
-        const restored = options?.onPreDispatchRejected?.() === true;
+        // Pressed under another account: its text goes back to no composer.
+        const accountChanged = isAccountChangedRefusal(err);
+        const restored =
+          !accountChanged && options?.onPreDispatchRejected?.() === true;
         options?.onDispatchRejected?.();
-        if (restored) {
+        if (restored || accountChanged) {
           clearPendingUserPresentation(true);
           await reconcileRejectedPlanExit();
           const reason = extractIpcErrorMessage(err).trim();
@@ -4268,3 +4309,49 @@ export const createMessagingSlice: StateCreator<
     });
   },
 });
+
+/**
+ * Every cloud send takes its chat's next place in order when it is called,
+ * before anything waits (CAN-6828). A send already holding a live place, as
+ * New task's message or a re-dispatch does, keeps it. A place no dispatch
+ * claimed by the time the send returns is dropped.
+ */
+export const createOrderedMessagingSlice: StateCreator<
+  ChatState,
+  [],
+  [],
+  ChatMessagingSlice
+> = (set, get, store) => {
+  const slice = createMessagingSlice(set, get, store);
+  const send = slice.sendMessage;
+  return {
+    ...slice,
+    sendMessage: async (text, fileReferences, target, inputMode, options) => {
+      const sel = target ?? get().selectedWorktree;
+      const chatId =
+        target?.chatId ??
+        (sel === null
+          ? undefined
+          : get().worktreeChats[worktreeKey(sel)]?.activeTabId);
+      if (
+        sel === null ||
+        chatId === undefined ||
+        !isWebCoreScope(sel.projectId)
+      )
+        return send(text, fileReferences, target, inputMode, options);
+      const held = options?.webCoreSendPress;
+      const press =
+        held !== undefined && isCloudSendPressed(held)
+          ? held
+          : pressCloudSend({ ...sel, chatId });
+      try {
+        await send(text, fileReferences, target, inputMode, {
+          ...options,
+          webCoreSendPress: press,
+        });
+      } finally {
+        releaseUnclaimedCloudSend(press);
+      }
+    },
+  };
+};

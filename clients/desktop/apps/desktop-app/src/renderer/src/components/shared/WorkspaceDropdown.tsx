@@ -35,6 +35,7 @@ import {
   ClearFilledIcon,
   PlusMediumIcon,
 } from '@canopy/ui-shared/icons/AppIcons';
+import { CloudBackendIcon } from '@canopy/ui-shared/icons';
 import { getWorkspaceDisplayName } from '@/lib/workspaceDisplayName';
 import { ProjectIcon } from './ProjectIcon';
 import { POSTHOG_REPLAY_MASK_CLASS } from '@canopy/desktop-instrumentation/posthog-replay-privacy';
@@ -62,8 +63,64 @@ function WorkspaceSwatch({ item }: WorkspaceSwatchProps): JSX.Element {
   );
 }
 
+/** A cloud project offered beside local ones; its id is a web core scope id. */
+export interface WorkspaceDropdownCloudOption {
+  readonly id: string;
+  readonly name: string;
+  readonly color?: string;
+}
+
+type WorkspaceDropdownEntry =
+  | { readonly id: string; readonly kind: 'local'; readonly item: SidebarItem }
+  | {
+      readonly id: string;
+      readonly kind: 'cloud';
+      readonly option: WorkspaceDropdownCloudOption;
+    };
+
+function entryName(entry: WorkspaceDropdownEntry): string {
+  return entry.kind === 'local'
+    ? getWorkspaceDisplayName(entry.item)
+    : entry.option.name;
+}
+
+function EntrySwatch({
+  entry,
+}: {
+  entry: WorkspaceDropdownEntry;
+}): JSX.Element {
+  return entry.kind === 'local' ? (
+    <WorkspaceSwatch item={entry.item} />
+  ) : (
+    <ProjectIcon kind="cowork" color={entry.option.color} />
+  );
+}
+
+/** Marks a cloud project's row and trigger, as the sidebar marks its row. */
+function CloudMark({
+  entry,
+}: {
+  entry: WorkspaceDropdownEntry;
+}): JSX.Element | null {
+  if (entry.kind !== 'cloud') return null;
+  return (
+    <span
+      className="inline-flex shrink-0 fg-tertiary"
+      data-testid="workspace-dropdown-cloud-mark"
+    >
+      <CloudBackendIcon />
+      <span className="sr-only">Cloud project</span>
+    </span>
+  );
+}
+
 export interface WorkspaceDropdownProps {
   workspaces: SidebarItem[];
+  /**
+   * Cloud projects listed after `workspaces`, marked as cloud. Selecting one
+   * reports its id through `onSelect` like any other row (CAN-6757).
+   */
+  cloudWorkspaces?: readonly WorkspaceDropdownCloudOption[];
   selectedWorkspaceId: string;
   onSelect: (workspaceId: string) => void;
   /**
@@ -151,6 +208,7 @@ export interface WorkspaceDropdownProps {
  */
 export function WorkspaceDropdown({
   workspaces,
+  cloudWorkspaces,
   selectedWorkspaceId,
   unlistedWorkspaceIds,
   allowUnset = false,
@@ -179,12 +237,31 @@ export function WorkspaceDropdown({
     consumeActiveOptionScrollIntent,
   } = usePickerActiveScrollIntent();
 
-  const matched = workspaces.find((w) => w.id === selectedWorkspaceId);
+  const entries = useMemo(
+    (): readonly WorkspaceDropdownEntry[] => [
+      ...workspaces.map(
+        (item): WorkspaceDropdownEntry => ({
+          id: item.id,
+          kind: 'local',
+          item,
+        }),
+      ),
+      ...(cloudWorkspaces ?? []).map(
+        (option): WorkspaceDropdownEntry => ({
+          id: option.id,
+          kind: 'cloud',
+          option,
+        }),
+      ),
+    ],
+    [workspaces, cloudWorkspaces],
+  );
+  const matched = entries.find((w) => w.id === selectedWorkspaceId);
   // The first-workspace fallback serves callers that always carry a concrete
   // id; it must not fire where an empty id deliberately means "unchosen".
-  const selected = allowUnset ? matched : (matched ?? workspaces[0]);
+  const selected = allowUnset ? matched : (matched ?? entries[0]);
   const selectedDisplayName = selected
-    ? getWorkspaceDisplayName(selected)
+    ? entryName(selected)
     : 'Untitled project';
   const pending = selected === undefined ? pendingWorkspace : undefined;
 
@@ -193,18 +270,18 @@ export function WorkspaceDropdown({
   const listedWorkspaces = useMemo(
     () =>
       unlistedWorkspaceIds === undefined || unlistedWorkspaceIds.length === 0
-        ? workspaces
-        : workspaces.filter(
+        ? entries
+        : entries.filter(
             (workspace) => !unlistedWorkspaceIds.includes(workspace.id),
           ),
-    [workspaces, unlistedWorkspaceIds],
+    [entries, unlistedWorkspaceIds],
   );
 
   const filtered = useMemo(() => {
     const needle = query.trim().toLowerCase();
     if (!needle) return listedWorkspaces;
     return listedWorkspaces.filter((workspace) =>
-      getWorkspaceDisplayName(workspace).toLowerCase().includes(needle),
+      entryName(workspace).toLowerCase().includes(needle),
     );
   }, [listedWorkspaces, query]);
 
@@ -383,13 +460,14 @@ export function WorkspaceDropdown({
                     : 'inline-flex'
                 }
               >
-                <WorkspaceSwatch item={selected} />
+                <EntrySwatch entry={selected} />
               </span>
               <span
                 className={`${POSTHOG_REPLAY_MASK_CLASS} truncate fg-primary`}
               >
                 {selectedDisplayName}
               </span>
+              <CloudMark entry={selected} />
             </>
           ) : pending ? (
             <>
@@ -510,12 +588,17 @@ export function WorkspaceDropdown({
                   selected={isSelected}
                 >
                   <PickerMenuOptionLeading tone="primary">
-                    <WorkspaceSwatch item={workspace} />
+                    <EntrySwatch entry={workspace} />
                   </PickerMenuOptionLeading>
                   <PickerMenuOptionContent>
                     <PickerMenuOptionLabel>
-                      <span className={POSTHOG_REPLAY_MASK_CLASS}>
-                        {getWorkspaceDisplayName(workspace)}
+                      <span className="flex min-w-0 items-center gap-1.5">
+                        <span
+                          className={`${POSTHOG_REPLAY_MASK_CLASS} truncate`}
+                        >
+                          {entryName(workspace)}
+                        </span>
+                        <CloudMark entry={workspace} />
                       </span>
                     </PickerMenuOptionLabel>
                   </PickerMenuOptionContent>

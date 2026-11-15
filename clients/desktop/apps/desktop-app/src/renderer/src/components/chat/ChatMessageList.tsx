@@ -1,4 +1,12 @@
+import {
+  TranscriptTurnSection,
+  TranscriptReadingColumn,
+  StickyPromptBacking,
+  StickyPromptFade,
+  StickyPromptSurface,
+} from '@canopy/ui-shared/components/chat';
 import { isCreditHeldQueuedMessage } from '@canopy/ui-shared/lib/queued-message-force';
+import { isWebCoreScope } from '@/lib/chat-authority';
 import type { TranscriptSearchSelection } from '@/hooks/useTranscriptSearch';
 import { omitRecoveredCreditHoldArtifacts } from '@canopy/ui-shared/lib';
 import {
@@ -33,6 +41,7 @@ import type {
 import { APP_ADVISOR_PROJECT_ID } from '@canopy/desktop-shared/types';
 import {
   ChatVisualHostProvider,
+  ClaudeModLogNotices,
   QueuedMessageStack,
   useChatVisualsPublisher,
   ToolOutputReaderContext,
@@ -120,7 +129,6 @@ import {
 import { useNavigationStore } from '@/stores/navigationStore';
 import { useProjectsStore } from '@/stores/projectsStore';
 import { isUserTurnBoundary } from '@canopy/agent-transcript/lib/turn-boundary';
-import { POSTHOG_REPLAY_BLOCK_CLASS } from '@canopy/desktop-instrumentation/posthog-replay-privacy';
 import {
   Stack,
   ChatMessageLinkActionsProvider,
@@ -158,6 +166,10 @@ import {
 } from './agent-artifact-projection';
 import { ChatMarkdownFileTargetContext } from './chat-markdown-file-target';
 import {
+  CloudChatFileTargetContext,
+  cloudChatFileTarget,
+} from '@/cloud-chats/cloud-chat-file-target';
+import {
   chatMessageLookUpSelection,
   useChatMessageLinkActions,
 } from './chat-message-link-actions';
@@ -189,6 +201,7 @@ import {
 } from './native-task-stop';
 import { QueuedMessageBubble } from './QueuedMessageBubble';
 import { QueuedMessageCompactRow } from './QueuedMessageCompactRow';
+import { UnsavedQueuedEdits } from './UnsavedQueuedEdits';
 import { useComposerWorkDrawerLink } from './composer-work-drawer-context';
 import { scheduledMessageAsQueuedMessage } from './scheduledMessageAsQueuedMessage';
 import { useQueuedMessageKey } from './useQueuedMessageKey';
@@ -493,7 +506,7 @@ const StickyUserMessageHeader = memo(function StickyUserMessageHeader({
   );
 
   return (
-    <div
+    <StickyPromptSurface
       ref={wrapperRef}
       onMouseEnter={(): void => setTurnHover(true)}
       onMouseLeave={(): void => setTurnHover(false)}
@@ -503,7 +516,6 @@ const StickyUserMessageHeader = memo(function StickyUserMessageHeader({
       // border width cannot offset it) paints the surface color over that
       // band; in normal flow it covers the already-`bg-base` inter-item gap,
       // so it is invisible there.
-      className="group/sticky sticky top-0 z-20 before:absolute before:inset-x-0 before:-top-2 before:h-2 before:bg-base"
       data-testid="sticky-user-message"
       data-sticky-user-message-id={group.userMessage.id}
     >
@@ -524,10 +536,7 @@ const StickyUserMessageHeader = memo(function StickyUserMessageHeader({
           over the gradient instead of being washed out by it. It still covers
           the banner, which sits a stacking level below the whole header.
           Absolutely positioned, so it never alters layout. */}
-      <div
-        aria-hidden
-        className="pointer-events-none absolute inset-x-0 top-full hidden h-2.5 bg-gradient-to-b from-base/80 via-base/30 to-transparent group-data-[underlap]/sticky:block"
-      />
+      <StickyPromptFade />
       {/* While stuck, the bubble gets an opaque `bg-base` backing so the
           transcript passes behind the pinned stack rather than through it.
           The backing covers the banners and the gap above them and stops at
@@ -536,7 +545,7 @@ const StickyUserMessageHeader = memo(function StickyUserMessageHeader({
           paint-only and attribute-driven, so stuck-state changes NEVER alter
           layout — a layout-affecting toggle here feeds back into the sticky
           math and oscillates the scroller. */}
-      <div className="relative group-data-[stuck]/sticky:bg-base">
+      <StickyPromptBacking>
         <ChatMessageItem
           message={group.userMessage}
           appliedMemory={appliedMemory}
@@ -548,8 +557,8 @@ const StickyUserMessageHeader = memo(function StickyUserMessageHeader({
           forceExpandedUserMessage={forceExpandedUserMessage}
           onJumpToMessage={onJumpToMessage}
         />
-      </div>
-    </div>
+      </StickyPromptBacking>
+    </StickyPromptSurface>
   );
 });
 
@@ -993,6 +1002,10 @@ export function ChatMessageList({
           }
         : null,
     [worktreeTarget, chatId],
+  );
+  const cloudFileTarget = useMemo(
+    () => cloudChatFileTarget(chatTarget),
+    [chatTarget],
   );
   const trailingTurnSettled = useChatTabRenderState(
     chatTarget,
@@ -2581,7 +2594,12 @@ export function ChatMessageList({
       if (!el) return;
       const highlight = (sectionEl: HTMLElement): void => {
         if (!bubbleOnly) {
-          highlightSectionElement(sectionEl);
+          highlightSectionElement(
+            sectionEl,
+            sectionEl.hasAttribute('data-chat-sticky-section')
+              ? 'chatTurnFocus'
+              : 'chatCallFocus',
+          );
           return;
         }
         const bubble =
@@ -2595,16 +2613,40 @@ export function ChatMessageList({
           ) ?? sectionEl.querySelector<HTMLElement>('[data-role="user"]');
         highlightSectionElement(bubble ?? sectionEl, 'chatCallFocus');
       };
-      // Only the canonical head section, never a `:continuation:` clone: a
-      // continuation's key is `${headKey}:continuation:${itemId}`, so an exact
-      // match on the bare message id can only resolve the head. Unlike
-      // `jumpToUserMessage` this does not additionally require `stickyGroup`,
-      // because a deep link must still reach a turn whose head does not render
-      // as a hoisted sticky header (a reverted or in-flight turn).
+      // A human prompt resolves to its canonical head, never a continuation
+      // clone. Automatic turns (including resumes) stay inline, so their
+      // message anchor can instead live inside another prompt's section.
       const canonicalSectionIndex = stickySections.findIndex(
-        (candidate) => candidate.key === userMessageId,
+        (candidate) =>
+          candidate.key === userMessageId ||
+          stickySectionContainsMessage(candidate, userMessageId),
       );
-      if (canonicalSectionIndex < 0) return;
+      const sectionKey = stickySections[canonicalSectionIndex]?.key;
+      if (sectionKey === undefined) return;
+      const findTarget = (): HTMLElement | undefined => {
+        const section = findSectionElement(sectionKey);
+        // The item wrapper includes resume markers and sender headings, and
+        // stays mounted when a reverted turn hides its message content.
+        return sectionKey === userMessageId
+          ? section
+          : (section?.querySelector<HTMLElement>(
+              `[data-chat-transcript-item-id="${CSS.escape(userMessageId)}"]`,
+            ) ?? undefined);
+      };
+      const targetTopInset = (target: HTMLElement): number => {
+        const padding = Number.parseFloat(
+          window.getComputedStyle(el).paddingTop,
+        );
+        const topInset = Number.isFinite(padding) ? padding : 0;
+        const section = target.closest<HTMLElement>(
+          '[data-chat-sticky-section]',
+        );
+        const stickyHeight =
+          sectionKey !== userMessageId && section
+            ? readStickyUserHeight(section)
+            : 0;
+        return stickyHeight > 0 ? topInset + stickyHeight + 8 : topInset;
+      };
 
       if (virtualizationEnabled) {
         transcriptVirtualizer.scrollToIndex(canonicalSectionIndex, {
@@ -2614,20 +2656,16 @@ export function ChatMessageList({
         let framesLeft = 30;
         let stableFrames = 0;
         const settleVirtualTurn = (): void => {
-          const sectionEl = findSectionElement(userMessageId);
+          const sectionEl = findTarget();
           if (!sectionEl) {
             transcriptVirtualizer.scrollToIndex(canonicalSectionIndex, {
               align: 'start',
             });
           } else {
-            const padding = Number.parseFloat(
-              window.getComputedStyle(el).paddingTop,
-            );
-            const topInset = Number.isFinite(padding) ? padding : 0;
             const delta =
               sectionEl.getBoundingClientRect().top -
               el.getBoundingClientRect().top -
-              topInset;
+              targetTopInset(sectionEl);
             if (Math.abs(delta) > 1) {
               el.scrollTop += delta;
               stableFrames = 0;
@@ -2654,14 +2692,12 @@ export function ChatMessageList({
         return;
       }
 
-      const sectionEl = findSectionElement(userMessageId);
+      const sectionEl = findTarget();
       if (!sectionEl) return;
-      const padding = Number.parseFloat(window.getComputedStyle(el).paddingTop);
-      const topInset = Number.isFinite(padding) ? padding : 0;
       const delta =
         sectionEl.getBoundingClientRect().top -
         el.getBoundingClientRect().top -
-        topInset;
+        targetTopInset(sectionEl);
       el.scrollTo({ top: el.scrollTop + delta, behavior: 'smooth' });
       clearTurnFocusHighlight();
       turnFocusFrameRef.current = window.requestAnimationFrame(() => {
@@ -3017,6 +3053,7 @@ export function ChatMessageList({
             : undefined
         }
         data-chat-turn-group={item.kind === 'turn-group' ? key : undefined}
+        data-chat-transcript-item-id={key}
       >
         {index === 0 &&
           forkDividerIndex === -1 &&
@@ -3358,10 +3395,9 @@ export function ChatMessageList({
           {/* Session replay records this as a same-size placeholder: the
               surrounding panel and navigation stay visible, while the
               recorder skips the transcript's per-token mutations. */}
-          <div
+          <TranscriptReadingColumn
             ref={contentRef}
             data-testid="chat-message-list-content"
-            className={`${POSTHOG_REPLAY_BLOCK_CLASS} mx-auto w-full max-w-[var(--chat-reading-width)] chat-width-transition flex flex-col gap-2 [&>*]:shrink-0 [&_[data-chat-call-focus]]:rounded-lg [&_[data-chat-call-focus]]:ring-2 [&_[data-chat-call-focus]]:ring-line-accent`}
           >
             {/* Keep the loading lane stable: changing its height outside the
                 virtual window would move an otherwise correctly anchored row. */}
@@ -3375,12 +3411,9 @@ export function ChatMessageList({
                   {section.startIndex === 0 &&
                     forkDividerIndex === -1 &&
                     forkedFrom && <ForkedFromLink forkedFrom={forkedFrom} />}
-                  <div
-                    data-chat-sticky-section={section.key}
-                    className="flex flex-col relative rounded-lg transition-shadow data-[chat-turn-focus]:ring-2 data-[chat-turn-focus]:ring-line-accent gap-2"
-                  >
+                  <TranscriptTurnSection data-chat-sticky-section={section.key}>
                     {renderStickySection(section)}
-                  </div>
+                  </TranscriptTurnSection>
                 </Stack>
               ))
             ) : (
@@ -3434,17 +3467,29 @@ export function ChatMessageList({
                         forkedFrom && (
                           <ForkedFromLink forkedFrom={forkedFrom} />
                         )}
-                      <div
+                      <TranscriptTurnSection
                         data-chat-sticky-section={section.key}
-                        className="flex flex-col relative rounded-lg transition-shadow data-[chat-turn-focus]:ring-2 data-[chat-turn-focus]:ring-line-accent gap-2"
                       >
                         {renderStickySection(section)}
-                      </div>
+                      </TranscriptTurnSection>
                     </div>
                   );
                 })}
               </div>
             )}
+            {/* A Claude Mod's log lines: shown here only, never saved. A
+                cloud chat runs in the web core, which draws no Mod surface. */}
+            {worktreeTarget &&
+            chatId &&
+            !isWebCoreScope(worktreeTarget.projectId) ? (
+              <ClaudeModLogNotices
+                chat={{
+                  projectId: worktreeTarget.projectId,
+                  worktreeId: worktreeTarget.worktreeId,
+                  chatId,
+                }}
+              />
+            ) : null}
             {inputDelivery?.version === 1 && worktreeTarget && (
               <InputDeliveryList
                 rows={inputDeliveryViews(inputDelivery, steeringCapabilities)}
@@ -3482,6 +3527,10 @@ export function ChatMessageList({
                 }}
               />
             )}
+            <UnsavedQueuedEdits
+              worktreeTarget={worktreeTarget}
+              chatId={chatId}
+            />
             {queuedMessages.map((message, i) => {
               if (compactQueue) return null;
               // The message being edited steps out of the queue: its editor
@@ -3577,7 +3626,7 @@ export function ChatMessageList({
                 />
               );
             })}
-          </div>
+          </TranscriptReadingColumn>
         </OverlayScrollArea>
         {showScrollButton && (
           // Above the pinned user bubble (z-20).
@@ -3626,38 +3675,44 @@ export function ChatMessageList({
   return (
     <AgentSentReceivingContextProvider receivingContext={receivingContext}>
       <ChatMarkdownFileTargetContext.Provider value={worktreeTarget}>
-        <ToolOutputReaderContext.Provider value={readToolOutput}>
-          <ChatVisualHostProvider value={chatVisualHost}>
-            <SubagentEntryActionsContext.Provider value={subagentEntryActions}>
-              <DelegationTranscriptSourceContext.Provider
-                value={delegationTranscriptSource}
+        <CloudChatFileTargetContext.Provider value={cloudFileTarget}>
+          <ToolOutputReaderContext.Provider value={readToolOutput}>
+            <ChatVisualHostProvider value={chatVisualHost}>
+              <SubagentEntryActionsContext.Provider
+                value={subagentEntryActions}
               >
-                <WaitingDelegationsContext.Provider value={waitingDelegations}>
-                  <NativeTaskStopContext.Provider
-                    value={nativeTaskStopControls}
+                <DelegationTranscriptSourceContext.Provider
+                  value={delegationTranscriptSource}
+                >
+                  <WaitingDelegationsContext.Provider
+                    value={waitingDelegations}
                   >
-                    <ManagedDelegationStopContext.Provider
-                      value={delegationStopControls}
+                    <NativeTaskStopContext.Provider
+                      value={nativeTaskStopControls}
                     >
-                      <ChatMessageLinkActionsProvider value={linkActions}>
-                        <ChatMessageLookUpProvider
-                          value={chatMessageLookUpSelection()}
-                        >
-                          <StreamingTranscript
-                            id={chatId}
-                            hasContent={messages.length > 0}
+                      <ManagedDelegationStopContext.Provider
+                        value={delegationStopControls}
+                      >
+                        <ChatMessageLinkActionsProvider value={linkActions}>
+                          <ChatMessageLookUpProvider
+                            value={chatMessageLookUpSelection()}
                           >
-                            {messageList}
-                          </StreamingTranscript>
-                        </ChatMessageLookUpProvider>
-                      </ChatMessageLinkActionsProvider>
-                    </ManagedDelegationStopContext.Provider>
-                  </NativeTaskStopContext.Provider>
-                </WaitingDelegationsContext.Provider>
-              </DelegationTranscriptSourceContext.Provider>
-            </SubagentEntryActionsContext.Provider>
-          </ChatVisualHostProvider>
-        </ToolOutputReaderContext.Provider>
+                            <StreamingTranscript
+                              id={chatId}
+                              hasContent={messages.length > 0}
+                            >
+                              {messageList}
+                            </StreamingTranscript>
+                          </ChatMessageLookUpProvider>
+                        </ChatMessageLinkActionsProvider>
+                      </ManagedDelegationStopContext.Provider>
+                    </NativeTaskStopContext.Provider>
+                  </WaitingDelegationsContext.Provider>
+                </DelegationTranscriptSourceContext.Provider>
+              </SubagentEntryActionsContext.Provider>
+            </ChatVisualHostProvider>
+          </ToolOutputReaderContext.Provider>
+        </CloudChatFileTargetContext.Provider>
       </ChatMarkdownFileTargetContext.Provider>
     </AgentSentReceivingContextProvider>
   );

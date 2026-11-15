@@ -157,7 +157,16 @@ interface LinkButtonProps
   touchArea?: undefined;
 }
 
-export type ButtonProps = CapsuleButtonProps | LinkButtonProps;
+type CostRowButtonVariant = 'cost-row-stack' | 'cost-row-inline';
+
+type CostRowButtonProps = Omit<LinkButtonProps, 'variant'> & {
+  variant: CostRowButtonVariant;
+};
+
+export type ButtonProps =
+  | CapsuleButtonProps
+  | LinkButtonProps
+  | CostRowButtonProps;
 
 /**
  * The press every button and dropdown trigger shares: a 3% scale-down while
@@ -196,7 +205,7 @@ export const DROPDOWN_INVALID_CLASS =
 // `hover:` and `active:`, so each disabled class below outranks the hover or
 // press class for the same property. Loader-equipped busy buttons can opt
 // into retaining their variant paint; disabled semantics still block presses.
-const BASE_CLASS_NAME = `focus-ring inline-flex max-h-9 [-webkit-tap-highlight-color:transparent] shrink-0 select-none items-center justify-center gap-1.5 font-medium transition-[opacity,transform,scale] ${BUTTON_PRESS_CLASS} before:absolute before:inset-x-0 before:content-[''] disabled:scale-100 disabled:cursor-not-allowed disabled:not-data-[busy-appearance=preserved]:shadow-none aria-disabled:scale-100 aria-disabled:cursor-not-allowed`;
+const BASE_CLASS_NAME = `focus-ring inline-flex [-webkit-tap-highlight-color:transparent] shrink-0 select-none items-center justify-center gap-1.5 font-medium transition-[opacity,transform,scale] ${BUTTON_PRESS_CLASS} before:absolute before:inset-x-0 before:content-[''] disabled:scale-100 disabled:cursor-not-allowed disabled:not-data-[busy-appearance=preserved]:shadow-none aria-disabled:scale-100 aria-disabled:cursor-not-allowed`;
 const ARIA_DISABLED_DIM_CLASS_NAME =
   'aria-disabled:not-data-[busy-appearance=preserved]:opacity-60';
 // A read-only value keeps its ink; only the hover fill is withheld.
@@ -460,6 +469,7 @@ function positionsItself(className: string): boolean {
 export function buttonClassName({
   variant = 'secondary',
   size = 'md',
+  multiline = false,
   iconOnly = false,
   iconShape = 'default',
   leadingIcon = false,
@@ -470,8 +480,9 @@ export function buttonClassName({
   touchArea = 'expanded',
   className = '',
 }: {
-  variant?: ButtonVariant | ButtonLinkVariant;
+  variant?: ButtonVariant | ButtonLinkVariant | CostRowButtonVariant;
   size?: ButtonSize;
+  multiline?: boolean;
   iconOnly?: boolean;
   leadingIcon?: boolean;
   iconShape?: 'default' | 'nested';
@@ -482,6 +493,11 @@ export function buttonClassName({
   touchArea?: ButtonTouchArea;
   className?: string;
 } = {}): string {
+  if (variant === 'cost-row-stack' || variant === 'cost-row-inline') {
+    const layout =
+      variant === 'cost-row-stack' ? 'flex-col gap-1.5' : 'items-center gap-3';
+    return `flex w-full rounded-md px-2 py-2 text-left text-xs pointer-coarse:min-h-11 ${layout} focus-ring transition-colors hover:bg-subtle ${className}`;
+  }
   if (variant === 'link') return `${LINK_CLASS_NAME} ${className}`;
   const position = positionsItself(className) ? '' : 'relative ';
   const radiusClassName =
@@ -505,7 +521,10 @@ export function buttonClassName({
   ]
     .filter(Boolean)
     .join(' ');
-  return `${position}${BASE_CLASS_NAME} ${states} ${VARIANT_CLASS_NAMES[variant]} ${SIZE_CLASS_NAMES[size]} ${radiusClassName} ${contentSizeClassName} ${className}`;
+  const heightClassName = multiline
+    ? 'min-h-11 py-2 text-s'
+    : `max-h-9 ${SIZE_CLASS_NAMES[size]}`;
+  return `${position}${BASE_CLASS_NAME} ${states} ${VARIANT_CLASS_NAMES[variant]} ${heightClassName} ${radiusClassName} ${contentSizeClassName} ${className}`;
 }
 
 /**
@@ -561,7 +580,7 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(
           readOnlyAppearance,
           touchArea,
           className: fillRow
-            ? `${FILL_ROW_CLASS_NAME} ${variant === 'link' ? '' : FILL_ROW_HOVER_CLASS_NAMES[variant]} ${placementClassName}`
+            ? `${FILL_ROW_CLASS_NAME} ${variant === 'link' || variant === 'cost-row-stack' || variant === 'cost-row-inline' ? '' : FILL_ROW_HOVER_CLASS_NAMES[variant]} ${placementClassName}`
             : placementClassName,
         })}
         style={fillRow ? { ...FILL_ROW_STYLE, ...style } : style}

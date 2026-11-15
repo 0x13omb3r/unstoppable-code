@@ -1,31 +1,22 @@
 import type { AccountOrganizationSettingsClient } from '@canopy/app-core/settings';
-import { CLIENT_FEATURE_FLAGS } from '@canopy/protocol/feature-flags';
 import { registeredHostedSettingsClient } from '@/client/hosted-settings-client-registry';
-import { useFeatureFlagsStore } from '@/stores/featureFlagsStore';
 import { useNavigationStore } from '@/stores/navigationStore';
 import { useRemoteControlStore } from '@/stores/remoteControlStore';
 import { resolveHostedSettingsHref } from './hosted-settings-location';
-
-const HOSTED_SETTINGS_FLAG_KEY =
-  CLIENT_FEATURE_FLAGS.canopyDesktopHostedSettings.key;
 
 /**
  * The hosted settings client this window may use, or `null` when hosted
  * account and organization settings are unavailable here.
  *
- * Hosted settings need the `canopy-desktop-hosted-settings` rollout flag,
- * the capability (main's settings bridge is exposed), and a window that
- * shows this computer: a remote-control window has the preload bridge too,
+ * Hosted settings need the capability (main's settings bridge is exposed)
+ * and a window that shows this computer: a remote-control window has the preload bridge too,
  * but main blocks the settings channels there.
  */
 export function useHostedSettingsClient(): AccountOrganizationSettingsClient | null {
   const localWindow = useRemoteControlStore(
     (store) => store.context.mode === 'local',
   );
-  const rolledOut = useFeatureFlagsStore((state) =>
-    state.isEnabled(HOSTED_SETTINGS_FLAG_KEY),
-  );
-  return localWindow && rolledOut ? capableSettingsClient() : null;
+  return localWindow ? capableSettingsClient() : null;
 }
 
 function capableSettingsClient(): AccountOrganizationSettingsClient | null {
@@ -36,7 +27,6 @@ function capableSettingsClient(): AccountOrganizationSettingsClient | null {
 export function hostedSettingsOpenable(): boolean {
   return (
     useRemoteControlStore.getState().context.mode === 'local' &&
-    useFeatureFlagsStore.getState().isEnabled(HOSTED_SETTINGS_FLAG_KEY) &&
     capableSettingsClient() !== null
   );
 }

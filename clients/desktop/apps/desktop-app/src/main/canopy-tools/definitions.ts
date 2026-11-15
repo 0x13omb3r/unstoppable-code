@@ -1933,7 +1933,8 @@ function desktopDispatchActionJsonSchema(
       },
     ],
     [
-      ...ENVIRONMENT_ACTION_TYPES,
+      // The other environment actions are retired; projects.* replaces them.
+      'models.list',
       ...TRANSCRIPT_READ_ACTION_TYPES,
       ...PROJECT_ACTION_TYPES,
       ...BOT_ACTION_TYPES,

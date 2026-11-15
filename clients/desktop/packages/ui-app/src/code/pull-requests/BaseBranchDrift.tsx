@@ -1,5 +1,6 @@
 'use client';
 
+import { DialogActionFooter } from '@canopy/ui-shared/components';
 import type { JSX } from 'react';
 import {
   Button,
@@ -123,7 +124,7 @@ export function AlignBaseBranchConfirmation({
           </ul>
         </Surface>
       </div>
-      <div className="flex items-center justify-end gap-2 border-t p-4">
+      <DialogActionFooter center padding="roomy">
         {!pending && (
           <Button size="compact" onClick={onClose}>
             Cancel
@@ -140,7 +141,7 @@ export function AlignBaseBranchConfirmation({
           {pending && <ThinkingSpinner tone="emphasis" quiet />}
           {pending ? 'Updating base branch…' : 'Update base branch'}
         </Button>
-      </div>
+      </DialogActionFooter>
     </DialogModal>
   );
 }

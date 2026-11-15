@@ -1,7 +1,10 @@
+import type { MemoryLinkHealth } from './link-health';
 import type { MemoryImportSourceTool } from './input-budget';
 
 export interface ConsolidationUsageStats {
   usageCount: number;
+  citationCount?: number;
+  usageSignalCount?: number;
   lastUsedAt: string | null;
   createdAt: string;
 }
@@ -36,6 +39,9 @@ export interface ConsolidationInput {
   omittedTopicFiles?: ConsolidationInputOmission;
   omittedInboxFiles?: ConsolidationInputOmission;
   omittedImportFiles?: ConsolidationInputOmission;
+  /** Complete host snapshot for link checks, including topics omitted from the prompt. */
+  allTopicFiles?: NonNullable<ConsolidationOutput['topicFiles']>;
+  linkHealth?: MemoryLinkHealth;
   inputHash: string;
   indexWithinLimits: boolean;
   // When usage tracking started for this scope, or null when the usage
@@ -61,6 +67,9 @@ export function isConsolidationInputClean(input: ConsolidationInput): boolean {
   return (
     input.inboxFiles.length === 0 &&
     input.importFiles.length === 0 &&
-    input.indexWithinLimits
+    input.indexWithinLimits &&
+    (input.linkHealth?.unresolvedLinks.length ?? 0) === 0 &&
+    (input.linkHealth?.orphanTopics.length ?? 0) === 0 &&
+    (input.linkHealth?.pendingRepairCount ?? 0) === 0
   );
 }

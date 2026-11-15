@@ -35,11 +35,9 @@ function findGroupOption(
 
 function groupColorDot(color: SidebarItemGroup['color']): JSX.Element {
   return (
-    <span
-      aria-hidden="true"
-      className="h-2 w-2 rounded-full"
-      style={{ backgroundColor: sidebarItemGroupColor(color) }}
-    />
+    <svg aria-hidden="true" className="size-2" viewBox="0 0 8 8">
+      <circle cx="4" cy="4" r="4" fill={sidebarItemGroupColor(color)} />
+    </svg>
   );
 }
 
@@ -121,12 +119,16 @@ export function AutomationSidebarGroupPicker({
       createLabel={(name): string => `Create “${name}”`}
       unmatchedValueHint="New group"
       unmatchedValueLeading={
-        <span
-          aria-hidden="true"
-          className="h-2 w-2 rounded-full border border-dashed"
-          // Color is chosen at run time; a hollow neutral dot stands in.
-          style={{ borderColor: sidebarItemGroupColor('neutral') }}
-        />
+        <svg aria-hidden="true" className="size-2" viewBox="0 0 8 8">
+          <circle
+            cx="4"
+            cy="4"
+            r="3.5"
+            fill="none"
+            stroke={sidebarItemGroupColor('neutral')}
+            strokeDasharray="2 1"
+          />
+        </svg>
       }
       findOption={findOption}
       normalizeText={normalizeSidebarItemGroupName}

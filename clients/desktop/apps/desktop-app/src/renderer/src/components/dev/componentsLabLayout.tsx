@@ -1,5 +1,6 @@
 import { useState, type JSX, type ReactNode } from 'react';
 import {
+  Surface,
   Button,
   CopyButton,
   DialogModal,
@@ -189,13 +190,15 @@ function DialogFrame({
 }): JSX.Element {
   const [container, setContainer] = useState<HTMLElement | null>(null);
   return (
-    <div
-      ref={setContainer}
-      className="relative w-full overflow-hidden rounded-lg"
-      style={{ height, transform: 'translateZ(0)' }}
-    >
-      {container ? children(container) : null}
-    </div>
+    <Surface variant="outline" className="w-full overflow-hidden">
+      <div
+        ref={setContainer}
+        className="relative w-full"
+        style={{ height, transform: 'translateZ(0)' }}
+      >
+        {container ? children(container) : null}
+      </div>
+    </Surface>
   );
 }
 
@@ -307,7 +310,11 @@ const SPACE_ROLES: readonly { role: SpaceRole; px: number }[] = [
 ];
 
 function Swatch(): JSX.Element {
-  return <span className="block h-4 w-8 rounded-sm bg-accent-subtle" />;
+  return (
+    <svg aria-hidden="true" viewBox="0 0 32 16" className="block h-4 w-8">
+      <rect width="32" height="16" rx="4" fill="var(--bg-accent-subtle)" />
+    </svg>
+  );
 }
 
 export function SpacingSpecimen(): JSX.Element {

@@ -14,6 +14,7 @@ export function openCodeApprovalPlugin(
   token: string,
   shellEnvironment: NodeJS.ProcessEnv,
   forkScope?: OpenCodeForkScope,
+  afterTools = false,
 ): string {
   // Capture only the roots overridden for the provider process, never the
   // caller's credentials or the rest of its environment in the plugin file.
@@ -209,6 +210,13 @@ export default {
         // V2 validates and executes the hook's resulting input.
         event.input = approved;
       }
+    });
+    if (${JSON.stringify(afterTools)}) await ctx.tool.hook('execute.after', async (event) => {
+      if (event.status !== 'completed') return;
+      const result = await decide({ kind: 'tool-completed', sessionId: event.sessionID, toolCallId: event.id, toolName: event.tool, toolArgs: event.input, result: event.result });
+      const context = result.updated_input?.additionalContext;
+      if (typeof context === 'string' && context)
+        event.result.content = [...(event.result.content ?? []), { type: 'text', text: context }];
     });
     // ACP owns its server credentials. Expose only the metadata the host needs,
     // using the existing per-turn approval secret, never the native server API.

@@ -1,3 +1,4 @@
+import { Surface } from '@canopy/ui-shared/components';
 import { DesktopErrorBanner } from '@/components/shared/DesktopErrorBanner';
 /**
  * The Cowork page — the Cowork workspace UX aligned onto the Code-workspace
@@ -48,6 +49,10 @@ import {
 } from '@/lib/standaloneChatSelection';
 import { StandaloneColdStartEmptyState } from '@/components/standalone-chat/StandaloneColdStartEmptyState';
 import { CoworkArchiveOverlay } from '@/components/standalone-chat/CoworkArchiveOverlay';
+import {
+  sweepCoworkArchives,
+  whenNoWorkEntryLoads,
+} from '@/components/pages/cowork-archive-sweep';
 import { useCoworkArchiveOverlayOpen } from '@/components/standalone-chat/coworkArchiveOverlayState';
 import { useNavigationStore } from '@/stores/navigationStore';
 import { CoworkTopBar } from '@/components/panels/CoworkTopBar';
@@ -126,6 +131,13 @@ export function StandaloneChatPage(): JSX.Element {
     if ((s.worktreeChats[activeScopeKey]?.tabs.length ?? 0) > 0) return null;
     return sync.reason ?? '';
   });
+  // The page moves to a clicked entry before its tabs load (CAN-6754); until
+  // that switch lands, the entry shows loading in its grid's place.
+  const activeEntryLoading = useStandaloneChatStore(
+    (s) =>
+      s.loadingWorkEntryId !== null &&
+      s.loadingWorkEntryId === s.activeWorkEntryId,
+  );
   const retryChatStateRefresh = useChatStore((s) => s.retryChatStateRefresh);
   useEffect(() => {
     ensureCloudScopeLifecycle();
@@ -246,21 +258,27 @@ export function StandaloneChatPage(): JSX.Element {
       return;
     }
 
-    // When the workspace really has no known activity, check archive files in
-    // sequence. This stops on the first archived chat and avoids the previous
-    // unbounded IPC fan-out plus one whole-store update per Work Entry.
+    // When the workspace really has no known activity, check archive files a
+    // few at a time (CAN-6778). This stops on the first archived chat and
+    // avoids the previous unbounded IPC fan-out plus one whole-store update
+    // per Work Entry.
     let cancelled = false;
-    void (async (): Promise<void> => {
-      for (const entry of workEntries) {
-        if (cancelled) return;
-        const key = `${activeChatProjectId}/${entry.id}`;
-        const currentArchives = useChatStore.getState().archivedChats;
-        if (Object.prototype.hasOwnProperty.call(currentArchives, key)) {
-          continue;
-        }
-        await loadArchivedChats(activeChatProjectId, entry.id);
-      }
-    })();
+    const projectId = activeChatProjectId;
+    void sweepCoworkArchives({
+      entries: workEntries.map((entry) => ({
+        id: entry.id,
+        key: `${projectId}/${entry.id}`,
+      })),
+      read: (entryId) => loadArchivedChats(projectId, entryId),
+      known: (key) =>
+        Object.prototype.hasOwnProperty.call(
+          useChatStore.getState().archivedChats,
+          key,
+        ),
+      cancelled: () => cancelled,
+      // Never ahead of a task the user opens: no read starts while one loads.
+      ready: whenNoWorkEntryLoads,
+    });
     return (): void => {
       cancelled = true;
     };
@@ -454,7 +472,9 @@ export function StandaloneChatPage(): JSX.Element {
   // ---------------------------------------------------------------------------
   // Render
   // ---------------------------------------------------------------------------
-  if (isColdStart && !containerViewerOpen) {
+  // An open archive page, such as a cloud project's More page with no chat
+  // left in it (CAN-6511), stays over the page instead of the cold start.
+  if (isColdStart && !containerViewerOpen && !archiveOverlayOpen) {
     return (
       <section className="flex h-full" data-testid="page-chat">
         <StandaloneColdStartEmptyState onNewChat={handleColdStartNewChat} />
@@ -490,7 +510,11 @@ export function StandaloneChatPage(): JSX.Element {
           />
         </>
       )}
-      <section className="relative flex min-h-55 min-w-0 flex-1 flex-col overflow-hidden bg-card/50">
+      <Surface
+        as="section"
+        variant="workspace-panel"
+        className="relative flex min-w-0 flex-1 flex-col overflow-hidden"
+      >
         {orgDefaultChatsError?.projectId === activeChatProjectId && (
           <div className="px-4 pt-4">
             <DesktopErrorBanner
@@ -542,7 +566,7 @@ export function StandaloneChatPage(): JSX.Element {
               {activeLoadFailure}
             </Notice>
           </div>
-        ) : ready ? (
+        ) : ready && !activeEntryLoading ? (
           <PanelGridSurface
             projectId={activeChatProjectId}
             worktreeId={activeWorkEntryId}
@@ -562,7 +586,7 @@ export function StandaloneChatPage(): JSX.Element {
           </div>
         )}
         <CoworkArchiveOverlay />
-      </section>
+      </Surface>
     </section>
   );
 }

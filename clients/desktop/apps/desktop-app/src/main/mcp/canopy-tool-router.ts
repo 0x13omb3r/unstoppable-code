@@ -129,6 +129,8 @@ export interface CanopyWorktreeSessionRoute {
   pipelineEditorRuntime?: PipelineEditorToolRuntime;
   model?: ChatModel;
   providerType?: AgentProviderType;
+  /** Live host capability for the selected model; never restored from route metadata. */
+  supportsPreviewImages?: boolean;
   pluginSelections?: ChatTabPluginSelections;
   deferredToolsAllowed?: boolean;
   onAwaitingUser?: () => void;
@@ -734,7 +736,8 @@ export class CanopyToolRouter {
           ? {
               imageBudgetBytes:
                 route.providerType === 'cursor' ||
-                route.providerType === 'opencode'
+                (route.providerType === 'opencode' &&
+                  route.supportsPreviewImages !== true)
                   ? VISUAL_PREVIEW_BUDGETS.acpImageBytes
                   : VISUAL_PREVIEW_BUDGETS.claudeImageBytes,
             }

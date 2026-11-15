@@ -8,8 +8,9 @@ import {
 } from '../invoker';
 
 // A fake web core shaped like the CAN-4185 contract: `core.workspace.list`,
-// `core.chat.task.list` per cowork project, and one `core.chat.task.events`
-// stream whose frames the test pushes.
+// `core.chat.task.list` per cowork project (and per git project, CAN-6106,
+// when the test serves `repoTasks`), and one `core.chat.task.events` stream
+// whose frames the test pushes.
 
 const PROJECT = '11111111-1111-4111-8111-111111111111';
 const REPO = '22222222-2222-4222-8222-222222222222';
@@ -84,6 +85,17 @@ class FakeWebCore implements CoreCoworkInvoker {
   readonly createRefusals: CanopyErrorPayload[] = [];
   /** Failures for the next task listings, as a web core that is briefly down. */
   readonly taskListFailures: CanopyErrorPayload[] = [];
+  /** Tasks archived through `core.chat.archive`, kept as the web core keeps them. */
+  archived: (FakeTask & { revision: number; locked: boolean })[] = [];
+  /** Other containers the caller's archive lists: another project's, a worktree. */
+  readonly foreignContainers: unknown[] = [];
+  /** Refusals for the next restores. */
+  readonly restoreRefusals: CanopyErrorPayload[] = [];
+  /**
+   * The git project's tasks (its worktree root chats), which the web core
+   * serves since CAN-6106; null refuses the listing, as before it.
+   */
+  repoTasks: FakeTask[] | null = null;
 
   async request(
     method: string,
@@ -189,6 +201,11 @@ class FakeWebCore implements CoreCoworkInvoker {
       // As the web core does: archiving a task's own chat archives the task.
       const tabId = String(Reflect.get(Object(params.action), 'tabId'));
       const known = this.tasks.some((task) => task.worktreeId === tabId);
+      this.archived.push(
+        ...this.tasks
+          .filter((task) => task.worktreeId === tabId)
+          .map((task) => ({ ...task, revision: 4, locked: true })),
+      );
       this.tasks = this.tasks.filter((task) => task.worktreeId !== tabId);
       return {
         ok: true,
@@ -200,16 +217,77 @@ class FakeWebCore implements CoreCoworkInvoker {
         },
       };
     }
+    if (method === 'core.archive.container.list') {
+      // As the web core does (archive.ts): a task is a work-entry container.
+      return {
+        ok: true,
+        value: {
+          workspaceId: params.workspaceId ?? null,
+          containers: [
+            ...this.archived.map((task) => ({
+              archiveId: `work-entry:${task.worktreeId}`,
+              kind: 'work-entry',
+              workspaceId: PROJECT,
+              workspaceName: this.projectName,
+              revision: task.revision,
+              name: task.title,
+              branchName: null,
+              archivedAt: task.updatedAt,
+              expiresAt: task.locked ? null : '2026-12-07T10:00:00.000Z',
+              locked: task.locked,
+              lockedAt: task.locked ? task.updatedAt : null,
+              chatCount: 0,
+              archivedChatCount: 0,
+              executionCount: 0,
+              partiallyRestored: false,
+              scope: { workspaceId: PROJECT, chatId: task.worktreeId },
+            })),
+            ...this.foreignContainers,
+          ],
+        },
+      };
+    }
+    if (method === 'core.archive.container.restore') {
+      const refused = this.restoreRefusals.shift();
+      if (refused) return { ok: false, error: refused };
+      const chatId = String(params.archiveId).replace(/^work-entry:/, '');
+      const task = this.archived.find((each) => each.worktreeId === chatId);
+      if (task === undefined || params.expectedRevision !== task.revision)
+        return {
+          ok: false,
+          error: {
+            kind: 'failed_precondition',
+            message: 'The archived item changed.',
+            code: 'core.archive.revisionConflict',
+            retry: { kind: 'never' },
+          },
+        };
+      this.archived = this.archived.filter((each) => each !== task);
+      const { revision: _revision, locked: _locked, ...restored } = task;
+      void _revision;
+      void _locked;
+      this.tasks = [restored, ...this.tasks];
+      return {
+        ok: true,
+        value: {
+          operation: {
+            operationId: `op-${chatId}`,
+            kind: 'core.archive.container.restore',
+            status: 'completed',
+          },
+          restoredScope: { workspaceId: PROJECT, chatId },
+        },
+      };
+    }
     if (method === 'core.chat.task.list') {
       const failure = this.taskListFailures.shift();
       if (failure) return { ok: false, error: failure };
-      // As the web core does: only a cowork project lists tasks.
       const scope = params.scope;
-      if (
+      const repo =
         typeof scope === 'object' &&
         scope !== null &&
-        Reflect.get(scope, 'workspaceId') === REPO
-      )
+        Reflect.get(scope, 'workspaceId') === REPO;
+      if (repo && this.repoTasks === null)
         return {
           ok: false,
           error: {
@@ -218,14 +296,14 @@ class FakeWebCore implements CoreCoworkInvoker {
             retry: { kind: 'never' },
           },
         };
-      const tasks = this.tasks;
+      const tasks = (repo ? this.repoTasks : null) ?? this.tasks;
       const held = this.taskListHolds.shift();
       if (held) await held;
       return {
         ok: true,
         value: {
           items: tasks.map((task) => ({
-            workspaceId: PROJECT,
+            workspaceId: repo ? REPO : PROJECT,
             worktreeId: task.worktreeId,
             title: task.title,
             state: 'idle',
@@ -769,6 +847,7 @@ describe('core cowork store', () => {
     });
   });
 
+  // The default, which desktop's cloud store runs with.
   it('a repository project is listed and never task-listed (CAN-6100)', async () => {
     const core = new FakeWebCore();
     const store = await connected(core);
@@ -794,6 +873,59 @@ describe('core cowork store', () => {
     expect(core.count('core.chat.task.list')).toBe(1);
     expect(core.count('core.workspace.list')).toBe(1);
     expect(store.getState().status).toBe('online');
+  });
+
+  // The web's background chats read a git worktree's working state and
+  // badge from its task row once its REST binding is gone (CAN-6509).
+  it("with repositoryTasks, lists a git project's tasks and re-reads them on its task events (CAN-6509)", async () => {
+    const core = new FakeWebCore();
+    core.repoTasks = [
+      {
+        worktreeId: 'root-1',
+        title: 'Root',
+        updatedAt: '2026-11-07T10:00:00Z',
+      },
+    ];
+    const store = createCoreCoworkStore({ repositoryTasks: true });
+    await store.getState().connect(core);
+    expect(store.getState().status).toBe('online');
+    const repoTaskIds = (): string[] =>
+      (store.getState().tasksByProject[`web-core:${REPO}`] ?? []).map(
+        (task) => task.worktreeId,
+      );
+    expect(repoTaskIds()).toEqual(['root-1']);
+    expect(
+      core.calls
+        .filter((call) => call.method === 'core.chat.task.list')
+        .map((call) => call.params.scope),
+    ).toEqual([{ workspaceId: PROJECT }, { workspaceId: REPO }]);
+
+    // Two task events, coalesced into one re-read as a cowork project's are.
+    core.repoTasks = [
+      ...core.repoTasks,
+      {
+        worktreeId: 'root-2',
+        title: 'Next',
+        updatedAt: '2026-11-07T11:00:00Z',
+      },
+    ];
+    core.stream.item(1, {
+      kind: 'task',
+      workspaceId: REPO,
+      worktreeId: 'root-1',
+      batchId: 'batch-1',
+    });
+    core.stream.item(2, {
+      kind: 'task',
+      workspaceId: REPO,
+      worktreeId: 'root-2',
+      batchId: 'batch-2',
+    });
+    await jest.advanceTimersByTimeAsync(1_000);
+    expect(core.count('core.chat.task.list')).toBe(3);
+    expect(core.count('core.workspace.list')).toBe(1);
+    // Most recently updated first, as cowork tasks list.
+    expect(repoTaskIds()).toEqual(['root-2', 'root-1']);
   });
 
   it('a project with no recorded owner is kept as Personal (CAN-6100)', async () => {
@@ -900,6 +1032,153 @@ describe('core cowork store', () => {
     expect(tasksOf(store).map((row) => row.worktreeId)).not.toContain(
       task.worktreeId,
     );
+  });
+
+  it("lists a project's archived and deleted tasks from its work-entry containers, newest first, and nothing else (CAN-6511)", async () => {
+    const core = new FakeWebCore();
+    core.archived = [
+      {
+        worktreeId: 'old-task',
+        title: 'Old',
+        updatedAt: '2026-11-01T10:00:00Z',
+        revision: 2,
+        locked: false,
+      },
+      {
+        worktreeId: 'new-task',
+        title: 'New',
+        updatedAt: '2026-11-09T10:00:00Z',
+        revision: 5,
+        locked: true,
+      },
+    ];
+    const container = (overrides: Record<string, unknown>): unknown => ({
+      archiveId: 'other',
+      kind: 'work-entry',
+      workspaceId: PROJECT,
+      workspaceName: 'Research',
+      revision: 1,
+      name: 'Other',
+      branchName: null,
+      archivedAt: '2026-11-08T10:00:00Z',
+      expiresAt: null,
+      locked: true,
+      lockedAt: null,
+      chatCount: 0,
+      archivedChatCount: 0,
+      executionCount: 0,
+      partiallyRestored: false,
+      scope: { workspaceId: PROJECT, chatId: 'other-task' },
+      ...overrides,
+    });
+    // Another project's task, a worktree, a whole project, and a container
+    // with no revision or chat are not this project's tasks.
+    core.foreignContainers.push(
+      container({
+        workspaceId: REPO,
+        scope: { workspaceId: REPO, chatId: 'x' },
+      }),
+      container({
+        kind: 'worktree',
+        scope: { workspaceId: PROJECT, worktreeId: 'w' },
+      }),
+      container({ kind: 'workspace', scope: { workspaceId: PROJECT } }),
+      container({ revision: null }),
+      container({ scope: { workspaceId: PROJECT } }),
+    );
+    const store = await connected(core);
+
+    const tasks = await store.getState().listArchivedTasks(PROJECT);
+
+    expect(tasks).toEqual([
+      {
+        archiveId: 'work-entry:new-task',
+        revision: 5,
+        worktreeId: 'new-task',
+        title: 'New',
+        archivedAt: '2026-11-09T10:00:00Z',
+        state: 'archived',
+        expiresAt: null,
+      },
+      {
+        archiveId: 'work-entry:old-task',
+        revision: 2,
+        worktreeId: 'old-task',
+        title: 'Old',
+        archivedAt: '2026-11-01T10:00:00Z',
+        state: 'deleted',
+        expiresAt: '2026-12-07T10:00:00.000Z',
+      },
+    ]);
+    expect(
+      core.calls.find((call) => call.method === 'core.archive.container.list')
+        ?.params,
+    ).toEqual({ workspaceId: PROJECT });
+  });
+
+  it('restoring a task restores its container in place at its listed revision, keyed, and lists it again (CAN-6511)', async () => {
+    const core = new FakeWebCore();
+    const store = await connected(core);
+    await store.getState().archiveTask(PROJECT, 'task-1');
+    expect(tasksOf(store).map((row) => row.worktreeId)).not.toContain('task-1');
+    const [archived] = await store.getState().listArchivedTasks(PROJECT);
+    expect(archived).toMatchObject({ worktreeId: 'task-1', revision: 4 });
+
+    await store.getState().restoreTask(PROJECT, archived);
+
+    const restores = core.calls.filter(
+      (call) => call.method === 'core.archive.container.restore',
+    );
+    expect(restores).toHaveLength(1);
+    expect(restores[0]?.params).toMatchObject({
+      archiveId: 'work-entry:task-1',
+      expectedRevision: 4,
+      destinationScope: { workspaceId: PROJECT },
+      conflictPolicy: 'fail',
+    });
+    expect(typeof idempotencyKeyOf(restores[0]?.params)).toBe('string');
+    expect(tasksOf(store).map((row) => row.worktreeId)).toContain('task-1');
+  });
+
+  it('a restored task that this window kept as deleted comes back live, not deleted (CAN-6511, CAN-6614)', async () => {
+    const core = new FakeWebCore();
+    const store = await connected(core);
+    await store.getState().archiveTask(PROJECT, 'task-1');
+    // The window saw the task go and kept its row, marked deleted, for the
+    // draft it held.
+    store.getState().keepDeletedTask(PROJECT, 'task-1', 'Task 1');
+    const rows = (): readonly { worktreeId: string; deleted?: true }[] =>
+      store.getState().tasksByProject[`web-core:${PROJECT}`] ?? [];
+    expect(rows().find((row) => row.worktreeId === 'task-1')?.deleted).toBe(
+      true,
+    );
+    const [archived] = await store.getState().listArchivedTasks(PROJECT);
+
+    await store.getState().restoreTask(PROJECT, archived);
+
+    const restored = rows().filter((row) => row.worktreeId === 'task-1');
+    expect(restored).toHaveLength(1);
+    expect(restored[0]?.deleted).toBeUndefined();
+  });
+
+  it('a refused restore rejects and leaves the task archived (CAN-6511)', async () => {
+    const core = new FakeWebCore();
+    const store = await connected(core);
+    await store.getState().archiveTask(PROJECT, 'task-1');
+    const [archived] = await store.getState().listArchivedTasks(PROJECT);
+    core.restoreRefusals.push({
+      kind: 'failed_precondition',
+      message: 'Restore the project first.',
+      retry: { kind: 'never' },
+    });
+
+    await expect(
+      store.getState().restoreTask(PROJECT, archived),
+    ).rejects.toBeDefined();
+    expect(tasksOf(store).map((row) => row.worktreeId)).not.toContain('task-1');
+    await expect(
+      store.getState().listArchivedTasks(PROJECT),
+    ).resolves.toHaveLength(1);
   });
 
   it('renaming a project sends a keyed patch at its listed revision (CAN-6099)', async () => {

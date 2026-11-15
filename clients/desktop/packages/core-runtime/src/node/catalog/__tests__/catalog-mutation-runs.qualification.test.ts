@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
   CatalogEntryPublishResultSchema,
+  CatalogEntryUnpublishResultSchema,
   CatalogPluginInstallResultSchema,
   CatalogSkillCustomSaveResultSchema,
   CatalogSkillRemoveResultSchema,
@@ -339,6 +340,10 @@ describe('catalog mutation receipts (CAN-4123)', () => {
           remoteEntryId: id,
           revision: 'r'.repeat(256),
         },
+      },
+      'core.catalog.entry.unpublish': {
+        schema: CatalogEntryUnpublishResultSchema,
+        result: { publicationId: id },
       },
       'core.catalog.skill.updates.check': {
         boundedBy:

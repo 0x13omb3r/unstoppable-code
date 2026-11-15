@@ -1,5 +1,6 @@
 'use client';
 
+import { FileViewControls } from '@canopy/ui-shared/components';
 import {
   useEffect,
   useId,
@@ -382,7 +383,7 @@ export function FilesTab({
       (canDownloadFile?.(target.relativePath) ?? true);
     if (!showMention && !showDownload) return undefined;
     return (
-      <div className="flex items-center gap-0.5 rounded-md bg-base">
+      <FileViewControls>
         {showMention && (
           <Tooltip label={`Mention ${target.name} in chat`}>
             <Button
@@ -423,7 +424,7 @@ export function FilesTab({
             </Button>
           </Tooltip>
         )}
-      </div>
+      </FileViewControls>
     );
   };
   const beginCreate = (

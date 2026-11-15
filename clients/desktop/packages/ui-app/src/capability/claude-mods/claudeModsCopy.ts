@@ -8,6 +8,12 @@ export const CLAUDE_MODS_COPY = {
   killSwitchLabel: 'Turn off every Mod',
   killSwitchDescription:
     'Turns off every Mod in Claude chats this app starts. Hooks in your own Claude settings keep running. If Claude offers to turn on a Mod in a terminal chat, that choice is yours there.',
+  /** A Mod the engine does not name, as a log line or toast shows it. */
+  unnamedMod: 'A Mod',
+  /** Follows the Mod's name in a log line: what it did to the draft. */
+  composerRead: 'read your draft',
+  composerFill: 'filled your draft',
+  composerCopy: 'Copied text to your clipboard',
   status: {
     changed:
       'This plugin changed after you allowed its Mod. The Mod stays off until you allow it again.',

@@ -213,6 +213,8 @@ interface CapturedInvocation {
   readonly profile: CodexSpawnProfileRequest;
   readonly authGeneration: number;
   readonly environmentFingerprint: string;
+  /** The route bills an organization's model gateway (not AI Credits). */
+  readonly orgGatewayRouted: boolean;
   readonly dispose: () => void;
   /** Set only when the helper took an account-proxy hold for this route. */
   readonly retained?: boolean;
@@ -1084,6 +1086,9 @@ export class DelegationRouteRuntime {
             config,
             authGeneration,
             environmentFingerprint: fingerprint(workspaceEnvironment),
+            orgGatewayRouted:
+              'modelGatewayRouted' in routed &&
+              routed.modelGatewayRouted === true,
             dispose: routed.dispose,
             profile: {
               environmentPolicy: 'restricted',
@@ -1176,6 +1181,28 @@ export class DelegationRouteRuntime {
     };
   }
 
+  /**
+   * Allowed models for this exact captured route, read from the saved policy
+   * now. Used at admission and before a later provider turn of the same run
+   * (quota recovery, an undelivered steer), never to stop a running turn.
+   */
+  async modelPolicyRefusal(
+    route: ResolvedAgentRouteSnapshot,
+  ): Promise<string | undefined> {
+    const captured = route.routeId
+      ? this.captured.get(route.routeId)
+      : undefined;
+    const {
+      managedDelegationModelPolicyRefusalFor,
+      readManagedDelegationModelPolicy,
+    } = await import('./model-policy');
+    return managedDelegationModelPolicyRefusalFor(
+      await readManagedDelegationModelPolicy(),
+      route,
+      captured?.orgGatewayRouted === true,
+    );
+  }
+
   async authorize(
     parent: DelegationParentContext,
     route: ResolvedAgentRouteSnapshot,
@@ -1229,6 +1256,8 @@ export class DelegationRouteRuntime {
     const base = {
       model: session.captured.model,
       waitForQuotaRecovery: session.captured.waitForQuotaRecovery,
+      admitContinuation: (): Promise<string | undefined> =>
+        this.modelPolicyRefusal(session.captured.route),
       tools: session.tools,
       ambientPluginIds: [
         ...(await resolveAmbientClaudePluginIds({
@@ -1392,6 +1421,8 @@ export class DelegationRouteRuntime {
     ): CodexDelegationPreparation => ({
       model: session.captured.model,
       waitForQuotaRecovery: session.captured.waitForQuotaRecovery,
+      admitContinuation: (): Promise<string | undefined> =>
+        this.modelPolicyRefusal(session.captured.route),
       commandEnvironment,
       tools: session.tools,
       selectedCapabilityRoots: capabilities.codexCapabilityRoots,

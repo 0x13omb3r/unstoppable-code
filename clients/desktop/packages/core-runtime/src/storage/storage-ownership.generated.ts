@@ -2,6 +2,31 @@
 import type { StorageOwnershipRow } from './writer-authority';
 export const STORAGE_OWNERSHIP = [
   {
+    "id": "app_advisor_watchers",
+    "transitionOwner": "legacy",
+    "currentWriters": [
+      "electron_main"
+    ],
+    "schemaVersion": 1,
+    "backupPolicy": "none",
+    "admittedWriters": [
+      "main/app-advisor/watchers"
+    ]
+  },
+  {
+    "id": "app_advisor_watchers_canonical",
+    "transitionOwner": "legacy",
+    "currentWriters": [
+      "electron_main"
+    ],
+    "schemaVersion": 1,
+    "backupPolicy": "none",
+    "admittedWriters": [
+      "main/app-advisor/watchers",
+      "main/app-advisor/chat-watcher-storage"
+    ]
+  },
+  {
     "id": "daemon_github_credential_fence",
     "transitionOwner": "daemon",
     "currentWriters": [

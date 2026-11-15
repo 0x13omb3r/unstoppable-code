@@ -2,6 +2,7 @@ import { homeModelRecoveryTarget } from '@/lib/composerModelRecoveryTarget';
 import { useSuggestionsClaimApi } from '@canopy/ui-app/suggestions';
 import { isPlanModeReadOnly } from '@canopy/ui-shared/lib/plan-mode-suggestion';
 import {
+  PendingAttachmentRow,
   usePlanModeSuggestion,
   useComposerHintActivity,
   type PlanModeSuggestion,
@@ -49,7 +50,10 @@ import { LoadingSpinner } from '@canopy/ui-shared/components';
 import { createEmptySelections } from '@/lib/pluginSelections';
 import { isCoworkChatTarget } from '@/lib/cowork';
 import { useAutoModelRoutingAvailability } from '@/hooks/useAutoModelRouting';
-import { importChatAttachments } from '@/lib/chatAttachments';
+import {
+  importChatAttachments,
+  pickCloudAttachmentFiles,
+} from '@/lib/chatAttachments';
 import { stageLinearTicketAttachment } from '@/lib/linearTicketStaging';
 import { useCurrentUiStateReporter } from '@/hooks/useCurrentUiStateReporter';
 import { useProviderAvailability } from '@/hooks/useProviderAvailability';
@@ -95,6 +99,7 @@ import { VoiceInputButton } from '@/components/shared/VoiceInputButton';
 import { VoiceDictationErrorModal } from '@/components/shared/VoiceDictationErrorModal';
 import { ComposerPlusMenu } from '@/components/shared/ComposerPlusMenu';
 import { LinearTicketPickerModal } from '@/components/shared/linear/LinearTicketPickerModal';
+import { isHomeCloudTarget } from './homeScope';
 import { useHomeEffectiveModelSettings } from './useHomeEffectiveModelSettings';
 
 interface HomeComposerActionMenuProps {
@@ -349,6 +354,7 @@ export function HomeComposerControls({
     pluginSelections,
     selectedRepoId,
     attachments,
+    cloudFiles,
     pendingAttachmentImportIds,
     text,
     isSending,
@@ -362,6 +368,8 @@ export function HomeComposerControls({
     setPluginSelections,
     addAttachments,
     removeAttachment,
+    addCloudFiles,
+    removeCloudFile,
     setSendError,
     loadDiscovery,
     setScheduledSendDraft,
@@ -382,6 +390,7 @@ export function HomeComposerControls({
       pluginSelections: s.pluginSelections,
       selectedRepoId: s.selectedRepoId,
       attachments: s.attachments,
+      cloudFiles: s.cloudFiles,
       pendingAttachmentImportIds: s.pendingAttachmentImportIds,
       text: s.text,
       isSending: s.isSending,
@@ -395,6 +404,8 @@ export function HomeComposerControls({
       setPluginSelections: s.setPluginSelections,
       addAttachments: s.addAttachments,
       removeAttachment: s.removeAttachment,
+      addCloudFiles: s.addCloudFiles,
+      removeCloudFile: s.removeCloudFile,
       setSendError: s.setSendError,
       loadDiscovery: s.loadDiscovery,
       setScheduledSendDraft: s.setScheduledSendDraft,
@@ -409,6 +420,10 @@ export function HomeComposerControls({
   const plusTriggerRef = useRef<HTMLButtonElement>(null);
 
   const isCowork = workspaceId !== null && isCoworkChatTarget(workspaceId);
+  // A cloud project's chat takes the web core's default model and its own
+  // settings once it opens; nothing here is read for it, and no local IPC
+  // carries its id (CAN-6757).
+  const cloudTarget = isHomeCloudTarget(workspaceId);
   const autoRouting = useAutoModelRoutingAvailability();
   const autoSelected = modelSelectionMode === 'auto';
   const handleSelectAuto = useCallback((): void => {
@@ -486,10 +501,10 @@ export function HomeComposerControls({
     executionHarness,
   );
   const speedControl = useContextualCodexSpeedControl({
-    enabled: resolvedSpeed !== undefined,
+    enabled: resolvedSpeed !== undefined && !cloudTarget,
     context: {
       kind: 'home',
-      ...(workspaceId ? { projectId: workspaceId } : {}),
+      ...(workspaceId && !cloudTarget ? { projectId: workspaceId } : {}),
       billingFramework: nextChatBilling,
       executionHarness:
         executionHarness === 'antigravity' ||
@@ -555,7 +570,7 @@ export function HomeComposerControls({
     approvalMode ?? approvalDefaultForWorkspace ?? settledApprovalDefault;
 
   useEffect(() => {
-    if (!workspaceId) return;
+    if (!workspaceId || cloudTarget) return;
     if (workspaceId in useChatStore.getState().approvalDefaultsCache) return;
     let active = true;
     void useChatStore
@@ -582,6 +597,7 @@ export function HomeComposerControls({
     approvalDefaultForWorkspace,
     approvalDefaultRequestId,
     approvalDefaultsGeneration,
+    cloudTarget,
     workspaceId,
   ]);
   const sendDisabled =
@@ -677,6 +693,20 @@ export function HomeComposerControls({
     `${workspaceId}/${branchTargetKey}`,
   );
   async function handleImportAttachments(): Promise<void> {
+    if (cloudTarget) {
+      if (disabled) return;
+      // Held until Send uploads them to the new task's chat (CAN-6763).
+      const picked = await pickCloudAttachmentFiles();
+      // The project may have changed while the picker was open.
+      if (
+        picked.length === 0 ||
+        !isHomeCloudTarget(useHomeComposerStore.getState().workspaceId)
+      )
+        return;
+      const problems = addCloudFiles(picked);
+      setSendError(problems.length > 0 ? problems.join('\n') : null);
+      return;
+    }
     if (filesGuestGate.interceptAttachment() || disabled || !workspaceId)
       return;
     const isCurrent = filesGuestGate.captureAccess();
@@ -726,7 +756,8 @@ export function HomeComposerControls({
         : { schedule: (): void => setScheduleModalOpen(true) }),
       pipeline: () => useHomeComposerStore.getState().setMode('pipeline'),
     },
-    !disabled && isChatMode,
+    // Every action here is this computer's (CAN-6757).
+    !disabled && isChatMode && !cloudTarget,
   );
 
   /**
@@ -834,7 +865,7 @@ export function HomeComposerControls({
     draftKey: `home:${workspaceId}:${selectedRepoId}:${draftGeneration}:${hintDraftRevision}`,
     activationKey: effectiveProviderType,
     planMode,
-    planAvailable: isChatMode && !isCowork && !disabled,
+    planAvailable: isChatMode && !isCowork && !cloudTarget && !disabled,
     planReadOnly,
     pipelineMode: !isChatMode,
     ...activity,
@@ -875,7 +906,7 @@ export function HomeComposerControls({
     [onPlanModeHintChange],
   );
   const planChip =
-    isChatMode && planMode
+    isChatMode && planMode && !cloudTarget
       ? buildPlanModeChip({
           readOnly: planReadOnly,
           compact: chipsCompact,
@@ -898,6 +929,19 @@ export function HomeComposerControls({
           onRemove={removeAttachment}
         />
       )}
+      {cloudTarget && (
+        // The web composer's row for files staged before they upload.
+        <PendingAttachmentRow
+          attachments={cloudFiles.map(({ id, file }) => ({
+            localId: id,
+            filename: file.name,
+            state: 'staged' as const,
+          }))}
+          onRemove={removeCloudFile}
+          // Nothing here has failed yet: a held file has no retry.
+          onRetry={(): void => undefined}
+        />
+      )}
 
       {/* Dictation replaces the whole toolbar, as in the chat composer, so
           the recording row spans the box and its waveform fills the gap. */}
@@ -918,53 +962,70 @@ export function HomeComposerControls({
           data-testid="home-composer-toolbar"
           className="flex items-center justify-between gap-2 p-2"
         >
-          <HomeComposerActionMenu
-            composerMenu={composerMenu}
-            searchFiles={searchFiles}
-            onSelectFile={onSelectFile}
-            disabled={disabled}
-            isChatMode={isChatMode}
-            isCodex={isCodex}
-            planMode={planMode}
-            planReadOnly={planReadOnly}
-            pipelineMode={mode === 'pipeline'}
-            onTogglePipeline={(): void =>
-              useHomeComposerStore
-                .getState()
-                .setMode(mode === 'pipeline' ? 'chat' : 'pipeline')
-            }
-            triggerRef={plusTriggerRef}
-            hasPluginSelections={
-              (pluginSelections?.collectionIds.length ?? 0) > 0 ||
-              (pluginSelections?.skillRefs.length ?? 0) > 0 ||
-              (pluginSelections?.pluginRefs.length ?? 0) > 0 ||
-              (pluginSelections?.mcpServerRefs?.length ?? 0) > 0
-            }
-            commands={commands}
-            discoveryLoading={commandsRefreshing}
-            onSelectCommand={onSelectCommand}
-            onPickAttachment={(): void => void handleImportAttachments()}
-            onPickLinear={() => setLinearPickerOpen(true)}
-            pluginSelections={pluginSelections ?? undefined}
-            providerScope={effectiveProviderType ?? 'mixed'}
-            onSelectPlugin={(ref, { label, enabled }): void => {
-              composerMenu?.insertPlugin({ ...ref, label });
-              if (enabled) return;
-              // Merge into the store's live draft, not this render's snapshot.
-              setPluginSelections(
-                mergeChatPluginSelections(
-                  useHomeComposerStore.getState().pluginSelections ??
-                    createEmptySelections(),
-                  { ...createEmptySelections(), pluginRefs: [ref] },
-                ),
-              );
-            }}
-            onOpenPlugins={() => setPluginsModalOpen(true)}
-            onTogglePlanMode={handleTogglePlanMode}
-            scheduleDisabled={scheduleDisabled}
-            scheduleDisabledDescription={scheduleDisabledDescription}
-            onOpenSchedule={() => setScheduleModalOpen(true)}
-          />
+          {/* Every other + row reads or stages something on this computer
+              (plugins, Linear, schedule, plan, workflow), so a cloud project
+              offers only files, which upload to its chat at Send (CAN-6763);
+              its chat has the rest once it opens. */}
+          {cloudTarget && (
+            <ComposerPlusMenu
+              onPickAttachment={(): void => void handleImportAttachments()}
+              disabled={disabled}
+              placement="bottom-left"
+              allowFlip={false}
+              dataTestIdPrefix="home-composer"
+              triggerRef={plusTriggerRef}
+              capsuleTrigger
+            />
+          )}
+          {!cloudTarget && (
+            <HomeComposerActionMenu
+              composerMenu={composerMenu}
+              searchFiles={searchFiles}
+              onSelectFile={onSelectFile}
+              disabled={disabled}
+              isChatMode={isChatMode}
+              isCodex={isCodex}
+              planMode={planMode}
+              planReadOnly={planReadOnly}
+              pipelineMode={mode === 'pipeline'}
+              onTogglePipeline={(): void =>
+                useHomeComposerStore
+                  .getState()
+                  .setMode(mode === 'pipeline' ? 'chat' : 'pipeline')
+              }
+              triggerRef={plusTriggerRef}
+              hasPluginSelections={
+                (pluginSelections?.collectionIds.length ?? 0) > 0 ||
+                (pluginSelections?.skillRefs.length ?? 0) > 0 ||
+                (pluginSelections?.pluginRefs.length ?? 0) > 0 ||
+                (pluginSelections?.mcpServerRefs?.length ?? 0) > 0
+              }
+              commands={commands}
+              discoveryLoading={commandsRefreshing}
+              onSelectCommand={onSelectCommand}
+              onPickAttachment={(): void => void handleImportAttachments()}
+              onPickLinear={() => setLinearPickerOpen(true)}
+              pluginSelections={pluginSelections ?? undefined}
+              providerScope={effectiveProviderType ?? 'mixed'}
+              onSelectPlugin={(ref, { label, enabled }): void => {
+                composerMenu?.insertPlugin({ ...ref, label });
+                if (enabled) return;
+                // Merge into the store's live draft, not this render's snapshot.
+                setPluginSelections(
+                  mergeChatPluginSelections(
+                    useHomeComposerStore.getState().pluginSelections ??
+                      createEmptySelections(),
+                    { ...createEmptySelections(), pluginRefs: [ref] },
+                  ),
+                );
+              }}
+              onOpenPlugins={() => setPluginsModalOpen(true)}
+              onTogglePlanMode={handleTogglePlanMode}
+              scheduleDisabled={scheduleDisabled}
+              scheduleDisabledDescription={scheduleDisabledDescription}
+              onOpenSchedule={() => setScheduleModalOpen(true)}
+            />
+          )}
           {planChip ? (
             <div className="flex shrink-0 items-center">
               <ChatComposerToolbarChip {...planChip} />
@@ -978,7 +1039,7 @@ export function HomeComposerControls({
             data-testid="home-composer-settings"
             className="flex min-w-0 flex-1 items-center gap-0"
           >
-            {isChatMode && (
+            {isChatMode && !cloudTarget && (
               <>
                 <div
                   // Nothing on the row collapses: the model name truncates as
@@ -1086,7 +1147,7 @@ export function HomeComposerControls({
           </div>
 
           <div className="flex shrink-0 items-center gap-2">
-            {isChatMode && (
+            {isChatMode && !cloudTarget && (
               <>
                 {effectiveApprovalMode ? (
                   <ApprovalModePicker
@@ -1107,7 +1168,7 @@ export function HomeComposerControls({
                     role="status"
                     aria-label="Loading tool approval mode"
                     data-testid="home-approval-mode-loading"
-                    className="inline-flex h-5 w-11 shrink-0 items-center justify-center rounded-md"
+                    className="inline-flex h-5 w-11 shrink-0 items-center justify-center"
                   >
                     <LoadingSpinner decorative tone="tertiary" />
                   </span>

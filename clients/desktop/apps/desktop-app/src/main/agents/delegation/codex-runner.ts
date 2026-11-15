@@ -145,6 +145,11 @@ const CODEX_DELEGATION_GRANT_CHECK_MS = 1_000;
 
 export interface CodexDelegationPreparation {
   readonly waitForQuotaRecovery?: AccountProxyQuotaWait;
+  /**
+   * Allowed models recheck before a later provider turn of this run (after a
+   * quota wait or for an undelivered steer). Returns the refusal, if any.
+   */
+  readonly admitContinuation?: () => Promise<string | undefined>;
   readonly model: string;
   readonly config?: NonNullable<ThreadStartParams['config']>;
   readonly profile: CodexSpawnProfileRequest;
@@ -1173,6 +1178,14 @@ export function createCodexDelegationRunner(options: {
                 context.signal,
               );
               context.signal.throwIfAborted();
+              // Allowed models: a later turn is admitted under the policy now.
+              const refusal = await segmentPrepared.admitContinuation?.();
+              if (refusal)
+                throw new DelegationRunnerError({
+                  code: 'policy_blocked',
+                  message: refusal,
+                  retryable: false,
+                });
               if (!segmentWrites) {
                 input = [CODEX_DELEGATION_RESUME_CONTINUATION];
                 continue;
@@ -1222,6 +1235,18 @@ export function createCodexDelegationRunner(options: {
           // rebuilt thread, as a parent chat's capability transition does.
           // It opens under the profile the root's plan state and the
           // parent's rules allow now.
+          // Allowed models: every later provider turn of this run (capability
+          // reload, read-only restart, recovered quota) is admitted under the
+          // policy now; the turn that just ended has already run.
+          const continuationRefusal = await prepared.admitContinuation?.();
+          if (continuationRefusal) {
+            reload?.controller.discardUndelivered();
+            throw new DelegationRunnerError({
+              code: 'policy_blocked',
+              message: continuationRefusal,
+              retryable: false,
+            });
+          }
           const next = await openThread(prepared, segment.threadId);
           handle = next;
           await segment.unsubscribe().catch((error: unknown) => {

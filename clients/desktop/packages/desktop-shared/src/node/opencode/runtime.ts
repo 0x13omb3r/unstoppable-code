@@ -63,6 +63,11 @@ export interface OpenCodeRuntimeOptions {
   forkScope?: OpenCodeForkScope;
   skillDirectories?: readonly string[];
   authorize(input: OpenCodeToolInput): Promise<CursorHookOutcome>;
+  beforeTool?(input: OpenCodeToolInput): Promise<CursorHookOutcome>;
+  afterTool?(
+    input: OpenCodeToolInput,
+    result: unknown,
+  ): Promise<CursorHookOutcome>;
   onUpdate(update: SessionNotification): void | Promise<void>;
 }
 
@@ -80,7 +85,9 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
-function isToolInput(value: unknown): value is OpenCodeToolInput {
+function isToolInput(
+  value: unknown,
+): value is OpenCodeToolInput & Record<string, unknown> {
   return (
     isRecord(value) &&
     typeof value.sessionId === 'string' &&
@@ -127,6 +134,7 @@ export async function startOpenCodeRuntime(
   let client: AcpClient | undefined;
   let closing: Promise<void> | undefined;
   let stopProcess: () => Promise<void> = () => Promise.resolve();
+  const approvedInputs = new Map<string, OpenCodeToolInput>();
   const hook = await createCursorHookTransport(
     async (payload) => {
       if (options.signal.aborted) return { decision: 'deny' };
@@ -142,18 +150,52 @@ export async function startOpenCodeRuntime(
         payload.sessionId !== activeSession
       )
         return { decision: 'deny' };
+      const identity = JSON.stringify([payload.sessionId, payload.toolCallId]);
+      if (payload.kind === 'tool-completed') {
+        const approved = approvedInputs.get(identity);
+        if (
+          !options.afterTool ||
+          !approved ||
+          approved.toolName !== payload.toolName
+        )
+          return { decision: 'deny' };
+        approvedInputs.delete(identity);
+        return options.afterTool(approved, payload.result);
+      }
+      if (payload.kind !== 'tool') return { decision: 'deny' };
       if (
         decisions.size >= 4096 ||
         decisions.has(JSON.stringify([payload.sessionId, payload.toolCallId]))
       )
         return { decision: 'deny' };
       // Reserve before yielding: duplicate deliveries may arrive while approval is pending.
-      const identity = JSON.stringify([payload.sessionId, payload.toolCallId]);
       decisions.set(identity, 'deny');
-      const outcome = await options.authorize(payload);
+      const before = await options.beforeTool?.(payload);
+      if (
+        options.signal.aborted ||
+        before?.decision === 'deny' ||
+        before?.stopTurn
+      )
+        return { ...before, decision: 'deny' };
+      const proposed = before?.updatedInput
+        ? { ...payload, toolArgs: before.updatedInput }
+        : payload;
+      const authorized = await options.authorize(proposed);
+      const outcome = {
+        ...authorized,
+        ...(authorized.decision === 'allow' &&
+        (authorized.updatedInput || before?.updatedInput)
+          ? { updatedInput: authorized.updatedInput ?? before?.updatedInput }
+          : {}),
+      };
       const decision =
         options.signal.aborted || outcome.stopTurn ? 'deny' : outcome.decision;
       decisions.set(identity, decision);
+      if (decision === 'allow' && options.afterTool)
+        approvedInputs.set(identity, {
+          ...proposed,
+          toolArgs: outcome.updatedInput ?? proposed.toolArgs,
+        });
       return { ...outcome, decision };
     },
     () => {
@@ -194,6 +236,7 @@ export async function startOpenCodeRuntime(
         hook.token,
         options.env,
         options.forkScope,
+        options.afterTool !== undefined,
       ),
       { mode: 0o600 },
     );

@@ -640,6 +640,7 @@ const results = memoized(() => {
       'system_prompt_append',
       'plan_mode_developer_instructions',
       'org_memory',
+      'local_memory',
     ]),
     provider: ObservabilityAuditProviderSchema,
     applicationCondition: z.enum([
@@ -650,6 +651,8 @@ const results = memoized(() => {
       'plan_mode_enabled',
       'deferred_tools_reload_continuation',
       'org_memory_enabled_for_turn',
+      'local_memory_enabled_for_turn',
+      'local_memory_withheld_for_turn',
     ]),
     text: z.string(),
     deferredToolsReload: z

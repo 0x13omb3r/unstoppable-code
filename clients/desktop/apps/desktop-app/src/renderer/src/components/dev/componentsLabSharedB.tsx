@@ -475,18 +475,17 @@ function MessageRow(): JSX.Element {
     messageId: 'lab-row',
   });
   return (
-    <div
-      {...targetProps}
-      className="focus-ring w-full rounded-lg bg-secondary px-3 py-2 text-s fg-primary"
-    >
-      Select some of this text and right-click, or focus it and press the Menu
-      key. See the{' '}
-      <a href="https://example.com/docs" className="fg-accent underline">
-        release notes
-      </a>{' '}
-      for a link menu.
-      {menu}
-    </div>
+    <Surface variant="group" padding="section-compact" className="w-full">
+      <div {...targetProps} className="focus-ring text-s fg-primary">
+        Select some of this text and right-click, or focus it and press the Menu
+        key. See the{' '}
+        <a href="https://example.com/docs" className="fg-accent underline">
+          release notes
+        </a>{' '}
+        for a link menu.
+        {menu}
+      </div>
+    </Surface>
   );
 }
 
@@ -562,7 +561,7 @@ function ChecklistRowDemo({
 }): JSX.Element {
   return (
     <div
-      className={`${CHECKLIST_ROW_CLASS_NAME} flex w-full items-center gap-2 rounded-lg px-3 py-1`}
+      className={`${CHECKLIST_ROW_CLASS_NAME} flex w-full items-center gap-2 px-3 py-1`}
     >
       <span className="min-w-0 flex-1 truncate text-s fg-primary">{title}</span>
       <ChecklistAction

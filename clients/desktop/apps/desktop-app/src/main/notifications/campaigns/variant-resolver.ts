@@ -3,7 +3,6 @@ import type {
   CampaignSuppressionReason,
   ProfileRoleId,
 } from '@canopy/desktop-shared/types';
-import { probeEntitlementsSummary } from '../../canopy-cloud/entitlements';
 import { readPreferencesFile } from '../../lib/preferences-store';
 import { DEFAULT_VARIANT_KEY } from './campaign-config';
 
@@ -37,33 +36,6 @@ const ROLE_VARIANTS: Partial<Record<ProfileRoleId, string>> = {
   'operations-support': 'business',
 };
 
-/**
- * Campaign 1 promises a free month only when the account demonstrably has one.
- * The ticket is explicit — "do not show an offer the account cannot claim" —
- * so an unresolved probe (offline, auth failure, 5xx) falls back to generic
- * copy rather than guessing. `probeEntitlementsSummary` never throws and
- * returns `{ resolved: false }` on any transient failure.
- *
- * Reading `trial.active` matches the campaign's own wording, which tells the
- * user the month is *ready* — i.e. already theirs. It is deliberately not an
- * attempt to infer claim eligibility from billing state, which would be a
- * guess about semantics this module does not own.
- *
- * Free app access has no trial to offer: every feature is already unlocked,
- * so the "free month" copy would frame the app as a trial (CAN-3926). The
- * server reports no trial then; the explicit check keeps that true even if a
- * response carries both.
- */
-async function resolveFirstTaskVariant(): Promise<VariantResolution> {
-  const probe = await probeEntitlementsSummary();
-  if (!probe.resolved || probe.freeAccess) {
-    return { variantKey: DEFAULT_VARIANT_KEY };
-  }
-  return {
-    variantKey: probe.trial?.active === true ? 'offer' : DEFAULT_VARIANT_KEY,
-  };
-}
-
 async function resolveRoleVariant(): Promise<VariantResolution> {
   const preferences = await readPreferencesFile();
   const role = preferences.profileRole;
@@ -82,10 +54,11 @@ export async function resolveCampaignVariantKey(
 ): Promise<VariantResolution> {
   try {
     switch (campaignId) {
-      case 'activation-first-task':
-        return await resolveFirstTaskVariant();
       case 'activation-role-branch':
         return await resolveRoleVariant();
+      // Campaign 1 used to offer a free-month trial; there are no trials, so
+      // it always sends its default copy.
+      case 'activation-first-task':
       case 'activation-marketplace':
       case 'activation-mobile':
         return { variantKey: DEFAULT_VARIANT_KEY };

@@ -1,3 +1,4 @@
+import { DialogActionFooter } from '@canopy/ui-shared/components';
 import { type JSX } from 'react';
 import { DialogModal } from '@/components/shared/DialogModal';
 import { Button, Surface } from '@canopy/ui-shared/components';
@@ -63,7 +64,7 @@ export function SplitInterruptedModal({
         </Surface>
       </div>
 
-      <div className="flex flex-wrap items-center justify-end gap-2 border-t px-6 py-3">
+      <DialogActionFooter wrap center>
         <Button
           size="compact"
           onClick={onDismiss}
@@ -87,7 +88,7 @@ export function SplitInterruptedModal({
         >
           Resume
         </Button>
-      </div>
+      </DialogActionFooter>
     </DialogModal>
   );
 }

@@ -7,7 +7,7 @@ export { OrganizationMemberPage } from './OrganizationMemberPage';
 export { OrganizationGroupsPage } from './OrganizationGroupsPage';
 export { OrganizationProjectsPage } from './OrganizationProjectsPage';
 export { OrganizationSettingsPage } from './OrganizationSettingsPage';
-export { TeamPage, type TeamLapsedInfo, type TeamPageProps } from './team-page';
+export { TeamPage, type TeamPageProps } from './team-page';
 export { TeamPanel, type TeamPanelProps } from './team-panel';
 export {
   OrganizationSettingsPlaceholder,
@@ -26,21 +26,14 @@ export {
   OrganizationSettingsSlotsProvider,
   useOrganizationSettingsSlots,
   useOrgProjectLocalStatuses,
-  type OrganizationAddCardModalProps,
   type OrganizationDataSharingOptInProps,
   type OrganizationPromotionDialogProps,
-  type OrganizationSeatChargeSlot,
-  type OrganizationSeatQuote,
   type OrganizationSettingsSlots,
   type OrganizationSettingsSlotsProviderProps,
   type OrgProjectLocalSetupSlot,
   type OrgProjectLocalState,
   type OrgProjectLocalStatus,
 } from './organization-settings-slots';
-export {
-  inviteMayAddPaidSeat,
-  type InviteSeatChargeMode,
-} from './invite-seat-charge';
 export { MemberAvatar } from './MemberAvatar';
 export { OrganizationLogo } from './OrganizationLogo';
 export {

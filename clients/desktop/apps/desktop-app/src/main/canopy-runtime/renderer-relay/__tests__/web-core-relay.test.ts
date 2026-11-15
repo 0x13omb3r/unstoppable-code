@@ -469,6 +469,57 @@ describe('web core authority on the canopy-core:relay channel (CAN-4185 PR-C)', 
     relay.dispose();
   });
 
+  it("a cloud project's archived tasks list and restore through the web core, and no other archive change does (CAN-6511)", async () => {
+    const binding = jest.fn<
+      ReturnType<RelayBindingProvider>,
+      Parameters<RelayBindingProvider>
+    >(unreachable);
+    const relay = webCoreRelay(binding);
+    const event = rendererEvent();
+    // Locking, deleting and reading an archived chat stay off the relay.
+    for (const method of [
+      'core.archive.container.update',
+      'core.archive.container.delete',
+      'core.archive.chat.get',
+    ]) {
+      expect(WEB_CORE_RELAY_OPERATIONS.has(method)).toBe(false);
+      await expect(
+        relay.invoke(event, { kind: 'request', method, params: {} }),
+      ).resolves.toMatchObject({
+        ok: false,
+        error: { kind: 'capability_unavailable' },
+      });
+    }
+    expect(binding).not.toHaveBeenCalled();
+    const requests = [
+      {
+        method: 'core.archive.container.list',
+        params: { workspaceId: '00000000-0000-4000-8000-000000000001' },
+      },
+      {
+        method: 'core.archive.container.restore',
+        params: {
+          archiveId: 'work-entry:00000000-0000-4000-8000-000000000002',
+          expectedRevision: 1,
+          destinationScope: {
+            workspaceId: '00000000-0000-4000-8000-000000000001',
+          },
+          conflictPolicy: 'fail',
+          _meta: { idempotencyKey: '00000000-0000-4000-8000-000000000003' },
+        },
+      },
+    ];
+    for (const { method, params } of requests) {
+      expect(WEB_CORE_RELAY_OPERATIONS.has(method)).toBe(true);
+      // Past the allowlist, each fails only at the unreachable binding.
+      await expect(
+        relay.invoke(event, { kind: 'request', method, params }),
+      ).resolves.toMatchObject({ ok: false, error: { kind: 'unavailable' } });
+    }
+    expect(binding).toHaveBeenCalledTimes(2);
+    relay.dispose();
+  });
+
   it('cloud durable terminal operations reach the web core binding (CAN-6175 R10)', async () => {
     const binding = jest.fn<
       ReturnType<RelayBindingProvider>,

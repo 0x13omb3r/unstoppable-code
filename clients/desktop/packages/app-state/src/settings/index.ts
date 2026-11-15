@@ -9,7 +9,6 @@ export {
   type SettingsBootstrapEntry,
   type SettingsLoadStatus,
   type SettingsPageEntry,
-  type SettingsSeatChargeMode,
   type SettingsStore,
   type SettingsStoreState,
 } from './create-settings-store';

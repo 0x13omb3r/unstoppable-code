@@ -104,6 +104,7 @@ export async function readAppAdvisorSettingsView(): Promise<PortalAppAdvisorSett
     availableModels: buildProjectedModelCatalog(preferences.appAdvisorModel, {
       cursor: true,
       owner: { kind: 'personal' },
+      projectId: APP_ADVISOR_PROJECT_ID,
       copilot: true,
       opencode: true,
       agentDefaultModel: await resolveCatalogAgentDefaultModel(

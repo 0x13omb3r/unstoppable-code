@@ -136,7 +136,14 @@ export interface AgentChatSendContext {
   startAdmission?: (
     task: { workspaceId: string; worktreeId: string },
     firstMessage: boolean,
-  ) => Promise<{ approvalMode: ApprovalMode }>;
+    /** The task is a worktree this creation just made beside the caller's. */
+    newWorktree?: boolean,
+  ) => Promise<{ approvalMode: ApprovalMode; selectedRepoId?: string }>;
+  /**
+   * Root project creations: refuses a first message the caller could not
+   * start a chat with, before the creation writes anything.
+   */
+  startPrecheck?: (targetWorkspaceId: string) => Promise<void>;
   /**
    * The originating root chat; inline watchers notify it, never the target.
    * A pipeline has none, so its sends cannot register watchers.
@@ -158,6 +165,13 @@ export interface AgentChatSendContext {
     | 'inputMode'
   >;
   fixedIds?: AgentSendFixedIds;
+  /**
+   * Main-only: the first message of a chat this creation started in a new
+   * worktree. The creation's start admission, against the root carried into
+   * that worktree, stands in for the send admission, and the queued delivery
+   * is readmitted as a started chat's first message, as chat.create's was.
+   */
+  startedChat?: true;
   newChatSeed?: PipelineNewChatSeed;
   /**
    * Trusted, main-only (CAN-5479): the seed settings a converted agent
@@ -406,7 +420,9 @@ async function send(
     return acceptedReceipt(target.address, replayed, []);
   }
   const admission =
-    action.type === 'projects.send_message' && context.admission
+    action.type === 'projects.send_message' &&
+    context.admission &&
+    !context.startedChat
       ? await context.admission(target.scope)
       : undefined;
   const fields = pipeline
@@ -448,7 +464,12 @@ async function send(
     ...fields,
     ...composition,
     ...(action.type === 'projects.send_message' && action.queueForSetup
-      ? { agentSendSetup: { version: 1 as const } }
+      ? {
+          agentSendSetup: {
+            version: 1 as const,
+            ...(context.startedChat ? { startedChat: true as const } : {}),
+          },
+        }
       : {}),
   };
   await revalidateAgentSenderRequest(request);
@@ -598,6 +619,23 @@ async function send(
         /* Ambiguous acceptance keeps the reservation inert for recovery. */
       }
     }
+    // An unexpected failure after the commit: the target's own state says
+    // whether it holds this input, so an accepted send is not reported as
+    // unknown.
+    if (
+      !acceptance &&
+      !definitelyRefused &&
+      !(error instanceof AgentChatSendError) &&
+      !isAgentSenderContextError(error)
+    ) {
+      logMainProcessWarn(
+        `[agent-send] Send ${commandId} to chat ${request.chatId} failed after dispatch; confirming from chat state:`,
+        error,
+      );
+      acceptance = await acceptanceFromChatState(port, request).catch(
+        () => undefined,
+      );
+    }
     if (!acceptance) {
       if (
         reservation &&
@@ -621,6 +659,43 @@ async function send(
         )
       : [];
   return acceptedReceipt(target.address, acceptance, watcherReceipts);
+}
+
+/**
+ * This input as the target chat holds it: a queued row carrying its message
+ * id, or the message itself in the chat's transcript. Undefined when neither
+ * is there, which leaves the outcome unknown.
+ */
+async function acceptanceFromChatState(
+  port: NonNullable<ReturnType<typeof getChatStateCommandPort>>,
+  request: Pick<
+    ChatSendMessageRequest,
+    'projectId' | 'worktreeId' | 'chatId' | 'userMessageId'
+  >,
+): Promise<AgentSendAcceptanceFacts | undefined> {
+  const state = await port.getState({
+    projectId: request.projectId,
+    worktreeId: request.worktreeId,
+  });
+  const acceptedAt = new Date().toISOString();
+  const queued = state.runtimeByChatId[request.chatId]?.queuedMessages?.find(
+    (row) => row.request.userMessageId === request.userMessageId,
+  );
+  if (queued)
+    return {
+      acceptedInputId: request.userMessageId,
+      disposition: 'queued',
+      queuedMessageId: queued.id,
+      acceptedAt,
+    };
+  const tab = state.tabsFile.tabs.find((entry) => entry.id === request.chatId);
+  return tab?.messages.some((message) => message.id === request.userMessageId)
+    ? {
+        acceptedInputId: request.userMessageId,
+        disposition: 'started',
+        acceptedAt,
+      }
+    : undefined;
 }
 
 function acceptedReceipt(

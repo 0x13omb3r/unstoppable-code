@@ -97,7 +97,8 @@ export function isPluginMemberInventory(
       (member) =>
         hasStringFields(member, ['event', 'hookType']) &&
         hasOptionalString(member, 'matcher') &&
-        hasOptionalString(member, 'command'),
+        hasOptionalString(member, 'command') &&
+        hasOptionalBoolean(member, 'async'),
     ) &&
     (value.mods === undefined ||
       (Array.isArray(value.mods) &&
@@ -274,6 +275,7 @@ function flattenHooksConfig(
             ? { matcher: entry.matcher }
             : {}),
           hookType: typeof hook.type === 'string' ? hook.type : 'command',
+          ...(typeof hook.async === 'boolean' ? { async: hook.async } : {}),
           ...(typeof hook.command === 'string'
             ? { command: hook.command }
             : {}),

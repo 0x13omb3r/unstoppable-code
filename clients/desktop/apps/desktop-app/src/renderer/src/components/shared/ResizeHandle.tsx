@@ -7,7 +7,10 @@ import {
   type JSX,
   type MouseEvent,
 } from 'react';
-import { ResizeRailIndicator } from '@canopy/ui-shared/components';
+import {
+  ResizeRailHandle,
+  ResizeRailIndicator,
+} from '@canopy/ui-shared/components';
 
 type Orientation = 'horizontal' | 'vertical';
 
@@ -98,22 +101,11 @@ export function ResizeHandle({
     };
   }, [isResizing, orientation]);
 
-  const axisCursor =
-    orientation === 'horizontal' ? 'cursor-col-resize' : 'cursor-row-resize';
-  const axisShape = orientation === 'horizontal' ? 'h-full w-2' : 'h-2 w-full';
-  const flexShape =
-    orientation === 'horizontal'
-      ? 'items-stretch justify-center'
-      : 'flex-col items-center justify-stretch';
-  const dividerShape = divider
-    ? orientation === 'horizontal'
-      ? 'border-l'
-      : 'border-t'
-    : '';
-
   return (
-    <div
-      className={`group flex shrink-0 ${axisShape} ${axisCursor} ${flexShape} ${dividerShape} ${className ?? ''}`}
+    <ResizeRailHandle
+      axis={orientation}
+      edge={divider}
+      className={className}
       style={style}
       onMouseDown={handleMouseDown}
       role="separator"
@@ -127,6 +119,6 @@ export function ResizeHandle({
         active={isResizing}
         line={orientation === 'horizontal' ? 'vertical' : 'horizontal'}
       />
-    </div>
+    </ResizeRailHandle>
   );
 }

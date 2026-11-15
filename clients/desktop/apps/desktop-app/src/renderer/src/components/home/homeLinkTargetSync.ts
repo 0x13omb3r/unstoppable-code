@@ -26,7 +26,7 @@ import {
   homeLinkScopeKey,
   splitHomeLinkProjects,
 } from './homeLinkTargetHost';
-import { useHomeScope } from './homeScope';
+import { isHomeCloudTarget, useHomeScope } from './homeScope';
 
 /**
  * Keeps `homeComposerStore.linkTarget` in step with the draft. Module-level so
@@ -152,7 +152,10 @@ async function runResolution(
  */
 export function syncHomeLinkTarget(): HomeLinkSelection {
   const store = useHomeComposerStore.getState();
-  if (store.mode !== 'chat') {
+  // A cloud project takes the draft as written: links resolve only to this
+  // computer's projects, so none is proposed and the send goes where the
+  // picker shows (CAN-6757).
+  if (store.mode !== 'chat' || isHomeCloudTarget(store.workspaceId)) {
     requestGeneration += 1;
     if (store.linkTarget.status !== 'idle') {
       store.setLinkTarget(IDLE_HOME_LINK_TARGET);

@@ -1,3 +1,7 @@
+import {
+  SidebarCustomizeDragRow,
+  SidebarCustomizeDragFrame,
+} from '@canopy/ui-shared/components';
 import { type JSX, type ReactNode, useMemo, useState } from 'react';
 import {
   DndContext,
@@ -26,10 +30,7 @@ import { Button, DialogModal } from '@canopy/ui-shared/components';
 import { useCurrentUiStateReporter } from '@/hooks/useCurrentUiStateReporter';
 import { useSidebarStore } from '@/stores/sidebarStore';
 import { getSidebarNavItemDefs } from './sidebar-nav-items';
-import {
-  SIDEBAR_NAV_ICON_CLASSNAME,
-  SIDEBAR_NAV_ITEM_CLASSNAME,
-} from './sidebar-styles';
+import { SIDEBAR_NAV_ICON_CLASSNAME } from './sidebar-styles';
 import {
   MORE_DIVIDER_ID,
   buildLayoutFromEntries,
@@ -83,7 +84,9 @@ function SortableRow({
     isDragging,
   } = useSortable({ id, disabled: fixed });
   return (
-    <div
+    <SidebarCustomizeDragFrame
+      fixed={fixed}
+      dragging={isDragging}
       ref={setNodeRef}
       style={{
         transform: CSS.Transform.toString(transform),
@@ -93,14 +96,9 @@ function SortableRow({
       {...(fixed ? {} : listeners)}
       // dnd-kit puts the keyboard handle (tabindex, role) on this wrapper, so
       // the focus ring belongs here, shaped like the row inside it.
-      className={
-        fixed
-          ? undefined
-          : `focus-ring rounded-row${isDragging ? ' relative z-10' : ''}`
-      }
     >
       {children(isDragging)}
-    </div>
+    </SidebarCustomizeDragFrame>
   );
 }
 
@@ -227,11 +225,9 @@ export function CustomizeSidebarModal({
                 return (
                   <SortableRow key={id} id={id}>
                     {(dragging) => (
-                      <div
+                      <SidebarCustomizeDragRow
+                        dragging={dragging}
                         data-testid={`customize-sidebar-row-${id}`}
-                        className={`${SIDEBAR_NAV_ITEM_CLASSNAME} cursor-default fg-primary ${
-                          dragging ? 'bg-card shadow-md' : 'hover:bg-subtle'
-                        }`}
                       >
                         <span className={SIDEBAR_NAV_ICON_CLASSNAME}>
                           {def.icon}
@@ -246,7 +242,7 @@ export function CustomizeSidebarModal({
                         >
                           <DragHandleIcon size={16} />
                         </span>
-                      </div>
+                      </SidebarCustomizeDragRow>
                     )}
                   </SortableRow>
                 );

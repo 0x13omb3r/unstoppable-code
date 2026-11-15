@@ -1,3 +1,4 @@
+import { Surface } from '@canopy/ui-shared/components';
 import type { JSX } from 'react';
 import { Button, DownloadIcon } from '@canopy/ui-shared';
 import { Folder, RefreshCw } from 'lucide-react';
@@ -68,8 +69,10 @@ interface ScreenShellProps {
 function ScreenShell({ children }: ScreenShellProps): JSX.Element {
   return (
     // The window's whole content in place of the shell, not a layer over it.
-    <div
-      className="flex h-screen w-full items-center justify-center overflow-hidden bg-base fg-primary"
+    <Surface
+      variant="app-pane"
+      extent="viewport"
+      className="flex w-full items-center justify-center overflow-hidden"
       data-testid={
         window.platform === 'darwin'
           ? 'mac-git-required-screen'
@@ -82,7 +85,7 @@ function ScreenShell({ children }: ScreenShellProps): JSX.Element {
         <BrandLogo size={64} className="select-none fg-accent" />
         {children}
       </div>
-    </div>
+    </Surface>
   );
 }
 

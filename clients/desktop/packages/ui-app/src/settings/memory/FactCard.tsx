@@ -1,3 +1,4 @@
+import { MemoryEvidenceQuote } from '@canopy/ui-shared/components';
 import { memo, type JSX } from 'react';
 import type {
   ExplorerFact,
@@ -47,14 +48,9 @@ function FactCardComponent({ fact, onSelect }: FactCardProps): JSX.Element {
           {fact.factText}
         </p>
         {fact.evidenceQuote !== null && (
-          <p
-            className={withPrivacyClass(
-              'line-clamp-2 border-l-2 border-line-accent pl-3 text-xs italic fg-secondary',
-              blockClassName,
-            )}
-          >
+          <MemoryEvidenceQuote compact blockReplay={blockClassName !== ''}>
             “{fact.evidenceQuote}”
-          </p>
+          </MemoryEvidenceQuote>
         )}
       </Stack>
       {fact.entities.length > 0 && (

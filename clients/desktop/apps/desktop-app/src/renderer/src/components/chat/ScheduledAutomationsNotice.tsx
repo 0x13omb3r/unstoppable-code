@@ -329,7 +329,7 @@ export function ScheduledAutomationsNoticeView({
             // Focusable so keyboard users can reach the prompt preview.
             tabIndex={0}
             data-testid="scheduled-automation-name"
-            className="focus-ring inline-block max-w-72 truncate rounded-sm align-bottom"
+            className="focus-ring inline-block max-w-72 truncate align-bottom"
           >
             {single.activityName}
           </span>

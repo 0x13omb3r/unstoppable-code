@@ -81,7 +81,7 @@ import {
 import { createModelsSlice } from './chat/slices/models';
 import { createTabsSlice } from './chat/slices/tabs';
 import { createArchiveSlice } from './chat/slices/archive';
-import { createMessagingSlice } from './chat/slices/messaging';
+import { createOrderedMessagingSlice } from './chat/slices/messaging';
 import { createQueueSlice } from './chat/slices/queue';
 import { createEventsSlice } from './chat/slices/events';
 import { createQuestionsSlice } from './chat/slices/questions';
@@ -113,7 +113,7 @@ const chatStore = createStore<ChatState>()((...a) => ({
   ...createModelsSlice(...a),
   ...createTabsSlice(...a),
   ...createArchiveSlice(...a),
-  ...createMessagingSlice(...a),
+  ...createOrderedMessagingSlice(...a),
   ...createQueueSlice(...a),
   ...createEventsSlice(...a),
   ...createQuestionsSlice(...a),

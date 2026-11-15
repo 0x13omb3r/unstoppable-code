@@ -110,8 +110,8 @@ const openOrganizations = (): void => {
 
 /**
  * The desktop switcher's pending organization invitations (CAN-3672). Reads
- * only through the hosted settings client this window may use (rollout flag,
- * capability, a local window) and only for a signed-in, non-guest
+ * only through the hosted settings client this window may use (capability,
+ * a local window) and only for a signed-in, non-guest
  * `accountKey`. Completed account notifications, including same-account
  * refreshes, trigger list reads. Membership broadcasts drive the destination
  * observer above, so a broadcast followed by its refresh-complete event does

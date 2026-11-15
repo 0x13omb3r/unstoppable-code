@@ -1,5 +1,9 @@
 'use client';
 
+import {
+  SidebarArchivedRow,
+  SidebarGroupStrip,
+} from '@canopy/ui-shared/components';
 import { useSidebarAutoDelete } from './SidebarAutoDelete';
 import {
   CodeSidebarItemGroups,
@@ -3075,14 +3079,10 @@ export function WorkspacesSidebarSections({
                       inert
                       data-testid={`sidebar-item-group-header-frame-${surface}`}
                     >
-                      <span
-                        aria-hidden="true"
-                        className="absolute -left-1.5 inset-y-0 w-0.5 rounded-full"
-                        style={{
-                          backgroundColor: sidebarItemGroupColor(
-                            selectedItemBlock.group?.color ?? 'neutral',
-                          ),
-                        }}
+                      <SidebarGroupStrip
+                        color={sidebarItemGroupColor(
+                          selectedItemBlock.group?.color ?? 'neutral',
+                        )}
                       />
                       {selectedItemBlock.group && (
                         <SidebarItemGroupHeader
@@ -3110,14 +3110,10 @@ export function WorkspacesSidebarSections({
                 : (surface): ReactNode => (
                     <div className="relative">
                       {selectedItemBlock?.group && (
-                        <span
-                          aria-hidden="true"
-                          className="absolute -left-1.5 inset-y-0 w-0.5 rounded-full"
-                          style={{
-                            backgroundColor: sidebarItemGroupColor(
-                              selectedItemBlock.group.color,
-                            ),
-                          }}
+                        <SidebarGroupStrip
+                          color={sidebarItemGroupColor(
+                            selectedItemBlock.group.color,
+                          )}
                         />
                       )}
                       {renderRow(
@@ -3319,10 +3315,7 @@ export function WorkspacesSidebarSections({
                         ) : (
                           <div className="flex flex-col gap-0.5">
                             {archivedItems.map((entry) => (
-                              <div
-                                key={entry.id}
-                                className="group relative flex min-w-0 items-center rounded-row hover:bg-subtle"
-                              >
+                              <SidebarArchivedRow key={entry.id}>
                                 <button
                                   type="button"
                                   data-testid={testIds?.archivedWorktreeRow?.(
@@ -3406,7 +3399,7 @@ export function WorkspacesSidebarSections({
                                     <TrashIcon size={16} />
                                   </Button>
                                 )}
-                              </div>
+                              </SidebarArchivedRow>
                             ))}
                           </div>
                         ))}

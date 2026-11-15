@@ -66,6 +66,7 @@ export function projectDeletionDiscardCopy(input: {
     readonly progress: ProjectDeletionDiscardItemProgress;
   }[];
   readonly interruptedDeletion: boolean;
+  readonly pendingRecovery?: boolean;
   readonly earlierDiscarded: readonly string[];
 }): ProjectDeletionDiscardCopy {
   const worktreeCopies = input.items.map((item) =>
@@ -77,8 +78,9 @@ export function projectDeletionDiscardCopy(input: {
       if (data !== 'retained-payload-copy') deleted.add(data);
   const count = input.items.length;
   return {
-    confirmLabel:
-      count === 0
+    confirmLabel: input.pendingRecovery
+      ? 'Discard pending recovery and delete project'
+      : count === 0
         ? 'Delete project'
         : count === 1
           ? 'Discard worktree and delete project'
@@ -86,13 +88,15 @@ export function projectDeletionDiscardCopy(input: {
     // With one left, the dialog's own action is that discard and says it also
     // deletes the project.
     discardItemLabel:
+      !input.pendingRecovery &&
       input.items.filter(
         (item) => item.progress === 'pending' || item.progress === 'stopped',
       ).length > 1
         ? 'Discard'
         : null,
-    lead:
-      count === 0
+    lead: input.pendingRecovery
+      ? 'Deleting this project also discards its pending archive recovery and saved recovery material. This cannot be undone. Recovery material stays protected until the project is deleted.'
+      : count === 0
         ? 'An earlier deletion of this project was interrupted. Deleting it again replaces that attempt.'
         : count === 1
           ? "This worktree's removal can't finish. Discarding permanently deletes its folders below, then the project is deleted. They can't be recovered."

@@ -1,9 +1,12 @@
 import { create } from 'zustand';
-import { CatalogSnapshotGetResultSchema } from '@canopy/protocol/canopy-core';
+import {
+  CORE_CATALOG_SNAPSHOT_GET_SCHEMA_REVISION,
+  CatalogSnapshotGetResultSchema,
+} from '@canopy/protocol/canopy-core';
 import type { ModelCatalog, ModelCatalogOption } from '@canopy/protocol/models';
 import type { AgentProviderType } from '@canopy/desktop-shared/types';
 import {
-  mapCloudChatCatalog,
+  cloudChatModels,
   type CoreCoworkInvoker,
 } from '@canopy/app-state/core-cowork';
 import { reportClientAppError } from '@canopy/desktop-instrumentation/client';
@@ -15,7 +18,9 @@ import { isServedThinkingLevel } from './translate';
  * The models a web core workspace runs, from `core.catalog.snapshot.get`
  * (CAN-6175 R5). A cloud chat's model id is a Core model definition id the
  * desktop model registry does not know, so its label, thinking levels and
- * fast mode come from here.
+ * fast mode come from here. Read at revision 2 and projected as the web's
+ * picker projects them, so the rows group by vendor and family and carry
+ * the AI Credits source, the Legacy flag and the default (CAN-6753).
  */
 export interface WebCoreModelCatalogState {
   /** Each workspace's models by id, keyed by the qualified workspace id. */
@@ -71,6 +76,8 @@ async function readCatalog(
     scope: { workspaceId },
     kinds: ['model'],
     includeUnavailable: false,
+    // Revision 2 answers the hosted catalog the web's picker reads.
+    revision: CORE_CATALOG_SNAPSHOT_GET_SCHEMA_REVISION,
   });
   if (!reply.ok)
     throw new CatalogReadError(
@@ -87,10 +94,9 @@ async function readCatalog(
       false,
     );
   return new Map(
-    mapCloudChatCatalog(parsed.data.entries).models.map((model) => [
-      model.id,
-      model,
-    ]),
+    cloudChatModels(parsed.data.entries, parsed.data.cloudModels).map(
+      (model) => [model.id, model],
+    ),
   );
 }
 
@@ -220,6 +226,27 @@ export function webCoreModelLabel(
 }
 
 const NO_MODELS: ModelCatalog = [];
+
+/**
+ * The picker's rows for a cloud chat whose model is `model`. The shared
+ * picker shows a row marked as the default when the chat names no model, so
+ * the owner's default stays unmarked until the web core names one: a cloud
+ * chat with no model reads Model (CAN-6365). Its rows are otherwise the
+ * catalog's (CAN-6753).
+ */
+export function webCorePickerModels(
+  models: ModelCatalog,
+  model: string | undefined,
+): ModelCatalog {
+  if (model !== undefined || !models.some((row) => row.isDefault === true))
+    return models;
+  return models.map((row) => {
+    if (row.isDefault !== true) return row;
+    const unmarked: ModelCatalogOption = { ...row };
+    delete unmarked.isDefault;
+    return unmarked;
+  });
+}
 
 /** A web core workspace's models as the shared model picker lists them. */
 export function webCoreModelList(

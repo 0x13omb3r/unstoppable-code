@@ -1,5 +1,5 @@
 import type { JSX, ReactNode } from 'react';
-import { MODEL_LIBRARY_UNLOCK_COPY } from './modelLibraryLock';
+import { MODEL_LIBRARY_UNLOCK_COPY } from './creditsPromptCopy';
 import { Notice } from './Notice';
 
 export interface CanopyProxyErrorPresentationProps {

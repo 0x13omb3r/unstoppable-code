@@ -5,9 +5,11 @@ import {
   CORE_CATALOG_PUBLISH_CODES,
   type CORE_CATALOG_PUBLISH_INSTRUCTION_DEFINITIONS,
   CORE_CATALOG_SOURCE_CODES,
+  CORE_CATALOG_UNPUBLISH_CODES,
   type CORE_CATALOG_SOURCE_INSTRUCTION_DEFINITIONS,
   type CORE_CATALOG_SOURCE_QUERY_DEFINITIONS,
   CatalogEntryPublishResultSchema,
+  CatalogEntryUnpublishResultSchema,
   CatalogPluginInstallResultSchema,
   CatalogSelectionUpdateResultSchema,
   CatalogSourceDeleteResultSchema,
@@ -970,6 +972,70 @@ export function createCoreCatalogHandlers(options: {
                 }) ?? error
               );
             }
+          },
+        }),
+      'core.catalog.entry.unpublish': async (params, context) =>
+        runs.run({
+          kind: 'core.catalog.entry.unpublish',
+          context,
+          params,
+          codes: CORE_CATALOG_UNPUBLISH_CODES,
+          keyReused: keyReusedConflict,
+          decode: (outcome) => {
+            const parsed = CatalogEntryUnpublishResultSchema.safeParse(outcome);
+            return parsed.success ? parsed.data : null;
+          },
+          effect: async () => {
+            const unpublish = host.unpublishSkill?.bind(host);
+            if (params.kind !== 'skill' || unpublish === undefined)
+              throw fail(
+                'capability_unavailable',
+                'This cloud copy cannot be removed from here.',
+              );
+            try {
+              await unpublish(
+                params.publicationId,
+                params.expectedRemoteVersion,
+              );
+            } catch (error) {
+              throw (
+                refusalError(error, {
+                  'unpublish-not-found': (cause) =>
+                    fail(
+                      'not_found',
+                      'This cloud copy is not linked to a skill on this computer.',
+                      { code: 'core.catalog.publicationNotFound', cause },
+                    ),
+                  'unpublish-shared': (cause) =>
+                    fail(
+                      'failed_precondition',
+                      'This copy is shared beyond your account. Remove it from its share settings.',
+                      { code: 'core.catalog.entryReadOnly', cause },
+                    ),
+                  'unpublish-version-moved': (cause) =>
+                    fail(
+                      'conflict',
+                      'This cloud copy changed since it was read.',
+                      {
+                        code: 'core.catalog.remoteVersionConflict',
+                        retry: {
+                          kind: 'after_refresh',
+                          resource: CORE_CATALOG_ENTRY_RESOURCE,
+                        },
+                        cause,
+                      },
+                    ),
+                  'publish-remote-unavailable': (cause) =>
+                    fail(
+                      'unavailable',
+                      'The cloud catalog cannot be reached right now.',
+                      // Recorded under its key, like a publish failure.
+                      { code: 'core.catalog.remoteUnavailable', cause },
+                    ),
+                }) ?? error
+              );
+            }
+            return { publicationId: params.publicationId };
           },
         }),
     },

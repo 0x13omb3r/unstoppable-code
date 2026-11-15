@@ -136,6 +136,14 @@ export const PANEL_KINDS = [
    * `instance.newTabId` so several can coexist.
    */
   'new-tab',
+  /**
+   * ONE pane a Claude Mod opened in a chat's session, bound via
+   * `instance.chatId` and `instance.paneId`. Repeatable (distinct panes
+   * coexist) but each `(chatId, paneId)` may be bound at most once across a
+   * layout family. The Mod opens it; a restored tab shows the pane closed
+   * until the chat's session opens it again.
+   */
+  'mod-pane',
 ] as const;
 
 /**
@@ -345,6 +353,38 @@ export interface SessionBreakdownPanelInstance {
   readonly chatId: string;
 }
 
+/** The binding a `mod-pane` panel carries in `instance`. */
+export interface ModPanePanelInstance {
+  readonly chatId: string;
+  /** The id the Mod opened the pane with: 1 to 64 of `A-Z a-z 0-9 _ -`. */
+  readonly paneId: string;
+}
+
+const MOD_PANE_ID = /^[A-Za-z0-9_-]{1,64}$/;
+
+/**
+ * Runtime guard for the `mod-pane` instance contract: exactly two keys,
+ * `chatId` (non-empty, trimmed, at most
+ * {@link SESSION_BREAKDOWN_PANEL_ID_MAX_LENGTH} characters) and `paneId` (the
+ * Claude Code pane id pattern).
+ */
+export function isModPanePanelInstance(
+  value: unknown,
+): value is ModPanePanelInstance {
+  if (!isRecord(value) || Object.keys(value).length !== 2) {
+    return false;
+  }
+  const { chatId, paneId } = value;
+  return (
+    typeof chatId === 'string' &&
+    chatId.length > 0 &&
+    chatId.length <= SESSION_BREAKDOWN_PANEL_ID_MAX_LENGTH &&
+    chatId.trim() === chatId &&
+    typeof paneId === 'string' &&
+    MOD_PANE_ID.test(paneId)
+  );
+}
+
 /**
  * Runtime guard for the `session-breakdown` instance contract: exactly one
  * key, `chatId`, whose value is non-empty, already trimmed and at most
@@ -481,6 +521,10 @@ export interface ISerializedPanelEntry {
    *   Repeatable across chats; the desktop store keeps one binding per chat
    *   across the layout family. A malformed entry is dropped, like
    *   `pipeline-execution`.
+   * - `mod-pane` → `{ chatId, paneId }` — one pane a Claude Mod opened in a
+   *   chat (see {@link isModPanePanelInstance}). Repeatable across panes; the
+   *   desktop store keeps one binding per `(chatId, paneId)`. A malformed
+   *   entry is dropped, like `pipeline-execution`.
    * - `terminal` / `activity-section` / `file-explorer` / `change-diagram` /
    *   `subagents` / `ledger` / `cost` take NO instance (worktree singletons); readers drop
    *   unexpected instance data. The root chat a `subagents` panel shows is
@@ -898,6 +942,9 @@ export function isSerializedPanelEntry(
   ) {
     return false;
   }
+  if (value.kind === 'mod-pane' && !isModPanePanelInstance(value.instance)) {
+    return false;
+  }
   return (
     isNonEmptyString(value.panelId) &&
     isPanelKind(value.kind) &&
@@ -1087,9 +1134,9 @@ const PANEL_LAYOUT_UPGRADERS: ReadonlyMap<number, PanelLayoutVersionUpgrader> =
   new Map();
 
 /**
- * Whether a raw panel entry is a `pipeline-execution`, `subagent-chat` or
- * `session-breakdown` tab with a bad binding (the kinds whose malformed
- * entries are dropped instead of rejecting the file).
+ * Whether a raw panel entry is a `pipeline-execution`, `subagent-chat`,
+ * `session-breakdown` or `mod-pane` tab with a bad binding (the kinds whose
+ * malformed entries are dropped instead of rejecting the file).
  */
 function isInvalidDroppableBoundEntry(entry: unknown): boolean {
   if (!isRecord(entry)) return false;
@@ -1101,6 +1148,9 @@ function isInvalidDroppableBoundEntry(entry: unknown): boolean {
   }
   if (entry.kind === 'session-breakdown') {
     return !isSessionBreakdownPanelInstance(entry.instance);
+  }
+  if (entry.kind === 'mod-pane') {
+    return !isModPanePanelInstance(entry.instance);
   }
   return false;
 }
@@ -1383,8 +1433,8 @@ export function sanitizeRawPlanPanelBindings(raw: unknown): unknown {
  * `null` for non-objects, unknown/forward versions, missing upgraders, or any
  * corruption anywhere in the recursive grid tree — the caller then applies
  * the default layout. Never throws. The exceptions to whole-file rejection
- * are malformed `pipeline-execution`, `subagent-chat` and `session-breakdown`
- * entries, which are dropped (see {@link ISerializedPanelEntry.instance}).
+ * are malformed `pipeline-execution`, `subagent-chat`, `session-breakdown` and
+ * `mod-pane` entries, which are dropped (see {@link ISerializedPanelEntry.instance}).
  */
 export function migratePanelLayout(
   raw: unknown,

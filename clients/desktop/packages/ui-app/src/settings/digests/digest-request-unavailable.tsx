@@ -1,3 +1,4 @@
+import { DigestRequestSurface } from '@canopy/ui-shared/components';
 import type { JSX } from 'react';
 import { Heading } from '@canopy/ui-shared/components';
 
@@ -20,9 +21,9 @@ export function DigestRequestUnavailable({
   return (
     // Same recessed, outlined control surface as `DigestRequestForm`: it stands
     // in the same slot, so it must not suddenly look like an archive row.
-    <section
-      className="flex flex-col rounded-xl border bg-depth p-5 gap-1"
-      data-testid={`${testIdPrefix}-digest-request-unavailable`}
+    <DigestRequestSurface
+      unavailable
+      testId={`${testIdPrefix}-digest-request-unavailable`}
     >
       <Heading level={3} variant="title">
         Request a digest
@@ -31,6 +32,6 @@ export function DigestRequestUnavailable({
         Digest requests are temporarily unavailable. Refresh in a moment to try
         again — your existing digests are unaffected.
       </p>
-    </section>
+    </DigestRequestSurface>
   );
 }

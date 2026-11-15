@@ -1,3 +1,6 @@
+import { CodeBlock } from '@canopy/ui-shared/components';
+import { ImageThumbnail } from '@canopy/ui-shared/components';
+import { InlineCode } from '@canopy/ui-shared/components';
 import {
   DelegationTranscriptSourceContext,
   transcriptReadSource,
@@ -132,7 +135,11 @@ import {
 import { isSafeCodexInlineImage } from '@canopy/agent-transcript/lib/codex-tool-images';
 import { AuthRecoveryCard } from './AuthRecoveryCard';
 import { CanopyProxyErrorNotice } from './CanopyProxyErrorNotice';
-import { AiCreditsStopLine } from '@canopy/ui-shared/components';
+import {
+  CreditsNotice,
+  type CreditsNoticeOwner,
+  type CreditsNoticePurchase,
+} from '@canopy/ui-app/credits';
 import { CodexAccountModelNoticeAction } from './CodexAccountModelNoticeAction';
 import { AccountProxyFailureNoticeAction } from './AccountProxyFailureNoticeAction';
 import { isAccountProxySettingsFailure } from '@canopy/protocol/auth-recovery';
@@ -158,6 +165,12 @@ import { useSubagentOpenChatCallback } from '@/components/subagents/subagent-ent
  * on the full parser. Mention and file-path decoration is applied separately
  * below.
  */
+// The transcript's credit refusal (CAN-5160) only says why the chat stopped:
+// the composer's notice owns the payment choice, so the line names no wallet
+// and offers no purchase.
+const STOP_LINE_OWNER: CreditsNoticeOwner = { kind: 'unknown' };
+const STOP_LINE_PURCHASE: CreditsNoticePurchase = { kind: 'elsewhere' };
+
 function canRenderAsPlainParagraph(text: string): boolean {
   if (
     text.trim().length === 0 ||
@@ -328,12 +341,12 @@ const ChatImageBlock = memo(function ChatImageBlock({
   }
 
   return (
-    <img
+    <ImageThumbnail
+      variant="generated-image"
       data-testid="chat-generated-image"
       src={src}
       alt={alt}
       onError={() => setSrc(null)}
-      className="max-h-[70vh] max-w-full self-start rounded-lg object-contain shadow-sm"
     />
   );
 });
@@ -1329,12 +1342,17 @@ export const ChatBlockRenderer = memo(function ChatBlockRenderer({
       }
       if (block.verbatim) {
         return (
-          <pre
+          <CodeBlock
             data-testid="chat-verbatim-text"
-            className="max-w-none whitespace-pre-wrap break-words rounded-md bg-fg-primary/[0.06] px-3 py-2 text-s fg-primary/80"
+            variant="tint"
+            size="s"
+            tone="soft"
+            font="sans"
+            replay="inherit"
+            className="max-w-none"
           >
             {block.text}
-          </pre>
+          </CodeBlock>
         );
       }
       const text = stripAgentCitations
@@ -1368,7 +1386,14 @@ export const ChatBlockRenderer = memo(function ChatBlockRenderer({
       // billing source banner is where the user chooses how to pay, so the
       // transcript only says why the chat stopped.
       if (proxyError?.code === 'no_billing_source') {
-        return <AiCreditsStopLine />;
+        return (
+          <CreditsNotice
+            condition="out_of_credits"
+            owner={STOP_LINE_OWNER}
+            placement="transcript"
+            purchase={STOP_LINE_PURCHASE}
+          />
+        );
       }
       if (proxyError) {
         return (
@@ -1520,9 +1545,7 @@ export const ChatBlockRenderer = memo(function ChatBlockRenderer({
                     {skillName}
                   </InvocableDetailsButton>
                 ) : (
-                  <code className="rounded bg-fg-primary/[0.08] px-1 py-0.5 font-mono text-2xs">
-                    {skillName}
-                  </code>
+                  <InlineCode variant="skill-name">{skillName}</InlineCode>
                 )}
               </span>
               {!block.result && (

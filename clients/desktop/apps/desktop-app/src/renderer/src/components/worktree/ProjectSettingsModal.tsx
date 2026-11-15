@@ -1,3 +1,4 @@
+import { Badge } from '@canopy/ui-shared/components';
 import { resolveHookComposerContext } from '@/lib/configurationComposerTargets';
 import { detailsFor, failureDetails, type FailureDetails } from '@/lib/errors';
 import {
@@ -173,7 +174,6 @@ import {
   type ProjectSettingsNavItem,
 } from './project-settings/ProjectSettingsFrame';
 import { ProjectSettingsScopeGroup } from './project-settings/ProjectSettingsScope';
-import { workspaceHealthIssueClassName } from './workspace-health-styles';
 
 /** A page that opens from a row of its parent page, with a way back. */
 type ProjectSettingsDrillIn =
@@ -1922,11 +1922,9 @@ export function ProjectSettingsModal({
               <SettingsRow
                 key={`${issue.code}-${issue.repoId ?? 'workspace'}`}
                 label={
-                  <span
-                    className={`inline-flex rounded-full px-2 text-xs ${workspaceHealthIssueClassName(issue.blocking)}`}
-                  >
+                  <Badge tone={issue.blocking ? 'danger' : 'warning'}>
                     {issue.blocking ? 'Blocking issue' : 'Warning'}
-                  </span>
+                  </Badge>
                 }
                 description={issue.message}
               />

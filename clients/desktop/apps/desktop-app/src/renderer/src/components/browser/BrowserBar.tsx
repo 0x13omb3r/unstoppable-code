@@ -75,9 +75,12 @@ export function BrowserBar({
       : inspectorAction;
 
   return (
-    <div
+    <Surface
       data-testid="browser-bar"
-      className="browser-bar flex flex-col border-b bg-card/50"
+      variant="tinted-panel"
+      boundary="bottom"
+      data-browser-bar=""
+      className="flex flex-col"
     >
       <div className="browser-bar-toolbar">
         <div className="browser-bar-nav">
@@ -238,7 +241,7 @@ export function BrowserBar({
           <FieldError id={errorId}>{urlError}</FieldError>
         </div>
       )}
-    </div>
+    </Surface>
   );
 }
 

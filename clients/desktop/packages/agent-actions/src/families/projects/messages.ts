@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { THINKING_LEVELS } from '@canopy/protocol/thinking';
 import { agentExecutionHarnessSchema } from '../../execution-harness';
 
 // Opaque public IDs, validated without normalization.
@@ -102,27 +103,63 @@ export const projectsScheduleMessageActionSchema = z.strictObject({
 
 const titleSchema = z.string().max(200);
 
-export const projectsCreateTaskActionSchema = z.strictObject({
-  type: z.literal('projects.create_task'),
-  /** Cowork projects only; code projects use the worktree-creation workflow. */
-  projectId: idSchema,
-  title: titleSchema.optional(),
-  initialMessage: textSchema.optional(),
-  /** Model id from models.list, including an installed custom Agent. */
-  model: modelIdSchema.optional(),
-  /** With model: its own harness or one of its models.list harnessChoices. */
-  executionHarness: agentExecutionHarnessSchema.optional(),
-});
-export const projectsCreateTaskChatActionSchema = z.strictObject({
-  type: z.literal('projects.create_task_chat'),
-  projectId: idSchema,
-  taskId: idSchema,
-  initialMessage: textSchema.optional(),
-  /** Model id from models.list, including an installed custom Agent. */
-  model: modelIdSchema.optional(),
-  /** With model: its own harness or one of its models.list harnessChoices. */
-  executionHarness: agentExecutionHarnessSchema.optional(),
-});
+// The host validates the ref itself; this only bounds the input.
+const branchSchema = z.string().trim().min(1).max(255);
+
+export const projectsCreateTaskActionSchema = z
+  .strictObject({
+    type: z.literal('projects.create_task'),
+    /** A Cowork project gets a work entry; a code project gets a worktree. */
+    projectId: idSchema,
+    title: titleSchema.optional(),
+    initialMessage: textSchema.optional(),
+    /** Model id from models.list, including an installed custom Agent. */
+    model: modelIdSchema.optional(),
+    /** With model: its own harness or one of its models.list harnessChoices. */
+    executionHarness: agentExecutionHarnessSchema.optional(),
+    /** A thinking level the chosen (or default) model lists in models.list. */
+    thinkingLevel: z.enum(THINKING_LEVELS).optional(),
+    /** Completion watchers on the initial message; they notify the caller. */
+    watchers: watchersSchema,
+    /** Code projects: a new branch for the worktree. Default: generated. */
+    branchName: branchSchema.optional(),
+    /** Code projects: the branch the new one starts from. */
+    baseBranch: branchSchema.optional(),
+    /** Code projects: start from another task's current branch. */
+    baseTaskId: idSchema.optional(),
+  })
+  .refine(
+    (action) =>
+      action.baseBranch === undefined || action.baseTaskId === undefined,
+    { message: 'Use baseBranch or baseTaskId, not both.' },
+  )
+  .refine(
+    (action) =>
+      action.watchers === undefined || action.initialMessage !== undefined,
+    { message: 'Watchers need an initialMessage to watch.' },
+  );
+export const projectsCreateTaskChatActionSchema = z
+  .strictObject({
+    type: z.literal('projects.create_task_chat'),
+    projectId: idSchema,
+    taskId: idSchema,
+    /** The new chat's title; like model, it always creates a new chat. */
+    title: titleSchema.optional(),
+    initialMessage: textSchema.optional(),
+    /** Model id from models.list, including an installed custom Agent. */
+    model: modelIdSchema.optional(),
+    /** With model: its own harness or one of its models.list harnessChoices. */
+    executionHarness: agentExecutionHarnessSchema.optional(),
+    /** A thinking level the chosen (or default) model lists in models.list. */
+    thinkingLevel: z.enum(THINKING_LEVELS).optional(),
+    /** Completion watchers on the initial message; they notify the caller. */
+    watchers: watchersSchema,
+  })
+  .refine(
+    (action) =>
+      action.watchers === undefined || action.initialMessage !== undefined,
+    { message: 'Watchers need an initialMessage to watch.' },
+  );
 export const botsCreateTaskActionSchema = z.strictObject({
   type: z.literal('bots.create_task'),
   botId: idSchema,

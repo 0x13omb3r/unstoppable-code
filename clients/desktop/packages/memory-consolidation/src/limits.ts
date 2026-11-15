@@ -9,6 +9,7 @@ export const MAX_TOPIC_FILENAME_BYTES = 200;
 export const TOPICS_INPUT_BUDGET_BYTES = 192 * 1024;
 export const INBOX_INPUT_BUDGET_BYTES = 192 * 1024;
 export const IMPORTS_INPUT_BUDGET_BYTES = 192 * 1024;
+export const LINK_HEALTH_INPUT_BUDGET_BYTES = 16 * 1024;
 
 // Upper bound on inbox notes consumed by a single consolidation run. Notes
 // are taken oldest-first, only the included notes are archived on success,
