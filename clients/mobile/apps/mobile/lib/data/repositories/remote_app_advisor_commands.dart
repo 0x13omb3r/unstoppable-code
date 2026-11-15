@@ -85,11 +85,15 @@ final class RemoteAppAdvisorCommands {
 
   /// Persists [chatId]'s model without sending. The desktop applies its
   /// model policy and re-projects the chat with the result.
-  Future<String> setModel({required String chatId, required String model}) =>
-      _submitAdvisor('portal.app_advisor.set_model', {
-        'chatId': chatId,
-        'model': model,
-      });
+  Future<String> setModel({
+    required String chatId,
+    required String model,
+    String? executionHarness,
+  }) => _submitAdvisor('portal.app_advisor.set_model', {
+    'chatId': chatId,
+    'model': model,
+    'executionHarness': ?executionHarness,
+  });
 
   /// Creates an empty tab with the client-minted [chatId] in [workEntryId].
   Future<String> createTab({required String chatId, String? workEntryId}) =>

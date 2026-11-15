@@ -37,9 +37,8 @@ Future<bool> confirmDestructive(
 /// errors are surfaced, never swallowed.
 ///
 /// Prefers the server's own 4xx sentence over [failureMessage]: those are
-/// deliberate, user-facing copy — a lapsed org's "Your organization's trial has
-/// ended. Subscribe to Team to restore team features." says far more than
-/// "Could not create the sub-team." A 5xx or transport failure falls back to
+/// deliberate, user-facing copy — "You do not have permission to view usage
+/// statistics" says far more than "Could not load stats." A 5xx or transport failure falls back to
 /// [failureMessage], because the server's words there describe an internal
 /// fault. The raw exception is never rendered.
 Future<void> guardAction(

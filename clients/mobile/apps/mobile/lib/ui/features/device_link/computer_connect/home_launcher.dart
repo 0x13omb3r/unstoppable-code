@@ -1,3 +1,4 @@
+import 'package:mobile/data/models/agent_model_selection.dart';
 import 'dart:async';
 import 'package:flutter/widgets.dart';
 import 'package:mobile/data/models/chat_drafts.dart';
@@ -129,7 +130,11 @@ final class ComputerHomeLauncher extends ChangeNotifier {
         project: choices.project!,
         worktree: choices.worktree,
         baseBranch: choices.baseBranch,
-        model: choices.models.where((m) => m.id == choices.modelId).firstOrNull,
+        model: selectionModelOption(
+          choices.models,
+          choices.modelId,
+          executionHarness: choices.executionHarness,
+        ),
         thinkingLevel: choices.thinkingLevel,
         text: text,
         delivery: delivery,

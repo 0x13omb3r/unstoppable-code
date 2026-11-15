@@ -8,7 +8,6 @@ import 'package:mobile/data/models/org_invite.dart';
 import 'package:mobile/data/protocol/generated/organization.dart';
 import 'package:mobile/data/services/api_client.dart';
 import 'package:mobile/ui/features/members/view_models/members_view_model.dart';
-import 'package:mobile/ui/features/organizations/org_lapse_presentation.dart';
 
 /// Bottom-sheet invite flow: an email + role form that, on success, shows the
 /// invite link (new users) or a dashboard note (existing users).
@@ -65,14 +64,8 @@ class _InviteMemberSheetState extends State<InviteMemberSheet> {
       });
     } catch (error) {
       if (!mounted) return;
-      final org = widget.viewModel.organization;
       setState(() {
         _error =
-            orgLapseActionMessage(
-              error,
-              orgName: org?.name,
-              viewerRole: org?.viewerRole,
-            ) ??
             presentableErrorMessage(error) ??
             'Could not send the invite. Please try again.';
         _submitting = false;

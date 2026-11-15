@@ -2279,3 +2279,14 @@ body {
     transition-delay: 0s;
   }
 }
+
+/* Typography spaces prose children with margins. Compact document readers
+ * preserve their existing fenced-code rhythm and respect not-prose. */
+.prose.canopy-compact-prose
+  :where(pre):not(:where([class~='not-prose'], [class~='not-prose'] *)) {
+  margin-block: calc(var(--spacing) * 1.5);
+}
+
+.canopy-feed-summary-prose {
+  margin-top: var(--spacing);
+}

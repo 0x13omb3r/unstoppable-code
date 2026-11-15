@@ -106,26 +106,7 @@ class ComputerConnectionView extends StatelessWidget {
                   ),
                 ),
                 const SizedBox(height: 24),
-                if (account.planRequired) ...[
-                  // F1 (CAN-5985): shown only for the token route's
-                  // entitlement denial, which billing-off never returns.
-                  InlineNotice(
-                    key: const ValueKey('computer-connect-plan-required'),
-                    glyph: CanopyGlyph.circleInfo,
-                    state: 'Remote Control needs a Pro plan.',
-                    explanation:
-                        'Upgrade to control your computers from your phone.',
-                    actions: [
-                      (
-                        label: 'See plans',
-                        glyph: CanopyGlyph.arrowUpRight,
-                        onPressed: () =>
-                            openExternalUrl(accountBillingUrl()).ignore(),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 16),
-                ] else if (error != null) ...[
+                if (error != null) ...[
                   InlineNotice(glyph: CanopyGlyph.circleInfo, state: error),
                   const SizedBox(height: 16),
                 ],

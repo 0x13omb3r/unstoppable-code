@@ -6,6 +6,12 @@ import 'package:mobile/device_link/chats/state.dart';
 import 'package:mobile/device_link/desktop/ipc.dart';
 import 'package:mobile/device_link/protocol.dart';
 
+typedef DeviceSettingsFailure = ({
+  String message,
+  bool reported,
+  bool modelChange,
+});
+
 final class _Selection {
   _Selection(this.patch, this.save);
   final Map<String, dynamic> patch;
@@ -45,19 +51,8 @@ final class DeviceComposerSettingsController {
   Object? _workingScope;
   int _selectionGeneration = 0;
   bool _draining = false, _disposed = false;
-  String? _error;
-  int _errorRevision = 0;
-  String? get error => _error;
-  int get errorRevision => _errorRevision;
-  set error(String? value) {
-    _error = value;
-    _errorRevision++;
-  }
-
-  /// A reload acknowledges only the error it started with, not a later failure.
-  void clearError({required int expectedRevision}) {
-    if (expectedRevision == _errorRevision) error = null;
-  }
+  bool _requiresRefresh = false;
+  DeviceSettingsFailure? failure;
 
   Object get _currentScope => (
     current()?.ref.key,
@@ -83,7 +78,8 @@ final class DeviceComposerSettingsController {
         if (!selection.result.isCompleted) selection.result.complete(false);
       }
       _selections.clear();
-      error = null;
+      failure = null;
+      _requiresRefresh = false;
     }
     final revision = current()?.revision;
     _selections.removeWhere(
@@ -105,14 +101,24 @@ final class DeviceComposerSettingsController {
     DeviceChatRef ref,
     Map<String, dynamic> patch,
     Future<int> Function(Map<String, dynamic> tab) save,
-  ) {
+  ) async {
     sync();
+    if (_requiresRefresh) {
+      final scope = _scope;
+      try {
+        await refresh();
+      } catch (_) {
+        return false;
+      }
+      if (_disposed || scope != _currentScope) return false;
+      _requiresRefresh = false;
+    }
     if (_disposed || current()?.ref.key != ref.key) {
       return Future.value(false);
     }
     final selection = _Selection(patch, save);
     _selections.add(selection);
-    error = null;
+    failure = null;
     onChanged();
     if (!_draining) unawaited(_drain());
     return selection.result.future;
@@ -147,7 +153,7 @@ final class DeviceComposerSettingsController {
             // A failed read for the previous chat must not strand new picks.
             if (!_disposed && scope != _currentScope) continue;
             if (!_disposed && scope == _currentScope) {
-              error = _describe(cause);
+              _recordFailure(cause);
               for (final selection in _selections) {
                 if (!selection.result.isCompleted) {
                   selection.result.complete(false);
@@ -190,7 +196,7 @@ final class DeviceComposerSettingsController {
                         next.patch.keys.every(selection.patch.containsKey),
                   );
               _selections.remove(next);
-              if (!superseded) error = _describe(cause);
+              if (!superseded) _recordFailure(cause, patch: next.patch);
             } else {
               // A timeout or lost reply can still commit on the computer.
               // Cancel dependent picks instead of writing from uncertain state.
@@ -200,8 +206,14 @@ final class DeviceComposerSettingsController {
                 }
               }
               _selections.clear();
-              error =
-                  "Couldn't confirm chat settings. Check the selection before trying again.";
+              _requiresRefresh = true;
+              _recordFailure(cause, patch: next.patch);
+              try {
+                await refresh();
+                if (scope == _currentScope) _requiresRefresh = false;
+              } catch (_) {
+                /* Keep dependent writes blocked until a read succeeds. */
+              }
             }
           }
           if (!next.result.isCompleted) next.result.complete(false);
@@ -216,6 +228,19 @@ final class DeviceComposerSettingsController {
       _workingScope = null;
       if (!_disposed) onChanged();
     }
+  }
+
+  void _recordFailure(Object cause, {Map<String, dynamic> patch = const {}}) {
+    final reported =
+        cause is DeviceChatSettingsRejected || cause is DesktopIpcNotSent;
+    failure = (
+      message: reported
+          ? _describe(cause)
+          : '${cause is DeviceLinkException ? cause.message : 'The computer did not confirm this change.'} Check the selection before trying again.',
+      reported: reported,
+      modelChange:
+          patch.containsKey('model') || patch.containsKey('modelSelectionMode'),
+    );
   }
 
   String _describe(Object cause) => cause is DeviceLinkException

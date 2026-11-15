@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:math';
 
+import 'package:mobile/data/models/agent_model_selection.dart';
 import 'package:mobile/data/models/remote_app_advisor.dart';
 import 'package:mobile/data/models/remote_chat.dart';
 import 'package:mobile/data/models/chat_turn_liveness.dart';
@@ -11,6 +12,8 @@ import 'package:mobile/data/repositories/remote_control_repository.dart';
 import 'chat_transcript_store.dart';
 import 'owned_command_registry.dart';
 import 'remote_identity.dart';
+import 'remote_advisor_model_setup.dart';
+import 'remote_model_setup.dart';
 
 /// How long the Advisor list waits for the desktop's snapshot.
 const Duration kRemoteAppAdvisorHydrationTimeout = Duration(seconds: 30);
@@ -112,6 +115,7 @@ final class RemoteAppAdvisorController {
   /// Chats whose choice in [_modelChoices] goes with the next send instead
   /// of a model command, because the desktop had not created the tab yet.
   final Set<String> _unsentModelChoices = {};
+  final _modelSetup = RemoteAdvisorModelSetup();
   RemoteAppAdvisorSettings? _settings;
   bool _loadingSettings = false;
   int _sessionGeneration = 0;
@@ -449,11 +453,28 @@ final class RemoteAppAdvisorController {
     _upsert(chatId, optimistic.messageIn(chatId), optimistic: true);
     notify();
     try {
+      final selection = model ?? unsentModel;
+      final harness = agentModelSetupHarness(
+        catalogFor(chatId).models,
+        selection,
+      );
+      if (selection != null && harness != null) {
+        await confirmRemoteComposerCommand(
+          commands: commands,
+          submit: () => advisorCommands.setModel(
+            chatId: chatId,
+            model: selection,
+            executionHarness: harness,
+          ),
+          isCurrent: () => canAct && generation == _sessionGeneration,
+        );
+        if (!canAct || generation != _sessionGeneration) return chatId;
+      }
       final commandId = await advisorCommands.send(
         chatId: chatId,
         userMessageId: userMessageId,
         text: optimistic.text,
-        model: model ?? unsentModel,
+        model: harness == null ? selection : null,
       );
       if (generation != _sessionGeneration) return chatId;
       commands.register(commandId, recordOutcome: false, onFailed: fail);
@@ -537,6 +558,7 @@ final class RemoteAppAdvisorController {
       return;
     }
     _removeMessage(chatId, messageId);
+    _modelSetup.forget(messageId);
     final first = _firstSend;
     if (chatId.isEmpty && first?.messageId == messageId) {
       first?.watchdog?.cancel();
@@ -565,11 +587,34 @@ final class RemoteAppAdvisorController {
   Future<void> _submitFirstSend(_FirstSend first, String? workEntryId) async {
     final generation = _sessionGeneration;
     try {
+      final model = first.model;
+      final harness = agentModelSetupHarness(catalogFor(null).models, model);
+      final preparedChatId = model != null && harness != null
+          ? await _modelSetup.prepare(
+              messageId: first.messageId,
+              model: model,
+              executionHarness: harness,
+              mintChatId: () => _newId('chat-m'),
+              advisor: advisorCommands,
+              commands: commands,
+              isCurrent: () =>
+                  canAct &&
+                  generation == _sessionGeneration &&
+                  identical(_firstSend, first),
+              workEntryId: workEntryId,
+            )
+          : null;
+      if (!canAct ||
+          generation != _sessionGeneration ||
+          !identical(_firstSend, first)) {
+        return;
+      }
       final commandId = await advisorCommands.send(
+        chatId: preparedChatId,
         userMessageId: first.messageId,
         text: first.text,
         workEntryId: workEntryId,
-        model: first.model,
+        model: preparedChatId == null ? model : null,
       );
       if (generation != _sessionGeneration) return;
       commands.register(
@@ -628,7 +673,11 @@ final class RemoteAppAdvisorController {
   /// Sets [chatId]'s model, showing it at once. A rejection restores the
   /// desktop's model and shows why. A tab the desktop has not created yet
   /// keeps the choice for its first send.
-  Future<void> setModel(String chatId, String model) async {
+  Future<void> setModel(
+    String chatId,
+    String model, {
+    String? executionHarness,
+  }) async {
     if (modelFor(chatId) == model) return;
     _modelChoices[chatId] = model;
     if (!_chats.containsKey(chatId)) {
@@ -638,7 +687,11 @@ final class RemoteAppAdvisorController {
     }
     _unsentModelChoices.remove(chatId);
     await _runCommand(
-      () => advisorCommands.setModel(chatId: chatId, model: model),
+      () => advisorCommands.setModel(
+        chatId: chatId,
+        model: model,
+        executionHarness: executionHarness,
+      ),
       onFailed: () {
         if (_modelChoices[chatId] == model) _modelChoices.remove(chatId);
       },
@@ -844,6 +897,7 @@ final class RemoteAppAdvisorController {
   /// Forgets the discarded session's chats.
   void reset() {
     _sessionGeneration++;
+    _modelSetup.clear();
     _settingsGeneration++;
     _boundFirstSend = null;
     _resendingMessages.clear();
@@ -941,6 +995,7 @@ final class RemoteAppAdvisorController {
     if (!identical(_firstSend, first)) return;
     _firstSend = null;
     _boundFirstSend = (messageId: first.messageId, chatId: chatId);
+    _modelSetup.forget(first.messageId);
     first.watchdog?.cancel();
     _actionError = null;
     // Keep earlier rejected submissions reachable after this chat is named.

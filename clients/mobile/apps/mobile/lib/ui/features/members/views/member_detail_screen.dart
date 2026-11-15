@@ -12,7 +12,6 @@ import 'package:mobile/ui/core/format.dart';
 import 'package:mobile/ui/core/widgets/state_message_view.dart';
 import 'package:mobile/ui/features/members/view_models/member_detail_view_model.dart';
 import 'package:mobile/ui/features/members/views/widgets/role_badge.dart';
-import 'package:mobile/ui/features/organizations/views/widgets/org_lapse_state_view.dart';
 
 /// Read-only member profile drill-down, pushed from the members list.
 ///
@@ -81,14 +80,6 @@ class _MemberDetailView extends StatelessWidget {
                 const Padding(
                   padding: EdgeInsets.symmetric(vertical: 48),
                   child: Center(child: CircularProgressIndicator()),
-                )
-              else if (viewModel.planLapse != null)
-                // The org lost its team features, so this member's usage rollup
-                // is gated. Retry cannot clear that; offer the remedy instead.
-                OrgLapseStateView(
-                  lapse: viewModel.planLapse!,
-                  glyph: CanopyGlyph.user,
-                  scrollable: false,
                 )
               else if (viewModel.error != null)
                 StateMessageView(

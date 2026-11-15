@@ -1,3 +1,4 @@
+import 'package:mobile/data/models/agent_model_selection.dart';
 import 'package:mobile/data/models/remote_chat.dart';
 import 'package:mobile/data/models/remote_session.dart';
 import 'package:mobile/ui/features/remote/view_models/remote_composer_effort.dart';
@@ -118,12 +119,14 @@ remoteDraftModelCatalog({
 final class RemoteDraftComposerChoices {
   const RemoteDraftComposerChoices({
     this.model,
+    this.executionHarness,
     this.thinkingLevel,
     this.fastMode,
     this.planMode,
   });
 
   final String? model;
+  final String? executionHarness;
   final String? thinkingLevel;
   final bool? fastMode;
   final bool? planMode;
@@ -132,11 +135,15 @@ final class RemoteDraftComposerChoices {
   /// again.
   RemoteDraftComposerChoices copyWith({
     String? model,
+    String? executionHarness,
     String? thinkingLevel,
     bool? fastMode,
     bool? planMode,
   }) => RemoteDraftComposerChoices(
     model: model ?? this.model,
+    executionHarness: model == null
+        ? executionHarness ?? this.executionHarness
+        : executionHarness,
     thinkingLevel: thinkingLevel ?? this.thinkingLevel,
     fastMode: fastMode ?? this.fastMode,
     planMode: planMode ?? this.planMode,
@@ -179,11 +186,11 @@ final class RemoteDraftComposer {
   /// The catalog entry the composer shows: the chosen or reference model,
   /// else, with neither, the catalog's default.
   ModelOption? get selectedModel {
-    final id = _modelId;
-    if (id == null) {
-      return catalog.where((option) => option.isDefault).firstOrNull;
-    }
-    return catalog.where((option) => option.id == id).firstOrNull;
+    return effectiveModelOption(
+      catalog,
+      _modelId,
+      executionHarness: choices.executionHarness,
+    );
   }
 
   /// The model the first send names: the chosen or reference model. The
@@ -208,8 +215,9 @@ final class RemoteDraftComposer {
   /// The same model-aware effort selection used by an existing remote chat.
   RemoteComposerEffort get effort => RemoteComposerEffort.resolve(
     catalog: catalog,
-    modelId: selectedModel?.id ?? _modelId,
+    modelId: _modelId ?? selectedModel?.id,
     providerType: providerType,
+    executionHarness: selectedModel?.harness,
     level:
         choices.thinkingLevel ??
         (cowork ? 'off' : reference?.thinkingLevel ?? 'high'),
@@ -232,6 +240,11 @@ final class RemoteDraftComposer {
     final options = RemoteChatSendOptions(
       model: modelId,
       providerType: modelId == null ? null : providerType,
+      executionHarness: agentModelSetupHarness(
+        catalog,
+        modelId,
+        executionHarness: choices.executionHarness,
+      ),
       planMode: cowork ? null : planMode,
       thinkingLevel: thinkingLevel,
       fastMode: sendsFast ? fastMode : null,

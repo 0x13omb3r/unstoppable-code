@@ -19,7 +19,6 @@ import 'package:mobile/ui/features/feed/views/widgets/feed_sharing_notice.dart';
 import 'package:mobile/ui/core/widgets/inline_notice.dart';
 import 'package:mobile/ui/core/widgets/state_message_view.dart';
 import 'package:mobile/ui/core/navigation/home_navigation_scope.dart';
-import 'package:mobile/ui/features/organizations/views/widgets/org_lapse_state_view.dart';
 import 'package:mobile/ui/features/members/view_models/members_view_model.dart';
 
 /// The activity-feed screen.
@@ -112,12 +111,6 @@ class _FeedScreenState extends State<FeedScreen> {
         listenable: viewModel,
         builder: (context, _) {
           final items = viewModel.items;
-          final lapse = viewModel.planLapse;
-          if (lapse != null) {
-            // The org lost its team features. Retry can never succeed, so
-            // the screen offers the billing remedy instead.
-            return OrgLapseStateView(lapse: lapse);
-          }
           // A reload of a known empty feed keeps the list (and its pull
           // gesture); only a first load for these filters shows a spinner.
           if (items.isEmpty && viewModel.isLoading && !viewModel.hasLoaded) {

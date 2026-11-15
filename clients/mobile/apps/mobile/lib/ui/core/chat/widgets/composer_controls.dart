@@ -1,3 +1,7 @@
+import 'package:mobile/data/models/selection_metadata.dart';
+import 'package:mobile/data/models/agent_catalog_selection.dart';
+import 'package:mobile/data/models/agent_model_selection.dart';
+import 'agent_picker_sheet.dart';
 import 'dart:async';
 
 import 'package:flutter/foundation.dart';
@@ -73,6 +77,12 @@ enum ModelCatalogStatus {
   loaded,
 }
 
+/// Paired hosts opt into Agent routes; cloud chats never supply this control.
+class AgentSelectionControl {
+  const AgentSelectionControl({this.defaultModel});
+  final String? defaultModel;
+}
+
 /// Immutable snapshot of the composer's control state + callbacks for one
 /// resolved chat. Built by the owning screen (which owns any optimistic
 /// overrides) and rendered by [ComposerToolbar].
@@ -94,8 +104,10 @@ class ComposerControlsData {
     required this.catalogStatus,
     this.onRetryCatalog,
     this.emptyCatalogHint,
+    this.executionHarness,
     this.lockedHarness,
     this.auto,
+    this.agentSelection,
   });
 
   /// Icon hint for the model control when no catalog row matches.
@@ -120,7 +132,7 @@ class ComposerControlsData {
   final bool isRunning;
 
   /// Null holds the selection: the model chip is disabled.
-  final ValueChanged<String>? onSelectModel;
+  final void Function(String model, {String? executionHarness})? onSelectModel;
 
   final VoidCallback onToggleFast;
   final VoidCallback onStop;
@@ -132,6 +144,9 @@ class ComposerControlsData {
   /// Optional subtitle for a projected catalog with no selectable model.
   final String? emptyCatalogHint;
 
+  /// Captured harness for current-selection metadata, even when unlocked.
+  final String? executionHarness;
+
   /// The harness a started chat runs on; rows of other harnesses explain the
   /// lock instead of switching. Null when the chat can still change harness.
   final String? lockedHarness;
@@ -139,25 +154,124 @@ class ComposerControlsData {
   /// Null hides Auto: the host or its transport cannot route.
   final ModelAutoControl? auto;
 
-  bool get autoSelected => auto?.selected ?? false;
+  final AgentSelectionControl? agentSelection;
+  String? get effectiveModelId => agentSelection == null
+      ? selectedModelId
+      : effectiveAgentModel(
+          availableModels,
+          selectedModelId,
+          defaultModel: agentSelection?.defaultModel,
+        );
+  String? get agentRemovalModelId =>
+      effectiveModelId ??
+      availableModels
+          .where(
+            (row) =>
+                row.kind == 'model' &&
+                row.isDefault &&
+                row.available &&
+                AgentCatalogSelection.concrete(row.id),
+          )
+          .firstOrNull
+          ?.id;
+  bool get hasAgent =>
+      agentSelection != null && selectedAgentId(selectedModelId) != null;
+  List<ModelOption> get pickerModels {
+    if (agentSelection == null) return availableModels;
+    return availableModels
+        .where((row) => row.kind != 'agent')
+        .map(
+          (row) =>
+              resolveModelSelectionMetadata(
+                catalog: availableModels,
+                selection: changeSelectedModel(selectedModelId, row.id),
+                executionHarness: modelCandidateHarness(
+                  row,
+                  _selectionHarness(
+                    changeSelectedModel(selectedModelId, row.id),
+                  ),
+                ),
+              ).metadataRow ??
+              row,
+        )
+        .toList();
+  }
+
+  // Preserve the captured runtime only when the next Agent can also use it.
+  String? _selectionHarness(String? selection) {
+    if (lockedHarness != null) return lockedHarness;
+    final next = resolveModelSelectionMetadata(
+      catalog: availableModels,
+      selection: selection,
+      defaultModelId: agentSelection?.defaultModel,
+    );
+    if (next.concreteModelId == null ||
+        next.concreteModelId != effectiveModelId) {
+      return null;
+    }
+    final support =
+        next.agentRow?.agentSelection?.supportedModels[next.concreteModelId];
+    if (support != null && !support.contains(executionHarness)) return null;
+    final row = next.modelRow;
+    return row == null ? null : modelCandidateHarness(row, executionHarness);
+  }
+
+  void selectModel(String selection) {
+    final choice = selectionModelOption(
+      availableModels,
+      selection,
+      executionHarness: _selectionHarness(selection),
+    );
+    onSelectModel?.call(selection, executionHarness: choice?.harness);
+  }
+
+  void selectConcreteModel(String model) => selectModel(
+    agentSelection == null
+        ? model
+        : changeSelectedModel(selectedModelId, model)!,
+  );
+  String? agentModelReason(ModelOption row) {
+    if (!hasAgent) return null;
+    final agent = availableModels
+        .where((row) => row.id == selectedAgentId(selectedModelId))
+        .firstOrNull;
+    final support = agent?.agentSelection?.supportedModels;
+    if (support != null &&
+        (!support.containsKey(row.id) ||
+            (lockedHarness != null &&
+                !support[row.id]!.contains(lockedHarness)))) {
+      return 'This agent cannot run on this model';
+    }
+    return null;
+  }
+
+  bool get autoSelected => !hasAgent && (auto?.selected ?? false);
 
   /// Whether Fast mode can be toggled now.
   bool get canToggleFast =>
       supportsFastMode && speed != CanopyEffortSpeed.ultraFast;
 
-  ModelOption? get selectedModel =>
-      availableModels.where((model) => model.id == selectedModelId).firstOrNull;
+  ModelOption? get selectedModel => resolveModelSelectionMetadata(
+    catalog: availableModels,
+    selection: selectedModelId,
+    defaultModelId: agentSelection?.defaultModel,
+    executionHarness: executionHarness ?? lockedHarness,
+  ).metadataRow;
 
   /// `$` commands follow the execution harness, including gateway models
   /// whose provider differs from the harness that runs them.
   bool get supportsDollarCommands =>
-      (lockedHarness ?? selectedModel?.harness ?? providerType) == 'codex';
+      (executionHarness ??
+          lockedHarness ??
+          selectedModel?.harness ??
+          providerType) ==
+      'codex';
 
   /// The selected model left a loaded catalog.
   bool get selectionRetired =>
       !autoSelected &&
       catalogStatus == ModelCatalogStatus.loaded &&
-      selectedModelId != null &&
+      effectiveModelId != null &&
       selectedModel == null;
 }
 
@@ -300,6 +414,29 @@ class ComposerToolbar extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.end,
       spacing: 4,
       children: [
+        if (data.agentSelection != null)
+          Flexible(
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 110),
+              child: CanopyComposerControl(
+                key: const ValueKey('composer-agent'),
+                glyph: CanopyGlyph.agent,
+                label:
+                    data.availableModels
+                        .where(
+                          (row) =>
+                              row.id == selectedAgentId(data.selectedModelId),
+                        )
+                        .firstOrNull
+                        ?.label ??
+                    'Agent',
+                tooltip: 'Agent',
+                onTap: data.onSelectModel == null
+                    ? null
+                    : () => unawaited(showComposerAgentPicker(context, live)),
+              ),
+            ),
+          ),
         Flexible(
           fit: FlexFit.loose,
           child: ConstrainedBox(
@@ -323,7 +460,10 @@ class ComposerToolbar extends StatelessWidget {
                   ? 'Auto'
                   : data.selectionRetired
                   ? 'Model no longer available'
-                  : data.modelLabel ?? 'Model',
+                  : data.hasAgent &&
+                        (data.effectiveModelId == null || selected == null)
+                  ? 'Choose a model'
+                  : data.selectedModel?.label ?? data.modelLabel ?? 'Model',
               onTap: data.onSelectModel == null
                   ? null
                   : () => unawaited(showComposerModelPicker(context, live)),

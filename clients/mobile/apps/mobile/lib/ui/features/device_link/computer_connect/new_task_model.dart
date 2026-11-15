@@ -1,3 +1,4 @@
+import 'package:mobile/data/models/agent_model_selection.dart';
 import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:mobile/data/models/chat_message.dart';
@@ -200,9 +201,11 @@ class DeviceNewTaskModel extends ChangeNotifier {
         _requireScope();
       }
       if (initialModel case final choice?) {
-        final currentChoice = model.settings.models
-            .where((row) => row.id == choice.id && row.available)
-            .firstOrNull;
+        final currentChoice = selectionModelOption(
+          model.settings.models,
+          choice.id,
+          executionHarness: choice.harness,
+        );
         if (currentChoice == null) {
           throw const DeviceLinkException(
             'This model is no longer available. Return home and choose another model.',

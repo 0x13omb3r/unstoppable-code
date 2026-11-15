@@ -1,3 +1,4 @@
+import 'package:mobile/data/models/selection_metadata.dart';
 import 'package:mobile/ui/core/chat/widgets/chat_provisioning.dart';
 import 'package:mobile/ui/core/chat/widgets/queued_messages_status.dart';
 import 'dart:async';
@@ -340,6 +341,12 @@ class _RemoteChatScreenState extends State<RemoteChatScreen>
     );
     _composerOverrides = viewModel.composerOverrides(
       onChanged: _onControllerChanged,
+      onFailure: (chatId, message) {
+        if (!mounted || chatId != _chatIdFor(_tabRows(_viewModel))) return;
+        ScaffoldMessenger.of(context)
+          ..hideCurrentSnackBar()
+          ..showSnackBar(SnackBar(content: Text(message)));
+      },
     );
     _composerChat = RemoteComposerChatResolver(
       tabs: _tabs,
@@ -1145,7 +1152,15 @@ class _RemoteChatScreenState extends State<RemoteChatScreen>
   RemoteChatSendOptions? _standaloneSendOptions(String? chatId) {
     if (_worktree != null || chatId == null) return null;
     final standalone = _viewModel.standaloneChatById(chatId) ?? _standaloneChat;
-    final provider = standalone?.providerType;
+    final provider =
+        resolveModelSelectionMetadata(
+          catalog: standalone?.availableModels ?? const [],
+          selection:
+              _composerOverrides.valueOf(chatId, ComposerField.model) ??
+              standalone?.model,
+          executionHarness: standalone?.executionHarness,
+        ).executionHarness ??
+        standalone?.providerType;
     final touched = _composerOverrides.valueOf(
       chatId,
       ComposerField.thinkingLevel,
@@ -1158,6 +1173,7 @@ class _RemoteChatScreenState extends State<RemoteChatScreen>
                 _composerOverrides.valueOf(chatId, ComposerField.model) ??
                 standalone?.model,
             providerType: provider,
+            executionHarness: standalone?.executionHarness,
             level: touched,
           );
     final options = RemoteChatSendOptions(
@@ -1531,10 +1547,20 @@ class _RemoteChatScreenState extends State<RemoteChatScreen>
               summaryModelLabel ??
               pendingModel)
         : summaryModelLabel;
-    final selectedModel = availableModels
-        .where((model) => model.id == effModelId)
-        .firstOrNull;
+    final capturedHarness = isWorktree
+        ? summary?.executionHarness
+        : standalone?.executionHarness;
+    final modelHarnessLocked = isWorktree
+        ? summary?.modelHarnessLocked
+        : standalone?.modelHarnessLocked;
+    final selectedModel = resolveModelSelectionMetadata(
+      catalog: availableModels,
+      selection: effModelId,
+      executionHarness: capturedHarness,
+    ).metadataRow;
     final providerType =
+        capturedHarness ??
+        selectedModel?.harness ??
         selectedModel?.provider ??
         (isWorktree ? summary?.providerType : standalone?.providerType);
     final effPlan =
@@ -1542,7 +1568,7 @@ class _RemoteChatScreenState extends State<RemoteChatScreen>
     final effort = RemoteComposerEffort.resolve(
       catalog: availableModels,
       modelId: effModelId,
-      executionHarness: summary?.executionHarness,
+      executionHarness: capturedHarness,
       providerType: isWorktree
           ? summary?.providerType
           : standalone?.providerType,
@@ -1564,7 +1590,9 @@ class _RemoteChatScreenState extends State<RemoteChatScreen>
         : null;
 
     return ComposerControlsData(
+      agentSelection: const AgentSelectionControl(),
       providerType: providerType,
+      executionHarness: capturedHarness,
       modelLabel: effModelLabel ?? selectedModel?.label ?? effModelId,
       selectedModelId: effModelId,
       availableModels: availableModels,
@@ -1606,23 +1634,17 @@ class _RemoteChatScreenState extends State<RemoteChatScreen>
           ? ModelCatalogStatus.loaded
           : ModelCatalogStatus.absent,
       emptyCatalogHint: 'Check model settings in the desktop app.',
-      lockedHarness: summary?.executionHarness,
+      lockedHarness: modelHarnessLocked == false ? null : capturedHarness,
       auto: _autoControl(worktreeTarget, summary),
-      onSelectModel: (id) => unawaited(
+      onSelectModel: (id, {executionHarness}) => unawaited(
         _runRemoteAction(
           overrides.chooseModel(
             target,
             id,
+            executionHarness: executionHarness,
             onSettled: (applied) {
               if (!applied) return;
-              widget.firstSend?.didChange(
-                ComposerField.model,
-                id,
-                providerType: availableModels
-                    .where((model) => model.id == id)
-                    .firstOrNull
-                    ?.provider,
-              );
+              widget.firstSend?.didChange(ComposerField.model, id);
             },
           ),
         ),

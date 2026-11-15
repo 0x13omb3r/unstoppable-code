@@ -1,3 +1,4 @@
+import 'package:mobile/data/models/agent_model_selection.dart';
 import 'dart:async';
 
 import 'package:flutter/material.dart';
@@ -140,11 +141,15 @@ class _RemoteAppAdvisorChatScreenState
         (chatId == null ? _newChatModel : null) ??
         advisor.modelFor(chatId) ??
         catalog.models.where((model) => model.isDefault).firstOrNull?.id;
-    final selected = catalog.models
-        .where((model) => model.id == modelId)
-        .firstOrNull;
+    final selected = effectiveModelOption(
+      catalog.models,
+      modelId,
+      executionHarness: summary?.executionHarness,
+    );
     return ComposerControlsData(
+      agentSelection: const AgentSelectionControl(),
       providerType: selected?.provider ?? summary?.providerType,
+      executionHarness: summary?.executionHarness,
       modelLabel:
           selected?.label ??
           (modelId == summary?.model ? summary?.modelLabel : null) ??
@@ -160,12 +165,16 @@ class _RemoteAppAdvisorChatScreenState
           ? ModelCatalogStatus.loaded
           : ModelCatalogStatus.absent,
       emptyCatalogHint: 'Check model settings in the desktop app.',
-      lockedHarness: summary?.executionHarness,
+      lockedHarness: summary?.modelHarnessLocked == false
+          ? null
+          : summary?.executionHarness,
       onSelectModel: !canAct || (chatId == null && advisor.isStartingChat)
           ? null
           : chatId == null
-          ? (id) => setState(() => _newChatModel = id)
-          : (id) => unawaited(advisor.setModel(chatId, id)),
+          ? (id, {executionHarness}) => setState(() => _newChatModel = id)
+          : (id, {executionHarness}) => unawaited(
+              advisor.setModel(chatId, id, executionHarness: executionHarness),
+            ),
       onToggleFast: () {},
       onStop: () {
         if (chatId != null) unawaited(advisor.cancel(chatId));

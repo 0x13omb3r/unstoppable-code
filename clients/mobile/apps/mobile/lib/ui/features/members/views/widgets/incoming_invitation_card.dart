@@ -6,7 +6,6 @@ import 'package:mobile/data/models/incoming_invitation.dart';
 import 'package:mobile/data/protocol/generated/organization.dart';
 import 'package:mobile/ui/core/action_dialogs.dart';
 import 'package:mobile/ui/features/members/views/widgets/role_badge.dart';
-import 'package:mobile/ui/features/organizations/org_lapse_presentation.dart';
 
 /// A pending incoming-invitation card with Accept / Decline actions, shared by
 /// the Members screen and the no-organization screen so the accept flow — and
@@ -102,18 +101,7 @@ class IncomingInvitationCard extends StatelessWidget {
     final confirmed = await confirmEnforcedSettings(context, invite);
     if (!context.mounted) return;
     if (!confirmed) return;
-    await guardAction(
-      context,
-      onAccept,
-      'Could not accept the invitation.',
-      failureMessageBuilder: (error) => orgLapseActionMessage(
-        error,
-        orgName: invite.organizationName,
-        // The invitee is not a member yet and cannot manage the target org's
-        // billing, regardless of the role the invitation would later grant.
-        viewerRole: null,
-      ),
-    );
+    await guardAction(context, onAccept, 'Could not accept the invitation.');
   }
 
   Future<void> _decline(BuildContext context) async {

@@ -28,20 +28,12 @@ final class MembersViewModel extends ChangeNotifier with DisposeSafeNotifier {
       List.unmodifiable(_incomingInvitations);
   Object? get error => _error;
 
-  /// The structured org-billing lapse payload when the most recent load
-  /// failed because the organization lost its team features, else null.
-  OrgTeamsLapsedError? get planLapse => errorOrgTeamsLapse(_error);
-
   /// User-presentable copy for the most recent load failure, or null when
   /// only generic copy is honest (5xx, transport). Never a raw exception dump.
   String? get errorMessage => presentableErrorMessage(_error);
 
   bool get isBusy => _isBusy;
   Object? get actionError => _actionError;
-
-  /// The structured org-billing lapse payload when the most recent mutation
-  /// failed because the organization lost its team features, else null.
-  OrgTeamsLapsedError? get actionPlanLapse => errorOrgTeamsLapse(_actionError);
 
   /// User-presentable copy for the most recent mutation failure, or null when
   /// only generic copy is honest (5xx, transport). Never a raw exception dump.

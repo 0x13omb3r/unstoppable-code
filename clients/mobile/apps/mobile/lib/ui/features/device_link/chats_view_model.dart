@@ -223,7 +223,7 @@ final class DeviceChatsViewModel extends ChangeNotifier {
 
   bool get settingsSaving => composerSettings.saving;
   String? _settingsError;
-  String? get settingsError => composerSettings.error ?? _settingsError;
+  String? get settingsCatalogError => _settingsError;
   StreamSubscription<void>? _subscription;
   bool _connected = false, _disposed = false, _restoring = false;
   int _connectionRevision = 0;
@@ -520,19 +520,17 @@ final class DeviceChatsViewModel extends ChangeNotifier {
     final ref = state?.ref;
     if (_disposed || !online || ref == null) return;
     if (settings.scopeKey != ref.key) _settingsError = null;
-    final errorRevision = composerSettings.errorRevision;
     final loading = settings.load(ref);
     try {
       await loading;
       if (!_disposed && state?.ref.key == ref.key) {
         _settingsError = null;
-        composerSettings.clearError(expectedRevision: errorRevision);
       }
     } catch (cause) {
       if (!_disposed && state?.ref.key == ref.key) {
         _settingsError = cause is DeviceLinkException
             ? cause.message
-            : 'Could not load models from your computer. Retry models.';
+            : "Couldn't load models from your computer.";
       }
     }
     if (!_disposed) notifyListeners();

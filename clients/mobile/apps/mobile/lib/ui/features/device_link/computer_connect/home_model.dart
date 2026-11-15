@@ -1,3 +1,5 @@
+import 'package:mobile/data/models/agent_model_selection.dart';
+import 'package:mobile/data/models/selection_metadata.dart';
 import 'dart:async';
 import 'dart:convert';
 import 'package:flutter/foundation.dart';
@@ -34,14 +36,18 @@ class ComputerChatHomeModel extends ChangeNotifier {
   bool _choicesValid = false, _reloadChoices = false;
   List<String> branches = [];
   String? projectId, worktreeId, baseBranch, modelId, thinkingLevel;
+  String? executionHarness;
   bool loading = true, branchesSupported = false, _disposed = false;
   String? error, saveError;
   int _generation = 0;
   Future<void> _writes = Future.value();
+  ModelOption? get selectedModel =>
+      effectiveModelOption(models, modelId, executionHarness: executionHarness);
   RemoteComposerEffort get effort => RemoteComposerEffort.resolve(
     catalog: models,
     modelId: modelId,
-    providerType: null,
+    providerType: selectedModel?.provider,
+    executionHarness: selectedModel?.harness,
     level: thinkingLevel ?? 'high',
   );
   bool get canStart =>
@@ -93,6 +99,9 @@ class ComputerChatHomeModel extends ChangeNotifier {
         ? saved['baseBranch'] as String
         : null;
     modelId = saved['modelId'] is String ? saved['modelId'] as String : null;
+    executionHarness = saved['executionHarness'] is String
+        ? saved['executionHarness'] as String
+        : null;
     thinkingLevel = saved['thinkingLevel'] is String
         ? saved['thinkingLevel'] as String
         : null;
@@ -126,6 +135,7 @@ class ComputerChatHomeModel extends ChangeNotifier {
         _choicesValid = false;
         projectId = null;
         worktreeId = baseBranch = modelId = thinkingLevel = null;
+        executionHarness = null;
         branches = [];
         models = [];
         providerAvailability = null;
@@ -144,6 +154,7 @@ class ComputerChatHomeModel extends ChangeNotifier {
     if (!projects.any((p) => p.id == id) || id == projectId) return;
     projectId = id;
     worktreeId = baseBranch = modelId = thinkingLevel = null;
+    executionHarness = null;
     await refreshChoices();
     await save();
   }
@@ -162,9 +173,10 @@ class ComputerChatHomeModel extends ChangeNotifier {
     await save();
   }
 
-  Future<void> selectModel(String id) async {
-    if (!models.any((m) => m.id == id && m.available)) return;
+  Future<void> selectModel(String id, {String? executionHarness}) async {
+    if (!validAgentSelection(models, id)) return;
     modelId = id;
+    this.executionHarness = executionHarness;
     if (thinkingLevel != null) thinkingLevel = effort.level;
     _notify();
     await save();
@@ -216,13 +228,15 @@ class ComputerChatHomeModel extends ChangeNotifier {
       }
       models = options.models;
       providerAvailability = options.providerAvailability;
-      if (!models.any((m) => m.id == modelId && m.available)) {
+      if (!validAgentSelection(models, modelId)) {
+        executionHarness = null;
         modelId =
             models.any((m) => m.id == options.defaultModelId && m.available)
             ? options.defaultModelId
             : null;
         thinkingLevel = options.defaultThinkingLevel;
       }
+      executionHarness = _rememberedHarness(models, modelId, executionHarness);
       if (thinkingLevel != null) thinkingLevel = effort.level;
       _choicesValid = true;
     } catch (cause) {
@@ -246,6 +260,7 @@ class ComputerChatHomeModel extends ChangeNotifier {
       'worktreeId': worktreeId,
       'baseBranch': baseBranch,
       'modelId': modelId,
+      'executionHarness': executionHarness,
       'thinkingLevel': thinkingLevel,
     });
     final next = _writes.then((_) => store.write(value));
@@ -266,4 +281,30 @@ class ComputerChatHomeModel extends ChangeNotifier {
     controller.removeListener(_inventoryChanged);
     super.dispose();
   }
+}
+
+// Remembered hints must not outlive the catalog support that made them selectable.
+String? _rememberedHarness(
+  List<ModelOption> models,
+  String? selection,
+  String? harness,
+) {
+  if (harness == null) return null;
+  final metadata = resolveModelSelectionMetadata(
+    catalog: models,
+    selection: selection,
+  );
+  final support = metadata
+      .agentRow
+      ?.agentSelection
+      ?.supportedModels[metadata.concreteModelId];
+  if (support != null && !support.contains(harness)) return null;
+  final row = metadata.modelRow;
+  if (row == null) {
+    return harness == metadata.executionHarness ? harness : null;
+  }
+  return harness == (row.harness ?? row.provider) ||
+          row.harnessProviders.containsKey(harness)
+      ? harness
+      : null;
 }

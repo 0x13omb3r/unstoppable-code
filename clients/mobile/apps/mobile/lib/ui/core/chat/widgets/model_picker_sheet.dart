@@ -73,6 +73,7 @@ class _ModelPickerSheetState extends State<ModelPickerSheet> {
   }
 
   String? _reason(ComposerControlsData data, ModelOption row) =>
+      data.agentModelReason(row) ??
       modelRowDisabledReason(
         row,
         availability: data.providerAvailability,
@@ -103,7 +104,7 @@ class _ModelPickerSheetState extends State<ModelPickerSheet> {
     if (row.extraChargeOnly && !await _confirmExtraCharge(row)) return;
     if (!mounted) return;
     Navigator.of(context).pop();
-    data.onSelectModel?.call(row.id);
+    data.selectConcreteModel(row.id);
   }
 
   Future<bool> _confirmExtraCharge(ModelOption row) async {
@@ -213,7 +214,7 @@ class _ModelPickerSheetState extends State<ModelPickerSheet> {
   }
 
   Widget _content(ComposerControlsData data) {
-    final rows = data.availableModels;
+    final rows = data.pickerModels;
     final tabs = modelPickerTabs(rows, data.providerAvailability);
     final tab = _currentTab(data, tabs);
     final searching = _search.text.trim().isNotEmpty;
@@ -247,9 +248,15 @@ class _ModelPickerSheetState extends State<ModelPickerSheet> {
               glyph: CanopyGlyph.sparkle,
               label: 'Auto',
               selected: autoRow.selected,
-              enabled: autoRow.selected || autoRow.reason == null,
-              explanation: autoRow.reason ?? 'Picks the best model for you',
-              onTap: () => _pickAuto(auto, autoRow),
+              enabled:
+                  !data.hasAgent &&
+                  (autoRow.selected || autoRow.reason == null),
+              explanation: data.hasAgent
+                  ? 'Remove the agent to use Auto'
+                  : autoRow.reason ?? 'Picks the best model for you',
+              onTap: () => data.hasAgent
+                  ? _announce('Remove the agent to use Auto')
+                  : _pickAuto(auto, autoRow),
             ),
           ),
         if (!searching && tabs.length > 1)
@@ -283,13 +290,13 @@ class _ModelPickerSheetState extends State<ModelPickerSheet> {
   }
 
   List<Widget> _searchResults(ComposerControlsData data) {
-    final sections = modelPickerSearch(data.availableModels, _search.text);
+    final sections = modelPickerSearch(data.pickerModels, _search.text);
     if (sections.isEmpty) return [const _Message(title: 'No models match')];
     return [for (final section in sections) ..._section(data, section)];
   }
 
   List<Widget> _tabContent(ComposerControlsData data, ModelPickerTab tab) {
-    final rows = data.availableModels;
+    final rows = data.pickerModels;
     final selectable = rows.any((row) => _reason(data, row) == null);
     return [
       if (rows.isEmpty)
@@ -364,7 +371,7 @@ class _ModelPickerSheetState extends State<ModelPickerSheet> {
           ? 'ollama'
           : 'other',
       label: row.label,
-      selected: !data.autoSelected && row.id == data.selectedModelId,
+      selected: !data.autoSelected && row.id == data.effectiveModelId,
       enabled: reason == null,
       // A sign-in lock names its remedy in place of the credits tag, like the
       // web picker (CAN-2872).

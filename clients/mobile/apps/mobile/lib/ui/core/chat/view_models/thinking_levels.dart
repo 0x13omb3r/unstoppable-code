@@ -7,26 +7,9 @@
 library;
 
 import 'package:mobile/data/models/chat_message.dart';
-
-/// Every effort level, weakest first (`THINKING_LEVELS`).
-const List<String> kThinkingLevelOrder = [
-  'off',
-  'low',
-  'medium',
-  'high',
-  'xhigh',
-  'max',
-  'ultra',
-];
-
-/// The levels a provider offers when its catalog row declares none
-/// (`providerFallbackThinkingLevels`). Providers without thinking get none.
-List<String> providerFallbackThinkingLevels(String? providerHint) =>
-    switch (providerHint) {
-      'unknown' || 'cursor' || 'copilot' || 'opencode' => const [],
-      'codex' => const ['off', 'medium', 'high', 'xhigh'],
-      _ => const ['off', 'medium', 'high', 'xhigh', 'max'],
-    };
+import 'package:mobile/data/models/selection_metadata.dart';
+export 'package:mobile/data/models/selection_metadata.dart'
+    show kThinkingLevelOrder, providerFallbackThinkingLevels;
 
 /// The effort levels a composer offers for [modelId], in canonical order
 /// (`resolveModelCatalogThinkingLevels`).
@@ -46,30 +29,18 @@ List<String> resolveThinkingLevels(
   String? modelId,
   String? providerHint,
 ) {
-  final selected = catalogRow(catalog, modelId);
-  final declared =
-      selected?.harnessThinkingLevels[providerHint] ??
-      selected?.supportedThinkingLevels;
-  if (declared != null) return _ordered(declared);
-  final legacy = selected?.thinkingLevels;
-  if (legacy != null) return _ordered(legacy);
-  return providerFallbackThinkingLevels(providerHint);
+  return resolveModelSelectionMetadata(
+    catalog: catalog,
+    selection: modelId == '' ? null : modelId,
+    executionHarness: providerHint,
+  ).thinkingLevels;
 }
 
-/// [modelId]'s catalog row. Without a model id the declared default row
-/// stands in, as the model picker shows it.
-ModelOption? catalogRow(List<ModelOption> catalog, String? modelId) {
-  final id = modelId == null || modelId.isEmpty ? null : modelId;
-  return catalog.where((option) => option.id == id).firstOrNull ??
-      (id == null
-          ? catalog.where((option) => option.isDefault).firstOrNull
-          : null);
-}
-
-List<String> _ordered(List<String> levels) => [
-  for (final level in kThinkingLevelOrder)
-    if (levels.contains(level)) level,
-];
+ModelOption? catalogRow(List<ModelOption> catalog, String? modelId) =>
+    resolveModelSelectionMetadata(
+      catalog: catalog,
+      selection: modelId == '' ? null : modelId,
+    ).metadataRow;
 
 /// Clamps [level] to the nearest supported level at or below it, so a stored
 /// value the active model does not support displays as a real level. If none

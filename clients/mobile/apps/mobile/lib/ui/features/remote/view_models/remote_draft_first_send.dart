@@ -42,22 +42,17 @@ final class RemoteDraftFirstSend {
 
   /// Keeps accepted composer edits over the carried draft's untouched fields.
   /// Command-backed edits arrive only after the desktop accepts the choice.
-  void didChange<T extends Object>(
-    ComposerField<T> field,
-    T value, {
-    String? providerType,
-  }) {
+  void didChange<T extends Object>(ComposerField<T> field, T value) {
     final options = _options;
     if (_disposed || _completed || options == null) return;
     _options = RemoteChatSendOptions(
       userMessageId: options.userMessageId,
-      model: switch ((field, value)) {
-        (ComposerField.model, final String model) => model,
-        _ => options.model,
-      },
-      providerType: field == ComposerField.model
-          ? providerType
-          : options.providerType,
+      // Model commands have already applied; do not override their captured harness on send.
+      model: field == ComposerField.model ? null : options.model,
+      providerType: field == ComposerField.model ? null : options.providerType,
+      executionHarness: field == ComposerField.model
+          ? null
+          : options.executionHarness,
       planMode: switch ((field, value)) {
         (ComposerField.planMode, final bool plan) => plan,
         _ => options.planMode,

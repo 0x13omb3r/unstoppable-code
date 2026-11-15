@@ -60,7 +60,7 @@ void main() {
           speed: CanopyEffortSpeed.regular,
           supportsFastMode: false,
           isRunning: running,
-          onSelectModel: (_) {},
+          onSelectModel: (_, {executionHarness}) {},
           onToggleFast: () {},
           onStop: () {},
           catalogStatus: ModelCatalogStatus.loaded,

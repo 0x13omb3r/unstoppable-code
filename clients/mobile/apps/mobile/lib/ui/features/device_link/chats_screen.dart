@@ -37,6 +37,7 @@ import 'computer_connect/chat_controls.dart';
 import 'computer_connect/composer_sources.dart';
 import 'computer_connect/file_screen.dart';
 import 'computer_connect/reconnect_notice_delay.dart';
+import 'computer_connect/settings_notice.dart';
 import 'device_chat_attachment_uploader.dart';
 
 /// Shown on the attach control while the computer is unreachable.
@@ -398,15 +399,9 @@ class _DeviceChatScreenState extends State<DeviceChatScreen>
         if (state?.hasPendingDecision == true && questions.isEmpty)
           _notice('This turn needs a response on your computer.'),
         if (state?.runtimeError case final error?) _notice(error),
-        if (model.settingsError case final error?)
-          _notice(
-            error,
-            action: CanopyButton(
-              label: 'Retry models',
-              onPressed: model.loadSettings,
-              variant: CanopyButtonVariant.inline,
-            ),
-          ),
+        if (model.composerSettings.failure != null ||
+            model.settingsCatalogError != null)
+          DeviceSettingsNotice(model: model),
       ];
       final hasTabs = model.tabs.isNotEmpty;
       return CanopyScaffold(

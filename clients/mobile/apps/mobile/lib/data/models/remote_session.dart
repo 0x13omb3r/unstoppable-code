@@ -591,6 +591,8 @@ class RemoteStandaloneChat {
     this.modelLabel,
     this.lastMessageAt,
     this.providerType,
+    this.executionHarness,
+    this.modelHarnessLocked,
     this.archived,
     this.hasActiveChat,
     this.hasUnread,
@@ -639,6 +641,8 @@ class RemoteStandaloneChat {
     modelLabel: modelLabel,
     lastMessageAt: lastMessageAt,
     providerType: providerType,
+    executionHarness: executionHarness,
+    modelHarnessLocked: modelHarnessLocked,
     archived: archived,
     hasActiveChat: active,
     hasUnread: unread,
@@ -655,6 +659,8 @@ class RemoteStandaloneChat {
 
   /// Provider that owns the chat session (`'claude' | 'codex'` on the wire).
   final String? providerType;
+  final String? executionHarness;
+  final bool? modelHarnessLocked;
 
   /// True when the chat has been archived from the active list.
   final bool? archived;
@@ -699,6 +705,8 @@ class RemoteStandaloneChat {
         modelLabel: _stringOrNull(json['modelLabel']),
         lastMessageAt: _stringOrNull(json['lastMessageAt']),
         providerType: _stringOrNull(json['providerType']),
+        executionHarness: _stringOrNull(json['executionHarness']),
+        modelHarnessLocked: _boolOrNull(json['modelHarnessLocked']),
         archived: _boolOrNull(json['archived']),
         hasActiveChat: _boolOrNull(json['hasActiveChat']),
         hasUnread: _boolOrNull(json['hasUnread']),

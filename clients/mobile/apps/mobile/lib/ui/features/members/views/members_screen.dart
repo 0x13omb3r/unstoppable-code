@@ -23,7 +23,6 @@ import 'package:mobile/ui/features/members/views/widgets/incoming_invitation_car
 import 'package:mobile/ui/features/members/views/widgets/role_badge.dart';
 import 'package:mobile/ui/features/organizations/view_models/org_settings_view_model.dart';
 import 'package:mobile/ui/features/organizations/views/org_settings_screen.dart';
-import 'package:mobile/ui/features/organizations/org_lapse_presentation.dart';
 import 'package:mobile/ui/features/organizations/view_models/org_view_model.dart';
 import 'package:mobile/ui/features/organizations/views/create_organization_flow.dart';
 import 'package:mobile/ui/features/sub_teams/view_models/sub_teams_view_model.dart';
@@ -240,7 +239,6 @@ class MembersScreen extends StatelessWidget {
       context,
       () => viewModel.setUsageStatsMinRole(selected),
       'Could not update usage-stats visibility.',
-      failureMessageBuilder: (error) => _lapseActionMessage(error, viewModel),
     );
   }
 
@@ -374,13 +372,7 @@ class MembersScreen extends StatelessWidget {
       messenger.showSnackBar(
         SnackBar(
           content: Text(
-            orgLapseActionMessage(
-                  orgVm.error,
-                  orgName: org.name,
-                  viewerRole: org.viewerRole,
-                ) ??
-                orgVm.errorMessage ??
-                'Could not delete the organization.',
+            orgVm.errorMessage ?? 'Could not delete the organization.',
           ),
         ),
       );
@@ -592,8 +584,6 @@ class _MemberRow extends StatelessWidget {
           context,
           () => viewModel.changeMemberRole(member.id, selected),
           'Could not change the role.',
-          failureMessageBuilder: (error) =>
-              _lapseActionMessage(error, viewModel),
         );
       case _MemberAction.remove:
         final confirmed = await confirmDestructive(
@@ -608,8 +598,6 @@ class _MemberRow extends StatelessWidget {
           context,
           () => viewModel.removeMember(member.id),
           'Could not remove the member.',
-          failureMessageBuilder: (error) =>
-              _lapseActionMessage(error, viewModel),
         );
     }
   }
@@ -664,18 +652,8 @@ class _InviteRow extends StatelessWidget {
       context,
       () => viewModel.revokeInvite(invite.id),
       'Could not revoke the invitation.',
-      failureMessageBuilder: (error) => _lapseActionMessage(error, viewModel),
     );
   }
-}
-
-String? _lapseActionMessage(Object error, MembersViewModel viewModel) {
-  final org = viewModel.organization;
-  return orgLapseActionMessage(
-    error,
-    orgName: org?.name,
-    viewerRole: org?.viewerRole,
-  );
 }
 
 String _initials(String name) {

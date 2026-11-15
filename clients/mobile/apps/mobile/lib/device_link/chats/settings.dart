@@ -1,3 +1,4 @@
+import 'package:mobile/data/models/agent_model_selection.dart';
 import 'package:mobile/data/models/chat_message.dart';
 import '../desktop/ipc.dart';
 import '../protocol.dart';
@@ -60,6 +61,11 @@ final class DeviceChatSettings {
 
   Future<Map<String, dynamic>?> _projection(DeviceChatRef ref) async {
     try {
+      if (ref.projectId == 'app-advisor') {
+        return deviceLinkObject(
+          deviceChatDto(await ipc.invoke('app-advisor:settings-view')),
+        );
+      }
       final result = deviceLinkObject(
         deviceChatDto(
           await ipc.invoke('desktop:session-snapshot', [
@@ -71,7 +77,7 @@ final class DeviceChatSettings {
           ]),
         ),
       );
-      return (result['chatSummaries'] as List? ?? const [])
+      final summary = (result['chatSummaries'] as List? ?? const [])
           .whereType<Map<String, dynamic>>()
           .where(
             (row) =>
@@ -81,6 +87,7 @@ final class DeviceChatSettings {
                 row['chatId'] == ref.id,
           )
           .firstOrNull;
+      return summary ?? (result['availableModels'] is List ? result : null);
     } catch (_) {
       // This optional, existing read must never break older registry-only hosts.
       return null;
@@ -142,8 +149,11 @@ final class DeviceChatSettings {
     );
     final outcome = response['outcome'];
     if (['conflict', 'not_found', 'rejected'].contains(outcome)) {
-      throw const DeviceChatSettingsRejected(
-        'The computer could not complete this action. Refresh and try again.',
+      final reason = response['reason'];
+      throw DeviceChatSettingsRejected(
+        reason is String && reason.trim().isNotEmpty
+            ? reason.substring(0, reason.length.clamp(0, 1000))
+            : 'The computer could not complete this action. Refresh and try again.',
       );
     }
     if (!['applied', 'already_applied'].contains(outcome)) {
@@ -155,8 +165,7 @@ final class DeviceChatSettings {
   }
 
   Future<int> selectModel(DeviceChatRef ref, ModelOption choice) async {
-    if (scopeKey != ref.key ||
-        !models.any((row) => row.id == choice.id && row.available)) {
+    if (scopeKey != ref.key || !validAgentSelection(models, choice.id)) {
       throw const DeviceChatSettingsRejected(
         'Refresh model choices before selecting a model.',
       );

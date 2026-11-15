@@ -58,7 +58,25 @@ final class DeviceChatHomeOptionsService {
     final registry = deviceLinkObject(
       deviceChatDto(await ipc.invoke('model-registry:get')),
     );
-    final catalog = deviceRegistryModels(registry);
+    Map<String, dynamic>? projection;
+    try {
+      projection = deviceLinkObject(
+        deviceChatDto(
+          await ipc.invoke('desktop:session-snapshot', [
+            {'workspaceLocalId': workspaceId},
+          ]),
+        ),
+      );
+    } catch (_) {
+      /* Older hosts may omit the scoped read. */
+    }
+    final rowsValue = projection?['availableModels'];
+    final catalog = rowsValue is List
+        ? [
+            for (final row in rowsValue)
+              ModelOption.fromJson(deviceLinkObject(row)),
+          ]
+        : deviceRegistryModels(registry);
     final defaults = await readDeviceDefaultModel(
       ipc,
       DeviceChatRef(projectId: workspaceId, worktreeId: '', id: '', title: ''),
@@ -74,10 +92,12 @@ final class DeviceChatHomeOptionsService {
       (row) => row['name'] == defaultBranch && row['hasRemoteRef'] == true,
     );
     return DeviceChatHomeOptions(
-      providerAvailability: ProviderAvailability(
-        cursor: cursor,
-        copilot: copilot,
-      ),
+      providerAvailability: ProviderAvailability.fromJson({
+        if (projection?['providerAvailability'] is Map)
+          ...deviceLinkObject(projection!['providerAvailability']),
+        'cursor': ?cursor,
+        'copilot': ?copilot,
+      }),
       branchesSupported: supported,
       branches: {
         if (supported)

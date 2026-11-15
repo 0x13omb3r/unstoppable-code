@@ -8,7 +8,6 @@ import 'package:mobile/data/protocol/generated/usage.dart';
 import 'package:mobile/ui/core/widgets/state_message_view.dart';
 import 'package:mobile/ui/core/navigation/home_navigation_scope.dart';
 import 'package:mobile/ui/features/members/view_models/members_view_model.dart';
-import 'package:mobile/ui/features/organizations/views/widgets/org_lapse_state_view.dart';
 import 'package:mobile/ui/features/stats/view_models/stats_view_model.dart';
 import 'package:mobile/ui/features/stats/views/tabs/activity_tab.dart';
 import 'package:mobile/ui/features/stats/views/tabs/cost_tab.dart';
@@ -87,12 +86,6 @@ class StatsScreen extends StatelessWidget {
             if (viewModel.isLoading) {
               return const Center(child: CircularProgressIndicator());
             }
-            final lapse = viewModel.planLapse;
-            if (lapse != null) {
-              // Retry cannot clear a billing lapse; offer the remedy instead.
-              return OrgLapseStateView(lapse: lapse, glyph: CanopyGlyph.chart4);
-            }
-
             if (viewModel.error != null) {
               return StateMessageView(
                 glyph: CanopyGlyph.chart4,

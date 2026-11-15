@@ -433,6 +433,7 @@ base class FakeRemoteControlRepository implements RemoteControlRepository {
 
   RemoteChatTarget? lastSetModelTarget;
   String? lastSetModel;
+  String? lastSetModelHarness;
   final List<RemoteWorktreeChatTarget> setAutoModelTargets = [];
   Future<String> Function()? setAutoModelHandler;
   bool? lastSetPlanMode;
@@ -493,9 +494,14 @@ base class FakeRemoteControlRepository implements RemoteControlRepository {
   ) async => 'fake-cmd-${++_commandSeq}';
 
   @override
-  Future<String> setChatModel(RemoteChatTarget target, String model) async {
+  Future<String> setChatModel(
+    RemoteChatTarget target,
+    String model, {
+    String? executionHarness,
+  }) async {
     lastSetModelTarget = target;
     lastSetModel = model;
+    lastSetModelHarness = executionHarness;
     return 'fake-cmd-${++_commandSeq}';
   }
 

@@ -1,3 +1,4 @@
+import 'package:mobile/data/models/agent_model_selection.dart';
 import 'dart:async';
 import 'package:mobile/data/models/chat_message.dart';
 import 'package:mobile/data/models/effort_speed.dart';
@@ -16,7 +17,14 @@ ComposerControlsData deviceComposerControls(DeviceChatsViewModel model) {
   final selectedId =
       tab['model'] as String? ??
       (settings.scopeKey == ref?.key ? settings.defaultModelId : null);
-  final current = catalog.where((row) => row.id == selectedId).firstOrNull;
+  final current = effectiveModelOption(
+    catalog,
+    selectedId,
+    defaultModel: settings.defaultModelId,
+    executionHarness:
+        (settings.scopeKey == ref?.key ? settings.executionHarness : null) ??
+        tab['executionHarness'] as String?,
+  );
   final provider = settings.scopeKey == ref?.key
       ? settings.executionHarness
       : null;
@@ -59,6 +67,9 @@ ComposerControlsData deviceComposerControls(DeviceChatsViewModel model) {
   }
 
   return ComposerControlsData(
+    agentSelection: AgentSelectionControl(
+      defaultModel: settings.defaultModelId,
+    ),
     providerType: harness,
     modelLabel:
         current?.label ??
@@ -121,8 +132,12 @@ ComposerControlsData deviceComposerControls(DeviceChatsViewModel model) {
     isRunning: model.state?.running == true,
     onSelectModel: !enabled || ref == null
         ? null
-        : (id) {
-            final choice = catalog.where((m) => m.id == id).firstOrNull;
+        : (id, {executionHarness}) {
+            final choice = selectionModelOption(
+              catalog,
+              id,
+              executionHarness: executionHarness ?? provider,
+            );
             if (choice != null) {
               unawaited(
                 model.changeSetting(ref, {
@@ -163,7 +178,7 @@ ComposerControlsData deviceComposerControls(DeviceChatsViewModel model) {
     },
     catalogStatus: settings.loading
         ? ModelCatalogStatus.loading
-        : model.settingsError != null
+        : model.settingsCatalogError != null
         ? ModelCatalogStatus.failed
         : settings.loaded
         ? ModelCatalogStatus.loaded

@@ -288,7 +288,8 @@ final class RemoteControlViewModel extends ChangeNotifier
   /// See [RemoteClientEngine.composerOverrides].
   ComposerOverridesController composerOverrides({
     required VoidCallback onChanged,
-  }) => _engine.composerOverrides(onChanged: onChanged);
+    void Function(String? chatId, String message)? onFailure,
+  }) => _engine.composerOverrides(onChanged: onChanged, onFailure: onFailure);
 
   /// A client-minted id for a flat workspace's first standalone chat.
   String mintStandaloneChatId() =>
@@ -947,8 +948,15 @@ final class RemoteControlViewModel extends ChangeNotifier
 
   /// Persists the chat's model without sending a message. Rethrows
   /// [RemoteControlException] so the composer can revert an optimistic flip.
-  Future<String> setChatModel(RemoteChatTarget target, String model) =>
-      _engine.sends.setChatModel(target, model);
+  Future<String> setChatModel(
+    RemoteChatTarget target,
+    String model, {
+    String? executionHarness,
+  }) => _engine.sends.setChatModel(
+    target,
+    model,
+    executionHarness: executionHarness,
+  );
 
   /// Toggles plan mode on a worktree chat. Rethrows on failure.
   Future<String> setChatPlanMode(

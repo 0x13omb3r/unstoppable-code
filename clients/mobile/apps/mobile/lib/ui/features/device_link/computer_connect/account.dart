@@ -45,9 +45,6 @@ final class ComputerConnectAccount extends ChangeNotifier {
   bool ready = false, busy = false, finding = false, accessDenied = false;
   int? accessStatus;
 
-  /// The account's plan does not include Remote Control. Set only for the
-  /// token route's entitlement denial, never for other access failures.
-  bool planRequired = false;
   String? error;
   String? _connectingId;
   bool _disposed = false, _foreground = true, _unreadable = false;
@@ -169,12 +166,9 @@ final class ComputerConnectAccount extends ChangeNotifier {
   void _denyAccess(DesktopRelayAccessException cause) {
     accessDenied = true;
     accessStatus = cause.statusCode;
-    planRequired = cause.entitlementDenied;
     _retry?.cancel();
     _retry = null;
-    error = planRequired
-        ? null
-        : cause.statusCode == 401
+    error = cause.statusCode == 401
         ? 'Your sign-in expired. Sign in again to connect your computers.'
         : 'Computer connection is unavailable for this account. Check your account access and try again.';
     _notify();
@@ -194,11 +188,10 @@ final class ComputerConnectAccount extends ChangeNotifier {
       return;
     }
     // Automatic discovery stops at accessDenied. A tap or foreground resume
-    // rechecks once, picking up a renewed sign-in or plan.
+    // rechecks once, picking up a renewed sign-in.
     if (accessDenied) {
       accessDenied = false;
       accessStatus = null;
-      planRequired = false;
       _resetRecovery();
     }
     _retry?.cancel();

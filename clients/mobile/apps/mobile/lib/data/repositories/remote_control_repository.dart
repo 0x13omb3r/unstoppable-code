@@ -211,7 +211,11 @@ abstract interface class RemoteControlRepository {
 
   /// Persists the chat's model without sending a message. Routes to
   /// `portal.chat.set_model` (worktree) or `portal.standalone_chat.set_model`.
-  Future<String> setChatModel(RemoteChatTarget target, String model);
+  Future<String> setChatModel(
+    RemoteChatTarget target,
+    String model, {
+    String? executionHarness,
+  });
 
   /// Turns on Auto for a worktree chat: `portal.chat.set_model` with
   /// `selectionMode: 'auto'` and no model. Standalone chats have no Auto.
@@ -1130,7 +1134,11 @@ final class MockRemoteControlRepository implements RemoteControlRepository {
   ) async => '';
 
   @override
-  Future<String> setChatModel(RemoteChatTarget target, String model) async {
+  Future<String> setChatModel(
+    RemoteChatTarget target,
+    String model, {
+    String? executionHarness,
+  }) async {
     await Future<void>.delayed(latency);
     return 'mock-cmd-${++_mockCommandSeq}';
   }
@@ -2695,37 +2703,42 @@ final class HttpRemoteControlRepository implements RemoteControlRepository {
   }
 
   @override
-  Future<String> setChatModel(RemoteChatTarget target, String model) =>
-      switch (target) {
-        RemoteWorktreeChatTarget(
-          :final workspaceLocalId,
-          :final worktreeLocalId,
-          :final chatId,
-        ) =>
-          _submitVoidCommand(
-            type: 'portal.chat.set_model',
-            target: {
-              'workspaceLocalId': workspaceLocalId,
-              'worktreeLocalId': worktreeLocalId,
-            },
-            payload: {
-              'projectId': workspaceLocalId,
-              'worktreeId': worktreeLocalId,
-              'chatId': ?chatId,
-              'model': model,
-            },
-          ),
-        RemoteStandaloneChatTarget(:final chatId, :final projectLocalId) =>
-          _submitVoidCommand(
-            type: 'portal.standalone_chat.set_model',
-            target: {'standaloneChatLocalId': chatId},
-            payload: {
-              'projectLocalId': ?projectLocalId,
-              'chatId': chatId,
-              'model': model,
-            },
-          ),
-      };
+  Future<String> setChatModel(
+    RemoteChatTarget target,
+    String model, {
+    String? executionHarness,
+  }) => switch (target) {
+    RemoteWorktreeChatTarget(
+      :final workspaceLocalId,
+      :final worktreeLocalId,
+      :final chatId,
+    ) =>
+      _submitVoidCommand(
+        type: 'portal.chat.set_model',
+        target: {
+          'workspaceLocalId': workspaceLocalId,
+          'worktreeLocalId': worktreeLocalId,
+        },
+        payload: {
+          'projectId': workspaceLocalId,
+          'worktreeId': worktreeLocalId,
+          'chatId': ?chatId,
+          'model': model,
+          'executionHarness': ?executionHarness,
+        },
+      ),
+    RemoteStandaloneChatTarget(:final chatId, :final projectLocalId) =>
+      _submitVoidCommand(
+        type: 'portal.standalone_chat.set_model',
+        target: {'standaloneChatLocalId': chatId},
+        payload: {
+          'projectLocalId': ?projectLocalId,
+          'chatId': chatId,
+          'model': model,
+          'executionHarness': ?executionHarness,
+        },
+      ),
+  };
 
   @override
   Future<String> setChatAutoModel(RemoteWorktreeChatTarget target) =>

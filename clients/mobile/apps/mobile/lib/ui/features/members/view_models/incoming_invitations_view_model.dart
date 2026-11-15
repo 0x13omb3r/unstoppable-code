@@ -1,6 +1,5 @@
 import 'package:flutter/foundation.dart';
 import 'package:mobile/data/models/incoming_invitation.dart';
-import 'package:mobile/data/protocol/generated/organization.dart';
 import 'package:mobile/data/repositories/incoming_invitations_repository.dart';
 import 'package:mobile/data/services/api_client.dart';
 import 'package:mobile/ui/core/dispose_safe_notifier.dart';
@@ -32,15 +31,10 @@ final class IncomingInvitationsViewModel extends ChangeNotifier
   Object? _error;
   bool _isBusy = false;
   Object? _actionError;
-  String? _actionInviteId;
 
   bool get isLoading => _isLoading;
   List<IncomingInvitation> get invitations => List.unmodifiable(_invitations);
   Object? get error => _error;
-
-  /// The structured org-billing lapse payload when the most recent load
-  /// failed because the organization lost its team features, else null.
-  OrgTeamsLapsedError? get planLapse => errorOrgTeamsLapse(_error);
 
   /// User-presentable copy for the most recent load failure, or null when
   /// only generic copy is honest (5xx, transport). Never a raw exception dump.
@@ -49,25 +43,9 @@ final class IncomingInvitationsViewModel extends ChangeNotifier
   bool get isBusy => _isBusy;
   Object? get actionError => _actionError;
 
-  /// The structured org-billing lapse payload when the most recent mutation
-  /// failed because the organization lost its team features, else null.
-  OrgTeamsLapsedError? get actionPlanLapse => errorOrgTeamsLapse(_actionError);
-
   /// User-presentable copy for the most recent mutation failure, or null when
   /// only generic copy is honest (5xx, transport). Never a raw exception dump.
   String? get actionErrorMessage => presentableErrorMessage(_actionError);
-
-  /// The invitation whose response produced [actionError], if it is still in
-  /// the pending list. This lets the no-organization surface name the correct
-  /// org when one of several invitation accepts is refused by the lapse gate.
-  IncomingInvitation? get actionErrorInvitation {
-    final id = _actionInviteId;
-    if (id == null) return null;
-    for (final invitation in _invitations) {
-      if (invitation.id == id) return invitation;
-    }
-    return null;
-  }
 
   /// Whether there is at least one pending invitation to act on.
   bool get hasInvitations => _invitations.isNotEmpty;
@@ -89,11 +67,10 @@ final class IncomingInvitationsViewModel extends ChangeNotifier
     final generation = ++_loadGeneration;
     _isLoading = true;
     _error = null;
-    // A fresh list check is also the recovery path after an owner
-    // restores a lapsed org. Do not leave a prior accept refusal latched over
-    // the newly loaded invitation; the user must be able to try it again.
+    // A fresh list check is the recovery path after a refused accept. Do not
+    // leave a prior refusal latched over the newly loaded invitation; the
+    // user must be able to try it again.
     _actionError = null;
-    _actionInviteId = null;
     notifyListenersSafe();
     try {
       final invitations = await repository.fetchIncomingInvitations().timeout(
@@ -129,14 +106,12 @@ final class IncomingInvitationsViewModel extends ChangeNotifier
   }) async {
     _isBusy = true;
     _actionError = null;
-    _actionInviteId = inviteId;
     notifyListenersSafe();
     try {
       await repository.respondToInvitation(inviteId: inviteId, accept: accept);
       _invitations = _invitations
           .where((i) => i.id != inviteId)
           .toList(growable: false);
-      _actionInviteId = null;
     } catch (e) {
       _actionError = e;
       rethrow;

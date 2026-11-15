@@ -447,8 +447,10 @@ final class RemoteClientEngine {
   /// chat commands and composer projections. The view owns and disposes it.
   ComposerOverridesController composerOverrides({
     required void Function() onChanged,
+    void Function(String? chatId, String message)? onFailure,
   }) => ComposerOverridesController(
     submit: _submitComposerChange,
+    onFailure: onFailure,
     sessionGeneration: () =>
         session.sessionGeneration + _viewRecoveryGeneration,
     projectionSequence: (target) {
@@ -462,14 +464,16 @@ final class RemoteClientEngine {
     RemoteChatTarget target,
     ComposerField<Object> field,
     Object value, {
+    String? executionHarness,
     required void Function(int completedAt) onCompleted,
-    required void Function() onFailed,
+    required void Function([String? reason]) onFailed,
   }) {
-    void failed(String _) => onFailed();
+    void failed(String reason) => onFailed(reason);
     return switch ((field, value, target)) {
       (ComposerField.model, final String model, _) => sends.setChatModel(
         target,
         model,
+        executionHarness: executionHarness,
         onCompleted: onCompleted,
         onFailed: failed,
       ),

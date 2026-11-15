@@ -13,6 +13,7 @@
 library;
 
 import 'dart:convert';
+import 'agent_catalog_selection.dart';
 
 /// Sender role on a chat message (`PortalChatMessage.role`).
 enum ChatRole {
@@ -458,12 +459,16 @@ class ModelOption {
     required this.kind,
     required this.available,
     this.description,
+    this.agentSelection,
     this.vendor,
     this.extraChargeOnly = false,
     this.extraChargeMessage,
     this.supportedThinkingLevels,
     this.thinkingLevels,
     this.harnessThinkingLevels = const {},
+    this.harnessProviders = const {},
+    this.harnessFastModes = const {},
+    this.harnessContextWindows = const {},
     this.isDefault = false,
     this.supportsFastMode,
     this.showMoreOnly = false,
@@ -495,6 +500,59 @@ class ModelOption {
   /// Declared levels per execution harness, from the row's `harnessChoices`
   /// entries that declare their own `supportedThinkingLevels`.
   final Map<String, List<String>> harnessThinkingLevels;
+  final Map<String, String> harnessProviders;
+  final Map<String, bool> harnessFastModes;
+  final Map<String, int> harnessContextWindows;
+
+  /// Keep source identity and display facts while choosing a compatible runtime.
+  ModelOption forExecution({
+    required String selection,
+    String? executionHarness,
+  }) => ModelOption(
+    id: selection,
+    label: label,
+    provider: provider == 'ollama'
+        ? provider
+        : harnessProviders[executionHarness] ?? executionHarness ?? provider,
+    kind: selection.startsWith('agent_model_') ? 'agent' : 'model',
+    available: available,
+    agentSelection: agentSelection,
+    description: description,
+    vendor: vendor,
+    extraChargeOnly: extraChargeOnly,
+    extraChargeMessage: extraChargeMessage,
+    supportedThinkingLevels:
+        harnessThinkingLevels[executionHarness] ??
+        (executionHarness == null || executionHarness == (harness ?? provider)
+            ? supportedThinkingLevels
+            : null),
+    thinkingLevels:
+        executionHarness == null || executionHarness == (harness ?? provider)
+        ? thinkingLevels
+        : null,
+    harnessThinkingLevels: harnessThinkingLevels,
+    harnessProviders: harnessProviders,
+    harnessFastModes: harnessFastModes,
+    harnessContextWindows: harnessContextWindows,
+    isDefault: isDefault,
+    supportsFastMode:
+        harnessFastModes[executionHarness] ??
+        (executionHarness == null || executionHarness == (harness ?? provider)
+            ? supportsFastMode
+            : null),
+    showMoreOnly: showMoreOnly,
+    source: source,
+    harness: executionHarness ?? harness,
+    family: family,
+    familyLabel: familyLabel,
+    contextWindow:
+        harnessContextWindows[executionHarness] ??
+        (executionHarness == null || executionHarness == (harness ?? provider)
+            ? contextWindow
+            : null),
+    sortOrder: sortOrder,
+    unavailableReason: unavailableReason,
+  );
 
   static const Set<String> _knownThinkingLevels = {
     'off',
@@ -508,6 +566,7 @@ class ModelOption {
 
   final String id;
   final String label;
+  final AgentCatalogSelection? agentSelection;
 
   /// Short catalog blurb for the row, when the desktop projection sends one.
   /// Optional so an older host that omits it parses unchanged.
@@ -562,7 +621,10 @@ class ModelOption {
     label: _stringValue(json['label'], fallback: _stringValue(json['id'])),
     provider: _stringValue(json['provider']),
     kind: _stringValue(json['kind'], fallback: 'model'),
-    available: _boolOrNull(json['available']) ?? true,
+    available: _boolOrNull(json['available']) ?? json['kind'] != 'agent',
+    agentSelection: json.containsKey('agentSelection')
+        ? AgentCatalogSelection.read(json['agentSelection'])
+        : null,
     description: _stringOrNull(json['description']),
     vendor: _stringOrNull(json['vendor']),
     extraChargeOnly: _boolOrNull(json['extraChargeOnly']) ?? false,
@@ -574,6 +636,42 @@ class ModelOption {
     harnessThinkingLevels: _harnessThinkingLevelsFromJson(
       json['harnessChoices'],
     ),
+    harnessProviders: {
+      for (final choice
+          in (json['harnessChoices'] is List
+                  ? json['harnessChoices'] as List
+                  : const [])
+              .whereType<Map>())
+        if ((choice['harness'], choice['provider']) case (
+          final String harness,
+          final String provider,
+        ))
+          harness: provider,
+    },
+    harnessFastModes: {
+      for (final choice
+          in (json['harnessChoices'] is List
+                  ? json['harnessChoices'] as List
+                  : const [])
+              .whereType<Map>())
+        if ((choice['harness'], choice['supportsFastMode']) case (
+          final String harness,
+          final bool fast,
+        ))
+          harness: fast,
+    },
+    harnessContextWindows: {
+      for (final choice
+          in (json['harnessChoices'] is List
+                  ? json['harnessChoices'] as List
+                  : const [])
+              .whereType<Map>())
+        if ((choice['harness'], choice['contextWindow']) case (
+          final String harness,
+          final int window,
+        ))
+          harness: window,
+    },
     isDefault: _boolOrNull(json['isDefault']) ?? false,
     supportsFastMode: _boolOrNull(json['supportsFastMode']),
     showMoreOnly: _boolOrNull(json['showMoreOnly']) ?? false,

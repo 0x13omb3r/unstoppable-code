@@ -270,6 +270,7 @@ class RemoteChatSummary implements ChatTabItem {
     this.backgroundTasks,
     this.backgroundDelegations,
     this.executionHarness,
+    this.modelHarnessLocked,
     this.modelAuto = false,
     this.modelRoutingSupported = false,
     this.pluginSelectionsDetail,
@@ -391,9 +392,12 @@ class RemoteChatSummary implements ChatTabItem {
   /// omitted the field; an empty list explicitly clears the cached queue.
   final List<RemoteQueuedMessage>? queuedMessages;
 
-  /// Desktop-captured harness of a started chat; the picker locks to it.
+  /// Desktop-captured harness of a started chat.
   /// Null for an unstarted chat or an older host.
   final String? executionHarness;
+
+  /// False permits changing harness; absent keeps the captured-harness lock.
+  final bool? modelHarnessLocked;
 
   /// The chat is in Auto (`modelSelectionMode: 'auto'`); [model] stays the
   /// concrete fallback. False for manual chats and older hosts.
@@ -453,6 +457,7 @@ class RemoteChatSummary implements ChatTabItem {
         json['queuedMessages'],
       ),
       executionHarness: _stringOrNull(json['executionHarness']),
+      modelHarnessLocked: _boolOrNull(json['modelHarnessLocked']),
       modelAuto: json['modelSelectionMode'] == 'auto',
       modelRoutingSupported: json['modelRoutingSupported'] == true,
       pluginSelectionsDetail: switch (json['pluginSelectionsDetail']) {
@@ -492,6 +497,7 @@ class RemoteChatSummary implements ChatTabItem {
     pendingQuestions: pendingQuestions,
     queuedMessages: queuedMessages,
     executionHarness: executionHarness,
+    modelHarnessLocked: modelHarnessLocked,
     modelAuto: modelAuto,
     modelRoutingSupported: modelRoutingSupported,
     pluginSelectionsDetail: pluginSelectionsDetail,
@@ -536,6 +542,7 @@ class RemoteChatSummary implements ChatTabItem {
       pendingQuestions: inheritedQuestions,
       queuedMessages: inheritedQueue,
       executionHarness: executionHarness,
+      modelHarnessLocked: modelHarnessLocked,
       modelAuto: modelAuto,
       modelRoutingSupported: modelRoutingSupported,
       pluginSelectionsDetail: pluginSelectionsDetail,
@@ -596,6 +603,7 @@ class RemoteChatSendOptions {
     this.userMessageId,
     this.model,
     this.providerType,
+    this.executionHarness,
     this.planMode,
     this.thinkingLevel,
     this.fastMode,
@@ -607,6 +615,9 @@ class RemoteChatSendOptions {
   final String? userMessageId;
   final String? model;
   final String? providerType;
+
+  /// Local setup intent, applied with set-model before sending; never a send payload field.
+  final String? executionHarness;
   final bool? planMode;
   final String? thinkingLevel;
   final bool? fastMode;
@@ -622,6 +633,7 @@ class RemoteChatSendOptions {
       userMessageId == null &&
       model == null &&
       providerType == null &&
+      executionHarness == null &&
       planMode == null &&
       thinkingLevel == null &&
       fastMode == null &&
@@ -636,11 +648,21 @@ class RemoteChatSendOptions {
     userMessageId: userMessageId ?? this.userMessageId,
     model: model,
     providerType: providerType,
+    executionHarness: executionHarness,
     planMode: planMode,
     thinkingLevel: thinkingLevel,
     fastMode: fastMode,
     inputMode: inputMode ?? this.inputMode,
     attachments: attachments ?? this.attachments,
+  );
+
+  RemoteChatSendOptions withoutModelSelection() => RemoteChatSendOptions(
+    userMessageId: userMessageId,
+    planMode: planMode,
+    thinkingLevel: thinkingLevel,
+    fastMode: fastMode,
+    inputMode: inputMode,
+    attachments: attachments,
   );
 }
 

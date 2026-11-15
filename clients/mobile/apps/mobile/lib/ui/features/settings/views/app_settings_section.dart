@@ -14,8 +14,6 @@ import 'package:mobile/ui/core/dimens.dart';
 import 'package:mobile/ui/core/theme_controller.dart';
 import 'package:mobile/ui/core/start_screen_controller.dart';
 import 'package:mobile/ui/core/usage_data_controller.dart';
-import 'package:mobile/ui/features/auth/view_models/auth_view_model.dart';
-import 'package:mobile/ui/features/organizations/org_lapse_presentation.dart';
 import 'package:mobile/ui/features/settings/view_models/notifications_view_model.dart';
 import 'package:mobile/ui/features/settings/views/widgets/server_environment_row.dart';
 import 'package:provider/provider.dart';
@@ -99,12 +97,6 @@ class _PushNotificationsRow extends StatelessWidget {
         value: CanopySettingsValue.loading(),
       );
     }
-    final activeOrg = context.read<AuthViewModel?>()?.activeOrganization;
-    final failureMessage = orgLapseActionMessage(
-      vm.error,
-      orgName: activeOrg?.name,
-      viewerRole: activeOrg?.role,
-    );
     final colors = AppColors.of(context);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -128,7 +120,7 @@ class _PushNotificationsRow extends StatelessWidget {
               children: [
                 Expanded(
                   child: Text(
-                    failureMessage ?? 'Could not update notification settings.',
+                    'Could not update notification settings.',
                     style: Theme.of(context).textTheme.bodySmall?.copyWith(
                       color: colors['fg-destructive'],
                     ),

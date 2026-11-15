@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:mobile/ui/features/auth/view_models/auth_view_model.dart';
-import 'package:mobile/ui/features/organizations/org_lapse_presentation.dart';
 import 'package:mobile/ui/features/organizations/view_models/org_view_model.dart';
 import 'package:provider/provider.dart';
 
@@ -101,17 +100,10 @@ Future<bool> promptCreateOrganization(BuildContext context) async {
   final messenger = ScaffoldMessenger.of(context);
   final newOrgId = await orgVm.create(name.trim());
   if (newOrgId == null) {
-    final activeOrg = auth.activeOrganization;
     messenger.showSnackBar(
       SnackBar(
         content: Text(
-          orgLapseActionMessage(
-                orgVm.error,
-                orgName: activeOrg?.name,
-                viewerRole: activeOrg?.role,
-              ) ??
-              orgVm.errorMessage ??
-              'Could not create the organization.',
+          orgVm.errorMessage ?? 'Could not create the organization.',
         ),
       ),
     );

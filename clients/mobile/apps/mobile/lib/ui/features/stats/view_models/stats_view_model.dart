@@ -1,5 +1,4 @@
 import 'package:flutter/foundation.dart';
-import 'package:mobile/data/protocol/generated/organization.dart';
 import 'package:mobile/data/protocol/generated/usage.dart';
 import 'package:mobile/data/repositories/stats_repository.dart';
 import 'package:mobile/data/services/api_client.dart';
@@ -83,10 +82,6 @@ final class StatsViewModel extends ChangeNotifier with DisposeSafeNotifier {
 
   /// Non-null when the most recent [loadUsage] ended with an error.
   Object? get error => _error;
-
-  /// The structured org-billing lapse payload when the most recent load
-  /// failed because the organization lost its team features, else null.
-  OrgTeamsLapsedError? get planLapse => errorOrgTeamsLapse(_error);
 
   /// User-presentable copy for the most recent load failure, or null when
   /// only generic copy is honest (5xx, transport). Never a raw exception dump.

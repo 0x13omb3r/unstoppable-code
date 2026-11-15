@@ -82,7 +82,7 @@ class _ModelPickerScreenState extends State<ModelPickerScreen> {
               glyph: CanopyGlyph.sparkle,
               label: 'Auto',
               enabled: false,
-              explanation: 'Add AI Credits to use this',
+              explanation: 'Buy AI Credits to use this',
               onTap: () {},
             ),
             CanopyModelRow(

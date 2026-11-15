@@ -3,15 +3,11 @@ import 'dart:async';
 import 'package:mobile/core/design-system/app-bar/canopy_app_bar.dart';
 import 'package:mobile/core/design-system/app-bar/canopy_scaffold.dart';
 import 'package:flutter/material.dart';
-import 'package:mobile/core/design-system/icon/canopy_glyph.dart';
 import 'package:provider/provider.dart';
-import 'package:mobile/data/protocol/generated/organization.dart';
-import 'package:mobile/ui/core/widgets/state_message_view.dart';
 import 'package:mobile/ui/features/auth/view_models/auth_view_model.dart';
 import 'package:mobile/ui/core/navigation/home_navigation_scope.dart';
 import 'package:mobile/ui/features/members/view_models/incoming_invitations_view_model.dart';
 import 'package:mobile/ui/features/members/views/widgets/incoming_invitation_card.dart';
-import 'package:mobile/ui/features/organizations/org_lapse_presentation.dart';
 import 'package:mobile/ui/features/organizations/views/create_organization_flow.dart';
 
 /// The Members tab for a signed-in user who belongs to no organization.
@@ -58,19 +54,9 @@ class _NoOrganizationScreenState extends State<NoOrganizationScreen>
   @override
   Widget build(BuildContext context) {
     final viewModel = context.watch<IncomingInvitationsViewModel>();
-    final actionLapse = viewModel.actionPlanLapse;
-    final loadLapse = viewModel.planLapse;
 
     final Widget body;
-    if (actionLapse != null) {
-      final invitation = viewModel.actionErrorInvitation;
-      body = _InvitationLapseState(
-        lapse: actionLapse,
-        organizationName: invitation?.organizationName,
-      );
-    } else if (loadLapse != null) {
-      body = _InvitationLapseState(lapse: loadLapse);
-    } else if (viewModel.hasInvitations) {
+    if (viewModel.hasInvitations) {
       body = _InvitationsView(viewModel: viewModel);
     } else if (viewModel.isLoading && !viewModel.hasLoaded) {
       // Only the FIRST load gets a full-screen spinner. A refresh must keep the
@@ -101,30 +87,6 @@ class _NoOrganizationScreenState extends State<NoOrganizationScreen>
           child: body,
         ),
       ),
-    );
-  }
-}
-
-class _InvitationLapseState extends StatelessWidget {
-  const _InvitationLapseState({required this.lapse, this.organizationName});
-
-  final OrgTeamsLapsedError lapse;
-  final String? organizationName;
-
-  @override
-  Widget build(BuildContext context) {
-    // A pending invitee is not a member yet and therefore cannot administer
-    // the target org's billing, even if the invitation would eventually grant
-    // ADMIN. Render the member/unknown-role remedy and no billing button.
-    final presentation = buildOrgLapsePresentation(
-      lapse: lapse,
-      orgName: organizationName,
-      viewerRole: null,
-    );
-    return StateMessageView(
-      glyph: CanopyGlyph.buildings,
-      title: presentation.title,
-      message: presentation.message,
     );
   }
 }

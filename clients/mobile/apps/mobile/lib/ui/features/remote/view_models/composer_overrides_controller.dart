@@ -36,8 +36,9 @@ typedef ComposerCommand =
       RemoteChatTarget target,
       ComposerField<Object> field,
       Object value, {
+      String? executionHarness,
       required void Function(int completedAt) onCompleted,
-      required void Function() onFailed,
+      required void Function([String? reason]) onFailed,
     });
 
 /// One optimistic composer value: what the user chose, the session that
@@ -86,6 +87,7 @@ final class ComposerOverridesController {
     required this.sessionGeneration,
     required this.projectionSequence,
     required this.onChanged,
+    this.onFailure,
   });
 
   final ComposerCommand submit;
@@ -96,6 +98,7 @@ final class ComposerOverridesController {
 
   /// Reports a change to an override the view renders.
   final void Function() onChanged;
+  final void Function(String? chatId, String message)? onFailure;
 
   final Map<String, _ChatOverrides> _chats = {};
   bool _disposed = false;
@@ -129,6 +132,7 @@ final class ComposerOverridesController {
     ComposerField<T> field,
     T value, {
     bool local = false,
+    String? executionHarness,
     void Function(bool applied)? onSettled,
   }) async {
     final chatId = target.chatId;
@@ -166,14 +170,23 @@ final class ComposerOverridesController {
         target,
         field,
         value,
+        executionHarness: executionHarness,
         onCompleted: (completedAt) {
           if (!isCurrent()) return;
           record.completedAt = completedAt;
           record._settle(true);
           if (_isSettled(chat, record)) discard();
         },
-        onFailed: () {
-          if (isCurrent()) discard();
+        onFailed: ([reason]) {
+          if (isCurrent()) {
+            onFailure?.call(
+              target.chatId,
+              reason == null || reason.trim().isEmpty
+                  ? 'The setting change was not confirmed.'
+                  : reason.substring(0, reason.length.clamp(0, 1000)),
+            );
+            discard();
+          }
         },
       );
       if (isCurrent() && commandId.isEmpty) discard();
@@ -192,10 +205,17 @@ final class ComposerOverridesController {
   Future<void> chooseModel(
     RemoteChatTarget target,
     String model, {
+    String? executionHarness,
     void Function(bool applied)? onSettled,
   }) {
     _drop(target.chatId, ComposerField.autoModel);
-    return change(target, ComposerField.model, model, onSettled: onSettled);
+    return change(
+      target,
+      ComposerField.model,
+      model,
+      executionHarness: executionHarness,
+      onSettled: onSettled,
+    );
   }
 
   /// Turns on Auto, dropping a pending concrete model choice.

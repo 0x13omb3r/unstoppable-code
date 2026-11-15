@@ -108,6 +108,14 @@ String modelRowHarness(ModelOption row) {
       (source != null && source != 'ai-gateway' ? source : row.provider);
 }
 
+/// A captured runtime describes the selected chat, not every candidate model.
+String? modelCandidateHarness(ModelOption row, String? lockedHarness) =>
+    lockedHarness != null &&
+        (modelRowHarness(row) == lockedHarness ||
+            row.harnessProviders.containsKey(lockedHarness))
+    ? lockedHarness
+    : null;
+
 /// The harness id that owns [row]'s tab. Like desktop, a native catalog source
 /// keeps its tab even when another harness runs the row.
 String modelRowTabHarness(ModelOption row) => switch (row.source) {
@@ -262,7 +270,7 @@ ModelAutoRow? modelAutoRow({
     selected: selected,
     reason: switch (availability) {
       ModelRoutingAvailability.loading => 'Checking AI Credits…',
-      ModelRoutingAvailability.noCredits => 'Add AI Credits to use this',
+      ModelRoutingAvailability.noCredits => 'Buy AI Credits to use this',
       _ when candidates.length < 2 => 'Needs two or more models',
       _ => null,
     },

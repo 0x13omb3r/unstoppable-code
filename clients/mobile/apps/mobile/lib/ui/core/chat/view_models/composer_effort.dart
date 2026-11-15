@@ -1,3 +1,4 @@
+import 'package:mobile/data/models/selection_metadata.dart';
 import 'package:mobile/data/models/chat_message.dart';
 import 'package:mobile/data/models/effort_speed.dart';
 import 'package:mobile/ui/core/chat/view_models/thinking_levels.dart';
@@ -28,12 +29,12 @@ final class RemoteComposerEffort {
     String? speed,
     bool? fastMode,
   }) {
-    final row = catalogRow(catalog, modelId);
-    final levels = resolveThinkingLevels(
-      catalog,
-      modelId,
-      executionHarness ?? row?.harness ?? row?.provider ?? providerType,
-    );
+    final levels = resolveModelSelectionMetadata(
+      catalog: catalog,
+      selection: modelId,
+      executionHarness: executionHarness,
+      providerHint: providerType,
+    ).thinkingLevels;
     return RemoteComposerEffort._(
       levels: levels,
       level: clampThinkingLevelTo(level, levels),

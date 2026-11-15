@@ -10,7 +10,6 @@ import 'package:provider/provider.dart';
 import 'package:mobile/data/protocol/generated/organization.dart';
 import 'package:mobile/ui/core/action_dialogs.dart';
 import 'package:mobile/ui/core/widgets/state_message_view.dart';
-import 'package:mobile/ui/features/organizations/org_lapse_presentation.dart';
 import 'package:mobile/ui/features/organizations/view_models/org_settings_view_model.dart';
 
 /// Display metadata for each enforced telemetry-sync scope. Labels + copy mirror
@@ -184,7 +183,6 @@ class _SettingsBody extends StatelessWidget {
     context,
     () => viewModel.setScopeEnforced(scope, enforced),
     'Could not update the enforced sync setting.',
-    failureMessageBuilder: (error) => _lapseActionMessage(error, viewModel),
   );
 }
 
@@ -268,18 +266,8 @@ class _ConnectedRow extends StatelessWidget {
       context,
       viewModel.disconnectGitHub,
       'Could not disconnect GitHub.',
-      failureMessageBuilder: (error) => _lapseActionMessage(error, viewModel),
     );
   }
-}
-
-String? _lapseActionMessage(Object error, OrgSettingsViewModel viewModel) {
-  final org = viewModel.organization;
-  return orgLapseActionMessage(
-    error,
-    orgName: org?.name,
-    viewerRole: org?.viewerRole,
-  );
 }
 
 class _DisconnectedRow extends StatelessWidget {

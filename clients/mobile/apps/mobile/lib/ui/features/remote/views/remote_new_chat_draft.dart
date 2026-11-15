@@ -358,9 +358,11 @@ class _RemoteNewChatDraftState extends State<RemoteNewChatDraft>
       RemoteDraftComposerChoices Function(RemoteDraftComposerChoices) change,
     ) => setState(() => _choices = change(_choices));
     return ComposerControlsData(
+      agentSelection: const AgentSelectionControl(),
       providerType: composer.providerType,
       modelLabel: composer.modelLabel,
-      selectedModelId: composer.selectedModel?.id ?? composer.modelId,
+      selectedModelId: composer.modelId ?? composer.selectedModel?.id,
+      executionHarness: composer.selectedModel?.harness,
       availableModels: composer.catalog,
       providerAvailability: composer.availability,
       planMode: composer.cowork
@@ -389,7 +391,10 @@ class _RemoteNewChatDraftState extends State<RemoteNewChatDraft>
           ? ModelCatalogStatus.absent
           : ModelCatalogStatus.loaded,
       emptyCatalogHint: 'Check model settings in the desktop app.',
-      onSelectModel: (id) => update((current) => current.copyWith(model: id)),
+      onSelectModel: (id, {executionHarness}) => update(
+        (current) =>
+            current.copyWith(model: id, executionHarness: executionHarness),
+      ),
       onToggleFast: () => update(
         (current) => current.copyWith(fastMode: !withChoices(current).fastMode),
       ),

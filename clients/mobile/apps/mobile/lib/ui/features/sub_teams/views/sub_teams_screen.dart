@@ -11,7 +11,6 @@ import 'package:provider/provider.dart';
 import 'package:mobile/data/protocol/generated/organization.dart';
 import 'package:mobile/ui/core/action_dialogs.dart';
 import 'package:mobile/ui/core/widgets/state_message_view.dart';
-import 'package:mobile/ui/features/organizations/org_lapse_presentation.dart';
 import 'package:mobile/ui/features/sub_teams/view_models/sub_teams_view_model.dart';
 import 'package:mobile/ui/features/sub_teams/views/sub_team_members_sheet.dart';
 import 'package:mobile/ui/features/sub_teams/views/sub_team_name_dialog.dart';
@@ -114,7 +113,6 @@ class _SubTeamsScreenState extends State<SubTeamsScreen> {
       context,
       () => viewModel.createSubTeam(name),
       'Could not create the sub-team.',
-      failureMessageBuilder: (error) => _lapseActionMessage(error, viewModel),
     );
   }
 }
@@ -248,7 +246,6 @@ class _SubTeamRow extends StatelessWidget {
       context,
       () => viewModel.setMembership(team.id, selected),
       'Could not update sub-team members.',
-      failureMessageBuilder: (error) => _lapseActionMessage(error, viewModel),
     );
   }
 
@@ -265,7 +262,6 @@ class _SubTeamRow extends StatelessWidget {
       context,
       () => viewModel.renameSubTeam(team.id, name),
       'Could not rename the sub-team.',
-      failureMessageBuilder: (error) => _lapseActionMessage(error, viewModel),
     );
   }
 
@@ -284,16 +280,6 @@ class _SubTeamRow extends StatelessWidget {
       context,
       () => viewModel.deleteSubTeam(team.id),
       'Could not delete the sub-team.',
-      failureMessageBuilder: (error) => _lapseActionMessage(error, viewModel),
     );
   }
-}
-
-String? _lapseActionMessage(Object error, SubTeamsViewModel viewModel) {
-  final org = viewModel.organization;
-  return orgLapseActionMessage(
-    error,
-    orgName: org?.name,
-    viewerRole: org?.viewerRole,
-  );
 }

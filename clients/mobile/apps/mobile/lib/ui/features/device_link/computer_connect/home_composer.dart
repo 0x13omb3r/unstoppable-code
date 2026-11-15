@@ -347,9 +347,7 @@ class ComputerHomeComposerState extends State<ComputerHomeComposer> {
           !model.loading &&
           !widget.controller.scopePending;
       final effort = model.effort;
-      final selected = model.models
-          .where((m) => m.id == model.modelId)
-          .firstOrNull;
+      final selected = model.selectedModel;
       final files = chatInputAttachmentsFor(_attachments);
       return ChatBody(
         transcript: ComputerHomeIntro(children: _notices()),
@@ -381,9 +379,11 @@ class ComputerHomeComposerState extends State<ComputerHomeComposer> {
             onAttach: files.onAttach,
           ),
           controls: ComposerControlsData(
+            agentSelection: const AgentSelectionControl(),
             providerType: selected?.harness ?? selected?.provider,
             modelLabel: selected?.label ?? 'Desktop default',
             selectedModelId: model.modelId,
+            executionHarness: selected?.harness,
             availableModels: model.models,
             providerAvailability: model.providerAvailability,
             effort: effort.levels.isEmpty
@@ -397,7 +397,9 @@ class ComputerHomeComposerState extends State<ComputerHomeComposer> {
             supportsFastMode: false,
             isRunning: false,
             onSelectModel: enabled
-                ? (id) => unawaited(model.selectModel(id))
+                ? (id, {executionHarness}) => unawaited(
+                    model.selectModel(id, executionHarness: executionHarness),
+                  )
                 : null,
             onToggleFast: () {},
             onStop: () {},

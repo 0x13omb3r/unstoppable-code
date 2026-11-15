@@ -9,6 +9,7 @@ import 'package:mobile/ui/features/remote/view_models/remote_unsent_sends.dart';
 import 'chat_transcript_store.dart';
 import 'owned_command_registry.dart';
 import 'remote_identity.dart';
+import 'remote_model_setup.dart';
 
 /// Ceiling on the post-send "awaiting agent turn" bridge. After an accepted
 /// send, the chat is presented as running until real turn evidence arrives —
@@ -155,6 +156,7 @@ final class ChatSendCoordinator {
     DraftTarget? clearDraft,
   }) async {
     final submittedAt = _clock();
+    final generation = sessionGeneration();
     final userMessageId = options?.userMessageId ?? _nextMessageId(submittedAt);
     final durable = options?.attachments?.isEmpty ?? true;
     if (!durable) {
@@ -199,7 +201,21 @@ final class ChatSendCoordinator {
       );
     }
     try {
-      if (mintedTab != null) await createChatTab(mintedTab);
+      if (mintedTab case final tab?) {
+        if (options?.executionHarness == null) {
+          await createChatTab(tab);
+        } else {
+          await confirmRemoteComposerCommand(
+            commands: commands,
+            submit: () => repository.createChatTab(tab),
+            isCurrent: () =>
+                isConnected() &&
+                !isDisposed() &&
+                sessionGeneration() == generation,
+            onFailed: (_) => onTabCreateFailed(tab),
+          );
+        }
+      }
       return await _deliver(
         sendTarget,
         text,
@@ -285,7 +301,7 @@ final class ChatSendCoordinator {
     final chatId = target.chatId;
     final key = remoteChatKeyForTarget(target);
     final sendGeneration = sessionGeneration();
-    final sendOptions = (options ?? const RemoteChatSendOptions()).copyWith(
+    var sendOptions = (options ?? const RemoteChatSendOptions()).copyWith(
       userMessageId: userMessageId,
     );
     var awaitingKey = key;
@@ -313,6 +329,30 @@ final class ChatSendCoordinator {
     }
 
     try {
+      if (sendOptions.model case final model?
+          when sendOptions.executionHarness != null) {
+        if (chatId == null || chatId.isEmpty) {
+          throw const RemoteControlException('The chat could not be created.');
+        }
+        await confirmRemoteComposerCommand(
+          commands: commands,
+          submit: () => repository.setChatModel(
+            target,
+            model,
+            executionHarness: sendOptions.executionHarness,
+          ),
+          isCurrent: () =>
+              isConnected() &&
+              !isDisposed() &&
+              sessionGeneration() == sendGeneration,
+        );
+        sendOptions = sendOptions.withoutModelSelection();
+        if (!isConnected() ||
+            isDisposed() ||
+            sessionGeneration() != sendGeneration) {
+          throw const RemoteControlException('Remote Control is disconnected.');
+        }
+      }
       RemoteChatSendResult result;
       try {
         result = await repository.sendChatMessage(
@@ -722,12 +762,17 @@ final class ChatSendCoordinator {
   Future<String> setChatModel(
     RemoteChatTarget target,
     String model, {
+    String? executionHarness,
     void Function(int completedAt)? onCompleted,
     OwnedCommandFailed? onFailed,
   }) async {
     if (!isConnected()) return '';
     return _submit(
-      () => repository.setChatModel(target, model),
+      () => repository.setChatModel(
+        target,
+        model,
+        executionHarness: executionHarness,
+      ),
       onCompleted: onCompleted,
       onFailed: onFailed,
     );

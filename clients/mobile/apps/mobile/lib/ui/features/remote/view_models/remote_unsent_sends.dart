@@ -100,6 +100,7 @@ final class RemoteUnsentRecord {
 Map<String, Object?> _optionsJson(RemoteChatSendOptions? options) => {
   'model': ?options?.model,
   'providerType': ?options?.providerType,
+  'executionHarness': ?options?.executionHarness,
   'planMode': ?options?.planMode,
   'thinkingLevel': ?options?.thinkingLevel,
   'fastMode': ?options?.fastMode,
@@ -119,6 +120,7 @@ RemoteChatSendOptions _optionsFrom(Object? value) {
   return RemoteChatSendOptions(
     model: text('model'),
     providerType: text('providerType'),
+    executionHarness: text('executionHarness'),
     planMode: flag('planMode'),
     thinkingLevel: text('thinkingLevel'),
     fastMode: flag('fastMode'),
