@@ -54,7 +54,7 @@ import {
   ActivitySectionChromeContext,
   PanelSection as DesktopPanelSection,
 } from '../shared/panel-section';
-import { AdvisorEtaBadge } from '../activity/AdvisorEtaBadge';
+import { AdvisorEtaStatus } from '../activity/AdvisorEtaBadge';
 import { ChatMessageItem } from '../chat/ChatMessageItem';
 import { FastModeButton } from '../chat/FastModeButton';
 import { QueuedMessageBubble } from '../chat/QueuedMessageBubble';
@@ -499,7 +499,7 @@ function PipelineRowChipsAfter(): JSX.Element {
           <Badge tone="warning" aria-label="Workflow input required">
             Input required
           </Badge>
-          <AdvisorEtaBadge
+          <AdvisorEtaStatus
             snapshot={DEMO_ADVISOR_SNAPSHOT}
             pipelineStatus="running"
             interactive={false}

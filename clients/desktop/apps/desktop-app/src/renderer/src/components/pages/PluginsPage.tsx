@@ -1,6 +1,10 @@
 import type { CustomizeRowMenuItem } from '@canopy/ui-shared/components/CustomizeRowMenu';
 import { isLocalCollectionConfig } from '@canopy/protocol/collections';
-import { Stack, Button } from '@canopy/ui-shared/components';
+import {
+  Stack,
+  Button,
+  HarnessCatchUpNotice,
+} from '@canopy/ui-shared/components';
 import type { PluginMcpNavigationTarget } from '@canopy/ui-shared/components';
 import {
   CustomizeSearchRow,
@@ -29,6 +33,7 @@ import {
   MarketplaceSourceAddDialog,
   MarketplaceSourceDetail,
   MarketplaceSourcesList,
+  MarketplacesManagePage,
   useMarketplaceSources,
   useMarketplaceSourcesAccess,
   type MarketplaceSourcePluginFilters,
@@ -60,6 +65,7 @@ import { PageContent } from '../shared/PageContent';
 import { useMarketplaceList } from '../../hooks/useMarketplaceList';
 import { useCuratedMcpServers } from '../../hooks/useCuratedMcpServers';
 import { useMcpServerList } from '../../hooks/useMcpServerList';
+import { useHarnessCatchUp } from '../../hooks/useHarnessCatchUp';
 import { useSkillList } from '../../hooks/useSkillList';
 import { useCustomizeSkillUpdates } from '../../hooks/useCustomizeSkillUpdates';
 import { usePublisherSkills } from '../../hooks/usePublisherSkills';
@@ -76,6 +82,7 @@ import { McpServerDialog } from './McpServersTab';
 import { AddSkillsModal, CreateSkillModal } from './SkillsTab';
 import { CollectionModal } from './CollectionsTab';
 import { ErrorBanner } from '../shared';
+import { toAppError } from '@canopy/protocol/app-errors';
 import { McpServerLogo } from '../shared/McpServerLogo';
 import { summarizeLoadErrors } from '@/lib/summarizeLoadErrors';
 import {
@@ -173,6 +180,7 @@ import {
   pipelineFiltersActive,
   type MarketplaceEntryShareState,
   type PipelineFilterValues,
+  type UnifiedEntryHarnessInstallFailure,
 } from '@canopy/ui-shared/lib';
 import { CLIENT_FEATURE_FLAGS } from '@canopy/protocol/feature-flags';
 import { CUSTOMIZE_LABEL } from '@canopy/protocol/ui-labels';
@@ -211,6 +219,7 @@ import type { SaveAgentModelRequest } from '@canopy/execution-engine/types/agent
 import type { SharedSkillSummary } from '@canopy/desktop-shared/types/skills';
 import { resolveSharedResourceErrorMessage } from '@/lib/sharedResourceErrors';
 import { installDesktopCustomizeTelemetry } from '@/lib/customizeTelemetry';
+import { useChatStore } from '@/stores/chatStore';
 
 // Customize analytics (CAN-6806); no visible effect.
 installDesktopCustomizeTelemetry();
@@ -370,6 +379,44 @@ export function PluginsPage({
     accountConnectionsUnavailableReason,
   } = useMcpServerList();
   const { entries: curatedMcpServers } = useCuratedMcpServers();
+  // One Add for every harness: try one refused harness again, for an MCP
+  // server (CAN-6815) or a plugin (CAN-6816).
+  const [harnessRetryError, setHarnessRetryError] = useState<string | null>(
+    null,
+  );
+  const canRetryHarnessInstall =
+    window.mcpServers.retryHarnessInstall !== undefined ||
+    window.plugins.retryHarnessInstall !== undefined;
+  const handleRetryHarnessInstall = useCallback(
+    (
+      _entry: UnifiedPluginEntry,
+      failure: UnifiedEntryHarnessInstallFailure,
+    ): void => {
+      const retry =
+        failure.item !== undefined
+          ? window.plugins
+              .retryHarnessInstall?.({
+                item: failure.item,
+                harness: failure.harness,
+              })
+              .then(() => reloadMarketplaces())
+          : window.mcpServers
+              .retryHarnessInstall?.({
+                serverId: failure.serverId,
+                harness: failure.harness,
+              })
+              .then(() => refreshServers());
+      if (retry === undefined) return;
+      setHarnessRetryError(null);
+      void retry.catch((cause: unknown) => {
+        const appError = toAppError(cause);
+        setHarnessRetryError(
+          appError?.detail.message.trim() || "Couldn't try that harness again.",
+        );
+      });
+    },
+    [refreshServers, reloadMarketplaces],
+  );
   const savedRoles = useSavedProfileRoles();
   const previousSavedRolesRef = useRef<typeof savedRoles>(undefined);
   useEffect(() => {
@@ -436,6 +483,11 @@ export function PluginsPage({
   // New Customize (CAN-6809, Labs): five tabs and one filter menu. Off, the
   // page is exactly as before.
   const discoveryEnabled = useCustomizeDiscoveryEnabled();
+  // New Customize (CAN-6811): an integration row shows and installs its copy
+  // for the harness new code chats use; Ollama and others read as Claude.
+  const defaultHarness = useChatStore((s) =>
+    s.modelDefaults?.worktreeProvider === 'codex' ? 'codex' : 'claude',
+  );
   const { filters: discoveryFilters, setFilters: setDiscoveryFilters } =
     useCustomizeDiscoveryFilters();
   const { active: sharedWithMeActive } = useCustomizeSharedWithMe();
@@ -992,6 +1044,14 @@ export function PluginsPage({
       sharedCustomAgentsEnabled,
     ],
   );
+  // New Customize (CAN-6817): offer to add existing installs to harnesses
+  // set up after they were added.
+  const harnessCatchUp = useHarnessCatchUp({
+    enabled: discoveryEnabled,
+    entries,
+    reloadPlugins: reloadMarketplaces,
+    reloadServers: refreshServers,
+  });
 
   const linkedSharedSkillEntry = useMemo(
     () =>
@@ -1568,8 +1628,10 @@ export function PluginsPage({
         ...(discoveryEnabled && sharedWithMeActive
           ? { sharedWithMeOnly: true }
           : {}),
+        ...(discoveryEnabled ? { defaultHarness } : {}),
       }),
     [
+      defaultHarness,
       discoveryEnabled,
       discoveryFilters,
       sharedWithMeActive,
@@ -3226,8 +3288,8 @@ export function PluginsPage({
     setCategory(null);
     setSelectedSourceId(null);
   };
-  // New Customize's Manage marketplaces… opens the Marketplaces view the old
-  // Marketplaces tab showed (CAN-6814 replaces it).
+  // New Customize's Manage marketplaces… opens the Marketplaces page
+  // (CAN-6814).
   const openMarketplacesView = (): void => selectTypeTab('sources');
   // One prop wiring for both presentations: the inline sub-page (shell-owned
   // branches) and the dialog fallback (skill/MCP-owned branches) must stay
@@ -3801,6 +3863,23 @@ export function PluginsPage({
               />
             </div>
           </div>
+        ) : discoveryEnabled && sourcesVisible ? (
+          // New Customize (CAN-6814): Marketplaces is its own page, opened
+          // from Manage marketplaces… and from the old tab's links.
+          <MarketplacesManagePage
+            state={marketplaceSources}
+            back={{
+              label: CUSTOMIZE_LABEL,
+              onClick: () => selectTypeTab('all'),
+            }}
+            onAddMarketplace={
+              canAddMarketplace
+                ? (): void => setAddMarketplaceOpen(true)
+                : undefined
+            }
+            onOpenSource={openMarketplaceSource}
+            removeConfirmation={marketplaceSourceRemoveConfirmation}
+          />
         ) : (
           <Stack gap="section">
             <div className="flex flex-col gap-0">
@@ -3987,6 +4066,20 @@ export function PluginsPage({
                         error={collectionActionError}
                         blockMessageFromReplay
                       />
+                      <ErrorBanner
+                        errorSource="plugins-page-harness-install"
+                        error={harnessRetryError}
+                        blockMessageFromReplay
+                      />
+                      {harnessCatchUp.state !== undefined && (
+                        <div className="pb-3">
+                          <HarnessCatchUpNotice
+                            state={harnessCatchUp.state}
+                            onAdd={harnessCatchUp.add}
+                            onDismiss={harnessCatchUp.dismiss}
+                          />
+                        </div>
+                      )}
                       <div
                         title={mcpConnectErrorCodeTitle(mcpBannerErrorCode)}
                         data-mcp-error-code={mcpBannerErrorCode ?? undefined}
@@ -4000,6 +4093,7 @@ export function PluginsPage({
                       <CustomizeTabSections
                         tab={activeCatalogTab}
                         entries={entries}
+                        defaultHarness={defaultHarness}
                         query={deferredQuery}
                         onClearSearch={() => {
                           setQuery('');
@@ -4044,6 +4138,11 @@ export function PluginsPage({
                         onEditEntry={handleEditEntry}
                         onAddEntry={handleAddEntry}
                         onConnectEntry={handleAddEntry}
+                        onRetryHarnessInstall={
+                          canRetryHarnessInstall
+                            ? handleRetryHarnessInstall
+                            : undefined
+                        }
                         onOpenEntryId={handleOpenEntryId}
                         entryShareStates={entryShareStates}
                         onShareEntry={handleShareEntry}

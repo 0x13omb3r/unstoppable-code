@@ -1,3 +1,4 @@
+import { ControlButton } from '@canopy/ui-shared/components';
 import { WorkflowNavJobRow } from '@canopy/ui-shared/components';
 import { useMemo, useRef, useState, type JSX } from 'react';
 import type {
@@ -89,10 +90,6 @@ function SelectionMarker(): JSX.Element {
   );
 }
 
-/** Selected and unselected row surfaces, shared by every selectable row. */
-const SELECTED_ROW_CLASS = 'bg-fg-primary/[0.04] font-semibold';
-const UNSELECTED_ROW_CLASS = 'hover:bg-fg-primary/[0.04]';
-
 export function PipelineDetailsNav({
   id,
   state,
@@ -153,11 +150,10 @@ export function PipelineDetailsNav({
       className="flex w-64 shrink-0 flex-col overflow-y-auto"
       data-testid="pipeline-details-nav"
     >
-      <button
+      <ControlButton
         type="button"
-        className={`focus-ring focus-ring-inset relative flex items-center gap-2 py-2 pl-4 pr-3.5 text-left transition-colors ${
-          selected === null ? SELECTED_ROW_CLASS : UNSELECTED_ROW_CLASS
-        }`}
+        presentation="workflow-detail-nav"
+        appearance={selected === null}
         aria-current={selected === null ? 'true' : undefined}
         onClick={(): void => onSelect(null)}
         data-testid="pipeline-details-nav-summary"
@@ -169,14 +165,13 @@ export function PipelineDetailsNav({
         />
         Summary
         {selected === null && <SelectionMarker />}
-      </button>
+      </ControlButton>
 
       {costEntry !== undefined ? (
-        <button
+        <ControlButton
           type="button"
-          className={`focus-ring focus-ring-inset relative flex items-center gap-2 py-2 pl-4 pr-3.5 text-left transition-colors ${
-            costSelected ? SELECTED_ROW_CLASS : UNSELECTED_ROW_CLASS
-          }`}
+          presentation="workflow-detail-nav"
+          appearance={costSelected}
           aria-current={costSelected ? 'true' : undefined}
           onClick={(): void => onSelect({ entry: 'cost' })}
           data-testid="pipeline-job-list-cost"
@@ -187,14 +182,13 @@ export function PipelineDetailsNav({
             {costEntry.amount}
           </span>
           {costSelected && <SelectionMarker />}
-        </button>
+        </ControlButton>
       ) : null}
 
-      <button
+      <ControlButton
         type="button"
-        className={`focus-ring focus-ring-inset relative flex items-center gap-2 py-2 pl-4 pr-3.5 text-left transition-colors ${
-          definitionSelected ? SELECTED_ROW_CLASS : UNSELECTED_ROW_CLASS
-        }`}
+        presentation="workflow-detail-nav"
+        appearance={definitionSelected}
         aria-current={definitionSelected ? 'true' : undefined}
         onClick={(): void => onSelect({ entry: 'definition' })}
         data-testid="pipeline-job-list-definition"
@@ -202,7 +196,7 @@ export function PipelineDetailsNav({
         <AppCatalogFileIcon size="sm" aria-hidden="true" className="shrink-0" />
         Definition used
         {definitionSelected && <SelectionMarker />}
-      </button>
+      </ControlButton>
 
       <div className="flex items-center justify-between px-3.5 pb-1 pt-3 text-2xs fg-secondary">
         <span>All jobs · {visibleJobs.length}</span>
@@ -309,12 +303,11 @@ function PipelineNavJob({
             <ChevronIcon open={expanded} />
           </Button>
         )}
-        <button
+        <ControlButton
           type="button"
           onClick={(): void => onSelect({ jobId })}
-          className={`focus-ring focus-ring-inset flex min-w-0 flex-1 items-center gap-2 py-2 pr-2.5 text-left ${
-            isMatrix ? 'pl-1.5' : 'pl-4'
-          }`}
+          presentation="workflow-detail-job"
+          appearance={isMatrix}
           aria-current={parentActive ? 'true' : undefined}
           data-testid={`pipeline-details-nav-job-${jobId}`}
         >
@@ -331,7 +324,7 @@ function PipelineNavJob({
               <Count value={children.length} /> variants
             </span>
           )}
-        </button>
+        </ControlButton>
         {parentActive && <SelectionMarker />}
       </WorkflowNavJobRow>
       {expanded && (
@@ -383,12 +376,11 @@ function PipelineNavMatrixVariant({
   onSelect: (target: PipelineDetailsSelection) => void;
 }): JSX.Element {
   return (
-    <button
+    <ControlButton
       type="button"
       onClick={(): void => onSelect({ jobId, variantJobId: child.id })}
-      className={`focus-ring focus-ring-inset relative flex w-full items-center gap-2 py-1.5 pl-3.5 pr-2.5 text-left transition-colors ${
-        active ? SELECTED_ROW_CLASS : UNSELECTED_ROW_CLASS
-      }`}
+      presentation="workflow-detail-child"
+      appearance={active}
       aria-current={active ? 'true' : undefined}
       data-testid={`pipeline-details-nav-child-${jobId}-${child.id}`}
     >
@@ -405,7 +397,7 @@ function PipelineNavMatrixVariant({
         </span>
       </span>
       {active && <SelectionMarker />}
-    </button>
+    </ControlButton>
   );
 }
 

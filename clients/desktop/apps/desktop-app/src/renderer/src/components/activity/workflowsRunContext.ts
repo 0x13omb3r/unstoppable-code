@@ -26,7 +26,17 @@ export type PipelineRunDestination =
       /** The owner differs from the selected navigation context. */
       outsideNavigation: boolean;
     }
-  | { kind: 'current-task'; projectId: string; worktreeId: string };
+  | {
+      kind: 'current-task';
+      projectId: string;
+      worktreeId: string;
+      /**
+       * A cloud run's owner, saved or chosen (CAN-6869): the run goes to
+       * that owner's cloud worktree on the task's branch. Absent on this
+       * computer, where the task's project decides.
+       */
+      cloudOwner?: string;
+    };
 
 export interface ResolvedRunContext {
   location: PipelineRunLocation;
@@ -59,7 +69,10 @@ export function resolveWorkflowsRunContext({
   /** The selected task's scope; absent with no selected task. */
   taskScope: PipelineExecutionScope | undefined;
   chosenLocation: PipelineRunLocation | undefined;
-  /** Where the run executes; a cloud run takes No project only (CP-36). */
+  /**
+   * Where the run executes. A cloud run with the current task (CAN-6869)
+   * also names its owner, whose cloud worktree on the branch it runs in.
+   */
   runOn?: PipelineRunOn;
   choices: PipelineRunOwnerChoices;
   selection: {
@@ -91,7 +104,10 @@ export function resolveWorkflowsRunContext({
     showLocation: supportsGlobal && supportsTask,
     currentTaskUnavailable,
   };
-  if (location === 'current-task') {
+  if (
+    location === 'current-task' &&
+    (runOn !== 'cloud' || currentTaskUnavailable)
+  ) {
     // A pipeline that only runs in a task waits for a compatible one.
     return {
       ...base,

@@ -1,5 +1,7 @@
 import {
+  useCallback,
   useEffect,
+  useLayoutEffect,
   useRef,
   type JSX,
   type ReactNode,
@@ -7,6 +9,10 @@ import {
 } from 'react';
 import { createPortal } from 'react-dom';
 import { focusableWithin } from '../lib/focusable';
+import {
+  DIALOG_INITIAL_FOCUS_TARGET_EVENT,
+  DIALOG_INITIAL_FOCUS_TARGET_SELECTOR,
+} from '../lib/dialog-initial-focus';
 import { Button } from './Button';
 import { floatingSurfaceAnchor } from './FloatingMenu';
 import { useOverlayEscape } from './useOverlayEscape';
@@ -36,7 +42,8 @@ function isRestorable(
   return (
     ElementConstructor !== undefined &&
     candidate instanceof ElementConstructor &&
-    candidate.isConnected
+    candidate.isConnected &&
+    !candidate.matches(':disabled')
   );
 }
 
@@ -319,7 +326,8 @@ interface DialogModalBaseProps {
   trapFocus?: boolean;
   /**
    * First focus target when `trapFocus` is set. Defaults to the first
-   * focusable descendant, which is the header close button.
+   * focusable descendant, which is the header close button. A descendant
+   * marked `data-dialog-initial-focus` takes priority when this ref is omitted.
    *
    * Read through a latest-ref internally, so an inline conditional
    * (`enabled ? aRef : bRef`) is safe and will not rebuild the trap.
@@ -413,6 +421,8 @@ function ownedBySurface(menu: Element, surface: HTMLElement): boolean {
 
 interface ModalFocusTrapOptions {
   readonly enabled: boolean;
+  /** Restore focus after a marked initial target was focused, even without a trap. */
+  readonly initialFocusAppliedRef?: RefObject<boolean>;
   /** Focus the surface itself rather than its first control. */
   readonly focusSurface: boolean;
   readonly initialFocusRef: RefObject<HTMLElement | null> | undefined;
@@ -426,12 +436,14 @@ interface ModalFocusTrapOptions {
  * The modal focus contract shared by {@link DialogModal} and
  * {@link WindowPage}: while enabled, focus moves into the surface, Tab and
  * Shift+Tab stay inside it, and on disable focus goes back where it was (or
- * to a named fallback).
+ * to a named fallback). DialogModal also restores focus after its marked
+ * initial target is focused when its host intentionally leaves the trap off.
  */
 function useModalFocusTrap(
   cardRef: RefObject<HTMLElement | null>,
   {
     enabled,
+    initialFocusAppliedRef,
     focusSurface,
     initialFocusRef,
     restoreFocusRef,
@@ -462,36 +474,63 @@ function useModalFocusTrap(
   containmentRef.current = containment;
   const focusCardRef = useRef(focusSurface);
   focusCardRef.current = focusSurface;
+  const enabledRef = useRef(enabled);
+  enabledRef.current = enabled;
+  const previouslyFocusedRef = useRef<Element | null>(null);
+  const hasPreviousFocusRef = useRef(false);
+  const effectGenerationRef = useRef(0);
+  const restoresInitialFocus = initialFocusAppliedRef !== undefined;
+  if (!enabled && !restoresInitialFocus) {
+    previouslyFocusedRef.current = null;
+    hasPreviousFocusRef.current = false;
+  } else if (!hasPreviousFocusRef.current) {
+    // Capture before a descendant's React `autoFocus` runs, so close restores
+    // focus to the opener instead of the search field being removed.
+    const doc =
+      ownerDocument ?? (typeof document === 'undefined' ? null : document);
+    if (doc) {
+      previouslyFocusedRef.current = doc.activeElement;
+      hasPreviousFocusRef.current = true;
+    }
+  }
 
-  useEffect(() => {
-    if (!enabled) return;
+  useLayoutEffect(() => {
+    if (!enabled && !restoresInitialFocus) return;
+    effectGenerationRef.current += 1;
     const card = cardRef.current;
     if (!card) return;
     const doc = card.ownerDocument;
-    const previouslyFocused = doc.activeElement;
+    const previouslyFocused = previouslyFocusedRef.current ?? doc.activeElement;
     const trapId = focusTrapIdRef.current;
     if (trapId === null) return;
-    // The pane a pane dialog covers: its scrim's positioned parent.
-    const pane =
-      containmentRef.current === 'parent'
-        ? (card.parentElement?.parentElement ?? null)
-        : null;
-    addFocusTrap(doc, trapId, card, pane);
+    if (enabled) {
+      // The pane a pane dialog covers: its scrim's positioned parent.
+      const pane =
+        containmentRef.current === 'parent'
+          ? (card.parentElement?.parentElement ?? null)
+          : null;
+      addFocusTrap(doc, trapId, card, pane);
 
-    // Resolve the named target against the focusable set rather than trusting
-    // it. A caller naturally names a semantic target ("the Cancel button"),
-    // which can be `disabled` at mount — `ConfirmDialog` disables Cancel while
-    // busy, so a dialog opened already-busy would `focus()` a disabled node,
-    // silently no-op, and strand focus on `<body>` inside an `aria-modal`
-    // surface: exactly the failure the trap exists to prevent.
-    const focusables = focusableWithin(card);
-    const named = initialFocusRefRef.current?.current;
-    const initial = focusCardRef.current
-      ? card
-      : named !== null && named !== undefined && focusables.includes(named)
-        ? named
-        : focusables[0];
-    initial?.focus();
+      // Resolve the named target against the focusable set rather than
+      // trusting it. A caller naturally names a semantic target ("the Cancel
+      // button"), which can be `disabled` at mount — `ConfirmDialog` disables
+      // Cancel while busy, so a dialog opened already-busy would `focus()` a
+      // disabled node, silently no-op, and strand focus on `<body>` inside an
+      // `aria-modal` surface: exactly the failure the trap exists to prevent.
+      const focusables = focusableWithin(card);
+      const named = initialFocusRefRef.current?.current;
+      const marked = card.querySelector<HTMLElement>(
+        DIALOG_INITIAL_FOCUS_TARGET_SELECTOR,
+      );
+      const initial = focusCardRef.current
+        ? card
+        : named !== null && named !== undefined && focusables.includes(named)
+          ? named
+          : marked !== null && focusables.includes(marked)
+            ? marked
+            : focusables[0];
+      initial?.focus();
+    }
 
     // Capture phase so the dialog claims Tab before anything underneath it.
     // A const arrow rather than a function declaration: declarations hoist, so
@@ -562,52 +601,209 @@ function useModalFocusTrap(
       }
     };
 
-    doc.addEventListener('keydown', handleKeyDown, true);
+    if (enabled) doc.addEventListener('keydown', handleKeyDown, true);
     return (): void => {
-      doc.removeEventListener('keydown', handleKeyDown, true);
-      removeFocusTrap(doc, trapId);
-      const active = doc.activeElement;
-      // Only reclaim focus we still own. A caller that reopens its own surface
-      // as the dialog resolves has already placed focus deliberately, and
-      // pulling it back to the pre-dialog element would fight that.
-      const stillOurs =
-        active === null || active === doc.body || card.contains(active);
-      if (!stillOurs || restoreFocusWhenRef.current?.() === false) return;
-
-      // The confirmed action often REMOVES the control that opened the dialog —
-      // removing a member, revoking a key, deleting a row. Focusing a detached
-      // node is a silent no-op that leaves focus on `<body>`, which is the
-      // exact failure this trap exists to prevent, just moved to the exit. Fall
-      // back to a target the caller named, then to the still-mounted overlay
-      // host, so focus always lands somewhere real.
-      const restoreTarget =
-        previouslyFocused !== null &&
-        previouslyFocused !== doc.body &&
-        isRestorable(previouslyFocused, doc, ownerDocument)
-          ? previouslyFocused
-          : resolveFallbackFocus(restoreFocusRefRef.current, doc);
-      // The shell behind a window page stays inert until it re-renders, so
-      // a target there cannot take focus yet: try again on the next frames
-      // while focus is still nowhere.
-      const restore = (attempt: number): void => {
-        if (!restoreTarget) return;
-        restoreTarget.focus();
-        const view = doc.defaultView;
+      if (enabled) {
+        doc.removeEventListener('keydown', handleKeyDown, true);
+        removeFocusTrap(doc, trapId);
+      }
+      if (!enabled && initialFocusAppliedRef?.current !== true) return;
+      const cleanupGeneration = ++effectGenerationRef.current;
+      queueMicrotask(() => {
+        // A new setup means this was an effect replay or the same surface is
+        // still active. Do not restore focus from a stale cleanup.
         if (
-          doc.activeElement === restoreTarget ||
-          attempt >= INERT_RESTORE_ATTEMPTS ||
-          !view ||
-          restoreTarget.closest('[inert]') === null
+          effectGenerationRef.current !== cleanupGeneration &&
+          enabledRef.current === enabled
         )
           return;
-        view.requestAnimationFrame((): void => {
-          const current = doc.activeElement;
-          if (current === null || current === doc.body) restore(attempt + 1);
-        });
-      };
-      restore(0);
+
+        const active = doc.activeElement;
+        // Only reclaim focus we still own. A caller that reopens its own
+        // surface as the dialog resolves has already placed focus deliberately,
+        // and pulling it back to the pre-dialog element would fight that.
+        const stillOurs =
+          active === null || active === doc.body || card.contains(active);
+        if (!stillOurs || restoreFocusWhenRef.current?.() === false) return;
+
+        // Layout-effect cleanup runs before React finishes the DOM mutations
+        // for this commit. Resolve the trigger only afterward so removed or
+        // disabled controls fall back to the caller's named target.
+        const restoreTarget =
+          previouslyFocused !== null &&
+          previouslyFocused !== doc.body &&
+          isRestorable(previouslyFocused, doc, ownerDocument)
+            ? previouslyFocused
+            : resolveFallbackFocus(restoreFocusRefRef.current, doc);
+        // The shell behind a window page stays inert until it re-renders, so
+        // a target there cannot take focus yet: try again on the next frames
+        // while focus is still nowhere.
+        const restore = (attempt: number): void => {
+          if (!restoreTarget) return;
+          restoreTarget.focus();
+          const view = doc.defaultView;
+          if (
+            doc.activeElement === restoreTarget ||
+            attempt >= INERT_RESTORE_ATTEMPTS ||
+            !view ||
+            restoreTarget.closest('[inert]') === null
+          )
+            return;
+          view.requestAnimationFrame((): void => {
+            const current = doc.activeElement;
+            if (current === null || current === doc.body) restore(attempt + 1);
+          });
+        };
+        restore(0);
+      });
     };
   }, [cardRef, enabled, ownerDocument]);
+}
+
+/** Focus picker searches present initially or announced after an open action. */
+function useDialogInitialFocusTarget(
+  surfaceRef: RefObject<HTMLElement | null>,
+  enabled: boolean,
+  onFocus?: () => void,
+): void {
+  useEffect(() => {
+    if (!enabled) return;
+    const surface = surfaceRef.current;
+    if (!surface) return;
+    const doc = surface.ownerDocument;
+    const view = doc.defaultView;
+    if (!view) return;
+
+    const selector = DIALOG_INITIAL_FOCUS_TARGET_SELECTOR;
+    let userInteracted = false;
+    let interactedAfterTarget = false;
+    let suppressedTarget = false;
+    let activationControl: Element | null = null;
+    let target: HTMLElement | null = null;
+    let frame: number | null = null;
+    let framesRemaining = 0;
+
+    const cancelFocusFrames = (): void => {
+      if (frame !== null && typeof view.cancelAnimationFrame === 'function')
+        view.cancelAnimationFrame(frame);
+      frame = null;
+      framesRemaining = 0;
+    };
+    const markUserInteraction = (event: Event): void => {
+      userInteracted = true;
+      if (target !== null) interactedAfterTarget = true;
+      activationControl = null;
+      const isActivation =
+        event.type === 'pointerdown' ||
+        (event instanceof view.KeyboardEvent &&
+          (event.key === 'Enter' || event.key === ' '));
+      const eventTarget = event.target;
+      if (isActivation && eventTarget instanceof view.Element) {
+        const control = eventTarget.closest('button, [role="button"]');
+        if (control && surface.contains(control)) activationControl = control;
+      }
+      cancelFocusFrames();
+    };
+    const focusInitialTarget = (
+      nextTarget: HTMLElement | null,
+      retry = false,
+    ): void => {
+      if (
+        !nextTarget ||
+        !surface.contains(nextTarget) ||
+        !focusableWithin(surface).includes(nextTarget)
+      )
+        return;
+      const targetChanged = target !== nextTarget;
+      if (targetChanged) {
+        target = nextTarget;
+        interactedAfterTarget = false;
+        const role = activationControl?.getAttribute('role');
+        const isToggle =
+          activationControl?.hasAttribute('aria-pressed') === true ||
+          activationControl?.hasAttribute('aria-checked') === true ||
+          role === 'tab' ||
+          role === 'switch';
+        const isCollapsedDisclosure =
+          activationControl?.getAttribute('aria-expanded') === 'false';
+        // Deliberate picker-opening buttons and expanded disclosures move
+        // focus to their new search. Tabs and state toggles only replace inline
+        // content, and should leave focus on the control the user chose.
+        suppressedTarget =
+          userInteracted &&
+          (activationControl === null || isToggle || isCollapsedDisclosure);
+        cancelFocusFrames();
+        if (suppressedTarget) return;
+      } else {
+        // Recheck after motion ends in case the surface animation displaced
+        // focus, but never move it after the user has started using the field.
+        if (!retry || suppressedTarget || interactedAfterTarget) return;
+      }
+
+      framesRemaining = 2;
+      const focus = (): void => {
+        if (
+          !target?.isConnected ||
+          !surface.contains(target) ||
+          !focusableWithin(surface).includes(target) ||
+          suppressedTarget ||
+          interactedAfterTarget
+        )
+          return;
+        target.focus();
+        if (doc.activeElement === target) {
+          onFocus?.();
+        }
+        framesRemaining -= 1;
+        if (
+          framesRemaining > 0 &&
+          typeof view.requestAnimationFrame === 'function'
+        )
+          frame = view.requestAnimationFrame(focus);
+      };
+      focus();
+    };
+    const focusRegisteredTarget = (event: Event): void => {
+      const nextTarget = event.target;
+      if (
+        nextTarget instanceof view.HTMLElement &&
+        nextTarget.matches(selector)
+      )
+        focusInitialTarget(nextTarget);
+    };
+    const retryFocusInitialTarget = (): void => {
+      focusInitialTarget(target, true);
+    };
+
+    doc.addEventListener('pointerdown', markUserInteraction, true);
+    doc.addEventListener('keydown', markUserInteraction, true);
+    surface.addEventListener(
+      DIALOG_INITIAL_FOCUS_TARGET_EVENT,
+      focusRegisteredTarget,
+    );
+    surface.addEventListener('animationend', retryFocusInitialTarget, true);
+    surface.addEventListener('transitionend', retryFocusInitialTarget, true);
+    focusInitialTarget(surface.querySelector<HTMLElement>(selector));
+    return (): void => {
+      cancelFocusFrames();
+      doc.removeEventListener('pointerdown', markUserInteraction, true);
+      doc.removeEventListener('keydown', markUserInteraction, true);
+      surface.removeEventListener(
+        DIALOG_INITIAL_FOCUS_TARGET_EVENT,
+        focusRegisteredTarget,
+      );
+      surface.removeEventListener(
+        'animationend',
+        retryFocusInitialTarget,
+        true,
+      );
+      surface.removeEventListener(
+        'transitionend',
+        retryFocusInitialTarget,
+        true,
+      );
+    };
+  }, [enabled, onFocus, surfaceRef]);
 }
 
 export function CloseButton({
@@ -756,8 +952,13 @@ export function DialogModal({
   );
 
   const focusCard = trapFocus && initialFocus === 'dialog';
+  const initialFocusAppliedRef = useRef(false);
+  const markInitialFocusApplied = useCallback((): void => {
+    initialFocusAppliedRef.current = true;
+  }, []);
   useModalFocusTrap(cardRef, {
     enabled: trapFocus,
+    initialFocusAppliedRef,
     focusSurface: focusCard,
     initialFocusRef,
     restoreFocusRef,
@@ -765,6 +966,7 @@ export function DialogModal({
     containment,
     ownerDocument,
   });
+  useDialogInitialFocusTarget(cardRef, true, markInitialFocusApplied);
 
   const overlay: JSX.Element = (
     <div
@@ -928,6 +1130,7 @@ export function WindowPage({
     containment: 'window',
     ownerDocument: undefined,
   });
+  useDialogInitialFocusTarget(pageRef, open);
   if (!open && !keepMounted) return null;
   const page = (
     <div

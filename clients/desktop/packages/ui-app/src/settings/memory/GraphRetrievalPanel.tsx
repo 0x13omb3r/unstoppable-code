@@ -98,53 +98,57 @@ export function GraphRetrievalPanel({
           {loading ? 'Previewing…' : 'Highlight'}
         </Button>
       </form>
-      <p className="mt-2 text-xs fg-secondary">
+      <p className="pt-2 text-xs fg-secondary">
         Runs the exact turn-time retrieval pipeline. Entities of injected facts
         get a solid ring, near-miss candidates a dashed ring. Each preview
         counts against the shared search rate limit.
       </p>
 
-      <ErrorBanner
-        errorSource="graph-retrieval-panel"
-        className="mt-3"
-        error={error?.copy}
-        details={error?.details}
-      />
+      <div className="pt-3 empty:hidden">
+        <ErrorBanner
+          errorSource="graph-retrieval-panel"
+          className=""
+          error={error?.copy}
+          details={error?.details}
+        />
+      </div>
 
       {preview !== null && (
-        <Stack gap="item" className="mt-3">
-          <Notice
-            intent={preview.gatePassed ? 'positive' : 'attention'}
-            title={preview.gatePassed ? 'Gate passed' : 'Gate blocked'}
-            data-testid="graph-retrieval-gate"
-            detail={
-              <span className="font-mono">
-                top rerank{' '}
-                {preview.diagnostics.topRerankScore?.toFixed(4) ?? '—'} · top
-                cosine {preview.diagnostics.topCosineScore?.toFixed(4) ?? '—'} ·{' '}
-                {preview.candidates.length} near-miss candidate
-                {preview.candidates.length === 1 ? '' : 's'} ·{' '}
-                {preview.diagnostics.latencyMs} ms
-              </span>
-            }
-          >
-            {gateSummary(preview)}
-          </Notice>
-          {hiddenEntityCount > 0 && (
-            <p className="text-xs fg-warning">
-              {hiddenEntityCount} retrieved{' '}
-              {hiddenEntityCount === 1 ? 'entity is' : 'entities are'} not
-              visible with the current filters.
-            </p>
-          )}
-          {preview.facts.length > 0 && (
-            <div className="grid max-h-64 gap-3 overflow-y-auto lg:grid-cols-2">
-              {preview.facts.map((fact) => (
-                <FactCard key={fact.id} fact={fact} />
-              ))}
-            </div>
-          )}
-        </Stack>
+        <div className="pt-3 empty:hidden">
+          <Stack gap="item">
+            <Notice
+              intent={preview.gatePassed ? 'positive' : 'attention'}
+              title={preview.gatePassed ? 'Gate passed' : 'Gate blocked'}
+              data-testid="graph-retrieval-gate"
+              detail={
+                <span className="font-mono">
+                  top rerank{' '}
+                  {preview.diagnostics.topRerankScore?.toFixed(4) ?? '—'} · top
+                  cosine {preview.diagnostics.topCosineScore?.toFixed(4) ?? '—'}{' '}
+                  · {preview.candidates.length} near-miss candidate
+                  {preview.candidates.length === 1 ? '' : 's'} ·{' '}
+                  {preview.diagnostics.latencyMs} ms
+                </span>
+              }
+            >
+              {gateSummary(preview)}
+            </Notice>
+            {hiddenEntityCount > 0 && (
+              <p className="text-xs fg-warning">
+                {hiddenEntityCount} retrieved{' '}
+                {hiddenEntityCount === 1 ? 'entity is' : 'entities are'} not
+                visible with the current filters.
+              </p>
+            )}
+            {preview.facts.length > 0 && (
+              <div className="grid max-h-64 gap-3 overflow-y-auto lg:grid-cols-2">
+                {preview.facts.map((fact) => (
+                  <FactCard key={fact.id} fact={fact} />
+                ))}
+              </div>
+            )}
+          </Stack>
+        </div>
       )}
     </Surface>
   );

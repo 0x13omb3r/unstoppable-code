@@ -38,6 +38,7 @@ import {
   PORTAL_CAPABILITY_PR_STATUS_PUSH,
   PORTAL_CAPABILITY_COMMAND_ORIGIN,
   PORTAL_CAPABILITY_CHAT_CANCEL_TURN,
+  PORTAL_CAPABILITY_CHAT_RETRY_FAILURE,
 } from '@canopy/protocol/portal';
 import { EventEmitter } from 'node:events';
 import { hostname } from 'node:os';
@@ -317,6 +318,7 @@ const PORTAL_SESSION_CAPABILITIES = {
   [PORTAL_CAPABILITY_CLAUDE_MOD_ADMISSION]: true,
   [PORTAL_CAPABILITY_COMMAND_ORIGIN]: true,
   [PORTAL_CAPABILITY_CHAT_CANCEL_TURN]: true,
+  [PORTAL_CAPABILITY_CHAT_RETRY_FAILURE]: true,
   [PORTAL_CAPABILITY_DEFERRED_PLUGIN_POLICY]: true,
 } satisfies Record<string, boolean>;
 
@@ -2972,6 +2974,7 @@ async function subscribeFeatureEvents(
           const projectId = scope.projectId;
           const worktreeId = scope.worktreeId;
           const source =
+            // Default Bot only: Portal snapshot commands expose app_advisor.
             projectId === APP_ADVISOR_PROJECT_ID
               ? { scope: 'app_advisor' as const }
               : isCoworkWorkspace(projectId)

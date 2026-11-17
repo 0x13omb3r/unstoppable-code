@@ -1,5 +1,6 @@
 'use client';
 
+import { ControlButton } from './Button';
 import {
   useId,
   useEffect,
@@ -125,13 +126,13 @@ export function SidebarItemGroupRail({
 }): JSX.Element {
   const action = collapsed ? 'Expand group' : 'Collapse group';
   return (
-    <span className="absolute -left-2 inset-y-0 w-2">
+    <span className="absolute -left-2 inset-y-1 w-2">
       <Tooltip
         label={readOnly ? action : `${action} · Right-click for options`}
         suppressed={expanded}
         className="h-full w-full"
       >
-        <button
+        <ControlButton
           type="button"
           tabIndex={-1}
           aria-label={action}
@@ -139,7 +140,7 @@ export function SidebarItemGroupRail({
           onClick={onToggle}
           onContextMenu={onContextMenu}
           {...activatorProps}
-          className="group/group-rail flex h-full w-2 items-stretch justify-center py-1 pointer-coarse:pointer-events-none"
+          presentation="sidebar-group-rail"
         >
           {/* Doubles 2px to 4px on hover and while expanded by `scale` on the
               compositor, never by `width`; the doubled geometry lives with the
@@ -151,7 +152,7 @@ export function SidebarItemGroupRail({
             className="w-0.5 rounded-full transition-[scale]"
             style={{ backgroundColor: sidebarItemGroupColor(color) }}
           />
-        </button>
+        </ControlButton>
       </Tooltip>
     </span>
   );
@@ -785,12 +786,15 @@ export function SidebarItemGroup({
     const top = root
       ?.querySelector<HTMLElement>('[data-sidebar-item-group-header]')
       ?.getBoundingClientRect().top;
-    // Stuck: the header has left its own top edge in the group.
+    const topPadding = root
+      ? Number.parseFloat(getComputedStyle(root).paddingTop) || 0
+      : 0;
+    // A sticky header has moved down from the group's content edge.
     stuckHeaderTop.current =
       !group.collapsed &&
       root &&
       top !== undefined &&
-      top - root.getBoundingClientRect().top > 1
+      top - root.getBoundingClientRect().top - topPadding > 1
         ? top
         : null;
     actions.onToggle();
@@ -821,14 +825,14 @@ export function SidebarItemGroup({
       role="group"
       aria-labelledby={group.labelHidden ? undefined : `${contentId}-label`}
       aria-label={group.labelHidden ? `${group.name} group` : undefined}
-      className="relative my-1 flex flex-col gap-px"
+      className="relative flex flex-col gap-px py-1"
       data-sidebar-item-group-id={group.id}
       data-testid={`sidebar-item-group-${group.id}`}
     >
       <span
         ref={railAnchorRef}
         aria-hidden="true"
-        className="absolute -left-2 top-0 h-0 w-0"
+        className="absolute -left-2 top-1 h-0 w-0"
       />
       <SidebarItemGroupRail
         readOnly={readOnly}
@@ -839,10 +843,11 @@ export function SidebarItemGroup({
         activatorProps={activatorProps}
         onContextMenu={(event): void => {
           event.preventDefault();
-          if (readOnly) return;
+          const root = rootRef.current;
+          if (readOnly || !root) return;
           railAnchorRef.current?.style.setProperty(
             'top',
-            `${event.clientY - event.currentTarget.getBoundingClientRect().top}px`,
+            `${event.clientY - root.getBoundingClientRect().top}px`,
           );
           setMenu('rail');
         }}
@@ -878,7 +883,7 @@ export function SidebarItemGroup({
         onClose={(): void => setMenu(null)}
         onEdit={(): void => {
           if (menu === 'rail')
-            railAnchorRef.current?.style.setProperty('top', '0px');
+            railAnchorRef.current?.style.removeProperty('top');
           setEditor(menu);
           setMenu(null);
         }}

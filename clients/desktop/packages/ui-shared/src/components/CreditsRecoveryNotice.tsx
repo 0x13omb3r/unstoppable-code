@@ -8,6 +8,7 @@ import {
   CREDIT_HELD_MESSAGE_WARNING_COPY,
 } from './creditsPromptCopy';
 import { Notice, NoticeButton, type NoticeProps } from './Notice';
+import { outOfAiCreditsCopy } from './creditsPromptCopy';
 
 type RecoveryNoticeProps<Props> = Props extends unknown
   ? Omit<Props, 'detail' | 'children'>
@@ -27,6 +28,10 @@ export type CreditsRecoveryNoticeProps = RecoveryNoticeProps<NoticeProps> & {
   readonly onBuyCredits?: () => void;
   /** The saved credit-held prompt occupies the same recovery surface on every host. */
   readonly queued?: boolean;
+  /** Billing refusal uses the same approved recovery card on every host. */
+  readonly outOfCredits?: boolean;
+  readonly orgPoolUnavailable?: boolean;
+  readonly canConnectClaude?: boolean;
   /**
    * Supporting sentences after the message, in this order. They run on in
    * the same paragraph rather than starting lines of their own.
@@ -59,7 +64,10 @@ function rendersContent(node: ReactNode): boolean {
  */
 export function CreditsRecoveryNotice({
   queued = false,
+  outOfCredits = false,
+  orgPoolUnavailable = false,
   connectAction,
+  canConnectClaude = connectAction !== undefined,
   onBuyCredits,
   actions,
   detailLines = [],
@@ -68,10 +76,14 @@ export function CreditsRecoveryNotice({
   children,
   ...props
 }: CreditsRecoveryNoticeProps): JSX.Element {
-  const message = queued ? CREDIT_HELD_MESSAGE_WARNING_COPY : children;
+  const recovery = outOfCredits
+    ? outOfAiCreditsCopy(canConnectClaude, orgPoolUnavailable)
+    : null;
+  const message =
+    recovery?.message ?? (queued ? CREDIT_HELD_MESSAGE_WARNING_COPY : children);
   const sentences = [
     message,
-    ...(contactAdmin
+    ...(contactAdmin && !outOfCredits
       ? [
           <span key="contact-admin" data-testid={contactAdminTestId}>
             {CONTACT_ORG_ADMIN_COPY}
@@ -83,7 +95,7 @@ export function CreditsRecoveryNotice({
   return (
     <Notice
       {...props}
-      title={queued ? MESSAGE_QUEUED_TITLE : props.title}
+      title={recovery?.title ?? (queued ? MESSAGE_QUEUED_TITLE : props.title)}
       actions={
         connectAction || onBuyCredits || actions ? (
           <>

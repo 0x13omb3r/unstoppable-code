@@ -12,19 +12,30 @@ import type {
   MultiRepoSetupRepository,
 } from './org-project-setup-journal';
 
+/**
+ * The child path of a multi-repo root's repository at `index` (0-based). The
+ * prefix guarantees uniqueness across case/Unicode collisions and DOS names.
+ */
+export function multiRepoSetupRelativePath(
+  index: number,
+  name: string,
+): string {
+  return `repos/r${String(index + 1).padStart(2, '0')}-${
+    name
+      .normalize('NFKD')
+      .toLowerCase()
+      .replace(/[^a-z0-9_-]/g, '-')
+      .slice(0, 64) || 'repository'
+  }`;
+}
+
 /** Prefix guarantees uniqueness across case/Unicode collisions and DOS names. */
 export function multiRepoSetupRepositories(
   repositories: readonly OrgProjectRepository[],
 ): MultiRepoSetupRepository[] {
   return repositories.map((repository, index) => ({
     repository,
-    relativePath: `repos/r${String(index + 1).padStart(2, '0')}-${
-      repository.name
-        .normalize('NFKD')
-        .toLowerCase()
-        .replace(/[^a-z0-9_-]/g, '-')
-        .slice(0, 64) || 'repository'
-    }`,
+    relativePath: multiRepoSetupRelativePath(index, repository.name),
     validated: false,
   }));
 }

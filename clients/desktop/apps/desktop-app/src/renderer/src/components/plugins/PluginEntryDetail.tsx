@@ -71,7 +71,10 @@ import {
   NoticeButton,
   type DetailMoreMenuItem,
 } from '@canopy/ui-shared/components';
-import type { MarketplaceShareAction } from '@canopy/ui-shared/lib';
+import {
+  pluginStandInCandidate,
+  type MarketplaceShareAction,
+} from '@canopy/ui-shared/lib';
 import { applyPluginUpdateToMarketplaceCaches } from '../../hooks/useMarketplaceList';
 import { useCurrentUiStateReporter } from '@/hooks/useCurrentUiStateReporter';
 import type { PipelineEditDeepLink } from '@/stores/navigationStore';
@@ -1354,6 +1357,9 @@ function PluginEntryDetailContent({
       >
         <PluginDetailView
           mcpTarget={mcpTarget}
+          {...(entry.chatGptAppStandIn !== undefined
+            ? { standIn: pluginStandInCandidate(entry.chatGptAppStandIn) }
+            : {})}
           autoInstall={initialIntent === 'add' || pluginAddOpen}
           plugin={pluginOverride ?? resolved.plugin}
           sharedContent={

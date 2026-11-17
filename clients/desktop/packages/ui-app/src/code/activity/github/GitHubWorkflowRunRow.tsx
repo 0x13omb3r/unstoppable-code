@@ -1,5 +1,6 @@
 'use client';
 
+import { ControlButton } from '@canopy/ui-shared/components';
 import { memo, useMemo, type JSX, type ReactNode } from 'react';
 import { DagProgressBar, type DagJobMeta } from '@canopy/ui-shared/components';
 import {
@@ -220,10 +221,9 @@ export const GitHubWorkflowRunRow = memo(function GitHubWorkflowRunRow({
       data-run-status={status.label}
     >
       <div className={status.active ? 'p-3' : 'px-3 py-2.5'}>
-        <button
-          type="button"
+        <ControlButton
           data-testid={`github-workflow-run-open-${run.runId}`}
-          className="absolute inset-0 cursor-pointer rounded-lg"
+          presentation="workflow-run-open"
           onClick={onOpen}
           aria-label={`Open ${githubWorkflowRunRowTitle(run)} on GitHub`}
         />
@@ -249,7 +249,7 @@ export const GitHubWorkflowRunRow = memo(function GitHubWorkflowRunRow({
               ) : null}
             </div>
             <div
-              className={`mt-1 truncate text-xs ${status.active ? 'font-medium fg-primary/80' : 'fg-secondary'}`}
+              className={`pt-1 truncate text-xs ${status.active ? 'font-medium fg-primary/80' : 'fg-secondary'}`}
             >
               {githubWorkflowRunRowTitle(run)}
             </div>

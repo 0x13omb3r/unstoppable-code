@@ -1,4 +1,6 @@
 'use client';
+
+import { ControlButton } from './Button';
 import type { JSX } from 'react';
 import { DropdownMenuItem } from './DropdownMenu';
 function IllustrationDivider({
@@ -157,21 +159,21 @@ export function WorkspaceLayoutPicker({
         <p className="label text-xs">Chat width</p>
         <div className="layouts" role="group" aria-label="Chat width">
           {(['default', 'full'] as const).map((value) => (
-            <button
+            <ControlButton
               key={value}
               type="button"
               role="menuitemradio"
               aria-checked={chatWidth === value}
               disabled={disabled}
               data-testid={`workspace-chat-width-${value}`}
-              className="option text-xs"
+              presentation="workspace-layout-option"
               onClick={() => onChatWidthChange(value)}
             >
               <ChatWidthIllustration full={value === 'full'} />
               <span className="caption">
                 {value === 'default' ? 'Default' : 'Full width'}
               </span>
-            </button>
+            </ControlButton>
           ))}
         </div>
       </div>
@@ -184,7 +186,7 @@ export function WorkspaceLayoutPicker({
           data-testid="workspace-layout-mode-toggle"
         >
           {(['minimal', 'advanced'] as const).map((value) => (
-            <button
+            <ControlButton
               key={value}
               type="button"
               role="menuitemradio"
@@ -192,14 +194,14 @@ export function WorkspaceLayoutPicker({
               aria-checked={mode === value}
               disabled={disabled}
               data-testid={`workspace-layout-mode-${value}`}
-              className="option text-xs"
+              presentation="workspace-layout-option"
               onClick={() => onModeChange(value)}
             >
               <LayoutIllustration advanced={value === 'advanced'} />
               <span className="caption">
                 {value === 'minimal' ? 'Minimal' : 'Advanced'}
               </span>
-            </button>
+            </ControlButton>
           ))}
         </div>
       </div>

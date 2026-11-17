@@ -9,10 +9,10 @@
  */
 import type { PanelKind } from '@canopy/protocol';
 import {
-  APP_ADVISOR_PROJECT_ID,
   PLAN_EXPLORE_CHAT_PROJECT_ID,
   type TrackedPlanData,
 } from '@canopy/desktop-shared/types';
+import { isBotProjectId } from '@canopy/protocol/chat-targets';
 import { isCoworkChatTarget } from '@/lib/cowork';
 import {
   getAuxPanelLayoutOwnerKey,
@@ -98,12 +98,12 @@ export function planDiagramSeed(plan: PlanPanelSource): ContentPanelSeed {
 
 /**
  * Whether a project can host plan panels. Plans belong to code worktrees
- * (including a shared-container recipient's read-only view); Cowork, App
- * Advisor, and the legacy plan-explore chat scope have no tracked plans.
+ * (including a shared-container recipient's read-only view); Cowork, Bots,
+ * and the legacy plan-explore chat scope have no tracked plans.
  */
 export function isPlanPanelScope(projectId: string): boolean {
   return (
-    projectId !== APP_ADVISOR_PROJECT_ID &&
+    !isBotProjectId(projectId) &&
     projectId !== PLAN_EXPLORE_CHAT_PROJECT_ID &&
     !isCoworkChatTarget(projectId)
   );

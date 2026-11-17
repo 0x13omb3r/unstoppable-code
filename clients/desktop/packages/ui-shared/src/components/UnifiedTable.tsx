@@ -42,7 +42,7 @@ import {
   DataTableHeaderCell,
   DataTableRow,
 } from './DataTable';
-import { Button } from './Button';
+import { ControlButton, Button } from './Button';
 import { Checkbox, ChoiceField } from './Choice';
 import { Disclosure } from './Disclosure';
 import { Stack } from './Stack';
@@ -134,6 +134,8 @@ export interface UnifiedTableProps {
   defaultSelectedFilter?: UnifiedTableSelectedFilter;
   hideSelectionSummary?: boolean;
   providerIconScope?: ProviderSupportScope;
+  /** Mark the name search as the initial focus target inside a picker dialog. */
+  autoFocusSearch?: boolean;
   /** Host renderer for desktop's resolved MCP logos. */
   renderMcpLogo?: (row: UnifiedTableRow) => ReactNode;
   /** Host renderer for a brand-aware first-party source mark. */
@@ -406,11 +408,16 @@ const UnifiedTableRowView = memo(function UnifiedTableRowView({
       <DataTableCell overflow="wrap">
         <Stack gap="tight">
           <Stack gap="inline">
-            <button
+            <ControlButton
               type="button"
               onClick={handleToggle}
               disabled={disabled}
-              className={`flex w-full min-w-0 items-center gap-2 text-left ${disabled ? 'cursor-not-allowed' : ''} ${toggleMode === 'unsupported' ? 'opacity-70' : ''}`}
+              presentation="table-filter-toggle"
+              appearance={{
+                disabled: !!disabled,
+                toggleMode:
+                  toggleMode === 'unsupported' ? 'unsupported' : 'supported',
+              }}
             >
               <span className="shrink-0 fg-secondary">
                 {KIND_GLYPHS[row.kind] ??
@@ -468,7 +475,7 @@ const UnifiedTableRowView = memo(function UnifiedTableRowView({
                   )}
                 </span>
               </Stack>
-            </button>
+            </ControlButton>
             {row.members && row.members.length > 0 && (
               <Disclosure
                 label={
@@ -493,7 +500,7 @@ const UnifiedTableRowView = memo(function UnifiedTableRowView({
                       <span className="font-medium fg-primary">
                         {member.name}
                       </span>
-                      <span className="ml-2 fg-secondary">{member.kind}</span>
+                      <span className="pl-2 fg-secondary">{member.kind}</span>
                       <p className="whitespace-normal break-words fg-secondary">
                         {member.description}
                       </p>
@@ -717,6 +724,7 @@ export function UnifiedTable({
   defaultSelectedFilter = 'all',
   hideSelectionSummary = false,
   providerIconScope = 'mixed',
+  autoFocusSearch = false,
   renderMcpLogo,
   renderAppLogo,
   rowCheckboxTestId,
@@ -949,6 +957,7 @@ export function UnifiedTable({
           onValueChange={setNameSearch}
           placeholder="Search by name…"
           aria-label="Search by name"
+          data-dialog-initial-focus={autoFocusSearch ? 'true' : undefined}
           // Escape keeps closing the dialog that hosts the table.
           clearOnEscape={false}
           className="min-w-35 flex-1"

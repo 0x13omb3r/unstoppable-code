@@ -16,7 +16,10 @@ import {
 export { WorktreeRegistryUnreadableError } from '@canopy/core-runtime/node/w5/worktree-list-repository';
 
 export type WorktreeListRead = CoreWorktreeListRead<WorktreeData>;
-export type WorktreeListRepository = CoreWorktreeListRepository<WorktreeData>;
+export interface WorktreeListRepository extends CoreWorktreeListRepository<WorktreeData> {
+  /** The committed registry alone, without provider discovery enrichment. */
+  readCommitted(workspaceId: string): Promise<WorktreeListRead>;
+}
 // The row keeps every stored field, as the list reader always has.
 function readRow(row: W5WorktreeListReadRow): WorktreeData {
   return row;
@@ -31,12 +34,13 @@ export function parseWorktreeList(
 
 /** Discovery sidecars are non-W5 effects, applied only after the list commits. */
 export function withWorktreeDiscovery(
-  list: WorktreeListRepository,
+  list: CoreWorktreeListRepository<WorktreeData>,
   discoveryFilePath: WorktreeDiscoveryPath,
 ): WorktreeListRepository {
   const ids = (read: WorktreeListRead): string[] =>
     read.authority === 'ok' ? read.worktrees.map((row) => row.id) : [];
   return {
+    readCommitted: (workspaceId) => list.read(workspaceId),
     async read(workspaceId): Promise<WorktreeListRead> {
       const read = await list.read(workspaceId);
       return read.authority === 'ok'

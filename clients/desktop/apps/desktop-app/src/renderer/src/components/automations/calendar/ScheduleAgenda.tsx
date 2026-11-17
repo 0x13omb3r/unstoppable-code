@@ -12,6 +12,7 @@ import {
   type CalendarEventGroup,
 } from './calendarEvents';
 import {
+  CalendarAgendaDayLabel,
   CalendarAgendaDot,
   ListRow,
   Surface,
@@ -104,17 +105,10 @@ export function ScheduleAgenda({
             padding="underline-tight"
             className="items-baseline"
           >
-            <span
-              className={`text-s font-semibold ${
-                isToday(agendaDay.day, now) ? 'fg-destructive' : 'fg-primary'
-              }`}
-            >
-              {agendaDay.day.toLocaleDateString(undefined, {
-                weekday: 'long',
-                month: 'long',
-                day: 'numeric',
-              })}
-            </span>
+            <CalendarAgendaDayLabel
+              today={isToday(agendaDay.day, now)}
+              date={agendaDay.day}
+            />
           </Surface>
           {agendaDay.groups.map((group) => {
             const event = group.representative;

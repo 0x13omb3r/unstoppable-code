@@ -1,5 +1,6 @@
 'use client';
 
+import { ControlButton } from '@canopy/ui-shared/components';
 import { WorkspaceIconSlot } from '@canopy/ui-shared/components';
 import {
   createContext,
@@ -448,13 +449,12 @@ function WorkspaceDragHandle({
 }): JSX.Element {
   const sortable = useContext(WorkspaceSortableStateContext);
   return (
-    <button
-      type="button"
+    <ControlButton
       aria-label={`Reorder ${context.workspace.name}`}
       aria-roledescription="sortable"
       // The icon reads as the workspace glyph, not a grip: desktop keeps the
       // default cursor on both activators and lets the drag itself signal.
-      className="focus-ring relative inline-flex h-5 w-5 shrink-0 cursor-default items-center justify-center rounded-md"
+      presentation="sidebar-project-reorder"
       data-workspace-drag-activator="icon"
       // No click swallowing here: a pointer click that never became a drag
       // must bubble to the header's row-background handler, which is what
@@ -465,7 +465,7 @@ function WorkspaceDragHandle({
       {...sortable?.listeners}
     >
       {children}
-    </button>
+    </ControlButton>
   );
 }
 
@@ -478,20 +478,19 @@ function WorktreeDragHandle({
 }): JSX.Element {
   const sortable = useContext(WorktreeSortableStateContext);
   return (
-    <button
-      type="button"
+    <ControlButton
       // "Move", not "Reorder": desktop names only its workspace handles
       // "Reorder …", and its automation finds a workspace's handle by that
       // prefix inside the workspace root — where these rows also live.
       aria-label={`Move ${sidebarRowLabel(context.workspace, context.worktree)}`}
       aria-roledescription="sortable"
-      className="focus-ring h-4 w-4 cursor-grab rounded active:cursor-grabbing"
+      presentation="sidebar-worktree-reorder"
       onClick={(event) => event.stopPropagation()}
       {...sortable?.attributes}
       {...sortable?.listeners}
     >
       {children}
-    </button>
+    </ControlButton>
   );
 }
 

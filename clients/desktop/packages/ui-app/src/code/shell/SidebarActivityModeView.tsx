@@ -1,7 +1,7 @@
 'use client';
 
-import { SidebarActivityRowSurface } from '@canopy/ui-shared/components';
-import { Heading, ErrorState } from '@canopy/ui-shared/components';
+import { CompositeListRow } from '@canopy/ui-shared/components';
+import { Heading, ErrorState, ListRow } from '@canopy/ui-shared/components';
 import {
   memo,
   useCallback,
@@ -183,9 +183,8 @@ const SidebarActivityRow = memo(function SidebarActivityRow({
       {/* The shared worktree row is a plain box; this wrapper gives it the
           button semantics and keyboard activation the tree's sortable
           wrapper gives it there. */}
-      <SidebarActivityRowSurface
-        role="button"
-        tabIndex={0}
+      <CompositeListRow
+        presentation="sidebar-activity"
         aria-current={selected ? 'true' : undefined}
         data-testid={testId}
         onKeyDown={(event: ReactKeyboardEvent<HTMLDivElement>): void => {
@@ -214,7 +213,7 @@ const SidebarActivityRow = memo(function SidebarActivityRow({
           touchTarget={touch}
           onClick={open}
         />
-      </SidebarActivityRowSurface>
+      </CompositeListRow>
     </li>
   );
 });
@@ -427,8 +426,8 @@ export function SidebarActivityModeView({
             label="Unreplied"
             footer={
               remaining > 0 ? (
-                <button
-                  type="button"
+                <ListRow
+                  touchTarget={touch}
                   onClick={(): void => {
                     if (remaining <= SIDEBAR_ACTIVITY_UNREPLIED_PAGE_SIZE)
                       pendingFocusIndexRef.current = unreplied.length;
@@ -436,10 +435,9 @@ export function SidebarActivityModeView({
                   }}
                   aria-label={`Show more unreplied chats (${remaining} remaining)`}
                   data-testid="sidebar-activity-show-more"
-                  className={`focus-ring flex w-full items-center rounded-md px-2 text-left text-s fg-secondary hover:bg-subtle hover:fg-primary ${touch ? 'min-h-11' : 'h-8'}`}
                 >
                   Show more ({remaining})
-                </button>
+                </ListRow>
               ) : null
             }
           >

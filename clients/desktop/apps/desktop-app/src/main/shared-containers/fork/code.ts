@@ -8,11 +8,24 @@ import {
   assertForkWorkspaceUnbound,
   assertOrganizationForkEligible,
   bindForkCodeWorkspaceToOrganization,
-  organizationForkError,
+  discardForkMultiRepoCopy,
+  publishForkMultiRepoCopy,
   releaseForkOrganizationBinding,
+  resolveForkMultiRepoHolders,
   toOrganizationForkFailure,
+  type ForkMultiRepoBoundInspection,
+  type ForkMultiRepoHolders,
 } from './org-destination';
-import { chmod, mkdir, rm, rmdir, symlink, writeFile } from 'node:fs/promises';
+import {
+  chmod,
+  lstat,
+  mkdir,
+  realpath,
+  rm,
+  rmdir,
+  symlink,
+  writeFile,
+} from 'node:fs/promises';
 import { basename, dirname, isAbsolute, join } from 'node:path';
 import type {
   SharedContainerForkProvenance,
@@ -30,6 +43,7 @@ import {
   decodeUtf8SymlinkTarget,
   deleteBranchIfMatches,
   getRemoteUrl,
+  initLocalRepo,
   materializeGitCommitRaw,
   resolveRefSha,
 } from '../../lib/git';
@@ -42,7 +56,10 @@ import {
 import { findOrCreateSingleRepoWorkspaceForRepo } from '../../lib/workspace-service';
 import { createWorkspace } from '../../lib/workspace-creation';
 import { addWorkspaceRepository } from '../../lib/workspace-repositories';
-import { readAllSidebarItems } from '../../lib/sidebar-items';
+import {
+  readAllSidebarItems,
+  readAllSidebarItemsSnapshot,
+} from '../../lib/sidebar-items';
 import { deleteWorkspaceById } from '../../lib/workspace-deletion';
 import { remoteUrlsMatch } from '../../lib/repo-url-matcher';
 import {
@@ -71,12 +88,45 @@ import { writeForkProvenanceForDestination } from './provenance';
 import { recordSharedContainerForkStartPage } from './fork-metadata';
 import type { W5CommitOptions } from '../../lib/w5-commit-scope';
 import type { W5KeyedAttempt } from '../../lib/w5-keyed-operation';
+import {
+  createMultiRepoSetupChildParent,
+  multiRepoSetupManifest,
+  multiRepoSetupRelativePath,
+} from '../../lib/org-project-multi-repo';
+import {
+  isForkCopyRootReferenced,
+  publishForkCopyRootMarker,
+  readForkCopyRootMarker,
+  settleForkCopyRootMarker,
+  writeForkCopyRootMarker,
+  type ForkCopyRootMarker,
+} from '../../lib/fork-copy-root-marker';
+import type {
+  BoundCopyRepository,
+  MultiRepoSetupRepository,
+} from '../../lib/org-project-setup-journal';
+import { readCanopyJson } from '../../lib/canopy-json';
+import { slugify } from '../../lib/string-utils';
+import type { OrgProjectSummary } from '@canopy/protocol/org-projects';
+import {
+  getSharedContainerForkProvenancePath,
+  readSharedContainerForkProvenance,
+  SharedContainerForkProvenanceInvalidError,
+} from './provenance';
 
 interface ResolvedCodeDestination {
   workspace: Exclude<SidebarItem, { type: 'cowork' }>;
   repoIds: Map<string, string>;
+  /** The workspace was made new for a copy: its base branches need no network. */
   createdWorkspace: boolean;
-  promotedPaths: string[];
+  /**
+   * This attempt made the workspace, so a failure may delete it. A continued
+   * organization copy (CAN-4856) was made earlier and is never deleted: only
+   * the new worktree is archived.
+   */
+  ownedByAttempt: boolean;
+  /** The workspace already has a start page; the fork's is not recorded. */
+  keepsStartPage?: boolean;
 }
 
 type SharedContainerCodeLayout = AnySharedContainerRevisionLayout;
@@ -146,7 +196,7 @@ async function matchExistingWorkspace(
       workspace,
       repoIds,
       createdWorkspace: false,
-      promotedPaths: [],
+      ownedByAttempt: false,
     };
   }
 
@@ -178,7 +228,7 @@ async function matchExistingWorkspace(
     workspace,
     repoIds,
     createdWorkspace: false,
-    promotedPaths: [],
+    ownedByAttempt: false,
   };
 }
 
@@ -196,6 +246,31 @@ async function createWorkspaceFromReplica(options: {
   const parentDirectory = options.parentDirectory ?? getDefaultReposDir();
   if (!isAbsolute(parentDirectory)) {
     throw new Error('Fork clone parent directory must be absolute');
+  }
+  if (
+    options.owner.kind === 'organization' &&
+    options.layout.repositories.length > 1
+  ) {
+    // A new organization copy of a multi-repo share (CAN-4856) is staged
+    // under one unpublished root and published bound; it never runs the
+    // Personal promotion below. Its holders are resolved before any effect.
+    const holders = await resolveForkMultiRepoHolders({
+      owner: options.owner,
+      organizationName: options.organizationName,
+      repositories: options.layout.repositories.map((repository) => ({
+        repoId: repository.repoId,
+        repoName: repository.repoName,
+        remoteUrl: isSnapshotRepository(repository)
+          ? null
+          : repository.remoteUrl,
+      })),
+    });
+    options.attempt?.beforeEffects();
+    return materializeForkMultiRepoCopy({
+      ...options,
+      parentDirectory,
+      holders,
+    });
   }
   options.attempt?.beforeEffects();
   await mkdir(parentDirectory, { recursive: true });
@@ -289,17 +364,10 @@ async function createWorkspaceFromReplica(options: {
       workspace: result.workspace,
       repoIds: new Map([[repository.repoId, result.workspace.id]]),
       createdWorkspace: true,
-      promotedPaths,
+      ownedByAttempt: true,
     };
   }
 
-  if (options.owner.kind === 'organization') {
-    // Refused before promotion; never stage a Personal multi-repo copy.
-    throw organizationForkError(
-      'organization-shape-unsupported',
-      options.organizationName,
-    );
-  }
   const { workspace } = await createWorkspace(
     {
       source: 'shared_container_fork',
@@ -342,7 +410,347 @@ async function createWorkspaceFromReplica(options: {
     workspace,
     repoIds,
     createdWorkspace: true,
-    promotedPaths,
+    ownedByAttempt: true,
+  };
+}
+
+/** The root folder name of a staged copy: its title, then its key's prefix. */
+function forkCopyRootName(title: string, creationKey: string): string {
+  const slug = slugify(title).slice(0, 64) || 'shared-copy';
+  return `${slug}-${creationKey.slice(0, 8)}`;
+}
+
+/**
+ * The indexed workspaces a staged copy root could be referenced by, from an
+ * authoritative read only: a workspace whose index entry or manifest could
+ * not be read would otherwise be missing, and its root removed.
+ */
+async function readCopyRootReferences(): Promise<SidebarItem[]> {
+  const snapshot = await readAllSidebarItemsSnapshot({
+    persistRemovalCleanup: false,
+  });
+  if (snapshot.authority !== 'ok' && snapshot.authority !== 'absent')
+    throw new Error('Organization copy root references could not be read');
+  return snapshot.file.items;
+}
+
+/**
+ * Stage a new multi-repo organization copy's checkout (CAN-4856) under one
+ * unpublished root: the marker first, then the root repository and each
+ * child at the setup's `repos/rNN-<slug>` paths. Nothing is indexed. A root
+ * already at the path is re-staged only when its marker proves this key made
+ * it and no indexed workspace uses it; otherwise it is left alone.
+ */
+async function stageForkMultiRepoCopy(input: {
+  creationKey: string;
+  parentDirectory: string;
+  request: SharedContainerForkRequest;
+  layout: SharedContainerCodeLayout;
+  revisionRoot: string;
+  holders: ForkMultiRepoHolders;
+  relativePaths: readonly string[];
+  name: string;
+  stagedRoots: Set<string>;
+}): Promise<
+  | { ok: true; path: string; repositories: BoundCopyRepository[] }
+  | { ok: false; reason: 'root-in-use' | 'root-unowned' }
+> {
+  await mkdir(input.parentDirectory, { recursive: true });
+  const parent = await realpath(input.parentDirectory);
+  const root = join(
+    parent,
+    forkCopyRootName(input.layout.title, input.creationKey),
+  );
+  const marker: ForkCopyRootMarker = {
+    version: 1,
+    creationKey: input.creationKey,
+    containerId: input.request.containerId,
+    revisionId: input.request.revisionId,
+    repositories: input.layout.repositories.map((repository, index) => ({
+      repoId: repository.repoId,
+      relativePath: input.relativePaths[index] ?? '',
+    })),
+  };
+  const present = await lstat(root).then(
+    (): boolean => true,
+    (error: unknown): boolean => {
+      if (
+        typeof error === 'object' &&
+        error !== null &&
+        'code' in error &&
+        error.code === 'ENOENT'
+      )
+        return false;
+      throw error;
+    },
+  );
+  if (present) {
+    const existing = await readForkCopyRootMarker(root);
+    if (
+      existing === 'absent' ||
+      existing === null ||
+      existing.creationKey !== input.creationKey
+    )
+      return { ok: false, reason: 'root-unowned' };
+    // A published copy's checkout, kept after its workspace was removed.
+    if (existing.published) return { ok: false, reason: 'root-in-use' };
+    // Only an authoritative read proves no workspace uses the root. The
+    // publication holds this project's reservation while `prepare` runs, and
+    // only this key's copy names this root, so nothing indexes it meanwhile.
+    if (await isForkCopyRootReferenced(root, await readCopyRootReferences()))
+      return { ok: false, reason: 'root-in-use' };
+    await rm(root, { recursive: true, force: true });
+  }
+  // Exclusive: a root that appeared meanwhile is not this attempt's.
+  await mkdir(root);
+  input.stagedRoots.add(root);
+  await writeForkCopyRootMarker(root, marker);
+  const held: MultiRepoSetupRepository[] = input.holders.repositories.flatMap(
+    (repository, index): MultiRepoSetupRepository[] => {
+      const relativePath = input.relativePaths[index];
+      return repository.holder?.repository && relativePath
+        ? [
+            {
+              repository: repository.holder.repository,
+              relativePath,
+              validated: true,
+            },
+          ]
+        : [];
+    },
+  );
+  await initLocalRepo(root, input.name, multiRepoSetupManifest(held));
+  await settleForkCopyRootMarker(root);
+  await createMultiRepoSetupChildParent(root);
+  const repositories: BoundCopyRepository[] = [];
+  for (let index = 0; index < input.layout.repositories.length; index += 1) {
+    const repository = input.layout.repositories[index];
+    const relativePath = input.relativePaths[index];
+    if (!repository || !relativePath)
+      throw new Error('Organization copy repository metadata is missing');
+    const destination = join(root, relativePath);
+    await copySharedContainerTree(
+      join(input.revisionRoot, 'repos', repository.repoId),
+      destination,
+    );
+    // As in the Personal promotion: restore the raw base tree, then the
+    // overlay is replayed into the new worktree.
+    await materializeGitCommitRaw(destination, repository.baseCommitSha, {
+      allowPromisorFetch: false,
+      resolveDestination: (relative) =>
+        resolveMaterializedPath(
+          destination,
+          validateMaterializedRelativePath(relative),
+        ),
+    });
+    repositories.push({
+      relativePath,
+      name: repository.repoName,
+      repository: input.holders.repositories[index]?.holder?.repository ?? null,
+    });
+  }
+  return { ok: true, path: root, repositories };
+}
+
+/**
+ * What a workspace bound to a copy key's project is (CAN-4856): an earlier
+ * finished copy of this revision (a worktree with its provenance), an
+ * unfinished copy of this key (its root carries this key's marker, every
+ * child is present and the workspace can take the copy), or something else.
+ */
+async function inspectForkMultiRepoCopy(
+  workspaceId: string,
+  creationKey: string,
+  request: SharedContainerForkRequest,
+  owner: WorkspaceContext,
+): Promise<ForkMultiRepoBoundInspection> {
+  // Authoritative reads only: a workspace a degraded index read missed would
+  // send the walk to another key and create another project, and a
+  // provenance read that failed would continue a finished copy with a second
+  // worktree. A missing file reads as none; a file that was read but holds no
+  // valid provenance is not this copy's (any worktree of the workspace can
+  // have one), so it is skipped rather than failing every retry.
+  const workspace = (await readCopyRootReferences()).find(
+    (item) => item.id === workspaceId,
+  );
+  if (!workspace || workspace.type !== 'multi-repo') return { kind: 'other' };
+  for (const worktree of workspace.worktrees) {
+    const provenance = await readSharedContainerForkProvenance(
+      getSharedContainerForkProvenancePath(workspace.id, worktree.id),
+    ).catch((error: unknown): null => {
+      if (
+        error instanceof SyntaxError ||
+        error instanceof SharedContainerForkProvenanceInvalidError
+      )
+        return null;
+      throw error;
+    });
+    if (
+      provenance?.sourceContainerId === request.containerId &&
+      provenance.sourceRevisionId === request.revisionId
+    )
+      return { kind: 'finished' };
+  }
+  const root = workspace.sourceRepoPath;
+  if (!root) return { kind: 'other' };
+  const marker = await readForkCopyRootMarker(root).catch((): null => null);
+  if (
+    marker === null ||
+    marker === 'absent' ||
+    marker.creationKey !== creationKey
+  )
+    return { kind: 'other' };
+  for (const entry of marker.repositories) {
+    const present = await lstat(join(root, entry.relativePath)).then(
+      (info): boolean => info.isDirectory(),
+      (): boolean => false,
+    );
+    if (!present) return { kind: 'other' };
+  }
+  try {
+    await assertForkWorkspaceOwner(workspace.id, owner, true);
+  } catch {
+    return { kind: 'other' };
+  }
+  return { kind: 'unfinished', marker };
+}
+
+/**
+ * A new organization copy of a multi-repo share (CAN-4856): staged
+ * unpublished, then published bound to the member's multi-repo project. A
+ * copy this attempt made is discarded on failure (instance handed back,
+ * workspace deleted, staged root removed); a continued one is never deleted.
+ */
+async function materializeForkMultiRepoCopy(options: {
+  request: SharedContainerForkRequest;
+  owner: WorkspaceContext;
+  organizationName?: string;
+  layout: SharedContainerCodeLayout;
+  revisionRoot: string;
+  parentDirectory: string;
+  rollback: SharedContainerForkRollback;
+  commit?: W5CommitOptions;
+  holders: ForkMultiRepoHolders;
+}): Promise<ResolvedCodeDestination> {
+  const stagedRoots = new Set<string>();
+  // Registered first so it runs last, once the workspace is gone. A root any
+  // remaining workspace still uses is kept.
+  options.rollback.defer(async () => {
+    for (const root of stagedRoots) {
+      if (await isForkCopyRootReferenced(root, await readCopyRootReferences()))
+        throw new Error(
+          `Preserved organization copy after workspace cleanup failed: ${root}`,
+        );
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+  const created: { workspaceId?: string } = {};
+  options.rollback.defer(() =>
+    discardForkMultiRepoCopy(created.workspaceId, (workspaceId) =>
+      deleteForkWorkspaceOrHide({ source: 'code_fork', workspaceId }, () =>
+        deleteWorkspaceById(workspaceId, 'shared_container_fork'),
+      ),
+    ),
+  );
+  const relativePaths = options.layout.repositories.map((repository, index) =>
+    multiRepoSetupRelativePath(index, repository.repoName),
+  );
+  let stagedKey: string | undefined;
+  const outcome = await publishForkMultiRepoCopy({
+    owner: options.owner,
+    organizationName: options.organizationName,
+    containerId: options.request.containerId,
+    revisionId: options.request.revisionId,
+    title: options.layout.title,
+    holders: options.holders,
+    ...(options.commit ? { commit: options.commit } : {}),
+    prepare: (creationKey: string, project: OrgProjectSummary) => {
+      stagedKey = creationKey;
+      return stageForkMultiRepoCopy({
+        creationKey,
+        parentDirectory: options.parentDirectory,
+        request: options.request,
+        layout: options.layout,
+        revisionRoot: options.revisionRoot,
+        holders: options.holders,
+        relativePaths,
+        name: project.name,
+        stagedRoots,
+      });
+    },
+    inspectBound: (workspaceId, creationKey) =>
+      inspectForkMultiRepoCopy(
+        workspaceId,
+        creationKey,
+        options.request,
+        options.owner,
+      ),
+    onCreated: (workspaceId) => {
+      created.workspaceId = workspaceId;
+    },
+  });
+  // Authoritative, so a degraded read cannot miss the copy just published.
+  const workspace = (await readCopyRootReferences()).find(
+    (item) => item.id === outcome.workspaceId,
+  );
+  if (!workspace || workspace.type !== 'multi-repo')
+    throw new Error(
+      'Organization copy was not indexed as a multi-repo project',
+    );
+  // Published: from here the root is the copy's checkout, which a later copy
+  // of this key must never re-stage or remove, even once its workspace is
+  // removed and the folder kept. Published as soon as the publication
+  // completes, not at the fork's end, so no crash leaves a bound copy with an
+  // unpublished root; this fork's own rollback still removes its root.
+  // A publish that throws fails the copy on purpose. Kept unpublished, the
+  // root is protected only while a workspace indexes it: once the user
+  // removes the workspace and keeps the folder, a later copy of this key
+  // would re-stage it and remove any work in it. Failing instead rolls back
+  // only what this attempt made (a continued copy is never deleted), before
+  // any user work exists in it.
+  const publishedRoot =
+    outcome.kind === 'created' ? outcome.root : workspace.sourceRepoPath;
+  const publishedKey =
+    outcome.kind === 'created' ? stagedKey : outcome.marker.creationKey;
+  if (publishedRoot && publishedKey)
+    await publishForkCopyRootMarker(publishedRoot, publishedKey);
+  const repoIds = new Map<string, string>();
+  const entries =
+    outcome.kind === 'created'
+      ? options.layout.repositories.map((repository, index) => ({
+          repoId: repository.repoId,
+          relativePath: relativePaths[index] ?? '',
+        }))
+      : outcome.marker.repositories;
+  for (const entry of entries)
+    repoIds.set(entry.repoId, entry.relativePath.slice('repos/'.length));
+  if (
+    options.layout.repositories.some(
+      (repository) =>
+        !workspace.repos.some(
+          (repo) => repo.id === repoIds.get(repository.repoId),
+        ),
+    )
+  )
+    throw new Error('Organization copy repository mapping is incomplete');
+  if (outcome.kind === 'created')
+    return {
+      workspace,
+      repoIds,
+      createdWorkspace: true,
+      ownedByAttempt: true,
+    };
+  const manifest = workspace.sourceRepoPath
+    ? await readCanopyJson(workspace.sourceRepoPath).catch((): null => null)
+    : null;
+  return {
+    workspace,
+    repoIds,
+    // A copy's base commits are local, so its base branches need no network.
+    createdWorkspace: true,
+    ownedByAttempt: false,
+    // A manifest that cannot be read may hold a start page: keep it.
+    keepsStartPage: manifest === null || manifest.startPage !== undefined,
   };
 }
 
@@ -582,6 +990,7 @@ export async function forkSharedCodeContainer(options: {
               });
         if (
           destination.createdWorkspace &&
+          destination.keepsStartPage !== true &&
           'startPage' in options.layout &&
           options.layout.startPage
         ) {
@@ -612,7 +1021,9 @@ export async function forkSharedCodeContainer(options: {
           options.commit,
           options.attempt,
         );
-        if (!destination.createdWorkspace) {
+        // A workspace this attempt did not make keeps everything but the new
+        // worktree, including a continued organization copy (CAN-4856).
+        if (!destination.ownedByAttempt) {
           rollback.defer(() =>
             destination.workspace.type === 'single-repo'
               ? archiveSingleRepoWorktree({

@@ -1,5 +1,6 @@
 'use client';
 
+import { ControlButton } from '@canopy/ui-shared/components';
 import { useId, useMemo, useRef, useState, type JSX } from 'react';
 import {
   DropdownMenuDivider,
@@ -100,154 +101,157 @@ export function SettingsScopePicker({
           : `Organization · ${ROLE_LABEL[scope.role]}`;
 
   return (
-    <div ref={anchorRef} className="relative mt-2">
-      <button
-        ref={triggerRef}
-        type="button"
-        onClick={() => setOpen(!open)}
-        aria-expanded={open}
-        aria-haspopup="menu"
-        aria-controls={open ? menuId : undefined}
-        data-settings-control="picker"
-        data-testid={`${testIdPrefix}scope-picker`}
-        className="focus-ring flex w-full min-w-0 items-center gap-2.5 rounded-row px-2 py-2 text-left hover:bg-subtle aria-expanded:bg-subtle pointer-coarse:min-h-11"
-      >
-        {scope.kind === 'account' ? (
-          <MemberAvatar
-            name={viewerName}
-            image={model.viewer?.image ?? null}
-            size="md"
-          />
-        ) : (
-          <OrganizationLogo
-            name={scope.name}
-            logoUrl={scope.logoUrl}
-            size="md"
-          />
-        )}
-        <span className="flex min-w-0 flex-1 flex-col">
-          <span
-            className={`truncate text-s font-medium fg-primary ${titleClassName}`}
-            title={scope.kind === 'account' ? undefined : title}
-            data-testid={`${testIdPrefix}scope-title`}
-          >
-            {title}
-          </span>
-          <span className="truncate text-xs fg-tertiary">{subtitle}</span>
-        </span>
-        <ChevronsUpDown
-          size={14}
-          aria-hidden="true"
-          className="shrink-0 fg-tertiary"
-        />
-      </button>
-      <FloatingMenu
-        id={menuId}
-        open={open}
-        onOpenChange={setOpen}
-        anchorRef={anchorRef}
-        returnFocusRef={triggerRef}
-        placement="bottom-left"
-        aria-label="Switch settings"
-        data-testid={`${testIdPrefix}scope-menu`}
-        // The menu spans the trigger, as wide as the rail's rows.
-        className="w-[var(--floating-menu-anchor-width)] min-w-60 pointer-coarse:[&_.canopy-dropdown-menu-item]:min-h-11"
-      >
-        <DropdownMenuItem
-          role="menuitemradio"
-          aria-checked={scope.kind === 'account' && !onListPage}
-          data-testid={`${testIdPrefix}scope-option-account`}
-          onClick={() => go(accountScopeHref(currentPath, model.account))}
+    <div className="pt-2">
+      <div ref={anchorRef} className="relative">
+        <ControlButton
+          ref={triggerRef}
+          onClick={() => setOpen(!open)}
+          aria-expanded={open}
+          aria-haspopup="menu"
+          aria-controls={open ? menuId : undefined}
+          data-settings-control="picker"
+          data-testid={`${testIdPrefix}scope-picker`}
+          presentation="settings-scope-picker"
         >
-          <DropdownMenuItemIcon>
+          {scope.kind === 'account' ? (
             <MemberAvatar
               name={viewerName}
               image={model.viewer?.image ?? null}
-              size="xs"
+              size="md"
             />
-          </DropdownMenuItemIcon>
-          <span className="min-w-0 flex-1 truncate">Personal account</span>
-          {scope.kind === 'account' && !onListPage ? (
-            <CheckIcon size={16} aria-hidden="true" className="shrink-0" />
-          ) : null}
-        </DropdownMenuItem>
-        {organizations.length > 0 ? (
-          <>
-            <DropdownMenuDivider />
-            <DropdownMenuLabel>Organizations</DropdownMenuLabel>
-            {organizations.map((organization) => {
-              const selected =
-                scope.kind === 'organization' &&
-                scope.organizationId === organization.id;
-              return (
-                <DropdownMenuItem
-                  key={organization.id}
-                  role="menuitemradio"
-                  aria-checked={selected}
-                  data-testid={`${testIdPrefix}scope-option-${organization.id}`}
-                  onClick={() => {
-                    if (selected) {
-                      setOpen(false);
-                      return;
-                    }
-                    onSelectOrganization?.(organization.id);
-                    go(organizationScopeHref(currentPath, organization));
-                  }}
-                >
-                  <DropdownMenuItemIcon>
-                    {organization.logoUrl ? (
-                      <OrganizationLogo
-                        name={organization.name}
-                        logoUrl={organization.logoUrl}
-                        size="xs"
+          ) : (
+            <OrganizationLogo
+              name={scope.name}
+              logoUrl={scope.logoUrl}
+              size="md"
+            />
+          )}
+          <span className="flex min-w-0 flex-1 flex-col">
+            <span
+              className={`truncate text-s font-medium fg-primary ${titleClassName}`}
+              title={scope.kind === 'account' ? undefined : title}
+              data-testid={`${testIdPrefix}scope-title`}
+            >
+              {title}
+            </span>
+            <span className="truncate text-xs fg-tertiary">{subtitle}</span>
+          </span>
+          <ChevronsUpDown
+            size={14}
+            aria-hidden="true"
+            className="shrink-0 fg-tertiary"
+          />
+        </ControlButton>
+        <FloatingMenu
+          id={menuId}
+          open={open}
+          onOpenChange={setOpen}
+          anchorRef={anchorRef}
+          returnFocusRef={triggerRef}
+          placement="bottom-left"
+          aria-label="Switch settings"
+          data-testid={`${testIdPrefix}scope-menu`}
+          // The menu spans the trigger, as wide as the rail's rows.
+          className="w-[var(--floating-menu-anchor-width)] min-w-60 pointer-coarse:[&_.canopy-dropdown-menu-item]:min-h-11"
+        >
+          <DropdownMenuItem
+            role="menuitemradio"
+            aria-checked={scope.kind === 'account' && !onListPage}
+            data-testid={`${testIdPrefix}scope-option-account`}
+            onClick={() => go(accountScopeHref(currentPath, model.account))}
+          >
+            <DropdownMenuItemIcon>
+              <MemberAvatar
+                name={viewerName}
+                image={model.viewer?.image ?? null}
+                size="xs"
+              />
+            </DropdownMenuItemIcon>
+            <span className="min-w-0 flex-1 truncate">Personal account</span>
+            {scope.kind === 'account' && !onListPage ? (
+              <CheckIcon size={16} aria-hidden="true" className="shrink-0" />
+            ) : null}
+          </DropdownMenuItem>
+          {organizations.length > 0 ? (
+            <>
+              <DropdownMenuDivider />
+              <DropdownMenuLabel>Organizations</DropdownMenuLabel>
+              {organizations.map((organization) => {
+                const selected =
+                  scope.kind === 'organization' &&
+                  scope.organizationId === organization.id;
+                return (
+                  <DropdownMenuItem
+                    key={organization.id}
+                    role="menuitemradio"
+                    aria-checked={selected}
+                    data-testid={`${testIdPrefix}scope-option-${organization.id}`}
+                    onClick={() => {
+                      if (selected) {
+                        setOpen(false);
+                        return;
+                      }
+                      onSelectOrganization?.(organization.id);
+                      go(organizationScopeHref(currentPath, organization));
+                    }}
+                  >
+                    <DropdownMenuItemIcon>
+                      {organization.logoUrl ? (
+                        <OrganizationLogo
+                          name={organization.name}
+                          logoUrl={organization.logoUrl}
+                          size="xs"
+                        />
+                      ) : (
+                        <BuildingIcon size="xl" />
+                      )}
+                    </DropdownMenuItemIcon>
+                    <span
+                      className={`min-w-0 flex-1 truncate ${maskClassName}`}
+                    >
+                      {organization.name}
+                    </span>
+                    <DropdownMenuItemTrailing>
+                      {ROLE_LABEL[organization.role]}
+                    </DropdownMenuItemTrailing>
+                    {selected ? (
+                      <CheckIcon
+                        size={16}
+                        aria-hidden="true"
+                        className="shrink-0"
                       />
-                    ) : (
-                      <BuildingIcon size="xl" />
-                    )}
-                  </DropdownMenuItemIcon>
-                  <span className={`min-w-0 flex-1 truncate ${maskClassName}`}>
-                    {organization.name}
-                  </span>
-                  <DropdownMenuItemTrailing>
-                    {ROLE_LABEL[organization.role]}
-                  </DropdownMenuItemTrailing>
-                  {selected ? (
-                    <CheckIcon
-                      size={16}
-                      aria-hidden="true"
-                      className="shrink-0"
-                    />
-                  ) : null}
-                </DropdownMenuItem>
-              );
-            })}
-          </>
-        ) : null}
-        <DropdownMenuDivider />
-        <DropdownMenuItem
-          role="menuitemradio"
-          aria-checked={onListPage}
-          data-testid={`${testIdPrefix}scope-all-organizations`}
-          onClick={() => go(ORGANIZATIONS_PATH)}
-        >
-          <DropdownMenuItemIcon>
-            <BuildingIcon size="xl" />
-          </DropdownMenuItemIcon>
-          <span className="min-w-0 flex-1 truncate">All organizations</span>
-          {onListPage ? (
-            <CheckIcon size={16} aria-hidden="true" className="shrink-0" />
+                    ) : null}
+                  </DropdownMenuItem>
+                );
+              })}
+            </>
           ) : null}
-        </DropdownMenuItem>
-        <DropdownMenuItem
-          data-testid={`${testIdPrefix}scope-create-organization`}
-          onClick={() => go(CREATE_ORGANIZATION_PATH)}
-        >
-          <DropdownMenuItemIcon>
-            <Plus size="xl" />
-          </DropdownMenuItemIcon>
-          Create an organization
-        </DropdownMenuItem>
-      </FloatingMenu>
+          <DropdownMenuDivider />
+          <DropdownMenuItem
+            role="menuitemradio"
+            aria-checked={onListPage}
+            data-testid={`${testIdPrefix}scope-all-organizations`}
+            onClick={() => go(ORGANIZATIONS_PATH)}
+          >
+            <DropdownMenuItemIcon>
+              <BuildingIcon size="xl" />
+            </DropdownMenuItemIcon>
+            <span className="min-w-0 flex-1 truncate">All organizations</span>
+            {onListPage ? (
+              <CheckIcon size={16} aria-hidden="true" className="shrink-0" />
+            ) : null}
+          </DropdownMenuItem>
+          <DropdownMenuItem
+            data-testid={`${testIdPrefix}scope-create-organization`}
+            onClick={() => go(CREATE_ORGANIZATION_PATH)}
+          >
+            <DropdownMenuItemIcon>
+              <Plus size="xl" />
+            </DropdownMenuItemIcon>
+            Create an organization
+          </DropdownMenuItem>
+        </FloatingMenu>
+      </div>
     </div>
   );
 }

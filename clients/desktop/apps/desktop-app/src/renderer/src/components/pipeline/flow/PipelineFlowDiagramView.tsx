@@ -1,3 +1,4 @@
+import { ControlButton } from '@canopy/ui-shared/components';
 import type { ComponentProps } from 'react';
 import {
   WorkflowNodeSurface,
@@ -145,9 +146,9 @@ function PipelineJobNodeView({
         position={targetPosition ?? Position.Top}
         className="!opacity-0"
       />
-      <button
+      <ControlButton
         type="button"
-        className="nodrag flex shrink-0 items-center gap-2 px-3 text-left transition-colors hover:bg-fg-primary/[0.04]"
+        presentation="diagram-job"
         style={{ height: JOB_HEADER_HEIGHT }}
         onClick={(e): void => {
           e.stopPropagation();
@@ -168,7 +169,7 @@ function PipelineJobNodeView({
             {data.steps.length}
           </span>
         )}
-      </button>
+      </ControlButton>
       {data.matrix !== undefined && (
         <MatrixSummaryBody jobId={data.jobId} summary={data.matrix} />
       )}
@@ -181,14 +182,12 @@ function PipelineJobNodeView({
         >
           {data.steps.map((step) => {
             const stepSelected = data.selectedStepIndex === step.stepIndex;
-            const stepClass = stepSelected
-              ? 'border-line-accent bg-accent-subtle'
-              : 'bg-fg-primary/[0.03] hover:bg-fg-primary/[0.07]';
             return (
-              <button
+              <ControlButton
                 key={step.stepIndex}
                 type="button"
-                className={`nodrag flex shrink-0 items-center gap-2 rounded border px-2 text-left transition-colors ${stepClass}`}
+                presentation="diagram-step"
+                appearance={stepSelected}
                 style={{ height: STEP_ROW_HEIGHT }}
                 onClick={(e): void => {
                   e.stopPropagation();
@@ -199,7 +198,7 @@ function PipelineJobNodeView({
                 <span className="min-w-0 flex-1 truncate text-2xs fg-primary/80">
                   {step.label}
                 </span>
-              </button>
+              </ControlButton>
             );
           })}
           {data.canAddStep === true && onAddStep && (

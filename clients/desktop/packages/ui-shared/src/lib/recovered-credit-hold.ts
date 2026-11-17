@@ -1,11 +1,16 @@
-import { parseCanopyProxyError } from '@canopy/protocol';
+import {
+  isCanopyProxyErrorBody,
+  parseCanopyProxyError,
+} from '@canopy/protocol';
 import type { PortalChatMessage } from '@canopy/protocol/portal';
 import type { PersistedChatMessage } from '@canopy/agent-transcript/types';
 
 type Message = PersistedChatMessage | PortalChatMessage;
 
 interface Row {
+  promptBoundary: boolean;
   boundary?: string;
+  proxyFailure?: { code: string; correlationId: string | null };
   timer?: {
     turnId: string;
     userMessageId: string;
@@ -69,7 +74,26 @@ function describe(message: Message): Row {
       parts.some((part) => part.kind !== 'turn_timer'));
   const nativeFailure =
     root && message.role === 'assistant' && text.startsWith('API Error:');
+  const proxyFailure =
+    root &&
+    parts.every((part) => part.kind === 'text') &&
+    (message.role === 'system' ||
+      (message.role === 'assistant' && isCanopyProxyErrorBody(text)))
+      ? parseCanopyProxyError(text)
+      : null;
   return {
+    promptBoundary:
+      root &&
+      message.role === 'user' &&
+      !parts.some((part) => part.kind === 'tool_result'),
+    ...(proxyFailure
+      ? {
+          proxyFailure: {
+            code: proxyFailure.code,
+            correlationId: proxyFailure.correlationId,
+          },
+        }
+      : {}),
     boundary:
       root && message.role === 'user' && text.trim()
         ? portal
@@ -106,6 +130,11 @@ export function omitRecoveredCreditHoldArtifacts<T extends Message>(
   messages: readonly T[],
 ): T[] {
   const omitted = new Set<number>();
+  const failures = new Map<
+    string,
+    Array<{ index: number; correlationId: string | null; liveFailure: boolean }>
+  >();
+  let execution: string | undefined;
   let anchor: string | undefined;
   let attempts: Array<{
     index: number;
@@ -147,6 +176,40 @@ export function omitRecoveredCreditHoldArtifacts<T extends Message>(
   };
   messages.forEach((message, index) => {
     const row = describe(message);
+    if (row.promptBoundary || (row.timer && row.timer.turnId !== execution)) {
+      failures.clear();
+      execution = row.timer?.turnId;
+    }
+    // Live assistant/error frames and the persisted snapshot can publish the
+    // same refusal under different row ids. Fold only within this execution;
+    // a different reference or a later prompt/retry remains a separate failure.
+    if (row.proxyFailure) {
+      const { code, correlationId } = row.proxyFailure;
+      const liveFailure =
+        'messageId' in message &&
+        message.role === 'assistant' &&
+        message.status === 'failed';
+      const seen = failures.get(code) ?? [];
+      const previous = seen.find(
+        (failure) =>
+          failure.correlationId === null ||
+          correlationId === null ||
+          failure.correlationId === correlationId,
+      );
+      if (previous) {
+        // Portal's turn groups keep the failed live row over its saved echo.
+        // Retain that same row here or neither id would reach the transcript.
+        if (previous.liveFailure && !liveFailure) {
+          omitted.add(index);
+          return;
+        }
+        omitted.add(previous.index);
+        previous.index = index;
+        previous.correlationId = correlationId ?? previous.correlationId;
+        previous.liveFailure = liveFailure;
+      } else seen.push({ index, correlationId, liveFailure });
+      failures.set(code, seen);
+    }
     if (row.boundary !== undefined) {
       finish();
       anchor = row.boundary;

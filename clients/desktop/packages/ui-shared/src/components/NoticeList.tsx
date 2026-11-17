@@ -24,7 +24,7 @@ export function NoticeList({
   ...rest
 }: NoticeListProps): JSX.Element {
   return (
-    <span role="list" className="mt-2 block flex flex-col gap-0.5" {...rest}>
+    <span role="list" className="flex flex-col gap-0.5 pt-2" {...rest}>
       {children}
     </span>
   );
@@ -41,7 +41,7 @@ export function NoticeListItem({
 }: NoticeListItemProps): JSX.Element {
   return (
     <span role="listitem" className="block pl-4 -indent-4" {...rest}>
-      <span aria-hidden="true" className="mr-1.5">
+      <span aria-hidden="true" className="pr-1.5">
         •
       </span>
       {children}

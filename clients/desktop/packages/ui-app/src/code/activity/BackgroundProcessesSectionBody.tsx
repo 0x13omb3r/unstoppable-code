@@ -1,7 +1,8 @@
 'use client';
 
+import { CompositeListRow } from '@canopy/ui-shared/components';
 import { Badge } from '@canopy/ui-shared/components/Badge';
-import { useState, type JSX, type KeyboardEvent } from 'react';
+import { useState, type JSX } from 'react';
 import type { BackgroundTaskStopRequest } from '@canopy/app-core';
 import type { BackgroundTask } from '@canopy/protocol/background-tasks';
 import { Stack, AnsiOutput, Disclosure } from '@canopy/ui-shared/components';
@@ -88,16 +89,6 @@ export function BackgroundProcessesSectionBody({
     return null;
   }
 
-  const handleKeyDown = (
-    event: KeyboardEvent<HTMLElement>,
-    process: BackgroundTask,
-  ): void => {
-    if (event.key === 'Enter' || event.key === ' ') {
-      event.preventDefault();
-      onOpenDetail(process);
-    }
-  };
-
   return (
     <Stack gap="inline" data-testid="activity-bg-body">
       {/* Active processes */}
@@ -108,10 +99,8 @@ export function BackgroundProcessesSectionBody({
           padding="compact"
           className="cursor-pointer"
           key={process.id}
-          role="button"
-          tabIndex={0}
+          as={CompositeListRow}
           onClick={(): void => onOpenDetail(process)}
-          onKeyDown={(event): void => handleKeyDown(event, process)}
           data-testid="activity-bg-item"
         >
           <div className="flex flex-col gap-3">
@@ -135,21 +124,21 @@ export function BackgroundProcessesSectionBody({
                 {/* Descriptions fall back to the command or prompt, and
                   summaries quote agent output, so replay blocks them. */}
                 <div
-                  className={`${REPLAY_BLOCK_CLASS} mt-1 truncate text-xs font-medium fg-primary/80`}
+                  className={`${REPLAY_BLOCK_CLASS} pt-1 truncate text-xs font-medium fg-primary/80`}
                 >
                   {process.title}
                 </div>
                 {process.lastDescription &&
                   process.lastDescription !== process.title && (
                     <div
-                      className={`${REPLAY_BLOCK_CLASS} mt-1 truncate text-xs fg-secondary`}
+                      className={`${REPLAY_BLOCK_CLASS} pt-1 truncate text-xs fg-secondary`}
                     >
                       {process.lastDescription}
                     </div>
                   )}
                 {process.summary && (
                   <div
-                    className={`${REPLAY_BLOCK_CLASS} mt-1 truncate text-xs fg-secondary`}
+                    className={`${REPLAY_BLOCK_CLASS} pt-1 truncate text-xs fg-secondary`}
                   >
                     {process.summary}
                   </div>
@@ -189,10 +178,8 @@ export function BackgroundProcessesSectionBody({
                   interactive
                   className="cursor-pointer overflow-hidden"
                   key={process.id}
-                  role="button"
-                  tabIndex={0}
+                  as={CompositeListRow}
                   onClick={(): void => onOpenDetail(process)}
-                  onKeyDown={(event): void => handleKeyDown(event, process)}
                   data-testid="activity-bg-item"
                 >
                   <div className="px-3 py-2.5">
@@ -207,7 +194,7 @@ export function BackgroundProcessesSectionBody({
                         {process.status}
                       </Badge>
                     </div>
-                    <div className="mt-1 truncate text-xs fg-secondary">
+                    <div className="pt-1 truncate text-xs fg-secondary">
                       {process.title}
                     </div>
                     {process.summary && (

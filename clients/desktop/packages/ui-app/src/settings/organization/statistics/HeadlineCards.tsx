@@ -114,7 +114,7 @@ export function HeadlineCards({
               )}
             </div>
             <p
-              className={`mt-1 text-2xl font-semibold ${
+              className={`pt-1 text-2xl font-semibold ${
                 detail?.tone === 'success' ? 'fg-success' : 'fg-primary'
               }`}
               data-testid={`usage-card-${card.key}-value`}
@@ -122,7 +122,7 @@ export function HeadlineCards({
               {detail?.value ?? formatCardValue(card.value, card.unit)}
             </p>
             {detail?.caption !== undefined ? (
-              <p className="mt-1 text-xs fg-secondary">{detail.caption}</p>
+              <p className="pt-1 text-xs fg-secondary">{detail.caption}</p>
             ) : (
               <TrendIndicator
                 current={card.value}

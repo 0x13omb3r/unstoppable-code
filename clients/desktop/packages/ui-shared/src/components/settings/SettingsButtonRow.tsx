@@ -1,3 +1,4 @@
+import { ControlButton } from '../Button';
 import type { ButtonHTMLAttributes, JSX, ReactNode } from 'react';
 import { CheckIcon, ChevronRightIcon } from '../../icons/AppIcons';
 import { Tooltip } from '../Tooltip';
@@ -44,12 +45,12 @@ export function SettingsButtonRow({
   ...props
 }: SettingsButtonRowProps): JSX.Element {
   const button = (
-    <button
+    <ControlButton
       {...props}
       type="button"
       aria-pressed={trailing === 'select' ? selected : undefined}
       data-settings-control="row"
-      className="focus-ring -mx-2 -my-3 box-content flex min-h-10 min-w-0 flex-1 items-center justify-between gap-6 rounded-md px-2 py-3 text-left transition-colors hover:bg-subtle focus-visible:bg-subtle disabled:cursor-not-allowed disabled:opacity-60 disabled:hover:bg-transparent"
+      presentation="settings-select-row"
     >
       <span className="min-w-0 flex-1 flex flex-col gap-0.5">
         <span className="block min-w-0 text-s font-medium fg-primary">
@@ -74,7 +75,7 @@ export function SettingsButtonRow({
           </span>
         )}
       </span>
-    </button>
+    </ControlButton>
   );
   return (
     <div className="flex">

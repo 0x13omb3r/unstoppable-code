@@ -7,6 +7,7 @@ import { createRelayCoreCoworkInvoker } from '@/cloud-chats/relay-invoker';
 import {
   createWebCoreChatBackendCore,
   webCoreUnavailable,
+  type CloudSendReceiptOutcome,
   type CloudTabModel,
   type WebCoreAttachmentFile,
   type WebCoreChatBackendCore,
@@ -320,6 +321,18 @@ export function uploadWebCoreChatAttachment(
       cloudChatAttachmentAdded(window.canopyCore, chatId);
     return result;
   });
+}
+
+/**
+ * Whether the web core took the send posted to a chat as `commandId`
+ * (CAN-6798); `unknown` while the cloud can't say.
+ */
+export function readWebCoreSendReceipt(
+  target: { projectId: string; worktreeId: string; chatId: string },
+  commandId: string,
+): Promise<CloudSendReceiptOutcome> {
+  webCoreChatBackend();
+  return core?.readSendReceipt(target, commandId) ?? Promise.resolve('unknown');
 }
 
 /** Ends every web core stream: the connection went offline or was turned off. */

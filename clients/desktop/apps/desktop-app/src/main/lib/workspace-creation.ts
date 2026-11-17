@@ -62,7 +62,10 @@ export type WorkspaceCreationVariant =
   | { kind: 'new-single-repo'; name: string }
   /** A new multi-repo project with its source repository. */
   | { kind: 'new-multi-repo'; name: string }
-  /** Host-only, validated complete clone with its organization binding. */
+  /**
+   * Host-only, validated complete clone with its organization binding, or a
+   * new organization copy's staged checkouts (CAN-4856, `copyRepositories`).
+   */
   | ({ kind: 'bound-multi-repo' } & Parameters<
       typeof registerBoundMultiRepoWorkspace
     >[0])
@@ -219,8 +222,8 @@ async function runCreation(
     case 'bound-multi-repo':
       return {
         workspace: await registerBoundMultiRepoWorkspace(variant),
-        clonedRepoIds: variant.repositories.map((entry) =>
-          entry.relativePath.slice('repos/'.length),
+        clonedRepoIds: (variant.copyRepositories ?? variant.repositories).map(
+          (entry) => entry.relativePath.slice('repos/'.length),
         ),
       };
     case 'cloud-project-multi-repo':

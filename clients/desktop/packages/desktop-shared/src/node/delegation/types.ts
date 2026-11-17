@@ -3,6 +3,7 @@ import type {
   AgentDelegationEvent,
   AgentDelegationSpawnRequest,
   DelegationStopReason,
+  ManagedDelegationSurface,
   PersistedAgentOverlaySummary,
   PersistedAgentRouteSnapshot,
 } from '@canopy/protocol/delegation';
@@ -112,6 +113,12 @@ export interface ResolvedDelegationRoute extends ResolvedAgentRouteSnapshot {
 }
 
 export interface AgentRunRequest {
+  /**
+   * Ephemeral trusted root policy. Omitted means the Code surface; the broker
+   * supplies it once a non-Code surface is enabled. Never persist this on
+   * parent or route.
+   */
+  readonly surface?: ManagedDelegationSurface;
   readonly delegationId: string;
   readonly runGeneration: number;
   readonly launchKey: string;

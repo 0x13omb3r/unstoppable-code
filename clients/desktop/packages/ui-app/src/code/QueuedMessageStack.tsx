@@ -214,7 +214,10 @@ export function QueuedMessageStack({
       });
   };
   return (
-    <div className="flex flex-col gap-2 empty:hidden" data-testid={testId}>
+    <div
+      className={`flex flex-col gap-2 empty:hidden ${drawer ? '' : 'px-5'}`}
+      data-testid={testId}
+    >
       {ids.length > 0 ? (
         <div
           role="list"

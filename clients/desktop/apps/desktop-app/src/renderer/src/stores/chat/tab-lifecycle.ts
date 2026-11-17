@@ -1,7 +1,6 @@
 import { noteChatCreatedInSession } from './created-in-session';
 // Tab creation/fork lifecycle helpers that need chat-store state types.
 import {
-  APP_ADVISOR_PROJECT_ID,
   PLAN_EXPLORE_CHAT_PROJECT_ID,
   WORKSPACE_ROOT_REPO_ID,
   getProviderForModel,
@@ -12,6 +11,7 @@ import {
   type ChatTabPluginSelections,
   type WorktreeSelection,
 } from '@canopy/desktop-shared/types';
+import { isBotProjectId } from '@canopy/protocol/chat-targets';
 import { isCoworkChatTarget } from '@/lib/cowork';
 import { newChatPluginDefaultsStamp } from '@canopy/desktop-shared/lib/effective-plugin-selections';
 import {
@@ -25,10 +25,7 @@ import { useProjectsStore } from '../projectsStore';
 import type { ChatState } from './state';
 import type { ChatTab, CreateTabTarget, WorktreeChatState } from './types';
 import { worktreeKey } from './utils';
-import {
-  isAppAdvisorChatTarget,
-  withRequiredPluginSelectionsForTarget,
-} from './surface';
+import { withRequiredPluginSelectionsForTarget } from './surface';
 import {
   chatTabHasConversationContent,
   createEmptyTab,
@@ -84,7 +81,7 @@ export function scheduleTaskBranchNamingFromInitialInput(
 ): void {
   if (
     isCoworkChatTarget(projectId) ||
-    projectId === APP_ADVISOR_PROJECT_ID ||
+    isBotProjectId(projectId) ||
     projectId === PLAN_EXPLORE_CHAT_PROJECT_ID ||
     text.trim().length === 0
   ) {
@@ -122,7 +119,7 @@ export function shouldStartFreshNativeAppAdvisorSessionAfterTerminal(
   terminalSnapshot: ClaudeTerminalClientState | undefined,
 ): boolean {
   if (
-    !isAppAdvisorChatTarget(sel.projectId, sel.worktreeId) ||
+    !isBotProjectId(sel.projectId) ||
     resolveTabProviderType(tab) !== 'claude'
   ) {
     return false;
@@ -417,8 +414,7 @@ export function appendNewTab(
         title: latestTab.title,
         ...(providerType ? { providerType } : {}),
         ...(latestTab.model ? { model: latestTab.model } : {}),
-        ...(sel.projectId === APP_ADVISOR_PROJECT_ID &&
-        latestTab.defaultStampModel
+        ...(isBotProjectId(sel.projectId) && latestTab.defaultStampModel
           ? { defaultStampModel: latestTab.defaultStampModel }
           : {}),
         ...(latestTab.modelConfig

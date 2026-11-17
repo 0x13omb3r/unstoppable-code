@@ -36,7 +36,7 @@ function PushToggleRow({
   readonly onChange: () => void;
 }): JSX.Element {
   return (
-    <div className={`mt-4 ${SETTINGS_CARD_ROW_CLASS}`}>
+    <div className={`pt-4 ${SETTINGS_CARD_ROW_CLASS}`}>
       <p className="text-s font-medium fg-primary">Allow push notifications</p>
       <SettingsCardSwitch
         checked={checked}

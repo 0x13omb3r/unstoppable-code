@@ -1,3 +1,4 @@
+import { ControlButton } from './Button';
 import type { SpaceRole } from './Stack';
 import {
   createContext,
@@ -174,10 +175,10 @@ export function PanelSection({
         }}
       >
         {keyboardDragHandleProps != null && (
-          <button
+          <ControlButton
             ref={keyboardDragHandleRef}
             type="button"
-            className="sr-only focus:not-sr-only focus:absolute focus:left-0 focus:top-0 focus:z-20 focus:rounded-sm focus:bg-quaternary focus:px-2 focus:py-1 focus:text-2xs focus:font-normal focus:fg-primary focus:shadow-sm"
+            presentation="panel-keyboard-drag"
             {...keyboardDragHandleProps}
           />
         )}
@@ -188,9 +189,9 @@ export function PanelSection({
             truncate
             className="col-start-1 row-start-1 min-w-0"
           >
-            <button
+            <ControlButton
               type="button"
-              className={`${titleRowClassName} focus-ring w-full rounded-sm`}
+              presentation="panel-section-disclosure"
               data-panel-section-title-row
               aria-expanded={!collapsed}
               onClick={(event): void => {
@@ -205,7 +206,7 @@ export function PanelSection({
               >
                 {title}
               </span>
-            </button>
+            </ControlButton>
           </Heading>
         ) : (
           <div
@@ -231,7 +232,7 @@ export function PanelSection({
         >
           {subtitleInline && subtitle != null && (
             <span
-              className="mr-2 whitespace-nowrap text-2xs font-normal fg-secondary"
+              className="pr-2 whitespace-nowrap text-2xs font-normal fg-secondary"
               data-panel-section-subtitle
             >
               {subtitle}

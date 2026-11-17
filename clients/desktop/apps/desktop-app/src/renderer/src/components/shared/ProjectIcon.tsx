@@ -28,7 +28,7 @@ export interface ProjectIconProps {
  * sidebar rail and the web portal draw from the snapshot's `avatarUrl`, so
  * multi-repo, cowork, offline, and loading states share one fallback.
  */
-export function ProjectIcon({
+export function DesktopProjectIdentity({
   kind,
   color,
   temporary,
@@ -85,3 +85,5 @@ export function ProjectIcon({
     />
   );
 }
+
+export { DesktopProjectIdentity as ProjectIcon };

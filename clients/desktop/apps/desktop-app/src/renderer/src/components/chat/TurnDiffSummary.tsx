@@ -1,3 +1,4 @@
+import { ControlButton } from '@canopy/ui-shared/components';
 import {
   memo,
   useCallback,
@@ -20,13 +21,12 @@ import { getBaseName } from '@/lib/format';
 import { useChatStore } from '@/stores/chatStore';
 import { requestFilePanelPlacementBesideChat } from '@/lib/panels/chat-panel-sync';
 import { TurnDiffPopover } from './TurnDiffPopover';
-import { TurnFileChip } from './TurnFiles';
+import { TurnFileControl } from './TurnFiles';
 import { openFileInDiff } from '@/lib/panels/open-file-diff';
 import {
   Button,
   GroupedDiffStats,
   ITEM_PREVIEW_OPEN_DELAY_MS,
-  TURN_FILE_ROW_CLASS_NAME,
   formatTurnFilesHeading,
   TurnFilesSummaryView,
   type TurnChangedFileRows,
@@ -97,16 +97,16 @@ function SingleDiffFile({
   const filename = getBaseName(file.path);
   return (
     <span className="flex min-w-0 flex-1 items-center gap-3 text-s">
-      <button
+      <ControlButton
         type="button"
         disabled={disabled}
         aria-label={`${SINGLE_FILE_VERBS[file.status] ?? 'Edited'} ${filename}`}
         data-turn-files-title=""
-        className="focus-ring min-w-0 truncate rounded-sm text-left fg-primary"
+        presentation="turn-file-title"
         onClick={onOpen}
       >
         {filename}
-      </button>
+      </ControlButton>
       <LineCounts insertions={file.insertions} deletions={file.deletions} />
     </span>
   );
@@ -139,13 +139,13 @@ const FileCard = memo(function FileCard({
 
   const folder = file.path.slice(0, file.path.length - baseName.length);
   return (
-    <button
+    <ControlButton
       type="button"
       onClick={onClick}
       onMouseEnter={onMouseEnter}
       onMouseMove={onMouseMove}
       onMouseLeave={onMouseLeave}
-      className={`focus-ring text-left ${TURN_FILE_ROW_CLASS_NAME}`}
+      presentation="turn-file-row"
       aria-label={file.path}
     >
       <span className="flex min-w-0 flex-1 items-baseline">
@@ -158,7 +158,7 @@ const FileCard = memo(function FileCard({
         <span className="shrink-0 fg-primary">{baseName}</span>
       </span>
       <LineCounts insertions={file.insertions} deletions={file.deletions} />
-    </button>
+    </ControlButton>
   );
 });
 
@@ -430,7 +430,7 @@ export const TurnDiffSummary = memo(function TurnDiffSummary({
   const outputFiles = fileTarget
     ? [
         ...extraFiles.map((file) => (
-          <TurnFileChip
+          <TurnFileControl
             key={`file:${file.target?.projectId ?? ''}/${file.target?.worktreeId ?? ''}:${file.path}`}
             path={file.path}
             absolutePath={file.absolutePath}
@@ -443,7 +443,7 @@ export const TurnDiffSummary = memo(function TurnDiffSummary({
           />
         )),
         ...visiblePending.map((file) => (
-          <TurnFileChip
+          <TurnFileControl
             key={`pending:${file.target?.projectId ?? ''}/${file.target?.worktreeId ?? ''}:${file.path}`}
             path={file.path}
             target={file.target}

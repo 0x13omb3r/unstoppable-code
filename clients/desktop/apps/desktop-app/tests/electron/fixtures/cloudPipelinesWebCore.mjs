@@ -15,6 +15,25 @@ import {
 
 const CONNECTIONS = '/api/cloud/core/connections';
 const START = 'core.pipeline.execution.start';
+/**
+ * The JSON-RPC code for each error kind, as `CANOPY_JSON_RPC_ERROR_CODES`
+ * has it (not imported, so the Electron lane loads one protocol copy).
+ */
+const JSON_RPC_ERROR_CODES = {
+  invalid_argument: -32602,
+  unauthenticated: -32001,
+  permission_denied: -32002,
+  not_found: -32003,
+  already_exists: -32004,
+  conflict: -32005,
+  failed_precondition: -32006,
+  capability_unavailable: -32007,
+  cancelled: -32008,
+  deadline_exceeded: -32009,
+  unavailable: -32010,
+  resource_exhausted: -32011,
+  internal: -32603,
+};
 const PREFLIGHT = 'core.pipeline.cloudModels.preflight';
 const MANIFEST = 'core.runtime.manifest.get';
 const HASH = 'a'.repeat(64);
@@ -65,15 +84,30 @@ export async function startCloudPipelinesWebCore({
   /**
    * `starts` are the recorded runs; `refusedStarts` the starts refused
    * because a model step had no confirmed cloud model (recording nothing).
-   * @type {{ cloudRuns: boolean, starts: object[], refusedStarts: object[], preflights: object[] }}
+   * `preparing` is how many more starts at a pushed branch answer that its
+   * cloud worktree is being set up (CAN-6869), recording nothing;
+   * `preparingStarts` are those starts. `heldStarts` are starts held by
+   * `holdNextStart` whose answer was lost (CAN-6869). `signedOut` is how
+   * many more starts answer that the caller isn't signed in, recording
+   * nothing.
+   * @type {{ cloudRuns: boolean, starts: object[], refusedStarts: object[], preflights: object[], preparing: number, preparingStarts: object[], heldStarts: object[], signedOut: number }}
    */
   const state = {
     cloudRuns: false,
     starts: [],
     refusedStarts: [],
     preflights: [],
+    preparing: 0,
+    preparingStarts: [],
+    heldStarts: [],
+    signedOut: 0,
   };
-  const cloudRuns = createFakeCloudRuns({ operations: CLOUD_RUN_OPERATIONS });
+  /** The next start's gate: it waits, then its answer is lost. */
+  let held = null;
+  // A cloud run's cost too (CAN-6881), for runs seeded with one.
+  const cloudRuns = createFakeCloudRuns({
+    operations: [...CLOUD_RUN_OPERATIONS, 'core.cost.cloudRun.get'],
+  });
   /** connectionId -> { sse: ServerResponse | null, pending: object[], push } */
   const connections = new Map();
   const openConnection = () => {
@@ -158,9 +192,13 @@ export async function startCloudPipelinesWebCore({
               PREFLIGHT,
               ...HOST_OPERATIONS,
               ...(state.cloudRuns
-                ? CLOUD_RUN_OPERATIONS.filter(
-                    (name) => !name.endsWith('.events'),
-                  )
+                ? [
+                    ...CLOUD_RUN_OPERATIONS.filter(
+                      (name) => !name.endsWith('.events'),
+                    ),
+                    // A cloud run's cost (CAN-6881).
+                    'core.cost.cloudRun.get',
+                  ]
                 : []),
             ],
             events: [],
@@ -220,6 +258,31 @@ export async function startCloudPipelinesWebCore({
       case 'core.events.unsubscribe':
         return { unsubscribed: cloudRuns.unsubscribe(params.subscriptionId) };
       case START: {
+        // A pushed branch's cloud worktree still being set up: nothing is
+        // recorded, and the caller sends the same start again (CAN-6869).
+        if (params.checkout !== undefined && state.preparing > 0) {
+          state.preparing -= 1;
+          state.preparingStarts.push(params);
+          return {
+            error: {
+              kind: 'unavailable',
+              code: 'core.pipeline.worktreePreparing',
+              message: `Setting up a cloud worktree for ${params.checkout.branch}. The run starts once it's ready.`,
+              retry: { kind: 'same_request', delayMs: 10_000 },
+            },
+          };
+        }
+        // Signed out since the start was first sent: nothing is recorded.
+        if (state.signedOut > 0) {
+          state.signedOut -= 1;
+          return {
+            error: {
+              kind: 'unauthenticated',
+              message: 'Sign in again.',
+              retry: { kind: 'never' },
+            },
+          };
+        }
         // As the run service does: a model step with no confirmed cloud
         // model refuses the start and records nothing.
         if (params.modelChoices === undefined) {
@@ -339,7 +402,26 @@ export async function startCloudPipelinesWebCore({
       response.writeHead(202).end();
       return;
     }
-    const result = answer(message.method, message.params ?? {}, connection);
+    // A held start waits for its release, then answers as a lost response
+    // would reach the caller: unavailable, the outcome unknown.
+    const lost = message.method === START && held !== null;
+    if (lost) {
+      const gate = held;
+      held = null;
+      state.heldStarts.push(message.params ?? {});
+      gate.arrived();
+      await gate.released;
+    }
+    const result = lost
+      ? {
+          error: {
+            // No code: the start declares none for a lost answer.
+            kind: 'unavailable',
+            message: 'The cloud stopped answering.',
+            retry: { kind: 'never' },
+          },
+        }
+      : answer(message.method, message.params ?? {}, connection);
     send(
       response,
       200,
@@ -350,7 +432,9 @@ export async function startCloudPipelinesWebCore({
               jsonrpc: '2.0',
               id: message.id,
               error: {
-                code: -32006,
+                // The JSON-RPC code for the payload's kind, as the wire
+                // requires.
+                code: JSON_RPC_ERROR_CODES[result.error.kind] ?? -32603,
                 message: result.error.message,
                 data: result.error,
               },
@@ -398,6 +482,22 @@ export async function startCloudPipelinesWebCore({
     curatedId: `curated:${key}`,
     state,
     cloudRuns,
+    /**
+     * Holds the next start until `release()`, then loses its answer; it
+     * records nothing. `arrived` settles once that start is in.
+     */
+    holdNextStart() {
+      let arrived = () => {};
+      let release = () => {};
+      const arrival = new Promise((resolve) => {
+        arrived = resolve;
+      });
+      const released = new Promise((resolve) => {
+        release = resolve;
+      });
+      held = { arrived, released };
+      return { arrived: arrival, release };
+    },
     close: () =>
       new Promise((resolve) => {
         server.closeAllConnections();

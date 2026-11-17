@@ -29,6 +29,7 @@ import type {
   IncomingTeamInvitationAction,
   OrganizationConfigDetail,
   OrganizationDetail,
+  OrganizationExternalShareListResponse,
   OrganizationLogoContentType,
   OrganizationRole,
   OrganizationSummary,
@@ -581,6 +582,37 @@ export async function updateAllowExternalContainerSharing(
     client.write('organization.settings.policies.update', {
       organizationId: orgId,
       allowExternalContainerSharing,
+    }),
+  );
+}
+
+/**
+ * One page of the organization's external shares (CAN-3420). Owners and
+ * Admins only; the server refuses Members.
+ */
+export async function listOrganizationExternalShares(
+  client: AccountOrganizationSettingsClient,
+  orgId: string,
+  cursor?: string,
+): Promise<OrganizationExternalShareListResponse> {
+  return settle(() =>
+    client.read('organization.externalShares.list', {
+      organizationId: orgId,
+      ...(cursor === undefined ? {} : { cursor }),
+    }),
+  );
+}
+
+/** Remove one external share right away (CAN-3420). */
+export async function removeOrganizationExternalShare(
+  client: AccountOrganizationSettingsClient,
+  orgId: string,
+  shareId: string,
+): Promise<void> {
+  await settle(() =>
+    client.write('organization.externalShares.remove', {
+      organizationId: orgId,
+      shareId,
     }),
   );
 }

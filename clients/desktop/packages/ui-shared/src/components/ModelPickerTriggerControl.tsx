@@ -1,4 +1,6 @@
 'use client';
+
+import { ControlButton } from './Button';
 import {
   forwardRef,
   type ButtonHTMLAttributes,
@@ -7,7 +9,7 @@ import {
   type Ref,
 } from 'react';
 import { FoldReveal } from './FoldReveal';
-import { CAPSULE_TOUCH_FLOOR_CLASS } from './ChatComposerToolbar';
+
 import { ChevronDownMediumIcon } from '../icons/AppIcons';
 
 export interface ModelPickerTriggerControlProps extends ButtonHTMLAttributes<HTMLButtonElement> {
@@ -51,21 +53,17 @@ export const ModelPickerTriggerControl = forwardRef<
   ref,
 ): JSX.Element {
   return (
-    <button
+    <ControlButton
       ref={ref}
       type="button"
       data-unavailable={unavailable ? 'true' : undefined}
-      className={`flex min-w-0 max-w-full items-center whitespace-nowrap ${
-        unavailable ? 'fg-warning-strong' : 'fg-primary'
-      } transition-colors hover:bg-subtle disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-transparent ${
-        variant === 'capsule'
-          ? compact
-            ? // 32px is desktop's capsule contract; a coarse pointer (phone,
-              // tablet, touch laptop) still gets the 44px floor (DESIGN.md).
-              `h-8 gap-1 rounded-full px-1 text-xs ${CAPSULE_TOUCH_FLOOR_CLASS}`
-            : `h-8 gap-1 rounded-full px-2.5 text-xs${hideChevron ? ' pr-3' : ''} ${CAPSULE_TOUCH_FLOOR_CLASS}`
-          : 'gap-1 rounded-md px-1.5 py-0.5 text-2xs'
-      }`}
+      presentation="model-picker-trigger"
+      appearance={{
+        unavailable: !!unavailable,
+        variant,
+        compact: !!compact,
+        hideChevron: !!hideChevron,
+      }}
       {...props}
     >
       {foldIcon ? (
@@ -94,6 +92,6 @@ export const ModelPickerTriggerControl = forwardRef<
           }
         />
       )}
-    </button>
+    </ControlButton>
   );
 });

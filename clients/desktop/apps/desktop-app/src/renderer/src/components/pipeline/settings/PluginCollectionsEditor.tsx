@@ -1,3 +1,4 @@
+import { ControlButton } from '@canopy/ui-shared/components';
 import { type JSX, useMemo, useState } from 'react';
 import {
   buildShareablePluginDisplay,
@@ -212,10 +213,11 @@ function CollectionItem({
     <Surface variant="group" size="small">
       {/* The remove action sits beside the toggle, not inside it. */}
       <div className="flex items-start">
-        <button
+        <ControlButton
           type="button"
           onClick={() => setExpanded((v) => !v)}
-          className="flex min-w-0 flex-1 items-start gap-2 px-3 py-2.5 text-left hover:bg-fg-primary/[0.04]"
+          aria-expanded={expanded}
+          presentation="workflow-setting-toggle"
         >
           <span className="flex h-5 shrink-0 items-center">
             <AppCatalogChevronRightMediumIcon
@@ -235,7 +237,7 @@ function CollectionItem({
               {collection.description ? ` — ${collection.description}` : ''}
             </div>
           </div>
-        </button>
+        </ControlButton>
         {/* The padding centers the 28px action on the title line. */}
         {!readonly && (
           <span className="flex shrink-0 p-1.5">

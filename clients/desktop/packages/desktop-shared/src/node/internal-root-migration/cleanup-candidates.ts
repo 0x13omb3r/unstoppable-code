@@ -74,6 +74,7 @@ export interface InternalRootCleanupReport {
 
 const idPattern = /^[A-Za-z0-9_-]+$/;
 const appManagedWorkspaceIds = new Set([
+  // Default Bot only: its legacy migration data is tied to the old app root.
   APP_ADVISOR_PROJECT_ID,
   CODE_REVIEW_CHAT_PROJECT_ID,
   PIPELINE_EDITOR_PROJECT_ID,

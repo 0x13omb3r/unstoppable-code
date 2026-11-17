@@ -78,7 +78,7 @@ import {
   VOICE_TAKE_EDITOR_CONTAINER_CLASS,
 } from '@/components/chat/ComposerLayout';
 import { ChatDropOverlay } from '@/components/chat/ChatDropOverlay';
-import { ScheduledSendChip } from '@/components/chat/ScheduledSendChip';
+import { ScheduledSendControl } from '@/components/chat/ScheduledSendChip';
 import { useFakeSpeechLevel } from './ComposerVoiceOptionsLab';
 
 /**
@@ -625,7 +625,7 @@ function GalleryComposer({
       }
       scheduledSendSlot={
         !promptCard && scheduledRunAt ? (
-          <ScheduledSendChip
+          <ScheduledSendControl
             runAt={scheduledRunAt}
             error={spec.scheduleError ?? null}
             editable

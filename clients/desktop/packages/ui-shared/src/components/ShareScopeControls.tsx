@@ -1,3 +1,4 @@
+import { ControlButton } from './Button';
 import { Stack, type SpaceRole } from './Stack';
 import { Children, type JSX, type ReactNode } from 'react';
 import type { ShareAudience } from '@canopy/protocol/sharing';
@@ -186,7 +187,7 @@ export function ShareScopeSelector<T extends string>({
   );
   return (
     <fieldset className="block text-s" data-testid={dataTestId}>
-      <legend className="mb-1.5 block font-medium fg-primary">{legend}</legend>
+      <legend className="block pb-1.5 font-medium fg-primary">{legend}</legend>
       {contentGap === undefined ? (
         <>
           {optionsRow}
@@ -337,7 +338,7 @@ export function ShareAudienceSelector({
         <p
           className={
             contentGap === undefined
-              ? 'mt-2 text-xs fg-secondary'
+              ? 'pt-2 text-xs fg-secondary'
               : 'text-xs fg-secondary'
           }
           data-testid={
@@ -351,7 +352,7 @@ export function ShareAudienceSelector({
         <p
           className={
             contentGap === undefined
-              ? 'mt-2 text-xs fg-secondary'
+              ? 'pt-2 text-xs fg-secondary'
               : 'text-xs fg-secondary'
           }
           data-testid={
@@ -472,7 +473,7 @@ export function SharedTargetPicker<T>({
             const avatarLabel = getAvatarLabel?.(item);
             return (
               <li key={key}>
-                <button
+                <ControlButton
                   type="button"
                   disabled={disabled}
                   onClick={() => onSelect(item)}
@@ -482,18 +483,15 @@ export function SharedTargetPicker<T>({
                       ? undefined
                       : `${dataTestId}-option-${key}`
                   }
-                  className={`focus-ring flex w-full items-center gap-2.5 rounded-lg px-2 py-2 text-left transition-colors disabled:cursor-not-allowed disabled:opacity-40 ${
-                    selected
-                      ? 'bg-accent-subtle ring-1 ring-line-accent/40'
-                      : 'hover:bg-fg-primary/[0.06]'
-                  }`}
+                  presentation="share-scope-option"
+                  appearance={{ selected }}
                 >
                   {avatarLabel !== undefined && (
                     <TargetAvatar label={avatarLabel} subject={targetSubject} />
                   )}
                   <span className="min-w-0 flex-1">{renderRow(item)}</span>
                   <SelectionIndicator selected={selected} />
-                </button>
+                </ControlButton>
               </li>
             );
           })}

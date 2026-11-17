@@ -1,3 +1,4 @@
+import type { OrchestratorSettingsDraftClient } from './orchestrator-settings';
 import type {
   WorktreeRecoveryListParams,
   WorktreeRecoveryListResult,
@@ -100,6 +101,7 @@ import type {
   PersonalOrganizationPromotionOutcome,
   PersonalProject,
   PersonalProjectConversionRequest,
+  PersonalProjectStatusRequest,
   PersonalProjectOperation,
   SendOrganizationInviteRequest,
   UpgradePersonalOrganizationRequest,
@@ -407,7 +409,7 @@ export interface QueryMap
   };
   /** Durable status of one bring-along operation, or `null` when unknown. */
   'personalOrganization.operationStatus': {
-    args: { readonly operationId: string };
+    args: PersonalProjectStatusRequest;
     result: PersonalProjectOperation | null;
   };
   /** The host-owned workspace context (Personal or one organization). */
@@ -495,6 +497,8 @@ export type WorktreeCreateResult =
       readonly status: 'completed';
       readonly worktreeId: string;
       readonly branchName?: string;
+      /** Git checkout readiness, when the host reports it. */
+      readonly setupPhase?: 'git-pending' | 'git-ready';
     }
   | { readonly status: 'pending' };
 
@@ -919,6 +923,8 @@ export type CommandName = keyof CommandMap;
  * `as` casts so the public contract stays honest.
  */
 export interface CanopyClient {
+  /** Independent reads and acknowledged writes for the local settings draft. */
+  readonly orchestratorSettingsDraft?: OrchestratorSettingsDraftClient;
   /** Host-local, once-per-incident notification receipts; absent on unsupported hosts. */
   readonly autoDeleteAttentionReceipts?: {
     hasShown(incidentId: string): boolean;

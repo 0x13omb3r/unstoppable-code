@@ -1,5 +1,6 @@
 import type { JSX } from 'react';
 import { DiffLineCounts } from './DiffLineCounts';
+import { DiffFileStatusMarker } from './diff/DiffFileTree';
 
 /**
  * Closed set of file-change statuses surfaced in the Changed Files section,
@@ -15,19 +16,6 @@ export type FileChangeStatus =
   | 'type-changed'
   | 'untracked'
   | 'unknown';
-
-const STATUS_DOT_CLASSES: Record<FileChangeStatus, string> = {
-  added: 'bg-success',
-  modified: 'bg-warning',
-  deleted: 'bg-destructive',
-  // Copied shares the renamed identity: a file that came from another path.
-  renamed: 'bg-fg-info',
-  copied: 'bg-fg-info',
-  unmerged: 'bg-destructive',
-  'type-changed': 'bg-fg-special-strong',
-  untracked: 'bg-success',
-  unknown: 'bg-fg-primary/40',
-};
 
 const STATUS_LABELS: Record<FileChangeStatus, string> = {
   added: 'Added',
@@ -66,7 +54,6 @@ export function FileChangeMetadata({
   const hiddenClass = hideOnHover
     ? 'group-hover:hidden group-focus-within:hidden'
     : '';
-  const dotClass = STATUS_DOT_CLASSES[status];
   const label = STATUS_LABELS[status];
   return (
     <>
@@ -75,9 +62,11 @@ export function FileChangeMetadata({
         deletions={deletions}
         className={`shrink-0 ${hiddenClass}`}
       />
-      <span
-        className={`h-2 w-2 shrink-0 rounded-full ${dotClass} ${hiddenClass}`}
-        title={label}
+      <DiffFileStatusMarker
+        status={status}
+        label={label}
+        size="regular"
+        className={hiddenClass}
       />
     </>
   );

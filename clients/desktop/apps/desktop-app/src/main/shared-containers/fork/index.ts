@@ -49,12 +49,88 @@ export type SharedContainerForkCommand = SharedContainerForkRequest &
     wireCall?: W5WireCall;
   };
 
+type ForkSourceContext = Awaited<ReturnType<typeof resolveForkSourceContext>>;
+
+interface ValidatedForkCommand {
+  request: SharedContainerForkCommand;
+  authorize: () => Promise<ForkSourceContext>;
+  /** IPC's context, authorized before the boundary; wire calls admit inside. */
+  sourceContext?: ForkSourceContext;
+}
+
+/**
+ * New organization copies running over IPC, by submission (CAN-4856). An
+ * identical submission while one runs joins it instead of starting a second
+ * copy, so both callers get the same response (or refusal) and the copy and
+ * its package install happen once. The publication's project reservation
+ * stays the backstop for anything that does not join.
+ */
+const organizationCopiesInFlight = new Map<
+  string,
+  Promise<SharedContainerForkResponse>
+>();
+
+/**
+ * Only an identical, already-authorized new organization copy joins, of any
+ * shape: single-repo and Cowork copies join too, as the CAN-4856 inventory
+ * records. The key deliberately leaves out `idempotencyKey` (each submission
+ * mints its own, so keying on it would never join a repeated one) and
+ * `expectedRevision` (both callers want the same copy; the joiner takes the
+ * running copy's outcome instead of a revision conflict against it).
+ */
+function organizationCopyFlightKey(
+  validated: ValidatedForkCommand,
+): string | undefined {
+  const { request, sourceContext } = validated;
+  const { destination } = request;
+  if (
+    request.wireCall ||
+    !sourceContext ||
+    destination.kind !== 'new-workspace' ||
+    sourceContext.owner.kind !== 'organization'
+  )
+    return undefined;
+  return JSON.stringify([
+    sourceContext.organizationId ?? null,
+    request.containerId,
+    request.revisionId,
+    destination.owner,
+    destination.parentDirectory ?? null,
+    request.expectedPackageDigest ?? null,
+  ]);
+}
+
 /** IPC keeps its post-copy install; wire calls save the install warnings too. */
 export async function forkSharedContainer(
   request: SharedContainerForkCommand,
 ): Promise<SharedContainerForkResponse> {
-  const response = await forkSharedContainerCopy(request);
-  return request.wireCall ? response : installForkPackage(request, response);
+  const validated = validateForkCommand(request);
+  // IPC retains its receipt bytes and admission; wire identity is
+  // request-only. Each caller authorizes on its own before it may join.
+  if (!validated.request.wireCall) {
+    const sourceContext = await validated.authorize();
+    validated.sourceContext = sourceContext;
+    validated.request = {
+      ...validated.request,
+      organizationId: sourceContext.organizationId,
+    };
+  }
+  const run = async (): Promise<SharedContainerForkResponse> => {
+    const response = await forkSharedContainerCopy(validated);
+    return validated.request.wireCall
+      ? response
+      : installForkPackage(validated.request, response);
+  };
+  const flightKey = organizationCopyFlightKey(validated);
+  if (flightKey === undefined) return run();
+  const running = organizationCopiesInFlight.get(flightKey);
+  if (running) return running;
+  const flight = run().finally((): void => {
+    if (organizationCopiesInFlight.get(flightKey) === flight)
+      organizationCopiesInFlight.delete(flightKey);
+  });
+  organizationCopiesInFlight.set(flightKey, flight);
+  return flight;
 }
 
 async function installForkPackage(
@@ -67,9 +143,9 @@ async function installForkPackage(
     : response;
 }
 
-async function forkSharedContainerCopy(
+function validateForkCommand(
   request: SharedContainerForkCommand,
-): Promise<SharedContainerForkResponse> {
+): ValidatedForkCommand {
   validateId(request.containerId, 'containerId');
   validateId(request.revisionId, 'revisionId');
   if (
@@ -80,12 +156,10 @@ async function forkSharedContainerCopy(
     throw new Error('Invalid sourceOwnerDisplayName');
   }
   const destination = validateForkDestination(request.destination);
-  request = { ...request, destination };
-  const authorize = async (): Promise<
-    Awaited<ReturnType<typeof resolveForkSourceContext>>
-  > => {
-    await request.wireCall?.admit?.();
-    const context = await resolveForkSourceContext(request);
+  const validated: SharedContainerForkCommand = { ...request, destination };
+  const authorize = async (): Promise<ForkSourceContext> => {
+    await validated.wireCall?.admit?.();
+    const context = await resolveForkSourceContext(validated);
     if (destination.kind === 'new-workspace') {
       assertNewForkOwner(destination, context.owner);
     } else {
@@ -93,10 +167,14 @@ async function forkSharedContainerCopy(
     }
     return context;
   };
-  // IPC retains its receipt bytes and admission; wire identity is request-only.
-  let sourceContext = request.wireCall ? undefined : await authorize();
-  if (sourceContext)
-    request = { ...request, organizationId: sourceContext.organizationId };
+  return { request: validated, authorize };
+}
+
+async function forkSharedContainerCopy(
+  validated: ValidatedForkCommand,
+): Promise<SharedContainerForkResponse> {
+  let { request, sourceContext } = validated;
+  const { authorize } = validated;
   const { expectedRevision, idempotencyKey } = request;
   return runW5BoundaryOperation(
     {

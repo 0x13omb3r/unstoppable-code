@@ -1,3 +1,6 @@
+export { INLINE_CHIP_CLASS } from './control-button-shared';
+import { CHIP_SHAPE_CLASS } from './control-button-shared';
+import { ControlButton } from './Button';
 import type {
   ComponentType,
   HTMLAttributes,
@@ -45,14 +48,11 @@ export interface InlineMentionProps extends Omit<
 // The chip never grows past its line: a long label (a path, an issue title)
 // wraps inside the chip or truncates instead of running out of the column.
 // The icon sits flush against the label, so the two never break apart.
-const CHIP_SHAPE_CLASS =
-  'inline-block max-w-full rounded-sm pt-[0.125em] pr-[0.5em] pb-[0.042em] pl-[0.417em] align-[0.0625em] text-[0.857em] leading-[1.5] no-underline';
 
 /**
  * A chip that opens what it names: accent ink on the accent tint. Links,
  * pull requests, issues, and files in prose share it.
  */
-export const INLINE_CHIP_CLASS = `${CHIP_SHAPE_CLASS} focus-ring cursor-pointer bg-accent-subtle fg-accent-strong transition-colors hover:bg-accent-subtle/80`;
 
 /**
  * A mention token in the composer: the accent chip's look without its
@@ -94,14 +94,14 @@ export function InlineMention({
   );
   if (onClick) {
     return (
-      <button
+      <ControlButton
         type="button"
-        className={INLINE_CHIP_CLASS}
+        presentation="inline-mention"
         onClick={onClick}
         {...rest}
       >
         {content}
-      </button>
+      </ControlButton>
     );
   }
   return (

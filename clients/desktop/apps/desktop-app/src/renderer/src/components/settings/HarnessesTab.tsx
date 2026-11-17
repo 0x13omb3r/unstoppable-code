@@ -156,9 +156,7 @@ function buildGroups(
     {
       key: 'ollama',
       label: getProviderLabel('ollama'),
-      icon: (
-        <ModelProviderIcon provider="ollama" central width={10} height={10} />
-      ),
+      icon: <ModelProviderIcon provider="ollama" central size="xs" />,
       showHeader: true,
       rows: bySource('ollama'),
     },

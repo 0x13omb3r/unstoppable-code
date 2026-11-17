@@ -5,11 +5,7 @@ import {
   type ReactNode,
 } from 'react';
 import type { AppIcon } from '../icons/AppIcons';
-import {
-  Button,
-  nestedIconButtonRadiusClassName,
-  type ButtonVariant,
-} from './Button';
+import { ControlButton, Button, type ButtonVariant } from './Button';
 import { Tooltip } from './Tooltip';
 
 /**
@@ -30,7 +26,7 @@ export type RailIconButtonSize = 'compact' | 'row';
 
 export interface RailIconButtonProps extends Omit<
   ButtonHTMLAttributes<HTMLButtonElement>,
-  'children'
+  'children' | 'className'
 > {
   icon: AppIcon;
   /** App glyph size. Defaults to 16px; optical exceptions can override. */
@@ -60,6 +56,8 @@ export interface RailIconButtonProps extends Omit<
    */
   hoverSurface?: boolean;
   tone?: RailIconButtonTone;
+  visibility?: 'all' | 'fine-pointer' | 'coarse-pointer';
+  inset?: 'none' | 'tight-end' | 'roomy-inline';
   /** Visible tooltip text. Defaults to `title`, then `aria-label`. */
   tooltipLabel?: ReactNode;
 }
@@ -88,21 +86,7 @@ const BUTTON_TONE_VARIANTS: Record<
  */
 type NativeTone = 'section' | 'destructive';
 
-const NATIVE_SIZE_CLASS_NAMES: Record<RailIconButtonSize, string> = {
-  compact: `h-7 w-7 ${nestedIconButtonRadiusClassName('sm')}`,
-  row: `h-8 w-8 ${nestedIconButtonRadiusClassName('md')}`,
-};
-
-const NATIVE_TONE_CLASS_NAMES: Record<NativeTone, string> = {
-  section: 'fg-quaternary hover:bg-subtle hover:fg-primary',
-  destructive: 'fg-tertiary hover:bg-destructive-subtle hover:fg-destructive',
-};
-
 /** Without a hover surface only the ink answers the pointer. */
-const QUIET_NATIVE_TONE_CLASS_NAMES: Record<NativeTone, string> = {
-  section: 'fg-quaternary hover:fg-primary',
-  destructive: 'fg-tertiary hover:fg-primary',
-};
 
 function isNativeTone(tone: RailIconButtonTone): tone is NativeTone {
   return tone === 'section' || tone === 'destructive';
@@ -127,7 +111,8 @@ export const RailIconButton = forwardRef<
     title,
     'aria-label': ariaLabel,
     type = 'button',
-    className = '',
+    visibility = 'all',
+    inset = 'none',
     ...props
   },
   ref,
@@ -143,19 +128,24 @@ export const RailIconButton = forwardRef<
   const native = isNativeTone(tone);
 
   const button = native ? (
-    <button
+    <ControlButton
       ref={ref}
       type={type}
       aria-label={ariaLabel}
-      className={`focus-ring inline-flex shrink-0 items-center justify-center border-0 bg-transparent transition-[color,background-color,opacity] disabled:cursor-not-allowed disabled:opacity-30 ${NATIVE_SIZE_CLASS_NAMES[size]} ${
-        hoverSurface
-          ? NATIVE_TONE_CLASS_NAMES[tone]
-          : QUIET_NATIVE_TONE_CLASS_NAMES[tone]
-      } ${floorClassName} ${className}`}
+      presentation="rail-icon"
+      appearance={{
+        size,
+        tone,
+        hoverSurface,
+        coarsePointerTarget,
+        touchTarget,
+        visibility,
+        inset,
+      }}
       {...props}
     >
       {glyph}
-    </button>
+    </ControlButton>
   ) : (
     <Button
       ref={ref}
@@ -169,7 +159,7 @@ export const RailIconButton = forwardRef<
       // would reach over the controls beside it (header clusters 2px apart,
       // the account footer), so it keeps its own 28px/32px target, as the
       // native rail buttons did. Switches to Button's `touchArea` (#7528).
-      className={`${coarsePointerTarget ? '' : 'pointer-coarse:before:hidden'} ${className}`}
+      railPlacement={{ coarsePointerTarget, visibility, inset }}
       {...props}
     >
       {glyph}

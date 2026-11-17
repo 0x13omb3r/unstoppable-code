@@ -1,3 +1,4 @@
+import { ControlButton } from '@canopy/ui-shared/components';
 import { WorktreeApplyControlSurface } from '@canopy/ui-shared/components';
 import { Stack, Heading, Surface } from '@canopy/ui-shared/components';
 import {
@@ -397,7 +398,7 @@ export function AddToWorktreeActionControls({
   return (
     <div className="relative">
       <WorktreeApplyControlSurface>
-        <button
+        <ControlButton
           type="button"
           onClick={() =>
             onAddToWorktree(
@@ -410,13 +411,14 @@ export function AddToWorktreeActionControls({
             )
           }
           disabled={disabled}
-          className={`focus-ring inline-flex items-center gap-2 ${sourceInspectWorktreeId ? 'rounded-md' : 'rounded-l-md'} bg-info px-3 py-1.5 text-xs font-medium fg-emphasis disabled:opacity-60`}
+          presentation="worktree-apply"
+          appearance={Boolean(sourceInspectWorktreeId)}
         >
           {feedback.phase === 'applying' && <LoadingSpinner />}
           {buttonLabel}
-        </button>
+        </ControlButton>
         {canChooseExisting && (
-          <button
+          <ControlButton
             ref={existingTriggerRef}
             type="button"
             onClick={() => onExistingDropdownOpenChange(!existingDropdownOpen)}
@@ -425,10 +427,10 @@ export function AddToWorktreeActionControls({
             aria-haspopup="listbox"
             aria-expanded={existingDropdownOpen}
             data-testid="add-to-existing-worktree-trigger"
-            className="focus-ring rounded-r-md border-l border-fg-emphasis/20 bg-info px-2 py-1.5 fg-emphasis disabled:opacity-60"
+            presentation="worktree-apply-menu"
           >
             <AppCatalogChevronDownMediumIcon size="sm" />
-          </button>
+          </ControlButton>
         )}
       </WorktreeApplyControlSurface>
       {canChooseExisting && (

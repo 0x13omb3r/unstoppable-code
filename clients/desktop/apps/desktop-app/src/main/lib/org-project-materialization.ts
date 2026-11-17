@@ -83,13 +83,22 @@ import {
 import { buildOrgProjectCloneUrl } from './org-project-clone-url';
 import { classifyGitHubAuthFailure } from './github-push-auth-failure';
 import {
+  isPersistableSetupJournal,
   normalizeSetupJournal,
+  serializeSetupJournal,
   setupOwner,
+  type BoundCopyRepository,
   type SetupJournal,
+  type SetupJournalV1,
   type SetupJournalV2,
   type MultiRepoSetupRepository,
   type SetupPhase,
 } from './org-project-setup-journal';
+import type { W5CommitOptions } from './w5-commit-scope';
+import {
+  isForkCopyRootReferenced,
+  readForkCopyRootMarker,
+} from './fork-copy-root-marker';
 
 /**
  * What the server answered a request to move a checkout's uploaded activity
@@ -225,6 +234,30 @@ export interface OrgProjectMaterializationDeps {
       name: string;
       repositories: MultiRepoSetupRepository[];
     }): Promise<void>;
+    /**
+     * Index a new organization copy's staged root (CAN-4856) as a workspace
+     * bound to its project, inside the copy's own W5 boundary: no key of its
+     * own, so no nested reservation. Nothing Personal ever exists.
+     */
+    createBoundCopyWorkspace?(
+      input: {
+        path: string;
+        localWorkspaceId: string;
+        owner: WorkspaceOwnerBinding;
+        name: string;
+        copyRepositories: BoundCopyRepository[];
+      },
+      commit?: W5CommitOptions,
+    ): Promise<void>;
+    /**
+     * Delete a copy's whole workspace (index entry and workspace directory)
+     * while it is still bound to `instanceId`. `true` when it is gone or was
+     * never indexed; `false` when it is bound elsewhere or unreadable.
+     */
+    removeBoundCopyWorkspace?(
+      localWorkspaceId: string,
+      instanceId: string,
+    ): Promise<boolean>;
     applyManagedPrivateMemory(input: {
       workspaceId: string;
       organizationId: string;
@@ -366,6 +399,21 @@ export interface OrgProjectMaterialization {
     request: OrgProjectConvertCoworkWorkspaceRequest,
     options?: OrgProjectConversionOptions,
   ): Promise<OrgProjectConversionResult>;
+  /**
+   * Publish a new organization copy of a multi-repo share (CAN-4856) bound
+   * from the start: create (or, for this subject, replay) the member's
+   * multi-repo project, stage the checkout through `prepare`, then claim,
+   * bind and complete. Nothing Personal is ever indexed.
+   */
+  publishMemberMultiRepoCopy(
+    request: MemberMultiRepoCopyRequest,
+    options: MemberMultiRepoCopyOptions,
+  ): Promise<MemberMultiRepoCopyResult>;
+  /**
+   * Hand back a published copy's instance when its fork fails afterwards
+   * (CAN-4856). A 404 or 403 means the server no longer holds it for us.
+   */
+  releaseMemberMultiRepoCopyInstance(instanceId: string): Promise<void>;
   /** Undo a conversion: release the instance and restore Personal. */
   moveBackToPersonal(
     request: OrgProjectMoveBackToPersonalRequest,
@@ -416,6 +464,52 @@ export interface OrgProjectConversionOptions {
    */
   onCreateRefused?: (error: unknown) => void;
 }
+
+export interface MemberMultiRepoCopyRequest {
+  organizationId: string;
+  /** The project and workspace name; non-blank, at most 256 characters. */
+  name: string;
+  /**
+   * Sent as the create's `localWorkspaceId` only: never in a claim or a
+   * journal. A retry with the same subject replays the same project.
+   */
+  creationSubject: string;
+  /** The 64-hex creation key; ties the journal to its staged root. */
+  creationKey: string;
+  /** The holder projects, de-duplicated in layout order; empty for snapshots. */
+  repositoryProjectIds: string[];
+}
+
+export type MemberMultiRepoCopyPrepareRefusal = 'root-in-use' | 'root-unowned';
+
+export interface MemberMultiRepoCopyOptions {
+  /** Stage the checkout once the project is known and unbound. */
+  prepare(project: OrgProjectSummary): Promise<
+    | {
+        ok: true;
+        /** Realpath'd and absolute. */
+        path: string;
+        repositories: BoundCopyRepository[];
+      }
+    | { ok: false; reason: MemberMultiRepoCopyPrepareRefusal }
+  >;
+  commit?: W5CommitOptions;
+  onCreateRefused?(error: unknown): void;
+}
+
+export type MemberMultiRepoCopyResult =
+  | { ok: true; workspaceId: string; owner: WorkspaceOwnerBinding }
+  | {
+      ok: false;
+      code: OrgProjectConversionErrorCode;
+      organizationProjectId?: string;
+      /** A workspace bound to the project already exists here. */
+      boundWorkspaceId?: string;
+      /** Why `prepare` refused, when it did. */
+      prepareRefusal?: MemberMultiRepoCopyPrepareRefusal;
+      /** Part of the attempt is still bound and could not be removed. */
+      cleanupPending?: boolean;
+    };
 
 export class OrgProjectAdoptionError extends Error {
   constructor(
@@ -483,6 +577,17 @@ function answeredMove(
     transferId: typeof transferId === 'string' ? transferId : null,
     counts: transferCounts(isObject(response) ? response.counts : undefined),
   };
+}
+/**
+ * A detach the server answers 404 `not_found` or 403 `forbidden`: it no
+ * longer holds the instance for us, so it is already released.
+ */
+function isInstanceAlreadyReleased(error: unknown): boolean {
+  return (
+    error instanceof CanopyCloudClientError &&
+    ((error.status === 404 && error.serverCode === 'not_found') ||
+      (error.status === 403 && error.serverCode === 'forbidden'))
+  );
 }
 function failedMove(projectId: string, error: unknown): ActivityMoveReport {
   const cloud = error instanceof CanopyCloudClientError ? error : undefined;
@@ -784,6 +889,14 @@ interface Attempt {
   /** Binding a checkout that was not previously in the workspace index. */
   adoption?: boolean;
   /**
+   * A new organization copy of a multi-repo share (CAN-4856). The fork owns
+   * its staged root, so nothing here ever removes it; a failure before the
+   * completion deletes the bound workspace instead.
+   */
+  copy?: true;
+  /** A copy's bound workspace could not be removed, or must be kept. */
+  copyCleanupPending?: boolean;
+  /**
    * Started by the startup sweep, before any window can be listening: it
    * reports nothing until a start from the renderer joins it.
    */
@@ -830,6 +943,7 @@ export function createOrgProjectMaterialization(
     }
   }
   let sweeping: Promise<void> | undefined;
+  let sweepingJournals: Promise<void> | undefined;
   function emit(
     projectId: string,
     state: OrgProjectSetupProgress['state'],
@@ -934,14 +1048,16 @@ export function createOrgProjectMaterialization(
     await mkdir(deps.paths.setupsDir(), { recursive: true });
     await writeFileAtomically(
       join(deps.paths.setupsDir(), `${journal.journalId}.json`),
-      JSON.stringify(journal),
+      serializeSetupJournal(journal),
       { mode: 0o600 },
     );
     await deps.checkpointed?.(journal, phase);
     // A conversion has no row of its own to show progress on: the project's
     // setup offer must not flash while an existing checkout is being bound.
+    // Nor does a new organization copy (CAN-4856): its dialog reports it.
     if (
       journal.conversion === undefined &&
+      !(journal.version === 1 && journal.copy !== undefined) &&
       ['validated', 'promoted', 'bound', 'completing'].includes(phase)
     )
       emit(journal.projectId, 'materializing', COPY.materializing, journal);
@@ -1157,6 +1273,7 @@ export function createOrgProjectMaterialization(
     journal: SetupJournal,
     path: string,
     preferredName?: string,
+    commit?: W5CommitOptions,
   ): Promise<void> {
     // The id is the one the server recorded with the claim, and the one a
     // reclaim has to present again (CAN-3129). Another workspace already bound
@@ -1174,7 +1291,23 @@ export function createOrgProjectMaterialization(
         'This project is already a workspace',
       );
     const owner = setupOwner(journal);
-    if (journal.version === 2) {
+    if (journal.version === 1 && journal.copy !== undefined) {
+      // A new organization copy (CAN-4856). Re-entrant: a resumed or
+      // reclaimed copy finds its workspace indexed and only refreshes the
+      // owner, with no parent commit.
+      if (!deps.workspace.createBoundCopyWorkspace)
+        fail('unsupported-multi-repo');
+      await deps.workspace.createBoundCopyWorkspace(
+        {
+          path,
+          localWorkspaceId: journal.localWorkspaceId,
+          owner,
+          name: journal.copy.name,
+          copyRepositories: journal.copy.repositories,
+        },
+        commit,
+      );
+    } else if (journal.version === 2) {
       if (
         !deps.workspace.createBoundMultiRepoWorkspace ||
         !(await validateCompleteCheckout(path, journal))
@@ -1225,6 +1358,10 @@ export function createOrgProjectMaterialization(
    * still retires, as does every conversion and adoption.
    */
   function resumable(journal: SetupJournal): boolean {
+    // A copy (CAN-4856) is resumed only once its completion was requested;
+    // earlier, its bound workspace is removed instead.
+    if (journal.version === 1 && journal.copy !== undefined)
+      return ['completing', 'reclaiming'].includes(journal.phase);
     return (
       journal.conversion === undefined &&
       journal.adoption === undefined &&
@@ -1282,6 +1419,8 @@ export function createOrgProjectMaterialization(
    * the disk as it is.
    */
   async function canResume(journal: SetupJournal): Promise<boolean> {
+    if (journal.version === 1 && journal.copy !== undefined)
+      return copyBoundTo(journal);
     if (journal.version === 2) {
       if (journal.phase === 'promoted')
         return (await promotedCheckout(journal)) !== null;
@@ -1305,8 +1444,11 @@ export function createOrgProjectMaterialization(
    * organization project, same instance. The fence is not compared — moving
    * it forward is exactly what a reclaim does.
    */
-  async function boundTo(journal: SetupJournal): Promise<boolean> {
-    return (await deps.readItems()).some(
+  async function boundTo(
+    journal: SetupJournal,
+    items?: readonly SidebarItem[],
+  ): Promise<boolean> {
+    return (items ?? (await deps.readItems())).some(
       (item): boolean =>
         item.id === journal.localWorkspaceId &&
         item.owner?.type === 'organization' &&
@@ -1314,6 +1456,19 @@ export function createOrgProjectMaterialization(
         item.owner.projectId === journal.projectId &&
         item.owner.instanceId === journal.instanceId,
     );
+  }
+  /**
+   * {@link boundTo} for a new organization copy (CAN-4856), from an
+   * authoritative read only: a copy found unbound has its instance handed
+   * back and its journal dropped, so a workspace whose entry or manifest
+   * could not be read must not count as gone. Throws otherwise, which keeps
+   * the journal for a later launch.
+   */
+  async function copyBoundTo(journal: SetupJournal): Promise<boolean> {
+    const index = await deps.readItemsSnapshot();
+    if (index.authority !== 'ok' && index.authority !== 'absent')
+      throw new Error('copy binding could not be read');
+    return boundTo(journal, index.items);
   }
   /**
    * Whether this account, device and server can finish the journal now. The
@@ -1678,12 +1833,23 @@ export function createOrgProjectMaterialization(
       journal !== undefined &&
       journal.conversion === undefined &&
       journal.adoption === undefined &&
+      // A live copy knows whether its completion went out (CAN-4856): one
+      // that never sent it is removed below, whatever the journal recorded.
+      (attempt.copy !== true ||
+        journal.phase === 'reclaiming' ||
+        attempt.completionSent === true) &&
       (journal.phase === 'reclaiming' ||
         // A claim gone with no server able to reclaim it is final.
         (journal.phase === 'completing' && code !== 'claim-expired')) &&
       !definitive
     ) {
       const kept = journal.phase === 'reclaiming' ? 'claim-expired' : code;
+      // A copy's bound workspace stays for the next launch to finish; its
+      // caller reports it instead of the project's setup row.
+      if (attempt.copy === true) {
+        attempt.copyCleanupPending = true;
+        return kept;
+      }
       emit(
         projectId,
         'failed',
@@ -1714,8 +1880,26 @@ export function createOrgProjectMaterialization(
               )
               .catch((): boolean => false)
         : undefined;
+    // A new organization copy (CAN-4856) had nothing Personal to go back to:
+    // short of a completion, its whole bound workspace goes, never its staged
+    // root (the fork's rollback owns that). One that cannot be removed keeps
+    // the claim and the journal for the next launch's sweep.
+    const removedCopy =
+      attempt.copy === true && journal && attempt.bindStarted
+        ? attempt.completionSent
+          ? false
+          : await (
+              deps.workspace.removeBoundCopyWorkspace?.(
+                journal.localWorkspaceId,
+                journal.instanceId,
+              ) ?? Promise.resolve(false)
+            ).catch((): boolean => false)
+        : undefined;
+    if (removedCopy === false) attempt.copyCleanupPending = true;
     const localBindingRetired =
-      restoredConversion !== false && removedAdoption !== false;
+      restoredConversion !== false &&
+      removedAdoption !== false &&
+      removedCopy !== false;
     if (journal && localBindingRetired) {
       // Each step stands alone, and terminalizing is last. An unreadable nonce
       // store or a destination that moved must not stop the claim being handed
@@ -1737,7 +1921,11 @@ export function createOrgProjectMaterialization(
       // a workspace the user can see, or half-written metadata that a delete
       // here would strand.
       const cleanup = async (): Promise<void> => {
-        if (!(attempt.ownsStaging || attempt.renamed) || attempt.bindStarted)
+        if (
+          !(attempt.ownsStaging || attempt.renamed) ||
+          attempt.bindStarted ||
+          attempt.copy === true
+        )
           return;
         // A destination that cannot be resolved is a reason to leave the disk
         // alone, not a reason to skip handing the claim back.
@@ -1831,8 +2019,9 @@ export function createOrgProjectMaterialization(
       // claim the server definitively rejected is the opposite case: that key
       // is spent, and reusing it only replays the rejection.
       await rotateAttemptNonce(projectId);
-    // A conversion answers its caller instead of the project's setup row.
-    if (attempt.conversion !== true)
+    // A conversion or a copy answers its caller instead of the project's
+    // setup row.
+    if (attempt.conversion !== true && attempt.copy !== true)
       emit(
         projectId,
         cancelled ? 'cancelled' : 'failed',
@@ -2133,14 +2322,7 @@ export function createOrgProjectMaterialization(
         }
         // A 404 or 403 means the server no longer holds it for us.
         await deps.cloud.detach(staleReadyInstanceId).catch((error): void => {
-          if (
-            !(
-              error instanceof CanopyCloudClientError &&
-              ((error.status === 404 && error.serverCode === 'not_found') ||
-                (error.status === 403 && error.serverCode === 'forbidden'))
-            )
-          )
-            throw error;
+          if (!isInstanceAlreadyReleased(error)) throw error;
         });
         // The catalog still shows it READY, which hides the setup row.
         await deps.catalog
@@ -3104,13 +3286,7 @@ export function createOrgProjectMaterialization(
     try {
       await deps.cloud.detach(owner.instanceId);
     } catch (error) {
-      if (
-        !(
-          error instanceof CanopyCloudClientError &&
-          ((error.status === 404 && error.serverCode === 'not_found') ||
-            (error.status === 403 && error.serverCode === 'forbidden'))
-        )
-      )
+      if (!isInstanceAlreadyReleased(error))
         return { ok: false, code: 'release-failed' };
     }
     const movedBack: WorkspaceOwnershipTransfer = {
@@ -3219,6 +3395,10 @@ export function createOrgProjectMaterialization(
    */
   async function retire(journal: SetupJournal): Promise<void> {
     if (journal.version === 2) return;
+    if (journal.copy !== undefined && journal.phase !== 'done') {
+      await retireCopy(journal, journal.copy);
+      return;
+    }
     // `checkpoint` overwrites `phase` in place, so read it first.
     const reached = journal.phase;
     // An unfinished conversion is rolled back to Personal before anything
@@ -3261,6 +3441,91 @@ export function createOrgProjectMaterialization(
       !['completing', 'done'].includes(reached)
     )
       await deps.cloud.detach(journal.instanceId).catch((): void => {});
+    await rm(join(deps.paths.setupsDir(), `${journal.journalId}.json`), {
+      force: true,
+    });
+  }
+  /**
+   * Remove a new organization copy's staged root (CAN-4856) on its journal's
+   * behalf, only when the journal can prove the fork made it: the destination
+   * resolves as recorded, the root's marker carries this journal's creation
+   * key, and no indexed workspace references the root or anything under it.
+   * Anything else is left alone. A root already gone counts as removed.
+   */
+  async function removeCopyRoot(
+    journal: SetupJournalV1,
+    copy: NonNullable<SetupJournalV1['copy']>,
+  ): Promise<void> {
+    const root = await realpath(journal.destinationRoot).catch(
+      (): null => null,
+    );
+    if (root !== journal.destinationRoot) return;
+    if (!(await exists(journal.finalPath))) return;
+    const marker = await readForkCopyRootMarker(journal.finalPath);
+    if (
+      marker === 'absent' ||
+      marker === null ||
+      marker.creationKey !== copy.creationKey ||
+      marker.published === true
+    )
+      return;
+    const index = await deps.readItemsSnapshot();
+    if (index.authority !== 'ok' && index.authority !== 'absent')
+      throw new Error('copy root references could not be read');
+    if (await isForkCopyRootReferenced(journal.finalPath, index.items)) return;
+    await rm(journal.finalPath, { recursive: true, force: true });
+  }
+  /**
+   * Retire a new organization copy's journal (CAN-4856). Before its
+   * completion was requested, the copy's bound workspace and its proven
+   * staged root go, and the claim is handed back. Once it was requested, a
+   * still-bound workspace is resumed elsewhere and never removed here; one
+   * that is gone (the fork's rollback or the user removed it) leaves only
+   * bookkeeping. No generic setup path ever removes a copy's `finalPath`.
+   */
+  async function retireCopy(
+    journal: SetupJournalV1,
+    copy: NonNullable<SetupJournalV1['copy']>,
+  ): Promise<void> {
+    const reached = journal.phase;
+    const bound = await copyBoundTo(journal);
+    const journalPath = join(
+      deps.paths.setupsDir(),
+      `${journal.journalId}.json`,
+    );
+    if (reached === 'completing' || reached === 'reclaiming') {
+      if (bound) return;
+      await rotateAttemptNonce(journal.projectId);
+      await checkpoint(journal, 'failed', 'interrupted');
+      await deps.cloud.detach(journal.instanceId).catch((): void => {});
+      await rm(journalPath, { force: true });
+      return;
+    }
+    // A removal that cannot be proven keeps the journal in flight.
+    if (
+      bound &&
+      !(await (deps.workspace.removeBoundCopyWorkspace?.(
+        journal.localWorkspaceId,
+        journal.instanceId,
+      ) ?? Promise.resolve(false)))
+    )
+      throw new Error('copy could not be rolled back');
+    await removeCopyRoot(journal, copy);
+    await rotateAttemptNonce(journal.projectId);
+    await checkpoint(journal, 'failed', 'interrupted');
+    await deps.cloud.detach(journal.instanceId).catch((): void => {});
+    await rm(journalPath, { force: true });
+  }
+  /**
+   * A copy journal marked failed whose process stopped before the fork's
+   * rollback ran (CAN-4856): remove the proven staged root, then the
+   * journal. Never a workspace.
+   */
+  async function sweepFailedCopy(
+    journal: SetupJournalV1,
+    copy: NonNullable<SetupJournalV1['copy']>,
+  ): Promise<void> {
+    await removeCopyRoot(journal, copy);
     await rm(join(deps.paths.setupsDir(), `${journal.journalId}.json`), {
       force: true,
     });
@@ -3379,15 +3644,48 @@ export function createOrgProjectMaterialization(
   }
   async function sweep(): Promise<void> {
     const failures: unknown[] = [];
+    const journalsSwept = sweepJournals(failures);
+    sweepingJournals = journalsSwept;
+    try {
+      await journalsSwept;
+    } finally {
+      if (sweepingJournals === journalsSwept) sweepingJournals = undefined;
+    }
+    // After the journals, so a slow server cannot hold interrupted setups
+    // back. Best effort: every workspace it skips is retried next launch.
+    await reconcileActivityOwnership().catch((): void => {});
+    if (failures.length > 0)
+      throw new Error(
+        `${failures.length} interrupted setup(s) could not be retired: ${failures
+          .map((error) => (error instanceof Error ? error.message : 'unknown'))
+          .join('; ')}`,
+      );
+  }
+  /**
+   * The sweep's journal phase, the only part of it that can remove a copy's
+   * staged root (CAN-4856); a new copy waits for this phase alone.
+   */
+  async function sweepJournals(failures: unknown[]): Promise<void> {
     const { found, unreadable } = await journals();
     for (const file of unreadable)
       failures.push(new Error(`journal ${file} could not be read`));
     for (const journal of found) {
+      if (attempts.has(journal.projectId)) continue;
+      // The generic v1 handling never applies to a copy's failed journal: only
+      // the marker-proven removal may touch its staged root.
       if (
-        attempts.has(journal.projectId) ||
-        ['failed', 'cancelled'].includes(journal.phase)
-      )
+        journal.version === 1 &&
+        journal.copy !== undefined &&
+        journal.phase === 'failed'
+      ) {
+        await sweepFailedCopy(journal, journal.copy).catch(
+          (error: unknown): void => {
+            failures.push(error);
+          },
+        );
         continue;
+      }
+      if (['failed', 'cancelled'].includes(journal.phase)) continue;
       // One unreadable store or unwritable file must not stop the rest: the
       // journals left here are independent, and the next launch sweeps again.
       // The failures are still worth surfacing, so they are collected rather
@@ -3399,15 +3697,6 @@ export function createOrgProjectMaterialization(
         failures.push(error);
       });
     }
-    // After the journals, so a slow server cannot hold interrupted setups
-    // back. Best effort: every workspace it skips is retried next launch.
-    await reconcileActivityOwnership().catch((): void => {});
-    if (failures.length > 0)
-      throw new Error(
-        `${failures.length} interrupted setup(s) could not be retired: ${failures
-          .map((error) => (error instanceof Error ? error.message : 'unknown'))
-          .join('; ')}`,
-      );
   }
   function newAdoptionAttempt(first: OrgProjectSetupProgress): Attempt {
     return {
@@ -3442,6 +3731,269 @@ export function createOrgProjectMaterialization(
     }
   }
 
+  /**
+   * A new organization copy of a multi-repo share (CAN-4856), published bound
+   * from the start. The server create keys the member's project on the copy's
+   * creation subject, so a retry replays it; the project is reserved before
+   * the bound check, so a concurrent call answers `busy`; the checkout is
+   * staged before the claim, so the copy cannot outlive the claim's lease; and
+   * the workspace is indexed only once it is bound. A failure before the
+   * completion removes the bound workspace and hands the claim back. The
+   * staged root is the fork's: nothing here removes it on a live failure.
+   */
+  async function publishCopy(
+    request: MemberMultiRepoCopyRequest,
+    options: MemberMultiRepoCopyOptions,
+  ): Promise<MemberMultiRepoCopyResult> {
+    const organizationId = request.organizationId.toLowerCase();
+    const attempt: Attempt = {
+      controller: new AbortController(),
+      // What a setup started meanwhile joins; never broadcast.
+      first: {
+        projectId: '',
+        instanceId: null,
+        state: 'claiming',
+        message: COPY.claiming,
+        percent: null,
+        updatedAt: deps.now(),
+      },
+      done: Promise.resolve(),
+      // No clone to cancel; the fork owns the staged root.
+      promoted: true,
+      ownsStaging: false,
+      copy: true,
+    };
+    let projectId: string | undefined;
+    let reserved = false;
+    const refused = (
+      code: OrgProjectConversionErrorCode,
+      extra: Omit<
+        Extract<MemberMultiRepoCopyResult, { ok: false }>,
+        'ok' | 'code' | 'organizationProjectId'
+      > = {},
+    ): MemberMultiRepoCopyResult => ({
+      ok: false,
+      code,
+      ...(projectId === undefined ? {} : { organizationProjectId: projectId }),
+      ...extra,
+    });
+    const hasAccess = (
+      access: Awaited<ReturnType<OrgProjectMaterializationDeps['access']>>,
+    ): boolean =>
+      access.enabled &&
+      !!access.accountId &&
+      access.capabilities.includes('org-projects-v1') &&
+      access.capabilities.includes('org-member-code-projects-v1');
+    try {
+      const access = await deps.access();
+      if (!hasAccess(access)) return refused('disabled');
+      let project: OrgProjectSummary;
+      try {
+        project = await deps.cloud.createMemberMultiRepoProject({
+          organizationId,
+          name: request.name,
+          // The creation subject, never a workspace id (see the request).
+          localWorkspaceId: request.creationSubject,
+          repositoryProjectIds: request.repositoryProjectIds,
+        });
+      } catch (error) {
+        options.onCreateRefused?.(error);
+        return refused(memberProjectRefusal(error));
+      }
+      projectId = project.id;
+      if (
+        project.organizationId?.toLowerCase() !== organizationId ||
+        project.kind !== 'CODE' ||
+        project.location !== 'LOCAL' ||
+        project.topology !== 'multi-repo' ||
+        project.state !== 'ACTIVE' ||
+        !project.capabilities.use
+      )
+        return refused('project-unavailable');
+      // A running sweep checked the reservations before it awaited, so its
+      // journal phase could still remove the root this copy is about to
+      // re-stage; reserve only once that phase is over, with no await between
+      // that and the reservation.
+      while (sweepingJournals) await sweepingJournals.catch((): void => {});
+      // Reserved before the bound check: a second caller waiting behind the
+      // check could otherwise claim a second workspace for the same project.
+      // Keep this synchronous with the wait above: an await in between would
+      // let a new sweep start and remove the root this copy re-stages.
+      if (attempts.has(project.id)) return refused('busy');
+      attempts.set(project.id, attempt);
+      reserved = true;
+      attempt.first = { ...attempt.first, projectId: project.id };
+      const context: WorkspaceContext = {
+        kind: 'organization',
+        organizationId,
+      };
+      const snapshot = await deps.catalog.refresh(context, { force: true });
+      if (snapshot.error === 'offline') return refused('offline');
+      if (snapshot.stale || snapshot.error)
+        return refused('project-unavailable');
+      const row = snapshot.projects.find((entry) => entry.id === project.id);
+      if (!row) return refused('project-unavailable');
+      const index = await deps.readItemsSnapshot();
+      if (index.authority !== 'ok' && index.authority !== 'absent')
+        return refused('workspace-unreadable');
+      const { found } = await journals();
+      const boundItem = index.items.find(
+        (item) =>
+          item.owner?.type === 'organization' &&
+          item.owner.organizationId === organizationId &&
+          item.owner.projectId === project.id,
+      );
+      if (boundItem) {
+        const copyJournal = found.find(
+          (journal) =>
+            journal.version === 1 &&
+            journal.copy !== undefined &&
+            journal.projectId === project.id &&
+            journal.localWorkspaceId === boundItem.id,
+        );
+        // One `completing` or `reclaiming` has a sent completion the next
+        // launch's sweep finishes; nothing was left to remove, so it answers
+        // busy (try again) rather than cleanup pending, and nothing continues
+        // inside it, or the copy would report success before it is complete.
+        if (
+          copyJournal !== undefined &&
+          ['completing', 'reclaiming'].includes(copyJournal.phase)
+        )
+          return refused('busy');
+        // One still `claimed` or `bound` is removed by that sweep.
+        const unfinished =
+          copyJournal !== undefined &&
+          ['claimed', 'bound'].includes(copyJournal.phase);
+        return refused('project-already-bound', {
+          boundWorkspaceId: boundItem.id,
+          ...(unfinished ? { cleanupPending: true } : {}),
+        });
+      }
+      const pending = found.find(
+        (journal) =>
+          journal.projectId === project.id &&
+          !['failed', 'cancelled'].includes(journal.phase),
+      );
+      if (pending) await retire(pending);
+      // Nothing is bound here, so a READY instance is stale: release it
+      // before the claim, which the server refuses beside one (CAN-3592).
+      if (row.instance?.state === 'READY') {
+        await deps.cloud.detach(row.instance.id).catch((error): void => {
+          if (!isInstanceAlreadyReleased(error)) throw error;
+        });
+        await deps.catalog.refresh(context, { force: true }).catch(() => {});
+      }
+      // Staged before the claim, so the tree copy cannot lapse its lease. A
+      // refusal or a throw here leaves no claim and no journal.
+      const prepared = await options.prepare(project);
+      if (!prepared.ok)
+        return refused('conversion-failed', {
+          prepareRefusal: prepared.reason,
+        });
+      const proposedWorkspaceId = deps.workspace.buildLocalWorkspaceId(
+        request.name,
+        await deps.readItems(),
+      );
+      let identity = await attemptNonce(project.id, proposedWorkspaceId);
+      if (identity.localWorkspaceId !== proposedWorkspaceId) {
+        await rotateAttemptNonce(project.id);
+        identity = await attemptNonce(project.id, proposedWorkspaceId);
+      }
+      const deviceId = await deps.resolveDeviceId();
+      const installationGeneration =
+        await deps.readInstallationGeneration(deviceId);
+      const idempotencyKey = key(
+        access.accountId,
+        deviceId,
+        project.id,
+        identity.nonce,
+      );
+      const current = await deps.access();
+      if (current.accountId !== access.accountId || !hasAccess(current))
+        return refused('disabled');
+      // A plain claim under the real workspace id, as a member's private
+      // project takes; the creation subject never appears here. Like
+      // adoption and conversion, the claim precedes the journal: an exit in
+      // between leaves the retained identity, so a retry for the same id
+      // replays this claim, and any other claim lapses with its lease.
+      attempt.claimSent = true;
+      const claimed = await deps.cloud.claim(project.id, {
+        deviceId,
+        installationGeneration,
+        localWorkspaceId: identity.localWorkspaceId,
+        idempotencyKey,
+      });
+      attempt.claimed = claimed.instanceId;
+      const finalPath = resolve(prepared.path);
+      const destinationRoot = dirname(finalPath);
+      const journalId = randomUUID();
+      const journal: SetupJournal = {
+        version: 1,
+        journalId,
+        projectId: project.id,
+        organizationId,
+        instanceId: claimed.instanceId,
+        operationId: claimed.operationId,
+        idempotencyKey,
+        attemptNonce: identity.nonce,
+        fencingGeneration: claimed.fencingGeneration,
+        localWorkspaceId: identity.localWorkspaceId,
+        destinationRoot,
+        finalPath,
+        // Never created: the fork staged the checkout where it belongs.
+        stagingPath: join(destinationRoot, `.canopy-setup-${journalId}`),
+        phase: 'claimed',
+        updatedAt: deps.now(),
+        copy: {
+          creationKey: request.creationKey,
+          name: request.name,
+          repositories: prepared.repositories,
+        },
+      };
+      if (!isPersistableSetupJournal(journal))
+        throw new Error('Invalid organization copy claim');
+      attempt.journal = journal;
+      attempt.claimed = undefined;
+      await checkpoint(journal, 'claimed');
+      await checkpoint(journal, 'bound');
+      attempt.bindStarted = true;
+      await bindCheckout(journal, finalPath, undefined, options.commit);
+      // Bound: a lapsed claim at completion is reclaimed, never destroyed.
+      attempt.renamed = true;
+      emitOwnership({
+        workspaceId: journal.localWorkspaceId,
+        organizationId,
+        projectId: project.id,
+        owner: 'organization',
+      });
+      await finish(journal, attempt);
+      return {
+        ok: true,
+        workspaceId: journal.localWorkspaceId,
+        owner: setupOwner(journal),
+      };
+    } catch (error) {
+      const setupCode =
+        attempt.claimSent && projectId !== undefined
+          ? await reportFailure(projectId, attempt, error)
+          : '';
+      const code =
+        error instanceof SetupError && error.code === 'project-already-bound'
+          ? 'project-already-bound'
+          : conversionFailureCode(error, setupCode);
+      return refused(
+        code,
+        attempt.copyCleanupPending === true ? { cleanupPending: true } : {},
+      );
+    } finally {
+      if (
+        reserved &&
+        projectId !== undefined &&
+        attempts.get(projectId) === attempt
+      )
+        attempts.delete(projectId);
+    }
+  }
   /**
    * One conversion of a workspace, single-repo or multi-repo. The workspace
    * is reserved for the whole attempt, and the project from the moment
@@ -3671,6 +4223,17 @@ export function createOrgProjectMaterialization(
       return runConversion(workspaceId, (attempt, claimProject, created) =>
         convertCowork(request, attempt, options, claimProject, created),
       );
+    },
+    publishMemberMultiRepoCopy(
+      request,
+      options,
+    ): Promise<MemberMultiRepoCopyResult> {
+      return publishCopy(request, options);
+    },
+    async releaseMemberMultiRepoCopyInstance(instanceId): Promise<void> {
+      await deps.cloud.detach(instanceId).catch((error: unknown): void => {
+        if (!isInstanceAlreadyReleased(error)) throw error;
+      });
     },
     async moveBackToPersonal({
       workspaceId,

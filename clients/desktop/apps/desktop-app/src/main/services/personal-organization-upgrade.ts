@@ -1,4 +1,6 @@
 import { createHash } from 'node:crypto';
+import { withPersonalProjectPreviewDeadline } from './personal-project-preview';
+import { InvalidCanopyJsonError } from '../lib/canopy-json';
 import type { CanopyCloudCredentialContext } from '../canopy-cloud/client';
 import type { PersonalOrganizationUpgradeJournal } from '../lib/personal-organization-upgrade-journal';
 import type { OrgMemberCreationOptions } from '../lib/org-member-code-create';
@@ -10,6 +12,7 @@ import type {
 import {
   PersonalProjectConversionRequestSchema,
   type PersonalProject,
+  type PersonalProjectOutcome,
   type PersonalProjectOperation,
   type PersonalProjectConversionRequest,
   type PersonalOrganizationPromotionOutcome,
@@ -64,7 +67,14 @@ export interface PersonalOrganizationUpgradeDeps {
     organizationId: string,
     identity: UpgradeIdentity,
   ): Promise<boolean>;
-  workspaces(this: void): Promise<UpgradeWorkspace[]>;
+  workspaces(
+    this: void,
+    selected?: {
+      workspaceIds: readonly string[];
+      reportInvalidConfig: (workspaceId: string) => void;
+    },
+  ): Promise<UpgradeWorkspace[]>;
+  previewProjects(this: void, signal?: AbortSignal): Promise<PersonalProject[]>;
   promote(
     this: void,
     request: UpgradePersonalOrganizationRequest,
@@ -124,6 +134,7 @@ export interface PersonalOrganizationUpgradeService {
     this: void,
     operationId: string,
     sessionId?: string,
+    acknowledgeTerminal?: true,
   ): Promise<PersonalProjectOperation | null>;
   convert(
     this: void,
@@ -131,7 +142,11 @@ export interface PersonalOrganizationUpgradeService {
     sessionId?: string,
     retry?: boolean,
   ): Promise<PersonalProjectOperation>;
-  list(this: void): Promise<{ projects: PersonalProject[] }>;
+  list(
+    this: void,
+    signal?: AbortSignal,
+    bounded?: boolean,
+  ): Promise<{ projects: PersonalProject[] }>;
   promote(
     this: void,
     request: UpgradePersonalOrganizationRequest,
@@ -143,6 +158,8 @@ export interface PersonalOrganizationUpgradeService {
   ): Promise<OrganizationInviteResult>;
   resume(this: void): Promise<void>;
 }
+class ObsoleteProjectResumeError extends Error {}
+
 export function createPersonalOrganizationUpgradeService(
   deps: PersonalOrganizationUpgradeDeps,
 ): PersonalOrganizationUpgradeService {
@@ -167,19 +184,27 @@ export function createPersonalOrganizationUpgradeService(
     )
       throw new Error('account-changed');
   }
-  async function status(
+  function status(
     operationId: string,
     sessionId?: string,
+    acknowledgeTerminal?: true,
   ): Promise<PersonalProjectOperation | null> {
-    const identity = await deps.identity();
-    const operation = (await deps.journal.read()).find(
-      (entry) =>
-        entry.accountId === identity.accountId &&
-        entry.operationId === operationId,
-    );
-    await guard(identity);
-    if (!operation || operation.desktopSessionId !== sessionId) return null;
-    return operation;
+    const read = async (): Promise<PersonalProjectOperation | null> => {
+      const identity = await deps.identity();
+      const operation = (await deps.journal.read()).find(
+        (entry) =>
+          entry.accountId === identity.accountId &&
+          entry.operationId === operationId,
+      );
+      await guard(identity, sessionId);
+      if (!operation || operation.desktopSessionId !== sessionId) return null;
+      if (acknowledgeTerminal && operation.terminalReason) {
+        await deps.journal.remove(operation);
+        return null;
+      }
+      return operation;
+    };
+    return acknowledgeTerminal ? serial(read) : read();
   }
   async function convert(
     request: PersonalProjectConversionRequest,
@@ -206,6 +231,7 @@ export function createPersonalOrganizationUpgradeService(
           entry.accountId === identity.accountId &&
           entry.operationId === input.operationId,
       );
+      if (expectedIdentity && !existing) throw new ObsoleteProjectResumeError();
       if (existing && existing.desktopSessionId !== sessionId)
         throw new Error('Desktop session changed');
       if (
@@ -214,6 +240,12 @@ export function createPersonalOrganizationUpgradeService(
           JSON.stringify(existing.selection) !== JSON.stringify(selection))
       )
         throw new Error('Operation payload changed');
+      if (existing?.terminalReason) return existing;
+      const previouslyStarted = new Set(
+        existing?.projects
+          .filter(({ creationStarted }) => creationStarted !== false)
+          .map(({ workspaceId }) => workspaceId),
+      );
       let operation: PersonalProjectOperation = existing ?? {
         operationId: input.operationId,
         accountId: identity.accountId,
@@ -233,12 +265,47 @@ export function createPersonalOrganizationUpgradeService(
         operation = { ...operation, updatedAt: deps.now() };
         await deps.journal.update(operation);
       }
+      async function endInvalidConfig(
+        entries: readonly PersonalProjectOutcome[] = [],
+      ): Promise<PersonalProjectOperation> {
+        const invalid = new Set(entries);
+        for (const entry of entries) {
+          entry.reasonCode = 'invalid-canopy-json';
+          delete entry.reason;
+        }
+        // A file can change after preflight. Preserve any unfinished hosted
+        // creation or share from that earlier, successful validation.
+        const hasUnfinishedEffects = operation.projects.some(
+          (project) =>
+            project.stage === 'member-created' ||
+            project.stage === 'converted' ||
+            (project.outcome === 'pending' &&
+              project.creationStarted !== false &&
+              (!invalid.has(project) ||
+                previouslyStarted.has(project.workspaceId))),
+        );
+        if (hasUnfinishedEffects) {
+          for (const entry of entries) {
+            if (entry.stage === 'queued' && entry.creationStarted === false)
+              entry.outcome = 'failed';
+          }
+          await save();
+          return operation;
+        }
+        for (const project of operation.projects) {
+          if (project.outcome === 'pending') project.outcome = 'failed';
+        }
+        operation.terminalReason = 'invalid-canopy-json';
+        await save();
+        return operation;
+      }
       try {
         identity = await deps.refreshAccount(identity);
         await guard(identity, sessionId);
         await deps.switchContext(input.organizationId);
         await guard(identity, sessionId);
       } catch (error) {
+        if (error instanceof InvalidCanopyJsonError) return endInvalidConfig();
         for (const entry of operation.projects) {
           if (
             entry.outcome !== 'pending' &&
@@ -247,15 +314,30 @@ export function createPersonalOrganizationUpgradeService(
             continue;
           if (error instanceof Error && error.message === 'account-changed')
             entry.outcome = 'account-changed';
-          entry.reason =
-            error instanceof Error
-              ? error.message
-              : 'Account refresh unavailable';
+          entry.reason = 'Account refresh unavailable';
         }
         await save();
         return operation;
       }
-      const initial = await deps.workspaces();
+      // Every entry point, including recovery and one-project Portal commands,
+      // validates the whole selection before entering the mutation loop.
+      const invalidConfigs = new Set<string>();
+      let initial: UpgradeWorkspace[];
+      try {
+        initial = await deps.workspaces({
+          workspaceIds: selection,
+          reportInvalidConfig: (id): void => {
+            invalidConfigs.add(id);
+          },
+        });
+      } catch (error) {
+        if (error instanceof InvalidCanopyJsonError) return endInvalidConfig();
+        throw error;
+      }
+      const invalidProjects = operation.projects.filter((entry) =>
+        invalidConfigs.has(entry.workspaceId),
+      );
+      if (invalidProjects.length > 0) return endInvalidConfig(invalidProjects);
       const ordered = [...operation.projects].sort(
         (a, b) =>
           Number(
@@ -294,13 +376,23 @@ export function createPersonalOrganizationUpgradeService(
           !['pending', 'converted-private'].includes(entry.outcome)
         )
           continue;
+        delete entry.reasonCode;
         try {
           await guard(identity, sessionId);
-          const workspace = (await deps.workspaces()).find(
+          let invalidConfig = false;
+          const workspaces = await deps.workspaces({
+            workspaceIds: [entry.workspaceId],
+            reportInvalidConfig: () => {
+              invalidConfig = true;
+            },
+          });
+          const workspace = workspaces.find(
             (w) => w.workspaceId === entry.workspaceId,
           );
           if (!workspace) {
+            if (invalidConfig) return endInvalidConfig([entry]);
             entry.outcome = 'workspace-not-found';
+            delete entry.reason;
             await save();
             continue;
           }
@@ -308,6 +400,7 @@ export function createPersonalOrganizationUpgradeService(
             (other) =>
               other.accountId === identity.accountId &&
               other.operationId !== operation.operationId &&
+              !other.terminalReason &&
               other.projects.some(
                 (project) =>
                   project.workspaceId === entry.workspaceId &&
@@ -439,6 +532,8 @@ export function createPersonalOrganizationUpgradeService(
           entry.stage = 'complete';
           await save();
         } catch (error) {
+          if (error instanceof InvalidCanopyJsonError)
+            return endInvalidConfig([entry]);
           const changed =
             error instanceof Error && error.message === 'account-changed';
           entry.outcome =
@@ -449,8 +544,7 @@ export function createPersonalOrganizationUpgradeService(
                 : entry.stage === 'converted'
                   ? 'converted-private'
                   : 'pending';
-          entry.reason =
-            error instanceof Error ? error.message : 'Unknown outcome';
+          entry.reason = 'Unknown outcome';
           await save();
           if (changed) {
             for (const remaining of operation.projects)
@@ -469,15 +563,26 @@ export function createPersonalOrganizationUpgradeService(
   return {
     status,
     convert,
-    async list(): Promise<{ projects: PersonalProject[] }> {
-      const identity = await deps.identity();
-      const workspaces = await deps.workspaces();
-      await guard(identity);
-      return {
-        projects: workspaces
-          .filter((w) => !w.owner)
-          .map(({ workspaceId, name, kind }) => ({ workspaceId, name, kind })),
+    async list(
+      signal?: AbortSignal,
+      bounded = true,
+    ): Promise<{ projects: PersonalProject[] }> {
+      const discover = async (
+        active?: AbortSignal,
+      ): Promise<{ projects: PersonalProject[] }> => {
+        active?.throwIfAborted();
+        const identity = await deps.identity();
+        active?.throwIfAborted();
+        const projects = await deps.previewProjects(active);
+        active?.throwIfAborted();
+        await guard(identity);
+        active?.throwIfAborted();
+        return { projects };
       };
+      // The original inline Portal request retains its broker window.
+      return bounded || signal
+        ? withPersonalProjectPreviewDeadline(discover, signal)
+        : discover();
     },
     async promote(
       request: UpgradePersonalOrganizationRequest,
@@ -541,6 +646,7 @@ export function createPersonalOrganizationUpgradeService(
       for (const entry of await deps.journal.read()) {
         if (
           entry.accountId !== identity.accountId ||
+          entry.terminalReason !== undefined ||
           (entry.desktopSessionId &&
             !deps.sessionCurrent(entry.desktopSessionId)) ||
           !entry.projects.some(
@@ -557,7 +663,9 @@ export function createPersonalOrganizationUpgradeService(
           entry.desktopSessionId,
           false,
           identity,
-        );
+        ).catch((error: unknown) => {
+          if (!(error instanceof ObsoleteProjectResumeError)) throw error;
+        });
       }
     },
   };

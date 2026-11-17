@@ -454,6 +454,9 @@ export function DisclosureChevron({
  * - `row`: a label and a value on one line, with the body further down.
  * - `usage-section`: a section label whose hit area covers its row, with
  *   independent actions and the chevron placed after it by the parent.
+ * - `usage-account`: a full-card account toggle in the usage popover.
+ * - `reverted-turn`: the boxed transcript toggle for a reverted turn.
+ * - `tool-count`: the quiet label that reveals a tool group's access list.
  * - `summary`, `summary-wrapping`: a card's title row, whose hit area
  *   stretches over the card; `summary-wrapping` gives the row to its actions
  *   below 32rem.
@@ -467,6 +470,9 @@ export type DisclosureToggleVariant =
   | 'tree-icon'
   | 'row'
   | 'usage-section'
+  | 'usage-account'
+  | 'reverted-turn'
+  | 'tool-count'
   | 'summary'
   | 'summary-wrapping';
 
@@ -491,6 +497,12 @@ const DISCLOSURE_TOGGLE_CLASS: Readonly<
   row: 'group focus-ring flex items-center justify-between gap-3 rounded-sm text-left text-xs pointer-coarse:min-h-11 pointer-coarse:min-w-11',
   'usage-section':
     "group peer focus-ring flex flex-1 items-center rounded-sm text-left text-xs pointer-coarse:min-h-11 pointer-coarse:min-w-11 after:absolute after:inset-0 after:content-['']",
+  'usage-account':
+    "group focus-ring flex flex-col gap-1.5 rounded-sm text-left text-xs pointer-coarse:min-h-11 pointer-coarse:min-w-11 after:absolute after:inset-0 after:rounded-md after:content-['']",
+  'reverted-turn':
+    'focus-ring flex w-full items-center gap-2 rounded-md border bg-fg-primary/[0.02] px-3 py-1.5 text-left text-xs fg-secondary transition-colors hover:bg-fg-primary/[0.04]',
+  'tool-count':
+    'focus-ring w-fit rounded-md text-xs font-medium fg-secondary transition-colors hover:fg-primary',
   summary: SUMMARY_TOGGLE_CLASS,
   'summary-wrapping': `${SUMMARY_TOGGLE_CLASS} basis-full @min-[32rem]/turn-files:basis-0`,
 };

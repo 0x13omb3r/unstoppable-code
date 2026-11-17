@@ -106,6 +106,10 @@ export interface DropdownMenuSurfaceProps extends HTMLAttributes<HTMLDivElement>
 }
 
 export interface DropdownMenuItemProps extends ButtonHTMLAttributes<HTMLButtonElement> {
+  /** Use native button semantics when the control is outside a menu. */
+  readonly asButton?: boolean;
+  /** Touch-sized overflow rows in the chat composer toolbar. */
+  readonly presentation?: 'standard' | 'composer-overflow';
   tone?: DropdownMenuItemTone;
   selected?: boolean;
   /** The row's submenu is open; it keeps a hover surface while it is. */
@@ -257,7 +261,9 @@ export const DropdownMenuItem = forwardRef<
     status,
     alert,
     type = 'button',
-    role = 'menuitem',
+    asButton = false,
+    presentation = 'standard',
+    role = asButton ? undefined : 'menuitem',
     children,
     ...props
   },
@@ -286,6 +292,10 @@ export const DropdownMenuItem = forwardRef<
     : selected
       ? 'bg-muted fg-primary enabled:hover:bg-muted'
       : `${ITEM_TONE_CLASS_NAMES[tone]}${expanded ? ' bg-subtle' : ''}`;
+  const presentationClassName =
+    presentation === 'composer-overflow'
+      ? `flex min-h-11 w-full items-center gap-2.5 px-3 text-left text-s transition-colors hover:bg-muted/60 focus-visible:bg-muted/60 focus:outline-none disabled:cursor-not-allowed disabled:opacity-40 ${selected ? 'fg-primary' : 'fg-secondary'}`
+      : `canopy-dropdown-menu-item outline-none ${geometryClassName} text-left ${textClassName} font-normal transition-colors focus-visible:bg-subtle disabled:cursor-not-allowed disabled:fg-disabled disabled:opacity-100 disabled:hover:bg-transparent ${surfaceClassName} ${status ? ITEM_STATUS_CLASS_NAMES[status] : ''} ${touchTarget ? 'min-h-11' : ''}`;
   return (
     <button
       ref={ref}
@@ -293,7 +303,7 @@ export const DropdownMenuItem = forwardRef<
       role={role}
       // Keyboard focus paints the row like hover (`focus-visible:bg-subtle`)
       // rather than drawing the accent ring around it.
-      className={`canopy-dropdown-menu-item outline-none ${geometryClassName} text-left ${textClassName} font-normal transition-colors focus-visible:bg-subtle disabled:cursor-not-allowed disabled:fg-disabled disabled:opacity-100 disabled:hover:bg-transparent ${surfaceClassName} ${status ? ITEM_STATUS_CLASS_NAMES[status] : ''} ${touchTarget ? 'min-h-11' : ''} ${className}`}
+      className={`${presentationClassName} ${className}`}
       {...props}
     >
       <PlainRowContext.Provider value={plainRow}>
@@ -416,7 +426,7 @@ export interface DropdownMenuItemIconProps extends HTMLAttributes<HTMLSpanElemen
  * menu's icons share one optical size and stroke, whatever size a caller asks
  * for.
  */
-export function DropdownMenuItemIcon({
+export function DropdownMenuItemIconSlot({
   className = '',
   tone: toneProp,
   ...props
@@ -508,10 +518,10 @@ export function DropdownMenuDivider({
   ...props
 }: HTMLAttributes<HTMLDivElement>): JSX.Element {
   return (
-    <div
-      role="separator"
-      className={`mx-2 my-1 border-t ${className}`}
-      {...props}
-    />
+    <div role="separator" className={`px-2 py-1 ${className}`} {...props}>
+      <div className="border-t" />
+    </div>
   );
 }
+
+export { DropdownMenuItemIconSlot as DropdownMenuItemIcon };

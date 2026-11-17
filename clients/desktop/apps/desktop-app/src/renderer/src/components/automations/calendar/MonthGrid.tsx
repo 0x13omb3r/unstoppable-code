@@ -1,3 +1,4 @@
+import { ControlButton } from '@canopy/ui-shared/components';
 import { useMemo, type JSX } from 'react';
 import {
   isToday,
@@ -7,9 +8,7 @@ import {
 } from './calendarDateUtils';
 import {
   calendarEventChipAttributes,
-  calendarEventInteractionClasses,
-  calendarEventSelectedClasses,
-  calendarEventToneClasses,
+  calendarEventTone,
   formatEventTime,
   formatGroupCount,
   isCalendarEventClickable,
@@ -44,7 +43,7 @@ interface MonthEventChipProps {
   onEventClick: (event: CalendarEvent) => void;
 }
 
-function MonthEventChip({
+function MonthGridEvent({
   group,
   selectedActivityId,
   onEventClick,
@@ -64,7 +63,7 @@ function MonthEventChip({
       surfaceClassName="w-max max-w-80"
       surfacePadding="compact"
     >
-      <button
+      <ControlButton
         type="button"
         {...calendarEventChipAttributes(event, selected)}
         data-event-count={group.count}
@@ -77,11 +76,13 @@ function MonthEventChip({
             : undefined
         }
         disabled={!clickable}
-        className={`flex w-full items-center gap-1 overflow-hidden rounded border px-1 py-0.5 text-left text-3xs leading-none transition-colors ${calendarEventToneClasses(
-          event,
-        )} ${calendarEventSelectedClasses(
+        presentation="calendar-event"
+        appearance={{
+          layout: 'month',
+          tone: calendarEventTone(event),
           selected,
-        )} ${calendarEventInteractionClasses(event)}`}
+          interactive: clickable,
+        }}
       >
         <span className="shrink-0 tabular-nums opacity-80">
           {formatEventTime(group.at)}
@@ -92,7 +93,7 @@ function MonthEventChip({
             {countLabel}
           </span>
         )}
-      </button>
+      </ControlButton>
     </RichHoverTooltip>
   );
 }
@@ -180,7 +181,7 @@ export function MonthGrid({
                     density="month-cell"
                   />
                   {shown.map((group) => (
-                    <MonthEventChip
+                    <MonthGridEvent
                       key={group.key}
                       group={group}
                       selectedActivityId={selectedActivityId}

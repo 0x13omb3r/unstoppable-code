@@ -17,6 +17,8 @@ export interface ColorSwatchOption {
   label: string;
   /** Semantic CSS color, independent of the persisted value. */
   color: string;
+  /** Contrast-solved indicator ink; omitted for existing workspace palettes. */
+  ink?: string;
 }
 
 export interface ColorSwatchPickerProps {
@@ -205,7 +207,7 @@ export function ColorSwatchPicker({
             className={`focus-ring inline-flex shrink-0 items-center justify-center rounded-full text-white transition-colors disabled:opacity-60 ${SWATCH_SIZE_CLASS_NAMES[size]} ${
               selected ? '' : 'hover:opacity-80'
             }`}
-            style={{ backgroundColor: option.color }}
+            style={{ backgroundColor: option.color, color: option.ink }}
           >
             {selected ? (
               <CheckIcon size={CHECK_SIZE} aria-hidden={true} />

@@ -1,3 +1,4 @@
+import { ControlButton } from '../Button';
 import { useId, type JSX, type ReactNode } from 'react';
 import type {
   PanelCollapseEdge,
@@ -129,9 +130,9 @@ export function PanelBranchCollapsedBar({
                   renderTabTooltip?.(tab) ?? getTabTitle?.(tab) ?? tab.title
                 }
               >
-                <button
+                <ControlButton
                   type="button"
-                  className="canopy-panel-collapsed-tab"
+                  presentation="panel-collapsed-tab"
                   data-testid={`panel-branch-tab-${tab.panelId}`}
                   aria-label={getTabTitle?.(tab) ?? tab.title}
                   aria-describedby={
@@ -152,7 +153,7 @@ export function PanelBranchCollapsedBar({
                       {renderTabAccessibleStatus(tab)}
                     </span>
                   ) : null}
-                </button>
+                </ControlButton>
               </Tooltip>
             ))}
           </div>

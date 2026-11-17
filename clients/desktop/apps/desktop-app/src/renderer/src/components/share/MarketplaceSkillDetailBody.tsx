@@ -254,6 +254,7 @@ export function MarketplaceSkillDetailBody({
           <Surface
             variant="group"
             padding="default"
+            gap="item"
             data-testid="deep-link-plugin-summary"
           >
             {hasMarkdownDescriptionText(snapshot.description) ? (
@@ -263,7 +264,7 @@ export function MarketplaceSkillDetailBody({
             ) : (
               <p className="text-s fg-secondary">No description provided.</p>
             )}
-            <FactList placement="mt-3" columnGap="2" valueTone="secondary">
+            <FactList columnGap="2" valueTone="secondary">
               <Fact
                 label={<span className="font-medium fg-primary">Source</span>}
               >

@@ -22,6 +22,7 @@ function activityCoversWorkspace(
       );
     case 'app_advisor_prompt':
       return (
+        // Default Bot only: this automation action targets the singleton Bot.
         workspaceId === APP_ADVISOR_PROJECT_ID &&
         isSimilarSignature(taskSignature(action.prompt), tokens)
       );

@@ -3,7 +3,7 @@
 import { StatusPill } from './StatusPill';
 import { Stack } from './Stack';
 import { useEffect, useId, useRef, type JSX, type RefObject } from 'react';
-import { Button } from './Button';
+import { ControlButton, Button } from './Button';
 import { TextInput } from './Field';
 import { FormField } from './FormField';
 import { LoadingSpinner } from './LoadingSpinner';
@@ -159,10 +159,9 @@ function RepositoryRow({
       ? null
       : repository.unavailableReason;
   const unavailable = reason !== null;
-  const tone = unavailable ? 'fg-tertiary' : 'hover:bg-secondary/30 fg-primary';
   return (
     <li>
-      <button
+      <ControlButton
         ref={buttonRef}
         type="button"
         aria-pressed={selected}
@@ -171,9 +170,8 @@ function RepositoryRow({
         onClick={() => {
           if (!unavailable) onSelect(repository.id);
         }}
-        className={`focus-ring flex w-full flex-col items-start gap-0.5 px-3 py-2 text-left transition-colors ${tone}${
-          unavailable ? ' cursor-not-allowed' : ''
-        }`}
+        presentation="github-repository-option"
+        appearance={{ unavailable }}
       >
         <div className="flex w-full items-center gap-2">
           <span className="truncate text-s font-medium">
@@ -201,7 +199,7 @@ function RepositoryRow({
             {reason}
           </span>
         )}
-      </button>
+      </ControlButton>
     </li>
   );
 }

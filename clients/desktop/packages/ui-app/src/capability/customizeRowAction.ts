@@ -1,0 +1,290 @@
+import type {
+  CustomizeRowSplitAction,
+  CustomizeRowSplitStatus,
+  InstalledItemSetStatus,
+} from '@canopy/ui-shared/components';
+import {
+  INSTALLED_ITEM_STATUS_COPY,
+  installedItemTargetKey,
+  type InstalledEntryStatusState,
+} from '@canopy/ui-shared/lib/installed-item-status';
+import type { UnifiedPluginEntry } from '@canopy/ui-shared/lib';
+import type { CustomizeWorkflowAvailability } from './customizeWorkflowActions';
+
+/**
+ * New Customize's one row action (CAN-6813): which state a row's split
+ * control shows and what its main segment runs. Every action here is one the
+ * row already offered; the caret adds the row's existing ⋯ menu items.
+ */
+
+/** A listing's status, as the row's status slot read it before. */
+export interface CustomizeRowActionStatus {
+  readonly listing: UnifiedPluginEntry;
+  /** The marketplace provider, when a grouped row has several listings. */
+  readonly provider?: string;
+  readonly state: InstalledEntryStatusState;
+}
+
+export interface CustomizeRowActionInput {
+  readonly entry: UnifiedPluginEntry;
+  /** A Workflows row's controls: an automation's switch or a pipeline's Run. */
+  readonly workflow?: {
+    readonly availability: CustomizeWorkflowAvailability;
+    readonly busy: boolean;
+    readonly onRun: () => void;
+    readonly onToggle: () => void;
+  };
+  /** A skill inside a plugin: its plugin's status, which it cannot change. */
+  readonly bundledSkill?: {
+    readonly state: InstalledEntryStatusState | undefined;
+    readonly reason: string;
+  };
+  /** A Browse row installed through a plugin, with the way to open it. */
+  readonly installedVia?: {
+    readonly pluginName: string;
+    readonly open: (() => void) | undefined;
+  };
+  /** Browse and not installed: the host's install flow, when it has one. */
+  readonly add?: (listing: UnifiedPluginEntry) => void;
+  readonly installed: boolean;
+  /** A pending sign-in the row starts (an MCP attention or a plugin's). */
+  readonly signIn?: {
+    readonly accessibleName: string;
+    readonly busy: boolean;
+    readonly run: () => void;
+  };
+  /** An update the row can run now. */
+  readonly update?: {
+    readonly busy: boolean;
+    readonly run: () => void;
+  };
+  readonly statuses: readonly CustomizeRowActionStatus[];
+  readonly pendingKeys: ReadonlySet<string>;
+  readonly onSetStatus?: InstalledItemSetStatus;
+  readonly onError?: (message: string) => void;
+}
+
+/** Shown when a Browse row cannot be added from this host. */
+export const CUSTOMIZE_ROW_ADD_UNAVAILABLE_REASON = 'Can’t be added here.';
+
+function addAction(
+  entry: UnifiedPluginEntry,
+  add: ((listing: UnifiedPluginEntry) => void) | undefined,
+): CustomizeRowSplitAction {
+  const base = {
+    label: 'Add',
+    accessibleName: `Add ${entry.name}`,
+    primaryTestId: `plugins-entry-add-${entry.id}`,
+  };
+  const choices = entry.marketplaceListings?.length
+    ? (entry.marketplaceProviders ?? []).flatMap((provider) => {
+        const listing = entry.marketplaceListings?.find(
+          (item) =>
+            item.marketplaceProvider === provider &&
+            item.state === 'available' &&
+            item.browseInstallAvailable !== false,
+        );
+        return listing ? [{ provider, listing }] : [];
+      })
+    : entry.browseInstallAvailable === false
+      ? []
+      : [{ provider: undefined, listing: entry }];
+  if (add === undefined || choices.length === 0)
+    return { ...base, reason: CUSTOMIZE_ROW_ADD_UNAVAILABLE_REASON };
+  const [only] = choices;
+  if (choices.length === 1 && only !== undefined)
+    return { ...base, onPrimary: () => add(only.listing) };
+  return {
+    ...base,
+    leadingItems: choices.map(({ provider, listing }) => ({
+      id: `add-${(provider ?? listing.id).toLowerCase()}`,
+      label: `Add from ${provider ?? listing.name}`,
+      onSelect: () => add(listing),
+    })),
+  };
+}
+
+function statusLabel(state: InstalledEntryStatusState): {
+  readonly label: string;
+  readonly glyph?: CustomizeRowSplitAction['glyph'];
+  readonly reason?: string;
+  readonly busy?: boolean;
+} {
+  switch (state.kind) {
+    case 'loading':
+      return { label: 'Installed', busy: true };
+    case 'read-only':
+      return {
+        label: 'Unavailable',
+        glyph: 'unavailable',
+        reason: state.reason,
+      };
+    case 'fixed':
+      return {
+        label: INSTALLED_ITEM_STATUS_COPY[state.status].label,
+        glyph: state.status,
+        reason: state.reason,
+      };
+    case 'ready': {
+      const status = state.item.status;
+      if (status === null)
+        return {
+          label: state.item.notices.some(
+            (notice) => notice.code === 'partial_removal',
+          )
+            ? 'Uninstall incomplete'
+            : 'Installed',
+        };
+      return { label: INSTALLED_ITEM_STATUS_COPY[status].label, glyph: status };
+    }
+  }
+}
+
+function statusChoice(
+  status: CustomizeRowActionStatus,
+  input: CustomizeRowActionInput,
+  heading: string | undefined,
+): CustomizeRowSplitStatus | undefined {
+  const { state } = status;
+  const onSetStatus = input.onSetStatus;
+  if (state.kind !== 'ready' || state.item.status === null || !onSetStatus)
+    return undefined;
+  const target = state.item.target;
+  return {
+    current: state.item.status,
+    ...(heading !== undefined ? { heading } : {}),
+    targetKind: target.kind,
+    retryCurrent: state.item.notices.some((notice) => notice.retryable),
+    busy: input.pendingKeys.has(installedItemTargetKey(target)),
+    onChange: (next) => {
+      void onSetStatus(target, next).then((outcome) => {
+        if (!outcome.ok && outcome.message) input.onError?.(outcome.message);
+      });
+    },
+  };
+}
+
+/** The row's split control: its state, main action and leading choices. */
+export function customizeRowAction(
+  input: CustomizeRowActionInput,
+): CustomizeRowSplitAction {
+  const { entry } = input;
+  const workflow = input.workflow;
+  if (workflow && entry.workflow) {
+    const enabled = entry.workflow.enabled;
+    if (entry.kind === 'automation' && enabled !== undefined) {
+      const { toggle } = workflow.availability;
+      return {
+        label: enabled ? 'On' : 'Off',
+        accessibleName: `${entry.name} is ${enabled ? 'on' : 'off'}`,
+        glyph: enabled ? 'active' : 'disabled',
+        busy: workflow.busy,
+        primaryTestId: `customize-workflow-toggle-${entry.id}`,
+        leadingItems: [
+          {
+            id: 'toggle',
+            label: enabled ? 'Turn off' : 'Turn on',
+            disabled: workflow.busy || !toggle.available,
+            disabledReason: toggle.reason,
+            onSelect: workflow.onToggle,
+          },
+        ],
+      };
+    }
+    if (entry.kind === 'pipeline') {
+      const { run } = workflow.availability;
+      return {
+        label: 'Run',
+        accessibleName: `Run ${entry.name}`,
+        busy: workflow.busy,
+        primaryTestId: `customize-workflow-run-${entry.id}`,
+        ...(run.available
+          ? { onPrimary: workflow.onRun }
+          : run.reason !== undefined
+            ? { reason: run.reason }
+            : {}),
+      };
+    }
+  }
+  if (input.bundledSkill) {
+    const state = input.bundledSkill.state;
+    const shown = state ? statusLabel(state) : undefined;
+    return {
+      label: shown?.label ?? 'Unavailable',
+      accessibleName: `Status for ${entry.name}: ${shown?.label ?? 'Unavailable'}`,
+      glyph: shown?.busy ? undefined : (shown?.glyph ?? 'unavailable'),
+      busy: shown?.busy,
+      reason: input.bundledSkill.reason,
+      primaryTestId: `plugins-entry-status-${entry.id}`,
+    };
+  }
+  if (input.installedVia) {
+    const { pluginName, open } = input.installedVia;
+    return {
+      label: 'Installed',
+      accessibleName: `${entry.name} is installed with ${pluginName}`,
+      primaryTestId: `plugins-entry-installed-via-${entry.id}`,
+      leadingItems: [
+        {
+          id: 'open-installed-via',
+          label: `Open the ${pluginName} plugin`,
+          disabled: open === undefined,
+          onSelect: () => open?.(),
+        },
+      ],
+    };
+  }
+  if (!input.installed) return addAction(entry, input.add);
+  const several = input.statuses.length > 1;
+  const statuses = input.statuses.flatMap((status) => {
+    const choice = statusChoice(
+      status,
+      input,
+      several ? (status.provider ?? status.listing.name) : undefined,
+    );
+    return choice ? [choice] : [];
+  });
+  if (input.signIn)
+    return {
+      label: 'Sign in',
+      accessibleName: input.signIn.accessibleName,
+      busy: input.signIn.busy,
+      onPrimary: input.signIn.run,
+      primaryTestId: `customize-row-connect-${entry.id}`,
+      // Status choices stay in the caret while sign-in waits.
+      statuses,
+      omitItemIds: ['connect'],
+    };
+  if (input.update)
+    return {
+      label: 'Update',
+      accessibleName: `Update ${entry.name}`,
+      busy: input.update.busy,
+      onPrimary: input.update.run,
+      primaryTestId: `customize-update-${entry.id}`,
+      statuses,
+      omitItemIds: ['update'],
+    };
+  // A grouped row reads its first listing that has a status.
+  const first =
+    input.statuses.find(
+      (status) =>
+        status.state.kind === 'ready' && status.state.item.status !== null,
+    ) ?? input.statuses[0];
+  if (first === undefined)
+    return {
+      label: 'Installed',
+      accessibleName: `${entry.name} is installed`,
+      primaryTestId: `plugins-entry-status-${entry.id}`,
+    };
+  const shown = statusLabel(first.state);
+  return {
+    label: shown.label,
+    accessibleName: `Status for ${entry.name}: ${shown.label}`,
+    ...(shown.glyph !== undefined ? { glyph: shown.glyph } : {}),
+    ...(shown.busy ? { busy: true } : {}),
+    ...(shown.reason !== undefined ? { reason: shown.reason } : {}),
+    primaryTestId: `plugins-entry-status-${first.listing.id}`,
+    statuses,
+  };
+}

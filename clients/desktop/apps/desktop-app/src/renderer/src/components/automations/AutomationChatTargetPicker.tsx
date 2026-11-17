@@ -119,6 +119,7 @@ export function AutomationChatTargetPicker({
   onStatusChange,
 }: AutomationChatTargetPickerProps): JSX.Element {
   const projects = useProjectsStore((state) => state.projects);
+  // Default Bot only: this picker opens chats through the singleton Bot destination.
   const isAppAdvisor = workspaceId === APP_ADVISOR_PROJECT_ID;
   const project = projects.find((candidate) => candidate.id === workspaceId);
   const isCowork = project?.type === 'cowork';

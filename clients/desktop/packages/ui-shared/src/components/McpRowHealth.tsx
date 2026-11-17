@@ -30,19 +30,23 @@ export function McpRowAttention({
   action,
   checkedLabel,
   testId,
+  instruction: instructionOverride,
 }: {
   readonly name: string;
   readonly label: string;
   readonly action: McpRowHealthModel['action'];
   readonly checkedLabel?: string;
   readonly testId: string;
+  /** Replaces the sentence that says where to fix it. */
+  readonly instruction?: string;
 }): JSX.Element {
   const instruction =
-    action === 'connect'
+    instructionOverride ??
+    (action === 'connect'
       ? `Open ${name} to sign in.`
       : action === 'reconnect'
         ? `Open ${name} to reconnect.`
-        : `Open ${name} for details.`;
+        : `Open ${name} for details.`);
   const message = `${label}. ${instruction}${checkedLabel ? ` ${checkedLabel}.` : ''}`;
   return (
     <Tooltip

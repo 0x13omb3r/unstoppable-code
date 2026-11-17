@@ -67,6 +67,8 @@ import {
 import { useChatStore, type ChatTab } from '@/stores/chatStore';
 import { importChatAttachments } from '@/lib/chatAttachments';
 import { HomeSurface } from '../../home/HomeSurface';
+import { installHomeDraftPersistence } from '../../home/homeDraftPersistence';
+import { submissionWatchForTest } from '../../home/homeSend';
 import { useHomeComposerStore } from '@/stores/homeComposerStore';
 import { useProjectsStore } from '@/stores/projectsStore';
 import { useWorkspaceContextStore } from '@/stores/workspaceContextStore';
@@ -176,6 +178,16 @@ function reply(value: unknown, settles: boolean): unknown {
 
 /** Holds main's upload replies until released, as a slow upload would. */
 let uploadGate: Promise<void> | null = null;
+/** The account main's saved-account read names; null once signed out (CAN-6798). */
+let savedAccountId: string | null = 'account-1';
+/** Set to have main's saved-account read fail, as a locked keychain does. */
+let savedAccountRead: 'ok' | 'unavailable' = 'ok';
+/**
+ * Holds main's saved-account reads until released (CAN-6798). Each read
+ * answers the account it started under, as one under way when the account
+ * changes does.
+ */
+let accountGate: Promise<void> | null = null;
 /** The files main uploaded to the task's chat, which its list then serves. */
 const uploadedAttachments: { name: string; mimeType: string; size: number }[] =
   [];
@@ -205,6 +217,9 @@ function uploadReply(_target: unknown, file: unknown): unknown {
   };
 }
 
+/** Main's answers a case sets for itself, by bridge path; cleared after each case. */
+const caseReplies = new Map<string, (...args: unknown[]) => unknown>();
+
 /** Files picked from this computer's disk, by the path main knows them by. */
 const diskPaths = new WeakMap<object, string>();
 
@@ -225,6 +240,17 @@ function recordingBridge(path: string): unknown {
       );
     }
     if (path === CLOUD_WAKE_FILES) return wakeFilesAnswer();
+    if (path === 'api.loadCanopyCloudAccount') {
+      const id = savedAccountId;
+      const read = savedAccountRead;
+      return held(accountGate).then(() =>
+        read !== 'ok'
+          ? { read, hasApiKey: false, credentialSource: null }
+          : id === null
+            ? { hasApiKey: false, credentialSource: null }
+            : { account: { id }, credentialSource: 'oauth_desktop' },
+      );
+    }
     if (path === 'api.cloudChats.uploadAttachment')
       // As main answers the web core's not_found for a chat it doesn't hold.
       return uncreated(Reflect.get(Object(args[0]), 'worktreeId'))
@@ -237,6 +263,8 @@ function recordingBridge(path: string): unknown {
               message: 'Attachment storage is full.',
             })
           : held(uploadGate).then(() => uploadReply(args[0], args[1]));
+    const answer = caseReplies.get(path);
+    if (answer !== undefined) return answer(...args);
     return reply(REPLIES[path], path in REPLIES);
   };
   return new Proxy(call, {
@@ -413,6 +441,21 @@ let unknownOutcomeSendText: string | null = null;
 let receiptGate: Promise<void> | null = null;
 /** Holds each message send's reply until released. */
 let sendGate: Promise<void> | null = null;
+/**
+ * The sends the web core applied, by command id, in order (CAN-6798). A send
+ * again under one of these ids is answered `already_applied` and applied no
+ * second time.
+ */
+const appliedSends: { chatId: string; commandId: string; text: string }[] = [];
+/** Set to have the web core apply a send before its held reply goes. */
+let appliesBeforeReply = false;
+/**
+ * The commands the web core refused (CAN-6798): a send again under one of
+ * them is refused again, and its receipt says so.
+ */
+const refusedCommands = new Set<string>();
+/** Set to have `core.chat.send.receipt` answer from `appliedSends`. */
+let servesSendReceipts = false;
 /** Set to make the web core answer a turn cancel as for a turn it no longer knows. */
 let cancelTurnGone = false;
 /** Set to make each send's turn keep running, as `runningTurn`. */
@@ -1408,18 +1451,23 @@ Object.defineProperty(window, 'canopyCore', {
                 retry: { kind: 'never' },
               },
             }));
+          const sentCommand = String(request.params?.commandId);
           if (
-            refusedSendText !== null &&
-            request.params?.text === refusedSendText
+            refusedCommands.has(sentCommand) ||
+            (refusedSendText !== null &&
+              request.params?.text === refusedSendText)
           )
-            return held(sendGate).then(() => ({
-              ok: false,
-              error: {
-                kind: 'failed_precondition',
-                message: 'The web core refused this message.',
-                retry: { kind: 'never' },
-              },
-            }));
+            return held(sendGate).then(() => {
+              refusedCommands.add(sentCommand);
+              return {
+                ok: false,
+                error: {
+                  kind: 'failed_precondition',
+                  message: 'The web core refused this message.',
+                  retry: { kind: 'never' },
+                },
+              };
+            });
           if (
             sendOutcomeUnknown ||
             (unknownOutcomeSendText !== null &&
@@ -1464,17 +1512,33 @@ Object.defineProperty(window, 'canopyCore', {
             return held(sendGate).then(() => queued);
           }
           if (sendsKeepRunning) runningTurn = 'turn-1';
-          const accepted = {
+          const commandId = String(request.params?.commandId);
+          // Applied once per command id, as the web core takes a send.
+          const apply = (): 'applied' | 'already_applied' => {
+            if (appliedSends.some((sent) => sent.commandId === commandId))
+              return 'already_applied';
+            appliedSends.push({
+              chatId: String(request.params?.chatId),
+              commandId,
+              text: String(request.params?.text),
+            });
+            return 'applied';
+          };
+          const accepted = (outcome: string): unknown => ({
             ok: true,
             value: {
               commandId: request.params?.commandId,
               revision: 3,
-              outcome: 'applied',
+              outcome,
               entityId: 'turn-1',
               ...(sendsNameMessage ? { messageId: 'turn-1-u' } : {}),
             },
-          };
-          return held(sendGate).then(() => accepted);
+          });
+          if (appliesBeforeReply) {
+            const outcome = apply();
+            return held(sendGate).then(() => accepted(outcome));
+          }
+          return held(sendGate).then(() => accepted(apply()));
         }
         // A turn the web core accepts a cancel for keeps running until it
         // ends; one it no longer knows has ended.
@@ -1514,7 +1578,22 @@ Object.defineProperty(window, 'canopyCore', {
             outcome: index >= 0 ? 'applied' : 'not_found',
           });
         }
-        case 'core.chat.send.receipt':
+        case 'core.chat.send.receipt': {
+          const commandId = String(request.params?.commandId);
+          if (servesSendReceipts)
+            return ok(
+              appliedSends.some((sent) => sent.commandId === commandId)
+                ? {
+                    outcome: 'matched',
+                    receipt: { commandId, revision: 3, outcome: 'applied' },
+                  }
+                : refusedCommands.has(commandId)
+                  ? {
+                      outcome: 'matched',
+                      receipt: { commandId, revision: 3, outcome: 'rejected' },
+                    }
+                  : { outcome: 'missing' },
+            );
           return held(receiptGate).then(() => ({
             ok: false,
             error: {
@@ -1523,6 +1602,7 @@ Object.defineProperty(window, 'canopyCore', {
               retry: { kind: 'same_request' },
             },
           }));
+        }
         case 'worker.filesystem.roots.list':
           return ok({
             roots: [
@@ -1905,9 +1985,20 @@ beforeEach(() => {
   resetWebCoreSendBinding();
   resetCloudSendOrder();
   refusedSendText = null;
+  caseReplies.clear();
   unknownOutcomeSendText = null;
   receiptGate = null;
   sendGate = null;
+  appliedSends.length = 0;
+  refusedCommands.clear();
+  appliesBeforeReply = false;
+  servesSendReceipts = false;
+  savedAccountId = 'account-1';
+  savedAccountRead = 'ok';
+  accountGate = null;
+  for (const key of Object.keys(window.localStorage))
+    if (key.startsWith('canopy:home-draft:v1:'))
+      window.localStorage.removeItem(key);
   cancelTurnGone = false;
   sendsKeepRunning = false;
   taskRuntime = null;
@@ -2790,6 +2881,11 @@ describe('a cloud task in the cowork page (CAN-6175 R2)', () => {
     await settle();
     // The shared picker the web's cloud chats use, over the cloud catalog.
     expect(doc.body.textContent).toContain('Review');
+    const search = doc.querySelector<HTMLInputElement>(
+      '[aria-label="Search by name"]',
+    );
+    expect(search).not.toBeNull();
+    expect(doc.activeElement).toBe(search);
     const reviewToggle = doc.querySelector<HTMLInputElement>(
       'input[aria-label="Select Review"]',
     );
@@ -9062,8 +9158,11 @@ describe('a cloud task in the cowork page (CAN-6175 R2)', () => {
     });
 
     afterEach(() => {
+      // Each case starts a window with no draft kept from another (CAN-6798).
+      installHomeDraftPersistence()();
       act(() => {
         useHomeComposerStore.getState().reset();
+        useHomeComposerStore.setState({ outboxCards: [] });
         useProjectsStore.setState({ projects: [] });
         useWorkspaceContextStore.setState((store) => ({
           hydrated: false,
@@ -9532,6 +9631,8 @@ describe('a cloud task in the cowork page (CAN-6175 R2)', () => {
         "Your message wasn't sent: The cloud sandbox is waking up. Try again in a moment.",
       );
       expect(callsCarryingWebCoreIds()).toEqual([]);
+      // Its chat's composer holds it: the outbox lets it go (CAN-6798).
+      expect(outboxIds()).toEqual([]);
     });
 
     it('holds a file pasted into New task for a cloud project until Send, sending this computer nothing (CAN-6763)', async () => {
@@ -9781,8 +9882,15 @@ describe('a cloud task in the cowork page (CAN-6175 R2)', () => {
       sendFromHome('Plan the launch');
       await settle();
       const taskId = createdChatIds.at(-1) ?? '';
-      // As before: New task keeps the draft until the created chat takes it.
-      expect(useHomeComposerStore.getState().text).toBe('Plan the launch');
+      // As before: New task keeps the message until the created chat takes it.
+      // New task holds it as a read-only sending entry in its outbox
+      // (CAN-6798), not in its editor.
+      expect(
+        useHomeComposerStore
+          .getState()
+          .outboxCards.filter((card) => card.state === 'sending')
+          .map((card) => card.entry.text),
+      ).toEqual(['Plan the launch']);
       createGate = null;
       create();
       await settle();
@@ -9806,7 +9914,14 @@ describe('a cloud task in the cowork page (CAN-6175 R2)', () => {
       await settle();
       const taskId = createdChatIds.at(-1) ?? '';
       expect(taskId).not.toBe('');
-      expect(useHomeComposerStore.getState().text).toBe('Plan the launch');
+      // New task holds it as a read-only sending entry in its outbox
+      // (CAN-6798), not in its editor.
+      expect(
+        useHomeComposerStore
+          .getState()
+          .outboxCards.filter((card) => card.state === 'sending')
+          .map((card) => card.entry.text),
+      ).toEqual(['Plan the launch']);
       createGate = null;
       create();
       await settle();
@@ -9855,7 +9970,14 @@ describe('a cloud task in the cowork page (CAN-6175 R2)', () => {
       // Until the message is sent, Home still holds it, and a second send
       // can't start another task.
       expect(sendsTo(taskId)).toBe(0);
-      expect(useHomeComposerStore.getState().text).toBe('Plan the launch');
+      // New task holds it as a read-only sending entry in its outbox
+      // (CAN-6798), not in its editor.
+      expect(
+        useHomeComposerStore
+          .getState()
+          .outboxCards.filter((card) => card.state === 'sending')
+          .map((card) => card.entry.text),
+      ).toEqual(['Plan the launch']);
       act(() => {
         container
           .querySelector<HTMLElement>('[data-testid="home-send-button"]')
@@ -9869,9 +9991,10 @@ describe('a cloud task in the cowork page (CAN-6175 R2)', () => {
       createGate = null;
       create();
       await settle();
-      // Sent once, and only then is Home cleared.
+      // Sent once, and only then does Home let it go.
       expect(sendsTo(taskId)).toBe(1);
       expect(useHomeComposerStore.getState().text).toBe('');
+      expect(useHomeComposerStore.getState().outboxCards).toEqual([]);
       expect(callsCarryingWebCoreIds()).toEqual([]);
     });
 
@@ -10132,6 +10255,8 @@ describe('a cloud task in the cowork page (CAN-6175 R2)', () => {
       });
       await settle();
       expect(sendsTo(taskId)).toBe(1);
+      // Its chat's composer holds it: the outbox lets it go (CAN-6798).
+      expect(outboxIds()).toEqual([]);
     });
 
     it("uploads none of New task's files for a cloud project once the account changes before the task exists (CAN-6763)", async () => {
@@ -10163,6 +10288,1567 @@ describe('a cloud task in the cowork page (CAN-6175 R2)', () => {
       expect(sendsTo(taskId)).toBe(0);
     });
 
+    /**
+     * Reloads the window as New task sees it (CAN-6798): the page hides, its
+     * draft store starts empty, and New task mounts again.
+     */
+    async function reloadHome(render: () => void): Promise<void> {
+      act(() => {
+        window.dispatchEvent(new Event('pagehide'));
+      });
+      act(() => {
+        root.render(<></>);
+      });
+      installHomeDraftPersistence()();
+      // The renderer's in-memory send order goes with it.
+      resetCloudSendOrder();
+      act(() => {
+        useHomeComposerStore.getState().reset();
+        useHomeComposerStore.setState({ outboxCards: [] });
+      });
+      render();
+      await settle();
+    }
+
+    /** The command ids the web core was sent for a task's chat, in order. */
+    const sendCommandsTo = (taskId: string): unknown[] =>
+      coreRequestLog
+        .filter(
+          (entry) =>
+            entry.method === 'core.chat.message.send' &&
+            entry.params.chatId === taskId,
+        )
+        .map((entry) => entry.params.commandId);
+
+    const noticeText = (testId: string): string | null | undefined =>
+      container.querySelector(`[data-testid="${testId}"]`)?.textContent;
+
+    /** New task's first message, held at the web core until `release`. */
+    async function sendHeldFromHome(text: string): Promise<{
+      readonly taskId: string;
+      readonly release: () => void;
+    }> {
+      let release = (): void => undefined;
+      sendGate = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      sendFromHome(text);
+      await settle();
+      const taskId = createdChatIds.at(-1) ?? '';
+      expect(taskId).not.toBe('');
+      expect(sendCommandsTo(taskId)).toHaveLength(1);
+      return {
+        taskId,
+        release: (): void => {
+          sendGate = null;
+          release();
+        },
+      };
+    }
+
+    const OUTBOX_KEY = 'canopy:home-draft:v1:account:account-1';
+
+    /** What New task's record holds now, as an earlier run would leave it. */
+    const savedRecord = (): Record<string, unknown> => {
+      const raw = window.localStorage.getItem(OUTBOX_KEY);
+      const parsed: unknown = raw === null ? {} : JSON.parse(raw);
+      return typeof parsed === 'object' && parsed !== null ? { ...parsed } : {};
+    };
+
+    /** The ids of the messages New task's outbox holds. */
+    const outboxIds = (): unknown[] => {
+      const outbox: unknown = savedRecord().outbox;
+      return Array.isArray(outbox)
+        ? outbox.map((entry: unknown): unknown => {
+            if (typeof entry !== 'object' || entry === null) return undefined;
+            const id: unknown = Reflect.get(entry, 'id');
+            return id;
+          })
+        : [];
+    };
+
+    /** Leaves a record as an earlier run would, before New task mounts. */
+    const plantRecord = (record: {
+      readonly draft?: unknown;
+      readonly outbox?: readonly unknown[];
+      readonly kept?: readonly unknown[];
+    }): void => {
+      window.localStorage.setItem(
+        OUTBOX_KEY,
+        JSON.stringify({ version: 1, owner: 'account:account-1', ...record }),
+      );
+    };
+
+    /** A cloud message an earlier run dispatched to a task's chat. */
+    const cloudEntry = (
+      commandId: string,
+      taskId: string,
+      text: string,
+      cloudFileNames: readonly string[] = [],
+    ): unknown => ({
+      id: commandId,
+      userMessageId: `msg-${commandId}`,
+      workspaceId: 'web-core:ws-1',
+      destination: {
+        projectId: 'web-core:ws-1',
+        worktreeId: `web-core:${taskId}`,
+        chatId: `web-core:${taskId}`,
+      },
+      text,
+      fileReferences: [],
+      attachments: [],
+      cloudFileNames,
+    });
+
+    const cardStates = (): string[] =>
+      useHomeComposerStore.getState().outboxCards.map((card) => card.state);
+
+    const click = (testId: string): void => {
+      act(() => {
+        container
+          .querySelector<HTMLElement>(`[data-testid="${testId}"]`)
+          ?.click();
+      });
+    };
+
+    /** A task the web core lists, from a first message it took. */
+    async function startTask(text: string): Promise<string> {
+      sendFromHome(text);
+      await settle();
+      const taskId = createdChatIds.at(-1) ?? '';
+      expect(taskId).not.toBe('');
+      return taskId;
+    }
+
+    it('keeps an unsent New task draft for a cloud project across a reload, naming its files to attach again (CAN-6798)', async () => {
+      renderHome();
+      await connectWithOrgProject();
+      await settle();
+      await pickHomeProject('web-core:ws-1');
+      await pickHomeFiles([
+        new File(['# Brief'], 'brief.md', { type: 'text/markdown' }),
+      ]);
+      act(() => {
+        useHomeComposerStore.getState().setText('Plan the launch');
+      });
+
+      await reloadHome(renderHome);
+
+      expect(useHomeComposerStore.getState().text).toBe('Plan the launch');
+      expect(useHomeComposerStore.getState().workspaceId).toBe('web-core:ws-1');
+      // The file's bytes weren't kept: the person attaches it again.
+      expect(useHomeComposerStore.getState().cloudFiles).toEqual([]);
+      expect(noticeText('home-draft-restored')).toContain('Your draft is back');
+      expect(noticeText('home-draft-restored')).toContain('brief.md');
+      expect(
+        coreRequestLog.filter(
+          (entry) => entry.method === 'core.chat.message.send',
+        ),
+      ).toEqual([]);
+    });
+
+    it("brings nothing back after a reload when the web core took New task's first message before the window heard, and says it was sent (CAN-6798)", async () => {
+      servesSendReceipts = true;
+      appliesBeforeReply = true;
+      renderHome();
+      await connectWithOrgProject();
+      await settle();
+      await pickHomeProject('web-core:ws-1');
+      const { release } = await sendHeldFromHome('Plan the launch');
+      expect(appliedSends.map((sent) => sent.text)).toEqual([
+        'Plan the launch',
+      ]);
+      // Dispatched, it's the outbox's: never a draft of its own.
+      expect(savedRecord().draft).toBeUndefined();
+      expect(outboxIds()).toHaveLength(1);
+
+      await reloadHome(renderHome);
+
+      // Taken: it isn't shown again, so it can't be sent twice.
+      expect(useHomeComposerStore.getState().text).toBe('');
+      expect(noticeText('home-outbox-sent')).toContain(
+        'Your earlier message was sent',
+      );
+      expect(outboxIds()).toEqual([]);
+      release();
+      await settle();
+      expect(appliedSends).toHaveLength(1);
+      // Nor after the cloud goes offline and comes back.
+      act(() => {
+        cloudCoworkStore.getState().disconnect('offline');
+      });
+      await connectWithOrgProject();
+      await settle();
+      expect(useHomeComposerStore.getState().text).toBe('');
+      expect(shown('home-outbox-missing')).toBe(false);
+    });
+
+    it("never brings one account's New task draft into another's when the account changes while its read is held (CAN-6798)", async () => {
+      const recordOf = (accountId: string): unknown => {
+        const raw = window.localStorage.getItem(
+          `canopy:home-draft:v1:account:${accountId}`,
+        );
+        return raw === null ? null : JSON.parse(raw);
+      };
+      renderHome();
+      await connectWithOrgProject();
+      await settle();
+      await pickHomeProject('web-core:ws-1');
+      act(() => {
+        useHomeComposerStore.getState().setText('Account A plan');
+      });
+      act(() => {
+        window.dispatchEvent(new Event('pagehide'));
+      });
+      expect(JSON.stringify(recordOf('account-1'))).toContain('Account A plan');
+
+      // The window reloads with account A's read held, and the account
+      // changes to B before it answers. A's answer comes while B's read is
+      // still out.
+      const holdRead = (): (() => void) => {
+        let release = (): void => undefined;
+        accountGate = new Promise<void>((resolve) => {
+          release = resolve;
+        });
+        return release;
+      };
+      const releaseA = holdRead();
+      await reloadHome(renderHome);
+      const releaseB = holdRead();
+      savedAccountId = 'account-2';
+      act(() => {
+        useWorkspaceContextStore.setState((store) => ({
+          accountEpoch: store.accountEpoch + 1,
+        }));
+      });
+      await settle();
+      accountGate = null;
+      releaseA();
+      await settle();
+      releaseB();
+      await settle();
+
+      // Nothing from A reaches B's New task. A is no longer the account
+      // signed in, so its record went once B's read answered.
+      expect(useHomeComposerStore.getState().text).toBe('');
+      expect(shown('home-draft-restored')).toBe(false);
+      expect(recordOf('account-1')).toBeNull();
+      // B's own draft goes under B's key.
+      act(() => {
+        useHomeComposerStore.getState().setText('Account B plan');
+      });
+      act(() => {
+        window.dispatchEvent(new Event('pagehide'));
+      });
+      expect(JSON.stringify(recordOf('account-2'))).toContain('Account B plan');
+    });
+
+    it("drops an account's New task draft and outbox once another account is the one signed in, whether the window saw the change or the app quit first (CAN-6798)", async () => {
+      const keyOf = (accountId: string): string =>
+        `canopy:home-draft:v1:account:${accountId}`;
+      servesSendReceipts = true;
+      renderHome();
+      await connectWithOrgProject();
+      await settle();
+      await pickHomeProject('web-core:ws-1');
+      act(() => {
+        useHomeComposerStore.getState().setText('Account A plan');
+      });
+      act(() => {
+        window.dispatchEvent(new Event('pagehide'));
+      });
+      // A message A sent was still on its way.
+      plantRecord({
+        draft: savedRecord().draft,
+        outbox: [cloudEntry('cmd-a', 'task-a', 'Account A message')],
+      });
+      const left = window.localStorage.getItem(keyOf('account-1'));
+      expect(left).toContain('Account A plan');
+      expect(left).toContain('Account A message');
+
+      // Signing in as B signs A out: A's draft and outbox go with it.
+      savedAccountId = 'account-2';
+      act(() => {
+        useWorkspaceContextStore.setState((store) => ({
+          accountEpoch: store.accountEpoch + 1,
+        }));
+      });
+      await settle();
+      expect(window.localStorage.getItem(keyOf('account-1'))).toBeNull();
+      expect(useHomeComposerStore.getState().text).toBe('');
+      expect(useHomeComposerStore.getState().outboxCards).toEqual([]);
+
+      // A record the app quit with before the window saw A go is dropped at
+      // the next start, under B, and nothing of it comes back.
+      window.localStorage.setItem(keyOf('account-1'), left ?? '');
+      await reloadHome(renderHome);
+      expect(window.localStorage.getItem(keyOf('account-1'))).toBeNull();
+      expect(useHomeComposerStore.getState().text).toBe('');
+      expect(useHomeComposerStore.getState().outboxCards).toEqual([]);
+      expect(shown('home-draft-restored')).toBe(false);
+    });
+
+    it("deletes and restores nothing while the saved account can't be read, and restores once it can (CAN-6798)", async () => {
+      const keyOf = (accountId: string): string =>
+        `canopy:home-draft:v1:account:${accountId}`;
+      renderHome();
+      await connectWithOrgProject();
+      await settle();
+      await pickHomeProject('web-core:ws-1');
+      act(() => {
+        useHomeComposerStore.getState().setText('Account A plan');
+      });
+      act(() => {
+        window.dispatchEvent(new Event('pagehide'));
+      });
+      const left = window.localStorage.getItem(keyOf('account-1'));
+      expect(left).toContain('Account A plan');
+      // Another account's record a quit left, which only a definite read may
+      // judge.
+      window.localStorage.setItem(keyOf('account-2'), left ?? '');
+
+      // The account can't be read at the next start: nothing is deleted, and
+      // nothing comes back.
+      savedAccountRead = 'unavailable';
+      await reloadHome(renderHome);
+      expect(window.localStorage.getItem(keyOf('account-1'))).toBe(left);
+      expect(window.localStorage.getItem(keyOf('account-2'))).toBe(left);
+      expect(useHomeComposerStore.getState().text).toBe('');
+
+      // Once it can be read, A's draft comes back and the other goes.
+      savedAccountRead = 'ok';
+      await reloadHome(renderHome);
+      expect(useHomeComposerStore.getState().text).toBe('Account A plan');
+      expect(window.localStorage.getItem(keyOf('account-2'))).toBeNull();
+    });
+
+    it("drops an account's New task draft and outbox when it signs out, so signing back in brings nothing back (CAN-6798)", async () => {
+      const changeAccount = async (accountId: string | null): Promise<void> => {
+        savedAccountId = accountId;
+        act(() => {
+          useWorkspaceContextStore.setState((store) => ({
+            accountEpoch: store.accountEpoch + 1,
+          }));
+        });
+        await settle();
+      };
+      servesSendReceipts = true;
+      renderHome();
+      await connectWithOrgProject();
+      await settle();
+      await pickHomeProject('web-core:ws-1');
+      await pickHomeFiles([
+        new File(['# Brief'], 'brief.md', { type: 'text/markdown' }),
+      ]);
+      act(() => {
+        useHomeComposerStore.getState().setText('Account A plan');
+      });
+      act(() => {
+        window.dispatchEvent(new Event('pagehide'));
+      });
+      // A message A sent was still on its way, and a draft was kept apart.
+      plantRecord({
+        draft: savedRecord().draft,
+        outbox: [cloudEntry('cmd-a', 'task-a', 'Account A message')],
+        kept: [
+          {
+            id: 'kept-a',
+            workspaceId: 'local-notes',
+            mode: 'chat',
+            text: 'Account A kept draft',
+            fileReferences: [],
+            attachments: [],
+            cloudFileNames: [],
+          },
+        ],
+      });
+      expect(window.localStorage.getItem(OUTBOX_KEY)).toContain('brief.md');
+      expect(outboxIds()).toEqual(['cmd-a']);
+
+      // Signed out: A's draft, its held file names and its outbox go with A.
+      await changeAccount(null);
+      expect(window.localStorage.getItem(OUTBOX_KEY)).toBeNull();
+
+      await changeAccount('account-1');
+      await reloadHome(renderHome);
+      await pickHomeProject('web-core:ws-1');
+      expect(useHomeComposerStore.getState().text).toBe('');
+      expect(shown('home-draft-restored')).toBe(false);
+      expect(useHomeComposerStore.getState().outboxCards).toEqual([]);
+      expect(shown('home-outbox-missing')).toBe(false);
+      expect(useHomeComposerStore.getState().keptDrafts).toEqual([]);
+      expect(shown('home-kept-draft')).toBe(false);
+    });
+
+    it('brings back only what was typed after a message the web core took, across two reloads while the cloud is offline (CAN-6798)', async () => {
+      servesSendReceipts = true;
+      appliesBeforeReply = true;
+      renderHome();
+      await connectWithOrgProject();
+      await settle();
+      await pickHomeProject('web-core:ws-1');
+      const { release } = await sendHeldFromHome('Original A');
+      act(() => {
+        cloudCoworkStore.getState().disconnect('offline');
+      });
+      await reloadHome(renderHome);
+      // Nothing can be asked yet: the message stays in the outbox, and never
+      // in the editor.
+      expect(cardStates()).toEqual(['checking']);
+      expect(useHomeComposerStore.getState().text).toBe('');
+      act(() => {
+        useHomeComposerStore.getState().setText('New B');
+      });
+      await reloadHome(renderHome);
+
+      await connectWithOrgProject();
+      await settle();
+
+      // Taken, so only what was typed since comes back.
+      expect(useHomeComposerStore.getState().text).toBe('New B');
+      expect(cardStates()).toEqual(['sent']);
+      expect(outboxIds()).toEqual([]);
+      release();
+      await settle();
+      expect(appliedSends.map((sent) => sent.text)).toEqual(['Original A']);
+    });
+
+    it("brings a message the web core refused back into New task's draft as an edit, which sends as a new message (CAN-6798)", async () => {
+      servesSendReceipts = true;
+      renderHome();
+      await connectWithOrgProject();
+      await settle();
+      await pickHomeProject('web-core:ws-1');
+      const taskId = await startTask('Earlier task');
+      // The window reloaded as the refusal arrived, before it gave the
+      // message back.
+      refusedCommands.add('cmd-refused');
+      plantRecord({
+        outbox: [cloudEntry('cmd-refused', taskId, 'Plan the launch')],
+      });
+      await reloadHome(renderHome);
+
+      expect(useHomeComposerStore.getState().text).toBe('Plan the launch');
+      expect(useHomeComposerStore.getState().workspaceId).toBe('web-core:ws-1');
+      expect(noticeText('home-outbox-restored')).toContain(
+        "Your earlier message wasn't sent",
+      );
+      expect(outboxIds()).toEqual([]);
+
+      sendFromHome('Plan the launch, with dates');
+      await settle();
+      // Never applied, so its edit goes as an ordinary message, once.
+      expect(appliedSends.map((each) => each.text)).toEqual([
+        'Earlier task',
+        'Plan the launch, with dates',
+      ]);
+      expect(sendCommandsTo(taskId)).not.toContain('cmd-refused');
+    });
+
+    it("keeps a refused message for its own project while New task holds another project's draft, until the person moves it back (CAN-6798)", async () => {
+      servesSendReceipts = true;
+      renderHome();
+      await connectWithOrgProject();
+      await settle();
+      await pickHomeProject('web-core:ws-1');
+      const taskId = await startTask('Earlier task');
+      refusedCommands.add('cmd-refused');
+      plantRecord({
+        outbox: [cloudEntry('cmd-refused', taskId, 'Plan the launch')],
+      });
+      // New task holds a local project's draft when the window reloads.
+      await pickHomeProject('local-notes');
+      act(() => {
+        useHomeComposerStore.getState().setText('Local note');
+      });
+      await reloadHome(renderHome);
+
+      // It never joins another project's draft: it waits, kept, with a way
+      // to move it back once New task is free.
+      expect(useHomeComposerStore.getState().text).toBe('Local note');
+      expect(noticeText('home-outbox-returned')).toContain('Plan the launch');
+      expect(
+        container
+          .querySelector<HTMLButtonElement>('[data-testid="home-outbox-move"]')
+          ?.hasAttribute('disabled'),
+      ).toBe(true);
+      expect(outboxIds()).toEqual(['cmd-refused']);
+      // Kept across another reload as it was.
+      await reloadHome(renderHome);
+      expect(noticeText('home-outbox-returned')).toContain('Plan the launch');
+
+      act(() => {
+        useHomeComposerStore.getState().setText('');
+      });
+      await settle();
+      click('home-outbox-move');
+      await settle();
+
+      expect(useHomeComposerStore.getState().text).toBe('Plan the launch');
+      expect(useHomeComposerStore.getState().workspaceId).toBe('web-core:ws-1');
+      expect(outboxIds()).toEqual([]);
+    });
+
+    it('keeps the names of files to attach again across a second reload (CAN-6798)', async () => {
+      renderHome();
+      await connectWithOrgProject();
+      await settle();
+      await pickHomeProject('web-core:ws-1');
+      await pickHomeFiles([
+        new File(['# Brief'], 'brief.md', { type: 'text/markdown' }),
+      ]);
+      act(() => {
+        useHomeComposerStore.getState().setText('Plan the launch');
+      });
+      await reloadHome(renderHome);
+      expect(noticeText('home-draft-restored')).toContain('brief.md');
+
+      await reloadHome(renderHome);
+      expect(useHomeComposerStore.getState().text).toBe('Plan the launch');
+      expect(noticeText('home-draft-restored')).toContain('brief.md');
+    });
+
+    it('shows a message a reload cut off as pending in its own project, and sends it again only when the person chooses, under a new command (CAN-6798)', async () => {
+      servesSendReceipts = true;
+      renderHome();
+      await connectWithOrgProject();
+      await settle();
+      await pickHomeProject('web-core:ws-1');
+      const taskId = await startTask('Earlier task');
+      const tasksCreated = createdChatIds.length;
+      // An earlier run dispatched it, and the web core has no such send.
+      plantRecord({
+        outbox: [cloudEntry('cmd-pending', taskId, 'Plan the launch')],
+      });
+      await reloadHome(renderHome);
+      await pickHomeProject('web-core:ws-1');
+
+      // Never put back in the editor, and nothing sent by itself.
+      expect(useHomeComposerStore.getState().text).toBe('');
+      expect(noticeText('home-outbox-missing')).toContain(
+        'could deliver it twice',
+      );
+      expect(noticeText('home-outbox-missing')).toContain('Plan the launch');
+      expect(sendCommandsTo(taskId)).toHaveLength(1);
+      // Only in its own project.
+      await pickHomeProject('local-notes');
+      expect(shown('home-outbox-missing')).toBe(false);
+      await pickHomeProject('web-core:ws-1');
+      expect(shown('home-outbox-missing')).toBe(true);
+
+      click('home-outbox-send-again');
+      await settle();
+
+      // Once, to its own task, under a new command, which replaces the
+      // earlier entry until its receipt settles it.
+      const sent = sendCommandsTo(taskId);
+      expect(sent).toHaveLength(2);
+      expect(sent[1]).not.toBe('cmd-pending');
+      expect(appliedSends.map((each) => each.text)).toEqual([
+        'Earlier task',
+        'Plan the launch',
+      ]);
+      expect(createdChatIds).toHaveLength(tasksCreated);
+      expect(shown('home-outbox-missing')).toBe(false);
+      expect(outboxIds()).toEqual([sent[1]]);
+      await reloadHome(renderHome);
+      expect(cardStates()).toEqual(['sent']);
+      expect(outboxIds()).toEqual([]);
+    });
+
+    it('asks again on the next reload about a message that may still arrive, and says it was sent once its task took it (CAN-6798)', async () => {
+      servesSendReceipts = true;
+      renderHome();
+      await connectWithOrgProject();
+      await settle();
+      await pickHomeProject('web-core:ws-1');
+      const { release } = await sendHeldFromHome('Plan the launch');
+      await reloadHome(renderHome);
+      expect(cardStates()).toEqual(['missing']);
+      // It reaches its task moments later.
+      release();
+      await settle();
+      expect(appliedSends).toHaveLength(1);
+
+      await reloadHome(renderHome);
+
+      expect(cardStates()).toEqual(['sent']);
+      expect(outboxIds()).toEqual([]);
+      expect(useHomeComposerStore.getState().text).toBe('');
+      expect(appliedSends).toHaveLength(1);
+    });
+
+    it('sends nothing again for a pending message that arrived after the card showed, and says it was sent (CAN-6798)', async () => {
+      servesSendReceipts = true;
+      renderHome();
+      await connectWithOrgProject();
+      await settle();
+      await pickHomeProject('web-core:ws-1');
+      const { taskId, release } = await sendHeldFromHome('Plan the launch');
+      const [command] = sendCommandsTo(taskId);
+      await reloadHome(renderHome);
+      sendGate = null;
+      await pickHomeProject('web-core:ws-1');
+      expect(cardStates()).toEqual(['missing']);
+      // It reaches its task while the card still says it may arrive.
+      release();
+      await settle();
+
+      click('home-outbox-send-again');
+      await settle();
+
+      // Asked once more first: taken, so it isn't sent a second time.
+      expect(sendCommandsTo(taskId)).toEqual([command]);
+      expect(appliedSends).toHaveLength(1);
+      expect(cardStates()).toEqual(['sent']);
+      expect(outboxIds()).toEqual([]);
+    });
+
+    it('sends a pending message again as a new task when its task is gone (CAN-6798)', async () => {
+      servesSendReceipts = true;
+      renderHome();
+      await connectWithOrgProject();
+      await settle();
+      await pickHomeProject('web-core:ws-1');
+      const { taskId } = await sendHeldFromHome('Plan the launch');
+      await reloadHome(renderHome);
+      sendGate = null;
+      await pickHomeProject('web-core:ws-1');
+      expect(cardStates()).toEqual(['missing']);
+      // Its task is deleted before the person sends it again.
+      act(() => {
+        cloudCoworkStore.setState((state) => ({
+          tasksByProject: {
+            ...state.tasksByProject,
+            'web-core:ws-1': (
+              state.tasksByProject['web-core:ws-1'] ?? []
+            ).filter((task) => task.worktreeId !== taskId),
+          },
+        }));
+      });
+
+      click('home-outbox-send-again');
+      await settle();
+
+      // A new task takes it; nothing more goes to the deleted one.
+      const newTask = createdChatIds.at(-1) ?? '';
+      expect(newTask).not.toBe(taskId);
+      expect(sendCommandsTo(taskId)).toHaveLength(1);
+      expect(appliedSends).toEqual([
+        expect.objectContaining({ chatId: newTask, text: 'Plan the launch' }),
+      ]);
+      expect(outboxIds()).toEqual([]);
+    });
+
+    it("won't send a pending message again without the files whose task is gone, and names them (CAN-6798)", async () => {
+      servesSendReceipts = true;
+      renderHome();
+      await connectWithOrgProject();
+      await settle();
+      await pickHomeProject('web-core:ws-1');
+      plantRecord({
+        outbox: [
+          cloudEntry('cmd-gone', 'task-deleted', 'Plan the launch', [
+            'brief.md',
+          ]),
+        ],
+      });
+      await reloadHome(renderHome);
+      await pickHomeProject('web-core:ws-1');
+
+      // Sent again as a new task, it would go without the files it was sent
+      // with: a different message.
+      expect(noticeText('home-outbox-missing')).toContain('brief.md');
+      expect(
+        container
+          .querySelector<HTMLButtonElement>(
+            '[data-testid="home-outbox-send-again"]',
+          )
+          ?.hasAttribute('disabled'),
+      ).toBe(true);
+      expect(shown('home-outbox-copy')).toBe(true);
+      click('home-outbox-send-again');
+      await settle();
+      expect(
+        coreRequestLog.filter(
+          (entry) => entry.method === 'core.chat.message.send',
+        ),
+      ).toEqual([]);
+      expect(outboxIds()).toEqual(['cmd-gone']);
+    });
+
+    it('settles each message an earlier run left on its own: one taken, one refused, one still on its way (CAN-6798)', async () => {
+      servesSendReceipts = true;
+      renderHome();
+      await connectWithOrgProject();
+      await settle();
+      await pickHomeProject('web-core:ws-1');
+      const taskId = await startTask('Earlier task');
+      appliedSends.push({
+        chatId: taskId,
+        commandId: 'cmd-taken',
+        text: 'Taken note',
+      });
+      refusedCommands.add('cmd-refused');
+      plantRecord({
+        outbox: [
+          cloudEntry('cmd-taken', taskId, 'Taken note'),
+          cloudEntry('cmd-refused', taskId, 'Refused note'),
+          cloudEntry('cmd-pending', taskId, 'Pending note'),
+        ],
+      });
+
+      await reloadHome(renderHome);
+      await pickHomeProject('web-core:ws-1');
+
+      const states = Object.fromEntries(
+        useHomeComposerStore
+          .getState()
+          .outboxCards.map((card) => [card.entry.id, card.state]),
+      );
+      expect(states).toEqual({
+        'cmd-taken': 'sent',
+        'cmd-refused': 'restored',
+        'cmd-pending': 'missing',
+      });
+      // Only the refused one comes back into the editor.
+      expect(useHomeComposerStore.getState().text).toBe('Refused note');
+      expect(outboxIds()).toEqual(['cmd-pending']);
+    });
+
+    it("keeps a restored attachment's prompt kind and a mention's position (CAN-6798)", async () => {
+      // As an earlier run left it, before this window's New task mounts.
+      plantRecord({
+        draft: {
+          workspaceId: 'local-notes',
+          mode: 'chat',
+          text: 'notes.md and then notes.md',
+          fileReferences: [
+            {
+              displayPath: 'notes.md',
+              absolutePath: '/Users/me/notes.md',
+              textStart: 18,
+            },
+          ],
+          attachments: [
+            {
+              filename: 'CAN-1.md',
+              absolutePath: '/Users/me/CAN-1.md',
+              promptKind: 'linear-ticket',
+            },
+          ],
+          cloudFileNames: [],
+        },
+      });
+
+      renderHome();
+      await settle();
+
+      const restored = useHomeComposerStore.getState();
+      expect(restored.text).toBe('notes.md and then notes.md');
+      expect(restored.attachments).toEqual([
+        expect.objectContaining({ promptKind: 'linear-ticket' }),
+      ]);
+      expect(restored.fileReferences).toEqual([
+        expect.objectContaining({ textStart: 18 }),
+      ]);
+    });
+
+    it("keeps a first message whose outcome the web core couldn't tell, and settles it by its receipt at the next start (CAN-6798)", async () => {
+      servesSendReceipts = true;
+      renderHome();
+      await connectWithOrgProject();
+      await settle();
+      await pickHomeProject('web-core:ws-1');
+      unknownOutcomeSendText = 'Plan the launch';
+      sendFromHome('Plan the launch');
+      await settle();
+
+      // It may have landed: its entry stays, though the send has ended.
+      expect(outboxIds()).toHaveLength(1);
+      await reloadHome(renderHome);
+      await pickHomeProject('web-core:ws-1');
+      expect(cardStates()).toEqual(['missing']);
+      expect(noticeText('home-outbox-missing')).toContain('Plan the launch');
+    });
+
+    it('never keeps a first message of files alone as a draft beside its outbox entry (CAN-6798)', async () => {
+      servesSendReceipts = true;
+      appliesBeforeReply = true;
+      renderHome();
+      await connectWithOrgProject();
+      await settle();
+      await pickHomeProject('web-core:ws-1');
+      await pickHomeFiles([
+        new File(['# Brief'], 'brief.md', { type: 'text/markdown' }),
+      ]);
+      await sendHeldFromHome('');
+      act(() => {
+        window.dispatchEvent(new Event('pagehide'));
+      });
+      expect(outboxIds()).toHaveLength(1);
+      expect(savedRecord().draft).toBeUndefined();
+
+      await reloadHome(renderHome);
+
+      // Taken: its files don't come back to be sent again.
+      expect(cardStates()).toEqual(['sent']);
+      expect(shown('home-draft-restored')).toBe(false);
+      expect(useHomeComposerStore.getState().text).toBe('');
+    });
+
+    it('takes a cloud message out of New task as it is dispatched, so anything typed there after is a new draft, even the same text (CAN-6798)', async () => {
+      servesSendReceipts = true;
+      renderHome();
+      await connectWithOrgProject();
+      await settle();
+      await pickHomeProject('web-core:ws-1');
+      await sendHeldFromHome('Plan the launch');
+      // It left the editor as it went, and shows read-only meanwhile.
+      expect(useHomeComposerStore.getState().text).toBe('');
+      expect(cardStates()).toEqual(['sending']);
+      expect(outboxIds()).toHaveLength(1);
+      // Typed after it went: a new draft, never compared with the message.
+      await pickHomeProject('web-core:ws-1');
+      act(() => {
+        useHomeComposerStore.getState().setText('Plan the launch');
+      });
+      act(() => {
+        window.dispatchEvent(new Event('pagehide'));
+      });
+      expect(JSON.stringify(savedRecord().draft)).toContain('Plan the launch');
+
+      await reloadHome(renderHome);
+      await pickHomeProject('web-core:ws-1');
+      expect(useHomeComposerStore.getState().text).toBe('Plan the launch');
+      expect(cardStates()).toEqual(['missing']);
+    });
+
+    it('never merges a restored message into a draft New task holds for its own project (CAN-6798)', async () => {
+      servesSendReceipts = true;
+      renderHome();
+      await connectWithOrgProject();
+      await settle();
+      await pickHomeProject('web-core:ws-1');
+      const taskId = await startTask('Earlier task');
+      refusedCommands.add('cmd-refused');
+      plantRecord({
+        outbox: [cloudEntry('cmd-refused', taskId, 'Plan the launch')],
+      });
+      await pickHomeProject('web-core:ws-1');
+      act(() => {
+        useHomeComposerStore.getState().setText('Pricing notes');
+      });
+      await reloadHome(renderHome);
+
+      expect(useHomeComposerStore.getState().text).toBe('Pricing notes');
+      expect(noticeText('home-outbox-returned')).toContain('Plan the launch');
+      expect(outboxIds()).toEqual(['cmd-refused']);
+    });
+
+    it('keeps the entry of a send that ended without word before the account was read, and settles it after a reload (CAN-6798)', async () => {
+      servesSendReceipts = true;
+      // The account read is slow: nothing can be written until it answers.
+      let answer = (): void => undefined;
+      accountGate = new Promise<void>((resolve) => {
+        answer = resolve;
+      });
+      renderHome();
+      await connectWithOrgProject();
+      await settle();
+      await pickHomeProject('web-core:ws-1');
+      unknownOutcomeSendText = 'Plan the launch';
+      sendFromHome('Plan the launch');
+      await settle();
+      expect(sendCommandsTo(createdChatIds.at(-1) ?? '')).toHaveLength(1);
+
+      accountGate = null;
+      answer();
+      await settle();
+      // Written once the account is known, never dropped before.
+      expect(outboxIds()).toHaveLength(1);
+      await reloadHome(renderHome);
+      await pickHomeProject('web-core:ws-1');
+      expect(cardStates()).toEqual(['missing']);
+    });
+
+    it('keeps a draft kept apart before the account was read, and writes it once the account is known (CAN-6798)', async () => {
+      // The account read is slow: nothing can be written until it answers.
+      let answer = (): void => undefined;
+      accountGate = new Promise<void>((resolve) => {
+        answer = resolve;
+      });
+      renderHome();
+      await settle();
+      await pickHomeProject('local-notes');
+      act(() => {
+        useHomeComposerStore.getState().setText('Newer note');
+      });
+      // As a failed send whose chat was rolled back leaves its message, kept
+      // beside the newer draft, before the account is known.
+      act(() => {
+        useHomeComposerStore.setState({
+          keptDrafts: [
+            {
+              id: 'kept-early',
+              workspaceId: 'local-notes',
+              mode: 'chat',
+              text: 'Kept before the read',
+              fileReferences: [],
+              attachments: [],
+              cloudFileNames: [],
+            },
+          ],
+        });
+      });
+      accountGate = null;
+      answer();
+      await settle();
+
+      // Never dropped before it is written (rule 3), and never merged.
+      expect(useHomeComposerStore.getState().text).toBe('Newer note');
+      expect(
+        useHomeComposerStore.getState().keptDrafts.map((each) => each.text),
+      ).toEqual(['Kept before the read']);
+      expect(JSON.stringify(savedRecord().kept)).toContain(
+        'Kept before the read',
+      );
+      await reloadHome(renderHome);
+      await pickHomeProject('local-notes');
+      expect(noticeText('home-kept-draft')).toContain('Kept before the read');
+    });
+
+    it("shows a message sent again as pending when its running task's queue refuses it after it went (CAN-6798)", async () => {
+      servesSendReceipts = true;
+      sendsKeepRunning = true;
+      renderHome();
+      await connectWithOrgProject();
+      await settle();
+      await pickHomeProject('web-core:ws-1');
+      // Its task is still running a turn when the person sends it again.
+      const taskId = await startTask('Earlier task');
+      plantRecord({
+        outbox: [cloudEntry('cmd-pending', taskId, 'Plan the launch')],
+      });
+      await reloadHome(renderHome);
+      await pickHomeProject('web-core:ws-1');
+      expect(cardStates()).toEqual(['missing']);
+      // The task's queue refuses it, and only after the send has gone.
+      refusedSendText = 'Plan the launch';
+      let release = (): void => undefined;
+      sendGate = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      onCaseEnd(async () => {
+        sendGate = null;
+        release();
+        await settle();
+      });
+      click('home-outbox-send-again');
+      await settle();
+      sendGate = null;
+      release();
+      await settle();
+
+      // Never lost from view: it shows as pending again, to send or copy.
+      expect(cardStates()).toEqual(['missing']);
+      expect(shown('home-outbox-missing')).toBe(true);
+      expect(appliedSends.map((each) => each.text)).toEqual(['Earlier task']);
+    });
+
+    it('lets a message go for good when the person discards it before the account was read (CAN-6798)', async () => {
+      servesSendReceipts = true;
+      // The account read is slow: nothing can be written until it answers.
+      let answer = (): void => undefined;
+      accountGate = new Promise<void>((resolve) => {
+        answer = resolve;
+      });
+      renderHome();
+      await connectWithOrgProject();
+      await settle();
+      await pickHomeProject('web-core:ws-1');
+      // The send fails outright, so it shows as pending at once.
+      unknownOutcomeSendText = 'Plan the launch';
+      sendFromHome('Plan the launch');
+      await settle();
+      expect(cardStates()).toEqual(['missing']);
+      act(() => {
+        container
+          .querySelector<HTMLButtonElement>(
+            '[data-testid="home-outbox-missing"] button[aria-label="Discard it"]',
+          )
+          ?.click();
+      });
+      await settle();
+      expect(cardStates()).toEqual([]);
+
+      accountGate = null;
+      answer();
+      await settle();
+      // The person's choice stands once the account is known.
+      expect(outboxIds()).toEqual([]);
+      await reloadHome(renderHome);
+      await pickHomeProject('web-core:ws-1');
+      expect(cardStates()).toEqual([]);
+      expect(useHomeComposerStore.getState().text).toBe('');
+    });
+
+    it("keeps a draft for another organization's project as a card across a reload, never moving it to a project here (CAN-6798)", async () => {
+      const setContext = (
+        context:
+          | { kind: 'personal' }
+          | { kind: 'organization'; organizationId: string },
+      ): void => {
+        act(() => {
+          useWorkspaceContextStore.setState((store) => ({
+            state: { ...store.state, context },
+          }));
+        });
+      };
+      renderHome();
+      await connectWithOrgProject();
+      await settle();
+      await pickHomeProject('web-core:ws-1');
+      await pickHomeFiles([
+        new File(['# Brief'], 'brief.md', { type: 'text/markdown' }),
+      ]);
+      act(() => {
+        useHomeComposerStore.getState().setText('Personal launch plan');
+      });
+      // The window comes back in the organization's context.
+      await reloadHome(() => {
+        setContext({ kind: 'organization', organizationId: 'org-1' });
+        renderHome();
+      });
+
+      // Kept apart, whole, and never moved to the organization's project.
+      expect(useHomeComposerStore.getState().text).toBe('');
+      expect(useHomeComposerStore.getState().workspaceId).not.toBe(
+        'web-core:ws-1',
+      );
+      expect(noticeText('home-kept-draft')).toContain('Personal launch plan');
+      expect(noticeText('home-kept-draft')).toContain(
+        'Switch to its organization to move it back.',
+      );
+      expect(
+        container
+          .querySelector<HTMLButtonElement>(
+            '[data-testid="home-kept-draft-move"]',
+          )
+          ?.hasAttribute('disabled'),
+      ).toBe(true);
+      expect(JSON.stringify(savedRecord().kept)).toContain(
+        'Personal launch plan',
+      );
+
+      // Back in its context, it moves into New task as it was.
+      setContext({ kind: 'personal' });
+      await settle();
+      act(() => {
+        useHomeComposerStore.getState().setText('');
+      });
+      await settle();
+      click('home-kept-draft-move');
+      await settle();
+      expect(useHomeComposerStore.getState().text).toBe('Personal launch plan');
+      expect(useHomeComposerStore.getState().workspaceId).toBe('web-core:ws-1');
+      expect(noticeText('home-draft-restored')).toContain('brief.md');
+    });
+
+    it('keeps a draft as a card while the context is still unknown, which the person can move in, and brings it in once the context is known (CAN-6798)', async () => {
+      const setHydrated = (hydrated: boolean): void => {
+        act(() => {
+          useWorkspaceContextStore.setState({ hydrated });
+        });
+      };
+      renderHome();
+      await settle();
+      await pickHomeProject('local-notes');
+      act(() => {
+        useHomeComposerStore.getState().setText('Unplaced note');
+      });
+      // The window comes back before main has said which context it is in.
+      await reloadHome(() => {
+        setHydrated(false);
+        renderHome();
+      });
+
+      // Never lost and never hidden: kept, to copy or move in now.
+      expect(useHomeComposerStore.getState().text).toBe('');
+      expect(noticeText('home-kept-draft')).toContain('Unplaced note');
+      expect(
+        container
+          .querySelector<HTMLButtonElement>(
+            '[data-testid="home-kept-draft-move"]',
+          )
+          ?.hasAttribute('disabled'),
+      ).toBe(false);
+      expect(JSON.stringify(savedRecord().kept)).toContain('Unplaced note');
+
+      // Once the context is known, it comes back into New task by itself.
+      setHydrated(true);
+      await settle();
+      expect(useHomeComposerStore.getState().text).toBe('Unplaced note');
+      expect(useHomeComposerStore.getState().workspaceId).toBe('local-notes');
+      expect(shown('home-kept-draft')).toBe(false);
+    });
+
+    it('keeps a draft as a card when the person switches to another organization, never throwing it away (CAN-6798)', async () => {
+      renderHome();
+      await connectWithOrgProject();
+      await settle();
+      await pickHomeProject('web-core:ws-1');
+      act(() => {
+        useHomeComposerStore.getState().setText('Personal launch plan');
+      });
+      await settle();
+
+      act(() => {
+        useWorkspaceContextStore.setState((store) => ({
+          state: {
+            ...store.state,
+            context: { kind: 'organization', organizationId: 'org-1' },
+          },
+        }));
+      });
+      await settle();
+
+      // New task is the organization's now, and the draft is kept, whole.
+      expect(useHomeComposerStore.getState().text).toBe('');
+      expect(noticeText('home-kept-draft')).toContain('Personal launch plan');
+      expect(noticeText('home-kept-draft')).toContain(
+        'Switch to its organization to move it back.',
+      );
+      expect(JSON.stringify(savedRecord().kept)).toContain(
+        'Personal launch plan',
+      );
+    });
+
+    it("keeps a draft restored before the cloud listed its project as a card once the listing shows another organization's (CAN-6798)", async () => {
+      const setContext = (
+        context:
+          | { kind: 'personal' }
+          | { kind: 'organization'; organizationId: string },
+      ): void => {
+        act(() => {
+          useWorkspaceContextStore.setState((store) => ({
+            state: { ...store.state, context },
+          }));
+        });
+      };
+      renderHome();
+      await connectWithOrgProject();
+      await settle();
+      await pickHomeProject('web-core:ws-1');
+      await pickHomeFiles([
+        new File(['# Brief'], 'brief.md', { type: 'text/markdown' }),
+      ]);
+      act(() => {
+        useHomeComposerStore.getState().setText('Personal launch plan');
+      });
+      // The window comes back in the organization, before the cloud answers.
+      await reloadHome(() => {
+        act(() => {
+          cloudCoworkStore.getState().disconnect('offline');
+        });
+        setContext({ kind: 'organization', organizationId: 'org-1' });
+        renderHome();
+      });
+
+      // The cloud lists the project as Personal's: the draft is kept, not lost.
+      await connectWithOrgProject();
+      await settle();
+      expect(useHomeComposerStore.getState().text).toBe('');
+      expect(noticeText('home-kept-draft')).toContain('Personal launch plan');
+      expect(JSON.stringify(savedRecord().kept)).toContain('brief.md');
+
+      // Back in its context, it moves into New task as it was.
+      setContext({ kind: 'personal' });
+      await settle();
+      act(() => {
+        useHomeComposerStore.getState().setText('');
+      });
+      await settle();
+      click('home-kept-draft-move');
+      await settle();
+      expect(useHomeComposerStore.getState().text).toBe('Personal launch plan');
+      expect(useHomeComposerStore.getState().workspaceId).toBe('web-core:ws-1');
+      expect(noticeText('home-draft-restored')).toContain('brief.md');
+    });
+
+    it('clears everything a send took when New task only moved meanwhile, and keeps where it moved to (CAN-6798)', () => {
+      const branch = {
+        kind: 'branch' as const,
+        branchName: 'next',
+        isRemote: false,
+      };
+      const base = { kind: 'worktree' as const, worktreeId: 'wt-base' };
+      act(() => {
+        useHomeComposerStore.setState({
+          workspaceId: 'local-notes',
+          mode: 'chat',
+          branchTarget: branch,
+          newWorktreeBaseTarget: base,
+          text: 'Sent plan',
+          attachments: [
+            { filename: 'brief.md', absolutePath: '/tmp/stage/brief.md' },
+          ],
+          cloudFiles: [
+            {
+              id: 'cloud-1',
+              file: new File(['# Notes'], 'notes.md', {
+                type: 'text/markdown',
+              }),
+            },
+          ],
+          scheduledSendDraft: { runAt: '2026-11-15T09:00:00.000Z' },
+        });
+      });
+
+      act(() => {
+        useHomeComposerStore.getState().clearSubmittedDraft();
+      });
+
+      const state = useHomeComposerStore.getState();
+      expect(state.text).toBe('');
+      expect(state.fileReferences).toEqual([]);
+      expect(state.attachments).toEqual([]);
+      expect(state.cloudFiles).toEqual([]);
+      expect(state.scheduledSendDraft).toBeNull();
+      expect(state.workspaceId).toBe('local-notes');
+      expect(state.mode).toBe('chat');
+      expect(state.branchTarget).toEqual(branch);
+      expect(state.newWorktreeBaseTarget).toEqual(base);
+    });
+
+    it("never keeps a local first message on its way as a card when the context changes, so it can't be sent twice (CAN-6798)", async () => {
+      // Main answers a local Cowork send up to its work entry, and holds that.
+      let release = (): void => undefined;
+      const created = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      onCaseEnd(() => {
+        release();
+      });
+      caseReplies.set('api.loadCanopyCloudEntitlements', () =>
+        Promise.resolve({ entitlements: [] }),
+      );
+      caseReplies.set('api.chatProject.checkFolder', () =>
+        Promise.resolve({ kind: 'internal' }),
+      );
+      caseReplies.set('api.chatProject.list', () =>
+        Promise.resolve({
+          projects: [
+            {
+              id: 'local-notes',
+              name: 'Local notes',
+              path: '/tmp/local-notes',
+              createdAt: CREATED_AT,
+              updatedAt: CREATED_AT,
+            },
+          ],
+        }),
+      );
+      caseReplies.set('api.standaloneChat.init', () =>
+        Promise.resolve(undefined),
+      );
+      caseReplies.set('api.workEntries.list', () =>
+        Promise.resolve({ entries: [] }),
+      );
+      caseReplies.set('api.workEntries.create', () => created.then(() => null));
+      renderHome();
+      await connectWithOrgProject();
+      await settle();
+      await pickHomeProject('local-notes');
+      sendFromHome('Local launch plan');
+      await settle();
+      expect(calls.some((call) => call.path === 'api.workEntries.create')).toBe(
+        true,
+      );
+
+      // The person moves to the organization while the message is on its way.
+      act(() => {
+        useWorkspaceContextStore.setState((store) => ({
+          state: {
+            ...store.state,
+            context: { kind: 'organization', organizationId: 'org-1' },
+          },
+        }));
+      });
+      await settle();
+
+      // The message is the send's, not a draft to keep: no copy to send again.
+      expect(shown('home-kept-draft')).toBe(false);
+      expect(useHomeComposerStore.getState().keptDrafts).toEqual([]);
+      act(() => {
+        window.dispatchEvent(new Event('pagehide'));
+      });
+      expect(JSON.stringify(savedRecord())).not.toContain('Local launch plan');
+    });
+
+    it('keeps a local draft whose send was refused before it went as a card when the context changes (CAN-6798)', async () => {
+      renderHome();
+      await connectWithOrgProject();
+      await settle();
+      await pickHomeProject('local-notes');
+      // A Cursor model with no Cursor connected stops the send before it goes.
+      act(() => {
+        useHomeComposerStore.setState({ model: 'cursor:auto' });
+      });
+      sendFromHome('Local launch plan');
+      await settle();
+      expect(useHomeComposerStore.getState().isSending).toBe(false);
+      expect(useHomeComposerStore.getState().text).toBe('Local launch plan');
+      expect(calls.some((call) => call.path === 'api.workEntries.create')).toBe(
+        false,
+      );
+
+      // The person moves to the organization without editing it.
+      act(() => {
+        useWorkspaceContextStore.setState((store) => ({
+          state: {
+            ...store.state,
+            context: { kind: 'organization', organizationId: 'org-1' },
+          },
+        }));
+      });
+      await settle();
+
+      // Never sent, so never thrown away: it is kept as a card.
+      expect(noticeText('home-kept-draft')).toContain('Local launch plan');
+      expect(JSON.stringify(savedRecord().kept)).toContain('Local launch plan');
+    });
+
+    it('clears a scheduled message from New task once it is scheduled, even after a switch to pipeline mode meanwhile (CAN-6798)', async () => {
+      // Main schedules it once released.
+      let release = (): void => undefined;
+      const scheduled = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      onCaseEnd(() => {
+        release();
+      });
+      caseReplies.set('api.loadCanopyCloudEntitlements', () =>
+        Promise.resolve({ entitlements: [] }),
+      );
+      caseReplies.set('api.chatProject.checkFolder', () =>
+        Promise.resolve({ kind: 'internal' }),
+      );
+      caseReplies.set('api.automations.create', () =>
+        scheduled.then(() => ({
+          ok: true,
+          activity: {
+            id: 'activity-1',
+            name: 'Scheduled message',
+            enabled: true,
+            createdAt: CREATED_AT,
+            updatedAt: CREATED_AT,
+          },
+        })),
+      );
+      renderHome();
+      await settle();
+      await pickHomeProject('local-notes');
+      act(() => {
+        useHomeComposerStore.setState({
+          scheduledSendDraft: { runAt: '2026-11-20T09:00:00.000Z' },
+        });
+      });
+      sendFromHome('Scheduled launch plan');
+      await settle();
+      expect(calls.some((call) => call.path === 'api.automations.create')).toBe(
+        true,
+      );
+
+      // The person switches to pipeline mode while it is scheduled.
+      act(() => {
+        useHomeComposerStore.getState().setMode('pipeline');
+      });
+      release();
+      await settle();
+
+      // Scheduled once, and nowhere left to send it from again.
+      expect(useHomeComposerStore.getState().text).toBe('');
+      expect(useHomeComposerStore.getState().mode).toBe('pipeline');
+      act(() => {
+        window.dispatchEvent(new Event('pagehide'));
+      });
+      expect(JSON.stringify(savedRecord())).not.toContain(
+        'Scheduled launch plan',
+      );
+    });
+
+    it("keeps watching New task while a send's chat holds it failed, so a later Try again never resets what was typed since (CAN-6798)", () => {
+      const watches = submissionWatchForTest;
+      act(() => {
+        useHomeComposerStore.getState().setText('First message');
+      });
+      watches.watch('held-edit');
+      // Its chat holds the send failed; the send itself has returned.
+      watches.hold('held-edit');
+      watches.release('held-edit');
+      act(() => {
+        useHomeComposerStore.getState().setText('A newer draft');
+      });
+      expect(watches.untouched('held-edit')).toBe(false);
+      void watches.resume('held-edit', () => Promise.resolve(true));
+    });
+
+    it("keeps a held send's watch when the send returns, untouched while nothing was typed (CAN-6798)", async () => {
+      const watches = submissionWatchForTest;
+      watches.watch('held-kept');
+      watches.hold('held-kept');
+      watches.release('held-kept');
+      expect(watches.untouched('held-kept')).toBe(true);
+      await watches.resume('held-kept', () => Promise.resolve(true));
+    });
+
+    it("releases a held send's watch once its Try again settles, unless its chat holds it failed again (CAN-6798)", async () => {
+      const watches = submissionWatchForTest;
+      watches.watch('held-sent');
+      watches.hold('held-sent');
+      watches.release('held-sent');
+      await watches.resume('held-sent', () => Promise.resolve(true));
+      expect(watches.untouched('held-sent')).toBeUndefined();
+
+      watches.watch('held-again');
+      watches.hold('held-again');
+      watches.release('held-again');
+      await watches.resume('held-again', () => {
+        watches.hold('held-again');
+        return Promise.resolve(false);
+      });
+      expect(watches.untouched('held-again')).toBe(true);
+      await watches.resume('held-again', () => Promise.resolve(true));
+      expect(watches.untouched('held-again')).toBeUndefined();
+    });
+
+    it('keeps a file attached while the send was on its way as a draft beside its entry (CAN-6798)', async () => {
+      servesSendReceipts = true;
+      renderHome();
+      await connectWithOrgProject();
+      await settle();
+      await pickHomeProject('web-core:ws-1');
+      // The task is still being created when the person attaches a file.
+      let create = (): void => undefined;
+      createGate = new Promise<void>((resolve) => {
+        create = resolve;
+      });
+      let release = (): void => undefined;
+      sendGate = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      sendFromHome('Plan the launch');
+      await settle();
+      act(() => {
+        useHomeComposerStore
+          .getState()
+          .addCloudFiles([
+            new File(['# Brief'], 'brief.md', { type: 'text/markdown' }),
+          ]);
+      });
+      createGate = null;
+      create();
+      await settle();
+      const taskId = createdChatIds.at(-1) ?? '';
+      expect(sendCommandsTo(taskId)).toHaveLength(1);
+
+      act(() => {
+        window.dispatchEvent(new Event('pagehide'));
+      });
+
+      // The message went without it: the file is the person's own draft.
+      expect(outboxIds()).toHaveLength(1);
+      expect(JSON.stringify(savedRecord().draft)).toContain('brief.md');
+      sendGate = null;
+      release();
+      await settle();
+    });
+
+    it("keeps an earlier run's draft for another project apart when New task holds a draft by the time it is read, until the person moves it back (CAN-6798)", async () => {
+      plantRecord({
+        draft: {
+          workspaceId: 'web-core:ws-1',
+          mode: 'chat',
+          text: 'Cloud plan',
+          fileReferences: [],
+          attachments: [],
+          cloudFileNames: [],
+        },
+      });
+      // The account read is slow: the person picks a local project and types
+      // before it answers.
+      let answer = (): void => undefined;
+      accountGate = new Promise<void>((resolve) => {
+        answer = resolve;
+      });
+      renderHome();
+      await settle();
+      await pickHomeProject('local-notes');
+      act(() => {
+        useHomeComposerStore.getState().setText('Local note');
+      });
+      accountGate = null;
+      answer();
+      await settle();
+
+      // Never merged into the local draft, and kept across a reload.
+      expect(useHomeComposerStore.getState().text).toBe('Local note');
+      expect(useHomeComposerStore.getState().workspaceId).toBe('local-notes');
+      expect(noticeText('home-kept-draft')).toContain('Cloud plan');
+      act(() => {
+        window.dispatchEvent(new Event('pagehide'));
+      });
+      expect(JSON.stringify(savedRecord().kept)).toContain('Cloud plan');
+      await reloadHome(renderHome);
+      expect(useHomeComposerStore.getState().text).toBe('Local note');
+      expect(noticeText('home-kept-draft')).toContain('Cloud plan');
+
+      act(() => {
+        useHomeComposerStore.getState().setText('');
+      });
+      await settle();
+      click('home-kept-draft-move');
+      await settle();
+      expect(useHomeComposerStore.getState().text).toBe('Cloud plan');
+      expect(useHomeComposerStore.getState().workspaceId).toBe('web-core:ws-1');
+      expect(savedRecord().kept).toBeUndefined();
+    });
+
+    it('keeps a cloud message a reload cut off while the cloud is offline apart from what was typed meanwhile (CAN-6798)', async () => {
+      servesSendReceipts = true;
+      renderHome();
+      await connectWithOrgProject();
+      await settle();
+      await pickHomeProject('web-core:ws-1');
+      const { taskId, release } = await sendHeldFromHome('Plan the launch');
+      const [command] = sendCommandsTo(taskId);
+      act(() => {
+        cloudCoworkStore.getState().disconnect('offline');
+      });
+      await reloadHome(renderHome);
+      expect(cardStates()).toEqual(['checking']);
+      act(() => {
+        useHomeComposerStore.getState().setText('And a note on pricing');
+      });
+      act(() => {
+        window.dispatchEvent(new Event('pagehide'));
+      });
+
+      await connectWithOrgProject();
+      await settle();
+
+      // The draft and the message stay apart: the message never joins it.
+      expect(useHomeComposerStore.getState().text).toBe(
+        'And a note on pricing',
+      );
+      expect(cardStates()).toEqual(['missing']);
+      expect(outboxIds()).toEqual([command]);
+      release();
+      await settle();
+      expect(sendCommandsTo(taskId)).toEqual([command]);
+    });
+
     it("hands a message the web core refuses back to the new chat's open composer", async () => {
       renderHomeBesidePage();
       await connectWithOrgProject();
@@ -10192,6 +11878,8 @@ describe('a cloud task in the cowork page (CAN-6175 R2)', () => {
       // The new chat's composer, already open, shows the message again.
       expect(chatEditor()?.textContent).toContain('Plan the launch');
       expect(callsCarryingWebCoreIds()).toEqual([]);
+      // Its chat's composer holds it: the outbox lets it go (CAN-6798).
+      expect(outboxIds()).toEqual([]);
     });
   });
 });

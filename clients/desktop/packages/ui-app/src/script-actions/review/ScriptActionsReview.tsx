@@ -791,7 +791,7 @@ function PendingSection({
         <Heading level={4} variant="title" id={headingId}>
           Needs review
           {pending.length > 0 ? (
-            <span className="ml-1 fg-tertiary">{pending.length}</span>
+            <span className="pl-1 fg-tertiary">{pending.length}</span>
           ) : null}
         </Heading>
       </div>
@@ -954,7 +954,7 @@ function ApprovedSection({
     >
       <Heading level={4} variant="title" id={headingId}>
         Approved
-        {count > 0 ? <span className="ml-1 fg-tertiary">{count}</span> : null}
+        {count > 0 ? <span className="pl-1 fg-tertiary">{count}</span> : null}
       </Heading>
       {count === 0 ? (
         <EmptyStateRow

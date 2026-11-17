@@ -107,6 +107,7 @@ import type {
   AgentDelegationSnapshot,
   DelegationApplyFailure,
   DelegationWorkspaceChanges,
+  ManagedDelegationSurface,
   ManagedDelegationTreeEntry,
   ManagedDelegationRootEntry,
   ManagedDelegationTranscriptPage,
@@ -274,6 +275,7 @@ import {
   delegationNoticeRootParentKey,
 } from './notice-delivery';
 import { WatcherRecipientNotReadyError } from '../../app-advisor/local-watcher-scheduler';
+import { isManagedDelegationSurfaceEnabled } from './surface-profiles';
 import type { LedgerContainer } from '@canopy/protocol/canopy-core';
 import {
   registerLedgerDelegateSource,
@@ -496,6 +498,8 @@ interface Actor {
   lifetime: ManagedDelegationLifetimeOwner;
   runtime: DelegationRouteRuntime;
   childMessages: ManagedChildMessageInbox;
+  /** Canonical kind captured only after successful root attachment validation. */
+  readonly surface: ManagedDelegationSurface;
   notices: DelegationNoticeDelivery;
   noticeStore: DelegationNoticeAckStore;
   /** The latest attached session's window lookup; sessions may come and go. */
@@ -1132,6 +1136,7 @@ async function actorFor(
     'projectId' | 'worktreeId' | 'cwd' | 'managedDelegationLifetimeLimit'
   >,
   getWindow: () => BrowserWindow | null,
+  surface: ManagedDelegationSurface,
 ): Promise<Actor> {
   const directory = delegationDirectory(options);
   for (;;) {
@@ -1143,7 +1148,12 @@ async function actorFor(
       continue;
     }
     const prior = actors.get(directory);
-    if (prior) return prior;
+    if (prior) {
+      const actor = await prior;
+      if (actor.surface !== surface)
+        throw new Error('The delegation actor surface authority changed.');
+      return actor;
+    }
     break;
   }
   const pending = (async (): Promise<Actor> => {
@@ -1232,6 +1242,9 @@ async function actorFor(
     const childDelegation = (
       context: LocalDelegationContext,
     ): DelegationParent | undefined => {
+      // Omission is the Code surface (the broker sets none yet).
+      const surface = context.request.surface ?? 'worktree-chat';
+      if (!isManagedDelegationSurfaceEnabled(surface)) return undefined;
       const owner = broker.childContext(
         context.request,
         'child-tools',
@@ -1259,6 +1272,7 @@ async function actorFor(
           namespace: BRAND.tools.namespace,
           names: names(owner.harnessId),
           broker,
+          surface,
           currentTurn: () => owner.turnId,
           removeQueued: (): Promise<void> => Promise.resolve(),
           reportError,
@@ -1419,6 +1433,10 @@ async function actorFor(
     await lifetime.initialize();
     const broker: AgentDelegationBroker = new AgentDelegationBroker({
       asyncAdmission: true,
+      // No resolveSurface while only worktree-chat is enabled: the broker
+      // behaves exactly as before for Code roots. The phase that enables
+      // Cowork or Advisor wires canonical surface resolution here, with its
+      // own qualification.
       onAdmitted: (parent, task, delegationId): Promise<void> =>
         notifyLedgerDelegateAdmitted(parent, task, delegationId, broker),
       generationStore: async ({ record }): Promise<GenerationStoreDecision> => {
@@ -1878,6 +1896,7 @@ async function actorFor(
       lifetime,
       runtime,
       childMessages,
+      surface,
       notices,
       noticeStore,
       window: windowRef,
@@ -2002,6 +2021,7 @@ class ManagedDelegationChatRoot {
     readonly actor: Actor,
     readonly target: ManagedDelegationChatTarget,
     readonly sessionKey: string,
+    readonly surface: ManagedDelegationSurface,
   ) {}
 
   get live(): boolean {
@@ -2636,10 +2656,15 @@ function chatRootFor(
   actor: Actor,
   target: ManagedDelegationChatTarget,
   sessionKey: string,
+  surface: ManagedDelegationSurface,
 ): ManagedDelegationChatRoot {
   const key = chatKey(target);
   const existing = roots.get(key);
-  if (existing?.actor === actor && existing.live) return existing;
+  if (existing?.actor === actor && existing.live) {
+    if (existing.surface !== surface)
+      throw new Error('The chat root surface authority changed.');
+    return existing;
+  }
   const root = new ManagedDelegationChatRoot(
     actor,
     {
@@ -2648,6 +2673,7 @@ function chatRootFor(
       chatId: target.chatId,
     },
     sessionKey,
+    surface,
   );
   roots.set(key, root);
   return root;
@@ -2999,6 +3025,7 @@ export class ManagedDelegationSession {
       namespace: BRAND.tools.namespace,
       names: names(this.harness),
       broker: this.root.actor.broker,
+      surface: this.root.surface,
       hostMessages: this.root.hostMessages,
       discoverModels: async (
         _parent,
@@ -3185,6 +3212,7 @@ export async function extendManagedDelegationLifetimeLimit(scope: {
           preferences.managedDelegationLifetimeLimit,
       },
       () => null,
+      'worktree-chat',
     );
     return await actor.lifetime.extendLifetimeLimit();
   } catch {
@@ -3222,6 +3250,12 @@ export async function createManagedDelegationSession(options: {
   ) => void;
 }): Promise<ManagedDelegationSession> {
   if (shuttingDown) throw new Error('Delegation service is closing');
+  // Omission means the Code surface. Only enabled surfaces own a tree; today
+  // that is worktree-chat alone, which needs no canonical lookup.
+  const surface =
+    options.currentOptions().managedDelegationSurface ?? 'worktree-chat';
+  if (!isManagedDelegationSurfaceEnabled(surface))
+    throw new Error('Managed delegation is unavailable for this chat surface.');
   initializeManagedService();
   if (cloudAuthority === undefined) {
     const initial = await loadCanopyCloudAccount();
@@ -3232,7 +3266,11 @@ export async function createManagedDelegationSession(options: {
   // Roots must see every plan-mode commit, so follow them before one exists.
   await trackCommittedPlanModes();
   if (shuttingDown) throw new Error('Delegation service is closing');
-  const actor = await actorFor(options.currentOptions(), options.getWindow);
+  const actor = await actorFor(
+    options.currentOptions(),
+    options.getWindow,
+    surface,
+  );
   if (
     shuttingDown ||
     closingScopes.has(delegationDirectory(options.currentOptions()))
@@ -3240,7 +3278,7 @@ export async function createManagedDelegationSession(options: {
     throw new Error('Delegation service is closing');
   actor.window.current = options.getWindow;
   const session = new ManagedDelegationSession(
-    chatRootFor(actor, options.currentOptions(), options.sessionKey),
+    chatRootFor(actor, options.currentOptions(), options.sessionKey, surface),
     options.harness,
     options.sessionKey,
     options.currentOptions,
@@ -3502,7 +3540,7 @@ async function userStopContext(target: ManagedDelegationChatTarget): Promise<
     return undefined;
   }
   if (shuttingDown || closingScopes.has(directory)) return undefined;
-  const root = chatRootFor(actor, target, chatKey(target));
+  const root = chatRootFor(actor, target, chatKey(target), actor.surface);
   const parent = root.context(
     root.harness,
     'user-stop',
@@ -4731,6 +4769,7 @@ async function actorForSessionEndSweep(scope: {
           preferences.managedDelegationLifetimeLimit,
       },
       () => null,
+      'worktree-chat',
     );
   } catch {
     return undefined;

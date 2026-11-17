@@ -1,4 +1,7 @@
-import { inspectMemoryLinks } from '@canopy/memory-consolidation/link-health';
+import {
+  inspectMemoryLinks,
+  mergeUnresolvedMemoryLinks,
+} from '@canopy/memory-consolidation/link-health';
 import type { MemoryConsolidationMeasurement } from '@canopy/protocol/local-memory/metrics';
 import { measureMemoryConsolidation } from '@canopy/memory-consolidation/metrics';
 import { readConsolidationState } from './consolidation-state';
@@ -620,10 +623,10 @@ export async function collectConsolidationInput(
   });
   const linkHealth = {
     ...health,
-    unresolvedLinks: [
-      ...health.unresolvedLinks,
-      ...(state?.unresolvedLinks ?? []),
-    ],
+    unresolvedLinks: mergeUnresolvedMemoryLinks(
+      health.unresolvedLinks,
+      state?.unresolvedLinks ?? [],
+    ),
   };
   const { trackingSince, entries: usage } = await readUsage(scopeDir);
   const pending = consumablePending(

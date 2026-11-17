@@ -112,7 +112,7 @@ function SectionRow({
     <div data-testid={`activity-card-section-${row.key}`}>
       <div className="flex items-center gap-0.5">
         <DropdownMenuItem
-          role="button"
+          asButton
           selected={expanded}
           aria-expanded={opensInPanel ? undefined : expanded}
           aria-controls={expanded ? bodyId : undefined}
@@ -175,7 +175,7 @@ function AddMenu({
     <>
       <DropdownMenuItem
         ref={triggerRef}
-        role="button"
+        asButton
         aria-haspopup="menu"
         aria-expanded={open}
         aria-controls={open ? menuId : undefined}
@@ -284,7 +284,9 @@ export function ActivityCardView({
           <>
             {/* Inset to the rows' 8px padding, so it starts at their icons
                   and ends with their labels; 4px of space above and below. */}
-            <Divider className="mx-2 my-1" />
+            <div className="px-2 py-1">
+              <Divider />
+            </div>
             <AddMenu
               rows={add}
               onChoose={(row): void => {

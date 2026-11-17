@@ -24,9 +24,9 @@ export const QUEUED_MESSAGE_RETRY_BLOCKED_TOOLTIPS: Readonly<
   >
 > = {
   insufficient_credits: {
-    title: 'Buy AI Credits first',
+    title: 'Switch provider to send this',
     description:
-      'Your queued message is saved. Try again sends it once your account has AI Credits.',
+      'Your queued message is saved. Try again sends it once a provider can run it.',
   },
 };
 
@@ -224,8 +224,8 @@ export const QueuedMessageActions = memo(function QueuedMessageActions({
     <div
       className={
         variant === 'badge'
-          ? 'mt-1 flex flex-wrap justify-end gap-2'
-          : 'mt-1 flex justify-end gap-2'
+          ? 'flex flex-wrap justify-end gap-2 pt-1'
+          : 'flex justify-end gap-2 pt-1'
       }
     >
       {settingsHeld && (showSteer || showInterrupt) ? (

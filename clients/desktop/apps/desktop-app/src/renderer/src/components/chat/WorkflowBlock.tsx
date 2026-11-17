@@ -1,3 +1,4 @@
+import { ControlButton } from '@canopy/ui-shared/components';
 import { DeferredToolOutput } from '@canopy/ui-app';
 import { useState, type JSX } from 'react';
 import { useWorkflowRun } from '@/hooks/useWorkflowRun';
@@ -46,77 +47,81 @@ export function WorkflowBlock({
   const total = run?.agents.length ?? run?.agentCount ?? 0;
 
   return (
-    <Surface
-      data-testid="workflow-block"
-      data-tool-use-id={toolUseId}
-      data-launched={launched ? 'true' : 'false'}
-      variant="group"
-      className="my-1"
-    >
-      <button
-        type="button"
-        onClick={() => setExpanded((prev) => !prev)}
-        className="focus-ring flex w-full items-center gap-2 px-3 py-2 text-left"
+    <div className="py-1 empty:hidden">
+      <Surface
+        data-testid="workflow-block"
+        data-tool-use-id={toolUseId}
+        data-launched={launched ? 'true' : 'false'}
+        variant="group"
       >
-        <span className="flex-shrink-0">
-          <ChevronIcon open={expanded} />
-        </span>
-        <span className="flex-shrink-0 fg-special">
-          <WorkflowIcon />
-        </span>
-        <span className="min-w-0 flex-1">
-          <span className="flex items-center gap-2">
-            <span className="text-xs font-semibold fg-primary/80">
-              Workflow
+        <ControlButton
+          type="button"
+          onClick={() => setExpanded((prev) => !prev)}
+          aria-expanded={expanded}
+          presentation="workflow-chat-toggle"
+        >
+          <span className="flex-shrink-0">
+            <ChevronIcon open={expanded} />
+          </span>
+          <span className="flex-shrink-0 fg-special">
+            <WorkflowIcon />
+          </span>
+          <span className="min-w-0 flex-1">
+            <span className="flex items-center gap-2">
+              <span className="text-xs font-semibold fg-primary/80">
+                Workflow
+              </span>
+              <span className="truncate text-xs fg-secondary">
+                {workflowName}
+              </span>
+              {isRunning && (
+                <ThinkingSpinner tone="accent" className="flex-shrink-0" />
+              )}
             </span>
-            <span className="truncate text-xs fg-secondary">
-              {workflowName}
-            </span>
-            {isRunning && (
-              <ThinkingSpinner tone="accent" className="flex-shrink-0" />
+            {summary && (
+              <span className="mt-0.5 block truncate text-2xs fg-secondary">
+                {summary}
+              </span>
             )}
           </span>
-          {summary && (
-            <span className="mt-0.5 block truncate text-2xs fg-secondary">
-              {summary}
+          {launched && total > 0 && (
+            <span className="flex-shrink-0 text-2xs fg-secondary">
+              {doneCount}/{total}
             </span>
           )}
-        </span>
-        {launched && total > 0 && (
-          <span className="flex-shrink-0 text-2xs fg-secondary">
-            {doneCount}/{total}
-          </span>
+        </ControlButton>
+        {expanded && (
+          <Surface variant="section" boundary="top" padding="section-compact">
+            {!launched ? (
+              <div className="py-2 text-xs fg-secondary">
+                Launching workflow…
+              </div>
+            ) : (
+              <WorkflowRunView
+                run={run}
+                transcriptDir={transcriptDir}
+                loading={loading}
+              />
+            )}
+          </Surface>
         )}
-      </button>
-      {expanded && (
-        <Surface variant="section" boundary="top" padding="section-compact">
-          {!launched ? (
-            <div className="py-2 text-xs fg-secondary">Launching workflow…</div>
-          ) : (
-            <WorkflowRunView
-              run={run}
-              transcriptDir={transcriptDir}
-              loading={loading}
+        {result?.fullOutputRef && result.messageId && result.toolUseId && (
+          // The run view above owns the visible output; the viewer only adds the
+          // full-output control, so it gets an empty preview.
+          <div data-testid="chat-deferred-output-host">
+            <DeferredToolOutput
+              identity={{
+                kind: 'reference',
+                reference: result.fullOutputRef,
+                messageId: result.messageId,
+                toolUseId: result.toolUseId,
+              }}
+              preview=""
+              isError={result.isError}
             />
-          )}
-        </Surface>
-      )}
-      {result?.fullOutputRef && result.messageId && result.toolUseId && (
-        // The run view above owns the visible output; the viewer only adds the
-        // full-output control, so it gets an empty preview.
-        <div data-testid="chat-deferred-output-host">
-          <DeferredToolOutput
-            identity={{
-              kind: 'reference',
-              reference: result.fullOutputRef,
-              messageId: result.messageId,
-              toolUseId: result.toolUseId,
-            }}
-            preview=""
-            isError={result.isError}
-          />
-        </div>
-      )}
-    </Surface>
+          </div>
+        )}
+      </Surface>
+    </div>
   );
 }

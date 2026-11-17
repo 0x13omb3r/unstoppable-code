@@ -1,3 +1,4 @@
+import { ControlButton } from '@canopy/ui-shared/components';
 /**
  * Slim archived-pipeline row for the archived-container viewer's Pipelines
  * tab. Deliberately NOT `CompletedRunRow` (PipelineRunsSection), which is
@@ -29,11 +30,11 @@ export function ArchivedExecutionRow({
   onOpen,
 }: ArchivedExecutionRowProps): JSX.Element {
   return (
-    <button
+    <ControlButton
       type="button"
       data-testid={`archived-execution-row-${summary.id}`}
       onClick={() => onOpen(summary.id)}
-      className="focus-ring flex w-full flex-col gap-2 rounded-lg border bg-fg-primary/[0.02] px-3 py-2.5 text-left transition-colors hover:bg-fg-primary/[0.05]"
+      presentation="archive-execution"
     >
       <div className="flex min-w-0 items-center gap-2">
         <Badge {...pipelineStatusBadge(summary.status)} muted>
@@ -49,6 +50,6 @@ export function ArchivedExecutionRow({
       {executionState !== undefined && (
         <DagProgressBar executionState={executionState} muted />
       )}
-    </button>
+    </ControlButton>
   );
 }

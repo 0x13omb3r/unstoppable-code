@@ -669,7 +669,7 @@ function SocialLinksField({
                 className="flex items-center justify-between gap-2 text-s fg-primary"
               >
                 <span className="flex min-w-0 items-center gap-2">
-                  <Icon size={15} aria-hidden="true" />
+                  <Icon size="sm" aria-hidden="true" />
                   <span className="sr-only">{meta.label}</span>
                   <span className="truncate">{link.url}</span>
                 </span>

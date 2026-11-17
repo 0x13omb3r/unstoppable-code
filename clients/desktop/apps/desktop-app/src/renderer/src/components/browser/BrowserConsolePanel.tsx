@@ -102,7 +102,7 @@ export function BrowserConsolePanel({
                   <div className="flex items-start gap-2">
                     <div className="min-w-0 flex-1">
                       <span
-                        className={`mr-2 uppercase ${levelClass(entry.level)}`}
+                        className={`pr-2 uppercase ${levelClass(entry.level)}`}
                       >
                         {entry.level}
                       </span>
@@ -110,7 +110,7 @@ export function BrowserConsolePanel({
                         {entry.text}
                       </span>
                       {location !== null && (
-                        <span className="ml-2 fg-secondary/70">{location}</span>
+                        <span className="pl-2 fg-secondary/70">{location}</span>
                       )}
                     </div>
                     <Button

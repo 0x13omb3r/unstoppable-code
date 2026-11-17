@@ -12,6 +12,7 @@ import type {
   BotChatAddress,
 } from '@canopy/desktop-shared/lib/bot-discovery';
 import { isRecord } from '../lib/type-guards';
+import { APP_ADVISOR_BOT_ID } from '@canopy/protocol/chat-targets';
 
 type ListActionType =
   | ProjectDiscoveryAction['type']
@@ -41,7 +42,7 @@ function buildListUiEnvelope(
     : snapshot.activeChat?.chatId;
   const selection: ListUiEnvelope['selection'] = {
     ...(bot
-      ? { botId: 'app_advisor' }
+      ? { botId: APP_ADVISOR_BOT_ID }
       : snapshot.selectedWorktree
         ? { projectId: snapshot.selectedWorktree.projectId }
         : {}),

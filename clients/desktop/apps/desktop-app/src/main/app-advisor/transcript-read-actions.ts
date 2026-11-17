@@ -6,10 +6,8 @@ import {
   type AgentActionErrorCode,
   type TranscriptReadAction,
 } from '@canopy/agent-actions';
-import {
-  APP_ADVISOR_PROJECT_ID,
-  type AppAdvisorActionResponse,
-} from '@canopy/desktop-shared/types';
+import type { AppAdvisorActionResponse } from '@canopy/desktop-shared/types';
+import { isBotProjectId } from '@canopy/protocol/chat-targets';
 import type { CanopyInjectedToolRuntime } from '../canopy-tools/core';
 import type { AppAdvisorDispatchAction } from './definitions';
 
@@ -98,7 +96,7 @@ export async function dispatchAdvisorTranscriptRead(
         );
       for (const workspace of page.items) {
         if (signal?.aborted) return failure('timeout');
-        if (workspace.workspaceId === APP_ADVISOR_PROJECT_ID) continue;
+        if (isBotProjectId(workspace.workspaceId)) continue;
         const owner = await lookup.findChat(
           workspace.workspaceId,
           action.target.chatId,

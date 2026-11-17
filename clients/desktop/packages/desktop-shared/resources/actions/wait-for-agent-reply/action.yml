@@ -34,6 +34,6 @@ outputs:
   reply_file:
     description: Absolute path to a file holding the full final message, never truncated. Empty when there is no reply.
   failure_reason:
-    description: Typed reason when the step failed (not_found, advisor_access_disabled, owner_context_unavailable, validation_failed, needs_desktop, unsupported_action, reply_timed_out). Empty on success.
+    description: Typed reason when the step failed (not_found, advisor_access_disabled, owner_context_unavailable, validation_failed, needs_desktop, unsupported_action, turn_failed, reply_timed_out). Empty on success.
 runs:
   using: host

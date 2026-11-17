@@ -1,3 +1,4 @@
+import { ControlButton } from '@canopy/ui-shared/components';
 import { useWorktreeLaunchStop } from '@/hooks/useWorktreeLaunchStop';
 import { Tooltip } from '@canopy/ui-shared';
 import { StopIcon } from '@canopy/ui-shared/icons/AppIcons';
@@ -65,7 +66,7 @@ export function WorktreeIdStopLaunchButton({
   {
     return (
       <Tooltip label={label} className="align-bottom">
-        <button
+        <ControlButton
           type="button"
           onClick={onStop}
           disabled={isLaunchStopping}
@@ -74,11 +75,8 @@ export function WorktreeIdStopLaunchButton({
           data-launch-status="shimmer"
           // Keep the ID's intrinsic width inside Tooltip's inline-flex wrapper.
           // The subtitle owns truncation; a percentage max-width here collapses it.
-          className={`focus-ring -mx-1 inline-flex h-4 items-center rounded px-1 align-bottom leading-4 transition-colors ${
-            isLaunchStopping
-              ? 'cursor-not-allowed fg-destructive'
-              : 'hover:bg-destructive-subtle hover:fg-destructive'
-          }`}
+          presentation="worktree-stop-launch-label"
+          appearance={isLaunchStopping}
         >
           <span className="truncate">
             <span
@@ -87,7 +85,7 @@ export function WorktreeIdStopLaunchButton({
               {worktreeId}
             </span>
           </span>
-        </button>
+        </ControlButton>
       </Tooltip>
     );
   }

@@ -2036,26 +2036,24 @@ export function ShareResourceDialog({
     />
   );
   const organizationSetup = (
-    <Stack
-      gap="inline"
-      className="mt-2"
-      data-testid={`${p}-organization-setup`}
-    >
-      {(onSetUpOrganization || canCreateTeam) && (
-        <Button
-          className="self-start"
-          type="button"
-          variant="secondary"
-          size="compact"
-          data-testid={`${p}-set-up-organization`}
-          onClick={handleSetUpOrganization}
-          disabled={openingOrganizationSetup}
-        >
-          {organizationSetupLabel}
-        </Button>
-      )}
-      {organizationSetupFailed && organizationSetupError}
-    </Stack>
+    <div className="pt-2 empty:hidden">
+      <Stack gap="inline" data-testid={`${p}-organization-setup`}>
+        {(onSetUpOrganization || canCreateTeam) && (
+          <Button
+            className="self-start"
+            type="button"
+            variant="secondary"
+            size="compact"
+            data-testid={`${p}-set-up-organization`}
+            onClick={handleSetUpOrganization}
+            disabled={openingOrganizationSetup}
+          >
+            {organizationSetupLabel}
+          </Button>
+        )}
+        {organizationSetupFailed && organizationSetupError}
+      </Stack>
+    </div>
   );
   // The setup step offered under a disabled Team or Organization pill.
   const organizationSetupAction =
@@ -2296,7 +2294,7 @@ export function ShareResourceDialog({
                   {showPublicLockedHint && (
                     <p
                       id={publicLockedHintId}
-                      className="mt-2 text-xs fg-secondary"
+                      className="pt-2 text-xs fg-secondary"
                       data-testid={`${p}-public-locked-hint`}
                     >
                       {copy.publicLockedHint}

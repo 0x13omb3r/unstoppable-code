@@ -31,6 +31,7 @@ import {
   type AgentAuditTranscriptRequest,
   type PanelLayoutSurface,
 } from '@canopy/desktop-shared/types';
+import { isBotProjectId } from '@canopy/protocol/chat-targets';
 export {
   getCursorRuntimeRootDir,
   getCursorRuntimeStateDir,
@@ -131,7 +132,7 @@ export function getAppWorkspacesRootDir(): string {
 
 function isAppManagedChatWorkspaceId(workspaceId: string): boolean {
   return (
-    workspaceId === APP_ADVISOR_PROJECT_ID ||
+    isBotProjectId(workspaceId) ||
     workspaceId === PLAN_EXPLORE_CHAT_PROJECT_ID ||
     workspaceId === CODE_REVIEW_CHAT_PROJECT_ID ||
     workspaceId === PIPELINE_EDITOR_PROJECT_ID ||
@@ -141,7 +142,7 @@ function isAppManagedChatWorkspaceId(workspaceId: string): boolean {
 
 function isAppManagedChatWorkspace(workspaceId: string): boolean {
   if (
-    workspaceId === APP_ADVISOR_PROJECT_ID ||
+    isBotProjectId(workspaceId) ||
     workspaceId === SHARED_CONTAINER_VIEWER_PROJECT_ID
   ) {
     // These sentinels are permanently app-managed and must never be redirected
@@ -1260,6 +1261,16 @@ export function getPluginCacheDir(): string {
   return join(getDataDir(), 'plugin-cache');
 }
 
+/** One Add for every harness: plugin and skill install records (CAN-6816). */
+export function getPluginHarnessInstallsFilePath(): string {
+  return join(getDataDir(), 'plugin-harness-installs.json');
+}
+
+/** The MCP servers standing in for plugins' ChatGPT apps (CAN-6818). */
+export function getPluginStandInsFilePath(): string {
+  return join(getDataDir(), 'plugin-stand-ins.json');
+}
+
 export function getPipelinePluginPreferencesFilePath(): string {
   return join(getDataDir(), 'pipeline-plugin-preferences.json');
 }
@@ -1331,6 +1342,14 @@ function assertSafeMcpServerId(serverId: string): void {
 
 export function getMcpServersIndexFilePath(): string {
   return join(getMcpServersDir(), 'index.json');
+}
+
+/**
+ * The install records of one Add for every harness (CAN-6815). Its own file,
+ * so the index and server files are never rewritten for it.
+ */
+export function getMcpHarnessInstallsFilePath(): string {
+  return join(getMcpServersDir(), 'harness-installs.json');
 }
 
 export function getMcpServerFilePath(serverId: string): string {
@@ -1622,7 +1641,7 @@ export function getWorkspaceWorktreesFilePath(workspaceId: string): string {
 export function getSidebarItemGroupsFilePath(workspaceId: string): string {
   validateId(workspaceId, 'workspace id');
   return join(
-    workspaceId === 'app-advisor'
+    isBotProjectId(workspaceId)
       ? getAppManagedChatWorkspaceDir(workspaceId)
       : getWorkspaceDir(workspaceId),
     'sidebar-item-groups.json',

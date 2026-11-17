@@ -2,6 +2,7 @@
 // admission of check, download and apply, and the events stream. The host
 // supplies the installer through `CoreUpdateHost`.
 export {
+  TARGETED_UPDATE_REFUSAL,
   UPDATE_CHANNEL_FOR_FLAVOR,
   createCoreUpdateHandlers,
   type CoreUpdateHandlerOptions,

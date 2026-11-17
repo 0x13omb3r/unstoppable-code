@@ -91,79 +91,88 @@ export function PipelineTemplatesSection({
   return (
     <>
       {unfilteredStatus && (
-        <Stack
-          as="section"
-          gap="item"
-          className="mt-10 min-w-0"
-          aria-label="Workflow templates"
-          data-testid="pipeline-templates-section-status"
-        >
-          <Heading level={2} variant="title">
-            Workflow templates
-          </Heading>
-          <CatalogStatus catalog={catalog} />
-        </Stack>
-      )}
-      {hasCards && (
-        <Stack
-          as="section"
-          gap="item"
-          className="mt-10 min-w-0"
-          aria-label="Workflow templates"
-          data-testid="pipeline-templates-section"
-        >
-          <div className="flex flex-wrap items-center justify-between gap-2">
+        <div className="pt-10 empty:hidden">
+          <Stack
+            as="section"
+            gap="item"
+            className="min-w-0"
+            aria-label="Workflow templates"
+            data-testid="pipeline-templates-section-status"
+          >
             <Heading level={2} variant="title">
               Workflow templates
             </Heading>
-            <Button
-              ref={viewAllRef}
-              variant="ghost"
-              size="compact"
-              onClick={() => {
-                setOpenedCards(cards);
-                setCatalogOpen(true);
-              }}
-              data-testid="pipeline-templates-view-all"
-            >
-              View all templates
-            </Button>
-          </div>
-          {/* The kept cards stand in while the catalog reloads after a reset;
-              a failed reload says so here, with a retry. */}
-          {keepOpenedCards && !catalogOpen && catalog.error && (
             <CatalogStatus catalog={catalog} />
-          )}
-          <ul className="grid min-w-0 grid-cols-1 gap-3 sm:grid-cols-3">
-            {cards.slice(0, 3).map((row) => (
-              <li
-                key={row.key}
-                className="flex min-w-0 flex-col gap-3 rounded-lg ring-1 ring-inset ring-line-base p-3"
-                data-testid={`pipeline-template-${row.key}`}
+          </Stack>
+        </div>
+      )}
+      {hasCards && (
+        <div className="pt-10 empty:hidden">
+          <Stack
+            as="section"
+            gap="item"
+            className="min-w-0"
+            aria-label="Workflow templates"
+            data-testid="pipeline-templates-section"
+          >
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <Heading level={2} variant="title">
+                Workflow templates
+              </Heading>
+              <Button
+                ref={viewAllRef}
+                variant="ghost"
+                size="compact"
+                onClick={() => {
+                  setOpenedCards(cards);
+                  setCatalogOpen(true);
+                }}
+                data-testid="pipeline-templates-view-all"
               >
-                <Stack gap="tight" className="min-w-0">
-                  <Heading level={3} variant="title" truncate title={row.name}>
-                    {row.name}
-                  </Heading>
-                  <Tooltip label={row.shortDescription} clamp allowShrink>
-                    <span className="min-w-0 truncate text-xs fg-secondary">
-                      {row.shortDescription}
-                    </span>
-                  </Tooltip>
-                </Stack>
-                <Button
-                  size="compact"
-                  className="self-start"
-                  onClick={() => catalog.onSelect(row)}
-                  data-testid={`pipeline-template-use-${row.key}`}
-                  aria-label={`Use template: ${row.name}`}
+                View all templates
+              </Button>
+            </div>
+            {/* The kept cards stand in while the catalog reloads after a reset;
+              a failed reload says so here, with a retry. */}
+            {keepOpenedCards && !catalogOpen && catalog.error && (
+              <CatalogStatus catalog={catalog} />
+            )}
+            <ul className="grid min-w-0 grid-cols-1 gap-3 sm:grid-cols-3">
+              {cards.slice(0, 3).map((row) => (
+                <li
+                  key={row.key}
+                  className="flex min-w-0 flex-col gap-3 rounded-lg ring-1 ring-inset ring-line-base p-3"
+                  data-testid={`pipeline-template-${row.key}`}
                 >
-                  Use template
-                </Button>
-              </li>
-            ))}
-          </ul>
-        </Stack>
+                  <Stack gap="tight" className="min-w-0">
+                    <Heading
+                      level={3}
+                      variant="title"
+                      truncate
+                      title={row.name}
+                    >
+                      {row.name}
+                    </Heading>
+                    <Tooltip label={row.shortDescription} clamp allowShrink>
+                      <span className="min-w-0 truncate text-xs fg-secondary">
+                        {row.shortDescription}
+                      </span>
+                    </Tooltip>
+                  </Stack>
+                  <Button
+                    size="compact"
+                    className="self-start"
+                    onClick={() => catalog.onSelect(row)}
+                    data-testid={`pipeline-template-use-${row.key}`}
+                    aria-label={`Use template: ${row.name}`}
+                  >
+                    Use template
+                  </Button>
+                </li>
+              ))}
+            </ul>
+          </Stack>
+        </div>
       )}
       {dialogOpen && (
         <DialogModal

@@ -118,7 +118,7 @@ export function PluginsAddCustomMenu({
         <ChevronDownMediumIcon size={16} aria-hidden="true" className="-ml-1" />
       </Button>
       {open && (
-        <DropdownMenuSurface className="absolute right-0 z-30 mt-3 w-56">
+        <DropdownMenuSurface className="absolute right-0 top-[calc(100%+0.75rem)] z-30 w-56">
           <ActionMenuRowStyle>
             {onAddMcpServer && (
               <DropdownMenuItem

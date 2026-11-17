@@ -47,28 +47,25 @@ export function MarkdownFrontmatterContent({
     <>
       {loading && (
         <DelayedLoadingPlaceholder>
-          <CenteredLoadingSpinner className="my-12" />
+          <CenteredLoadingSpinner spacing="section" />
         </DelayedLoadingPlaceholder>
       )}
       <ErrorBanner errorSource="markdown-frontmatter" error={error} />
       {content && !loading && (
-        <>
-          <FrontmatterBlock
-            frontmatter={content.frontmatter}
-            className="mb-4"
-          />
-          {frontmatterEntries.length > 0 && content.body.trim() && (
-            <hr className="mb-4" />
+        <div className="flex flex-col gap-4">
+          {frontmatterEntries.length > 0 && (
+            <FrontmatterBlock frontmatter={content.frontmatter} />
           )}
+          {frontmatterEntries.length > 0 && content.body.trim() && <hr />}
           {content.body.trim() && (
-            <div className="prose prose-sm [--tw-prose-body:var(--fg-primary)] dark:prose-invert max-w-none break-words prose-p:my-0.5 prose-pre:my-1.5 prose-pre:bg-fg-primary/[0.06] prose-pre:fg-primary/80 prose-code:fg-success prose-code:before:content-none prose-code:after:content-none prose-headings:fg-primary prose-a:fg-accent prose-strong:fg-primary prose-li:my-0.5">
+            <div className="prose prose-sm [--tw-prose-body:var(--fg-primary)] dark:prose-invert max-w-none break-words prose-p:my-0.5 canopy-compact-prose prose-pre:bg-fg-primary/[0.06] prose-pre:fg-primary/80 prose-code:fg-success prose-code:before:content-none prose-code:after:content-none prose-headings:fg-primary prose-a:fg-accent prose-strong:fg-primary prose-li:my-0.5">
               <Markdown options={markdownOptions}>{content.body}</Markdown>
             </div>
           )}
           {!content.body.trim() && frontmatterEntries.length === 0 && (
             <p className="text-s fg-secondary text-center py-8">{emptyText}</p>
           )}
-        </>
+        </div>
       )}
     </>
   );

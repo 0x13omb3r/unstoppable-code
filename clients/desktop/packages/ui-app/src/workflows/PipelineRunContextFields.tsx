@@ -37,8 +37,10 @@ export const PIPELINE_RUN_CONTEXT_COPY = {
   cloud: 'Cloud',
   cloudDetail: 'Runs in the cloud, even while this computer is off.',
   cloudSourceUnavailable:
-    'Only shared and curated workflows can run in the cloud for now.',
-  cloudDestinationUnavailable: `Cloud runs can only use ${NO_PROJECT_LABEL} for now. Choose ${NO_PROJECT_LABEL}, or run on this computer.`,
+    "Only shared, curated and a task's project workflows can run in the cloud for now.",
+  // CAN-6869: a task runs in the cloud at its pushed branch, which needs a
+  // Git worktree; a Cowork task has none.
+  cloudDestinationUnavailable: `Cloud runs need ${NO_PROJECT_LABEL} or a task's Git worktree. Choose ${NO_PROJECT_LABEL}, or run on this computer.`,
 } as const;
 
 /**

@@ -2,8 +2,8 @@
  * Owning-org resolution for organization memory (CAN-3457).
  *
  * Org memory follows the owner of the work (CAN-3455 D1, D5): a chat searches
- * only the organization that owns its project, is off in Personal work and App
- * Advisor, and never falls back to another org. A Cowork workspace follows its
+ * only the organization that owns its project, is off in Personal work and
+ * Bot chats, and never falls back to another org. A Cowork workspace follows its
  * saved owner (CAN-3477): an org-owned one, such as an org's default Chats
  * workspace, searches that org; a Personal one searches nothing. The sidebar
  * and the tab's captured context are never consulted for Cowork.
@@ -15,10 +15,10 @@
  * Every failure resolves to `null` — search nothing — never to a default org.
  */
 import {
-  APP_ADVISOR_PROJECT_ID,
   CODE_REVIEW_CHAT_PROJECT_ID,
   PLAN_EXPLORE_CHAT_PROJECT_ID,
 } from '@canopy/desktop-shared/types';
+import { isBotProjectId } from '@canopy/protocol/chat-targets';
 import {
   parseWorkspaceContext,
   type WorkspaceContext,
@@ -68,11 +68,6 @@ async function resolveRealTarget(
     return getCodeReviewTarget(worktreeId);
   }
   return { projectId, worktreeId };
-}
-
-/** App Advisor has no owner, so it never searches org memory. */
-function isMemoryDisabledSurface(projectId: string): boolean {
-  return projectId === APP_ADVISOR_PROJECT_ID;
 }
 
 /**
@@ -128,9 +123,9 @@ export async function resolveOrgMemoryOwner(
   input: OrgMemoryOwnerInput,
 ): Promise<OrgMemoryOwner | null> {
   try {
-    if (isMemoryDisabledSurface(input.projectId)) return null;
+    if (isBotProjectId(input.projectId)) return null;
     const target = await resolveRealTarget(input.projectId, input.worktreeId);
-    if (!target || isMemoryDisabledSurface(target.projectId)) return null;
+    if (!target || isBotProjectId(target.projectId)) return null;
 
     // Persisted owner authority; throws (→ null) on unreadable or malformed
     // config. The legacy Cowork sentinel maps to its Cowork workspace here.

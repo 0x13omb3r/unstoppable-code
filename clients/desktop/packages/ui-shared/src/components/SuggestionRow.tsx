@@ -1,3 +1,4 @@
+import { ControlButton } from './Button';
 import {
   forwardRef,
   type ButtonHTMLAttributes,
@@ -5,7 +6,11 @@ import {
   type ReactNode,
 } from 'react';
 
-export interface SuggestionRowProps extends ButtonHTMLAttributes<HTMLButtonElement> {
+export interface SuggestionRowProps extends Omit<
+  ButtonHTMLAttributes<HTMLButtonElement>,
+  'className'
+> {
+  replayMask?: boolean;
   icon: ReactNode;
   /** Allow sentences to wrap on narrow Home layouts. */
   multiline?: boolean;
@@ -36,7 +41,7 @@ export const SuggestionRow = forwardRef<HTMLButtonElement, SuggestionRowProps>(
       icon,
       multiline = false,
       children,
-      className = '',
+      replayMask = false,
       type = 'button',
       trailingControl = false,
       tone = 'default',
@@ -45,16 +50,11 @@ export const SuggestionRow = forwardRef<HTMLButtonElement, SuggestionRowProps>(
     ref,
   ): JSX.Element {
     return (
-      <button
+      <ControlButton
         ref={ref}
         type={type}
-        className={`focus-ring flex w-full items-center gap-2 rounded-full px-2 py-2 text-left text-s ${
-          tone === 'muted' ? 'fg-tertiary' : 'fg-secondary'
-        } transition-colors disabled:pointer-events-none disabled:fg-disabled ${
-          trailingControl === false
-            ? 'hover:bg-subtle hover:fg-primary'
-            : `${trailingControl === 'wide' ? 'pr-28' : 'pr-12'} group-hover:bg-subtle group-hover:fg-primary`
-        } ${className}`}
+        presentation="suggestion-row"
+        appearance={{ tone, trailingControl, replayMask }}
         {...props}
       >
         {/* A 16px icon starts 16px in, on the section title's edge; the
@@ -65,7 +65,7 @@ export const SuggestionRow = forwardRef<HTMLButtonElement, SuggestionRowProps>(
         <span className={multiline ? 'min-w-0' : 'min-w-0 truncate'}>
           {children}
         </span>
-      </button>
+      </ControlButton>
     );
   },
 );

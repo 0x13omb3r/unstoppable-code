@@ -1,6 +1,6 @@
 import { memo, useEffect, useRef, useState, type JSX } from 'react';
 import type { ShowFilesWorkspaceTarget } from '@canopy/desktop-shared/types';
-import { APP_ADVISOR_PROJECT_ID } from '@canopy/desktop-shared/types';
+import { isBotProjectId } from '@canopy/protocol/chat-targets';
 import {
   restoreTurnFileFocus,
   TurnFileChipView,
@@ -49,7 +49,7 @@ const UNNAMED_LOCATION = 'project folder';
  * changed-file cards in the turn summary and opens the file in the existing
  * viewer beside the chat; an App Advisor chip opens it in the main window.
  */
-export const TurnFileChip = memo(function TurnFileChip({
+export const TurnFileControl = memo(function TurnFileControl({
   path,
   absolutePath,
   target: explicitTarget,
@@ -109,8 +109,7 @@ export const TurnFileChip = memo(function TurnFileChip({
       const chatOrigin = { projectId, worktreeId, chatTabId: chatId };
       const surface = detectChatStoreSurface();
       const opensInMainWindow =
-        surface === 'app-advisor' &&
-        target.projectId !== APP_ADVISOR_PROJECT_ID;
+        surface === 'app-advisor' && !isBotProjectId(target.projectId);
       focusCleanup.current?.();
       focusCleanup.current = undefined;
       if (opensInMainWindow) {

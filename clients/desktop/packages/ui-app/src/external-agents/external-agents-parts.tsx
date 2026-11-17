@@ -1,5 +1,6 @@
 'use client';
 
+import { ControlButton } from '@canopy/ui-shared/components';
 import { useState, type JSX, type ReactNode } from 'react';
 import type {
   ExternalAgentActivityItem,
@@ -395,11 +396,10 @@ export function AgentRow({
   // button's -my-3 py-3 reclaims the group's row padding so the whole row clicks.
   return (
     <div>
-      <button
-        type="button"
+      <ControlButton
         data-settings-control="row"
         onClick={onOpen}
-        className="focus-ring -my-3 flex w-full min-w-0 items-center gap-3 rounded-md py-3 text-left"
+        presentation="settings-agent-row"
         data-testid="external-agent-row"
         data-connection-id={connection.id}
       >
@@ -437,7 +437,7 @@ export function AgentRow({
           aria-hidden
           className="shrink-0 fg-tertiary"
         />
-      </button>
+      </ControlButton>
     </div>
   );
 }

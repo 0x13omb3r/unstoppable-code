@@ -1,3 +1,4 @@
+import { ControlButton } from '@canopy/ui-shared/components';
 import { Surface } from '@canopy/ui-shared/components';
 import { toAppError } from '@canopy/protocol/app-errors';
 import {
@@ -2487,7 +2488,7 @@ export const PrStatusBar = memo(function PrStatusBar({
                 onMouseLeave={(): void => setBranchPillLockedWidth(null)}
                 paneWidth={branchPillLockedWidth ?? undefined}
               >
-                <button
+                <ControlButton
                   ref={branchMenuTriggerRef}
                   type="button"
                   data-testid="pr-status-bar-branch-menu-trigger"
@@ -2504,9 +2505,8 @@ export const PrStatusBar = memo(function PrStatusBar({
                   // drops from 8px to 4px: that 4px IS the text-to-copy gap,
                   // and the label gets the reclaimed 4px back, so it truncates
                   // less.
-                  className={`electron-no-drag focus-ring relative flex h-7 min-w-0 items-center rounded-md pl-2 ${
-                    branchPillLockedWidth !== null ? 'pr-1' : 'pr-2'
-                  }`}
+                  presentation="branch-picker"
+                  appearance={branchPillLockedWidth !== null}
                 >
                   <span
                     ref={branchMenuAnchorRef}
@@ -2530,7 +2530,7 @@ export const PrStatusBar = memo(function PrStatusBar({
                       {currentBranchDisplay}
                     </span>
                   )}
-                </button>
+                </ControlButton>
                 {/* Quick copy, revealed on pill hover INSIDE the pill, in-flow
                   after the label. The wrapper's width is locked to its rest
                   measurement for the whole hover (see onMouseEnter), so the
@@ -2545,7 +2545,7 @@ export const PrStatusBar = memo(function PrStatusBar({
                     <Tooltip
                       label={copiedBranch ? 'Copied' : 'Copy branch name'}
                     >
-                      <button
+                      <ControlButton
                         type="button"
                         onClick={handleCopyBranch}
                         data-testid="pr-status-bar-branch-copy"
@@ -2556,14 +2556,14 @@ export const PrStatusBar = memo(function PrStatusBar({
                         // 28px rounded-md branch pill, so its radius is the 8px
                         // of that pill less the inset, keeping the arcs
                         // concentric.
-                        className="electron-no-drag focus-ring flex h-6 w-6 items-center justify-center rounded-[calc(var(--radius-md)-2px)] fg-secondary transition-colors hover:bg-subtle hover:fg-primary"
+                        presentation="branch-copy"
                       >
                         {copiedBranch ? (
                           <CheckIcon size={16} />
                         ) : (
                           <CopyIcon size={16} />
                         )}
-                      </button>
+                      </ControlButton>
                     </Tooltip>
                   </span>
                 )}
@@ -2727,17 +2727,17 @@ export const PrStatusBar = memo(function PrStatusBar({
                       </span>
                     }
                   >
-                    <button
+                    <ControlButton
                       ref={baseBranchTriggerRef}
                       type="button"
                       onClick={handleBaseBranchClick}
                       data-testid="pr-status-bar-base-branch"
                       aria-haspopup="dialog"
                       aria-expanded={baseBranchDropdownOpen}
-                      className="electron-no-drag focus-ring inline-flex h-7 w-full min-w-0 items-center gap-0.5 rounded-md px-2 fg-secondary transition-colors hover:bg-subtle"
+                      presentation="base-branch-picker"
                     >
                       <span className={BRANCH_LABEL}>{baseBranchDisplay}</span>
-                    </button>
+                    </ControlButton>
                   </RichHoverTooltip>
                 )}
                 {visibleBaseBranchDrifts.length > 0 &&

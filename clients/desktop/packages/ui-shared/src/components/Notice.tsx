@@ -259,6 +259,8 @@ interface NoticeContentProps extends Omit<
    * is read in document order instead of being announced on mount.
    */
   role?: 'status' | 'alert' | 'none';
+  /** Announce a failure assertively while retaining the notice's visual intent. */
+  announcement?: 'assertive';
   /** Announce only the copy when action updates should stay outside the region. */
   liveRegionScope?: 'notice' | 'content';
   /**
@@ -442,7 +444,7 @@ export function ComposerNoticeStack({
     <NoticeShapeProvider shape="composer">
       <div
         data-testid={testId}
-        className="mb-2 flex flex-col gap-2 px-4 empty:hidden"
+        className="flex flex-col gap-2 px-4 pb-2 empty:hidden"
       >
         {children}
       </div>
@@ -477,9 +479,8 @@ export function ComposerNoticeStack({
  * - Rows share a 28px rhythm: the icon column, a single line of copy with
  *   its inset, the `NoticeButton`s, and the dismiss control are all 28px tall,
  *   so a one-line notice with actions is one straight row; on a wrapped
- *   message the glyph stays on the first line (centred on the whole message
- *   in the `composer` shape, like the buttons beside it) and the dismiss
- *   control follows the rule below.
+ *   message the glyph stays centred on the first text line, including in
+ *   the `composer` shape, and the dismiss control follows the rule below.
  * - Positions are stable across a stack: the dismiss control sits in the
  *   top-right corner, its 28px hit box inset 8px from the top and 8px from
  *   the right (the surface's 12px inset pulled in by 4px), so the corner
@@ -525,6 +526,7 @@ export function Notice({
   dismissDisabled = false,
   dismissTestId,
   role,
+  announcement,
   liveRegionScope = 'notice',
   shape,
   surface = 'tray',
@@ -564,7 +566,11 @@ export function Notice({
     displayErrorCode,
   });
   const resolvedIcon = icon === undefined ? defaultIcon(intent) : icon;
-  const resolvedRole = role ?? (intent === 'destructive' ? 'alert' : 'status');
+  const resolvedRole =
+    role ??
+    (announcement === 'assertive' || intent === 'destructive'
+      ? 'alert'
+      : 'status');
   const live = resolvedRole !== 'none';
   const hasActions = actions !== undefined && actions !== null;
   const trailingActions = hasActions && actionsPlacement === 'trailing';
@@ -616,11 +622,11 @@ export function Notice({
       <div className="@container/notice flex min-w-0 flex-1 flex-col gap-2">
         <div className="flex min-w-0 flex-wrap items-center gap-x-4 gap-y-2">
           <div
-            // On the composer the glyph centres on a wrapped message, level
-            // with the trailing buttons; elsewhere it heads the first line.
+            // The copy has a 5px line inset; the glyph follows that inset
+            // and centres within one inherited line, even when copy wraps.
             className={`flex min-w-0 flex-1 basis-64 ${
               composerShape
-                ? 'items-center gap-3'
+                ? 'items-start gap-3'
                 : toastShape
                   ? 'items-start gap-3'
                   : 'items-start gap-2'
@@ -629,11 +635,13 @@ export function Notice({
             {resolvedIcon !== null && (
               <span
                 aria-hidden="true"
-                className={`flex h-7 shrink-0 items-center justify-center ${
+                className={`shrink-0 pt-1.25 ${
                   composerShape ? 'w-8' : 'w-4'
                 } ${INTENT_ICON_CLASS[intent]}`}
               >
-                {resolvedIcon}
+                <span className="flex h-lh items-center justify-center">
+                  {resolvedIcon}
+                </span>
               </span>
             )}
             <div

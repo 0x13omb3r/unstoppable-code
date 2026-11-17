@@ -1,3 +1,4 @@
+import { ControlButton } from '@canopy/ui-shared/components';
 import {
   useContext,
   useEffect,
@@ -225,10 +226,10 @@ export function ChatMarkdownLink({
         delay="long"
         contentClassName="max-w-96 break-all"
       >
-        <button
+        <ControlButton
           type="button"
           data-testid="chat-local-file-link"
-          className={`focus-ring cursor-pointer ${TRANSCRIPT_LINK_CLASS}`}
+          presentation="transcript-file-link"
           disabled={opening}
           data-file-link-line={
             location
@@ -242,7 +243,7 @@ export function ChatMarkdownLink({
           }}
         >
           {children}
-        </button>
+        </ControlButton>
       </Tooltip>
     </FileLinkStatus>
   );

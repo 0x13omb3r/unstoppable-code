@@ -9,6 +9,7 @@ import { getWorkspaceContextService } from '../lib/workspace-context-service';
 import { getOrgProjectCatalogService } from './org-project-catalog-service';
 import { appendOrgProjectPlaceholderRows } from './org-project-placeholder-rows';
 import type { DesktopSessionSnapshotArgs } from '@canopy/desktop-shared/types';
+import { isBotProjectId } from '@canopy/protocol/chat-targets';
 import { validateId } from '../lib/validation';
 import { listWorktreeChatSummaryBatch } from './worktree-chat-summary-batch';
 import type {
@@ -219,7 +220,7 @@ export async function buildDesktopSessionSnapshot(
     });
     return buildProjectedModelCatalog(undefined, {
       cursor: true,
-      antigravity: projectId !== 'app-advisor',
+      antigravity: !isBotProjectId(projectId),
       copilot: true,
       opencode: true,
       owner,

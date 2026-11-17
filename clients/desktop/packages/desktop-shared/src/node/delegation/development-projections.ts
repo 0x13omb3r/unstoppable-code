@@ -10,5 +10,6 @@ export function createDevelopmentDelegationProjection(
 ): ReturnType<typeof createDelegationProjection> {
   return createDelegationProjection(harness, namespace, broker, {
     developmentProbe: true,
+    surface: 'worktree-chat',
   });
 }

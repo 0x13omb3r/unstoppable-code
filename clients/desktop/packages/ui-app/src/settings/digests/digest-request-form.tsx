@@ -261,7 +261,7 @@ export function DigestRequestForm({
         Request a digest
       </Heading>
       <p
-        className="mt-1 text-xs fg-secondary"
+        className="pt-1 text-xs fg-secondary"
         data-testid={`${testIdPrefix}-digest-request-intro`}
       >
         Generate a one-off report covering any range of up to 90 days. A report
@@ -276,7 +276,7 @@ export function DigestRequestForm({
       />
 
       <form
-        className="mt-4 flex flex-wrap items-end gap-3"
+        className="pt-4 flex flex-wrap items-end gap-3"
         onSubmit={handleSubmit}
       >
         <FormField label="Start date">
@@ -323,7 +323,7 @@ export function DigestRequestForm({
       </form>
 
       {notice && (
-        <div className="mt-3 flex flex-wrap items-center gap-3">
+        <div className="pt-3 flex flex-wrap items-center gap-3">
           <p
             className="text-xs fg-secondary"
             role="status"
@@ -349,7 +349,7 @@ export function DigestRequestForm({
           the same thing twice. */}
       {outOfCredits && (
         <p
-          className="mt-3 text-xs fg-secondary"
+          className="pt-3 text-xs fg-secondary"
           data-testid={`${testIdPrefix}-digest-request-credits`}
         >
           You&rsquo;re out of AI Credits, so reports can&rsquo;t be generated

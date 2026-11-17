@@ -316,7 +316,10 @@ export const WorkerPipelineHostLaunchSchema = z.strictObject({
   /** `ExecutionOptions.secretEnv`: masked in step output. */
   secretEnv: CanopyChildEnvironmentSchema,
   inputs: WorkerPipelineLaunchInputsSchema.optional(),
-  /** The run's trigger event; absent for `dispatch` (CAN-6327). */
+  /**
+   * The run's trigger event; absent for `dispatch` (CAN-6327), or for
+   * `workflow` when the definition declares it and not `dispatch` (CAN-6868).
+   */
   event: WorkerPipelineLaunchEventSchema.optional(),
   target: CanopyJsonValueSchema.optional(),
   pipelinePreferenceLocator: CanopyJsonValueSchema.optional(),
@@ -367,6 +370,20 @@ export const WorkerPipelineHostLaunchSchema = z.strictObject({
    * (`owner.precommit.failure`). Cloud runners in a folder or worktree.
    */
   repositoryActions: z.literal('brokered').optional(),
+  /**
+   * Read-only job variants and their owner (CAN-6892): `owner`, the run's
+   * owner places each variant of its `isolation: read_only` jobs as a child
+   * run in a sandbox of its own (`owner.isolatedJob.*`); `variant`, this run
+   * is such a child, and runs the variant its owner holds instead of
+   * `isolatedVariantJob`. Absent, the run's variants run in its own sandbox.
+   */
+  isolatedJobs: z.enum(['owner', 'variant']).optional(),
+  /**
+   * The job a `variant` launch runs (CAN-6892): its definition is its
+   * parent's whole workflow, checked as its parent's was, and it runs only
+   * this job, from the request its owner holds.
+   */
+  isolatedVariantJob: z.string().min(1).max(512).optional(),
   /** The run's Codex app-server environment, when it has a Codex step (CAN-5095 D20). */
   codexEnvironment: z
     .strictObject({

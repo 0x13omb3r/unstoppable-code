@@ -69,7 +69,12 @@ import {
   getRtkManagedEnv,
 } from '@canopy/execution-engine/node/pipelines/config-paths';
 import { resolveChildPipeline } from './child-pipeline-resolver';
-import { hostPortTakesAction, runHostAction } from './host-action-runner';
+import {
+  hostArtifactsDir,
+  hostPortTakesAction,
+  runHostAction,
+} from './host-action-runner';
+import { buildPipelineHostIdempotencyKey } from '@canopy/execution-engine/pipelines/host-actions';
 import {
   resolveActionRuntime,
   type ResolvedActionRuntime,
@@ -150,6 +155,8 @@ import type {
   PipelineAgentModelAliasResolution,
   PipelineAiCreditsRoutingContext,
   PipelineAiCreditsRoutingOverride,
+  DelegatedChildPipelineRequest,
+  PipelineHostActionResult,
   PipelineLedgerAttempt,
   PipelineLedgerSubprocessTools,
   PipelineModelPolicyScope,
@@ -1330,11 +1337,15 @@ async function runNestedPipelineAction(
       'run-pipeline cannot define both with.cwd and target.path; use target.path',
     );
   }
+  // A host that checks each child itself (a cloud runner's, CAN-6868)
+  // resolves children only from the run's checkout, its folder, the step's
+  // YAML and the bundled workflows: no person's store is read.
   if (
     options.executionContext !== undefined &&
     parseWorkspaceContext(options.executionContext)?.kind === 'organization' &&
     options.childPipelineAuthorizations === undefined &&
-    options.allowUnverifiedForegroundChildren !== true
+    options.allowUnverifiedForegroundChildren !== true &&
+    options.runtime.admitChildPipeline === undefined
   ) {
     throw new Error(backgroundExecutionDeniedMessage('unsupported-target'));
   }
@@ -1401,6 +1412,47 @@ async function runNestedPipelineAction(
   // and nothing of the other owner's is read. A legacy `with.cwd` path is not
   // a workspace id and is not owner-checked here.
   const requestedTarget = options.step.target;
+  // A host that runs a child on another target as a run of its own (a
+  // cloud runner, CAN-6868 part 3) hands it to its owner, which checks the
+  // target as authorizeTarget does: nothing of the target is read here.
+  const delegatedTarget: DelegatedChildPipelineRequest['target'] | null =
+    requestedTarget?.scope === 'worktree'
+      ? {
+          scope: 'worktree',
+          workspaceId: requestedTarget.workspace_id,
+          worktreeId: requestedTarget.worktree.id,
+        }
+      : requestedTarget?.scope === 'directory' &&
+          requestedTarget.path !== undefined
+        ? { scope: 'directory', path: requestedTarget.path }
+        : requestedTarget?.scope === 'global'
+          ? { scope: 'global' }
+          : null;
+  if (
+    delegatedTarget !== null &&
+    options.runtime.delegateChildPipeline !== undefined
+  ) {
+    // The owner runs the child at its target's root: a legacy `with.cwd`
+    // has nowhere to go, so it fails here rather than being dropped.
+    if (inputValues.cwd?.trim() && delegatedTarget.scope !== 'directory')
+      throw new Error(
+        `Step "${options.step.id}" can't use with.cwd with a ${delegatedTarget.scope} target in a cloud run; the child runs at its target's root.`,
+      );
+    // A folder target resolves against the step's working directory, as in
+    // process, and crosses relative to the run's checkout.
+    const target =
+      delegatedTarget.scope === 'directory'
+        ? delegatedFolderTarget(options, delegatedTarget.path)
+        : delegatedTarget;
+    return runDelegatedChildPipeline(options, {
+      delegate: options.runtime.delegateChildPipeline,
+      pipeline,
+      pipelineId,
+      inputs: childInputs,
+      target,
+      startedAt,
+    });
+  }
   if (requestedTarget?.scope === 'worktree') {
     await options.runtime.pipelineOwnership?.authorizeTarget({
       executionContext: options.executionContext,
@@ -1598,7 +1650,54 @@ async function runNestedPipelineAction(
   const resumeChildExecutionId = options.resumeChildReasonIds?.length
     ? options.resumeChildExecutionId
     : undefined;
+  // A host that classified its launch without the child checks it here,
+  // before the step names it (CAN-6868): on a resume, the stored snapshot
+  // and inputs that run again, not the definition read now.
   const childExecutionId = resumeChildExecutionId ?? randomUUID();
+  if (options.runtime.admitChildPipeline) {
+    const repoPath =
+      resolvedTarget.repoPath === undefined
+        ? {}
+        : { repoPath: resolvedTarget.repoPath };
+    const stored = resumeChildExecutionId
+      ? await (
+          await import('./execution-state')
+        ).loadExecutionState(
+          resumeChildExecutionId,
+          options.runtime.executionsDir,
+        )
+      : null;
+    const step = {
+      childExecutionId,
+      step: {
+        executionId: options.executionId,
+        jobId: options.jobId,
+        stepId: parentStepId,
+        attempt: options.attempt ?? 0,
+        iteration: effectiveIteration,
+      },
+      signal: options.signal,
+    };
+    await options.runtime.admitChildPipeline(
+      stored
+        ? {
+            ...step,
+            kind: 'resume',
+            pipelineId,
+            pipeline: stored.pipeline_snapshot,
+            inputs: stored.inputs,
+            ...repoPath,
+          }
+        : {
+            ...step,
+            kind: 'start',
+            pipelineId,
+            pipeline,
+            inputs: childInputs,
+            ...repoPath,
+          },
+    );
+  }
   await options.onRunningStepPatch?.(parentStepId, {
     child_execution_id: childExecutionId,
   });
@@ -1686,6 +1785,151 @@ async function runNestedPipelineAction(
   } finally {
     options.signal.removeEventListener('abort', cancelChild);
   }
+}
+
+/**
+ * A delegated child's folder target: the step's `target.path` resolved
+ * against its working directory, as the in-process resolver does, and
+ * named relative to the run's checkout. Throws for one outside it.
+ */
+function delegatedFolderTarget(
+  options: RunStepOptions & { resolvedCwd: string },
+  folder: string,
+): { readonly scope: 'directory'; readonly path: string } {
+  const root = getExecutionCheckoutRoot(options);
+  const relative =
+    typeof root === 'string' && !path.isAbsolute(folder)
+      ? path.relative(root, path.resolve(options.resolvedCwd, folder))
+      : null;
+  if (
+    relative === null ||
+    relative.startsWith('..') ||
+    path.isAbsolute(relative)
+  )
+    throw new Error(
+      `Step "${options.step.id}" targets a folder outside the run's checkout; a cloud run hands only a folder within it to its owner.`,
+    );
+  return {
+    scope: 'directory',
+    path: relative === '' ? '.' : relative.split(path.sep).join('/'),
+  };
+}
+
+/** A child on another target, run by the host's owner (CAN-6868 part 3). */
+async function runDelegatedChildPipeline(
+  options: RunStepOptions & { logFile: string; logMetadata: StepLogMetadata },
+  child: {
+    readonly delegate: NonNullable<ExecutionRuntime['delegateChildPipeline']>;
+    readonly pipeline: Pipeline;
+    readonly pipelineId: string;
+    readonly inputs: Readonly<Record<string, string>>;
+    readonly target: DelegatedChildPipelineRequest['target'];
+    readonly startedAt: string;
+  },
+): Promise<StepResult> {
+  const parentStepId = options.parentStepId ?? options.step.id;
+  const attempt = options.attempt ?? 0;
+  const iteration = options.iteration ?? 1;
+  // Kept across a resume, so the owner finds the same child run again.
+  const childExecutionId = options.resumeChildExecutionId ?? randomUUID();
+  await options.onRunningStepPatch?.(parentStepId, {
+    child_execution_id: childExecutionId,
+  });
+  const idempotencyKey = buildPipelineHostIdempotencyKey({
+    executionId: options.executionId,
+    jobId: options.jobId,
+    stepId: parentStepId,
+    attempt,
+    iteration,
+  });
+  await fsp.appendFile(
+    options.logFile,
+    `[run-pipeline] delegating ${child.pipelineId} to its target\n`,
+    'utf8',
+  );
+  let result: PipelineHostActionResult;
+  try {
+    result = await child.delegate({
+      childExecutionId,
+      pipelineId: child.pipelineId,
+      document: JSON.stringify(child.pipeline),
+      inputs: child.inputs,
+      target: child.target,
+      // The run's owner and origin, as a host step's caller carries them:
+      // its owner checks the target against the run's owner.
+      caller: {
+        executionId: options.executionId,
+        jobId: options.jobId,
+        stepId: parentStepId,
+        attempt,
+        iteration,
+        idempotencyKey,
+        ...(options.pipelineId !== undefined && {
+          pipelineId: options.pipelineId,
+        }),
+        ...(options.pipelineName !== undefined && {
+          pipelineName: options.pipelineName,
+        }),
+        ...(options.executionContext !== undefined && {
+          executionContext: options.executionContext,
+        }),
+        ...(options.initiationSource !== undefined && {
+          initiationSource: options.initiationSource,
+        }),
+        ...(options.agentOrigin !== undefined && {
+          agentOrigin: options.agentOrigin,
+        }),
+        ...(options.initiator !== undefined && {
+          initiator: options.initiator,
+        }),
+      },
+      signal: options.signal,
+      timeoutMs: (options.step.timeout_minutes ?? 360) * 60_000,
+      artifactsDir: hostArtifactsDir(
+        options.runtime.executionsDir,
+        options.executionId,
+        idempotencyKey,
+      ),
+    });
+  } catch (error) {
+    const cancelled = options.signal.aborted;
+    return createStepResult({
+      ...options.logMetadata,
+      status: cancelled ? 'cancelled' : 'failure',
+      conclusion: cancelled ? 'cancelled' : 'failure',
+      outcome: cancelled ? 'cancelled' : 'failure',
+      started_at: child.startedAt,
+      completed_at: new Date().toISOString(),
+      outputs: {},
+      dynamic_env: {},
+      log_file: options.logFile,
+      child_execution_id: childExecutionId,
+      error: cancelled
+        ? 'Child workflow cancelled'
+        : error instanceof Error
+          ? error.message
+          : 'Child workflow failed',
+    });
+  }
+  const status = result.status === 'success' ? 'success' : 'failure';
+  await fsp.appendFile(
+    options.logFile,
+    `[run-pipeline] completed ${child.pipelineId} with ${status}\n`,
+    'utf8',
+  );
+  return createStepResult({
+    ...options.logMetadata,
+    status,
+    conclusion: status,
+    outcome: status,
+    started_at: child.startedAt,
+    completed_at: new Date().toISOString(),
+    outputs: result.outputs,
+    dynamic_env: {},
+    log_file: options.logFile,
+    child_execution_id: childExecutionId,
+    ...(result.status === 'failure' ? { error: result.error } : {}),
+  });
 }
 
 /**

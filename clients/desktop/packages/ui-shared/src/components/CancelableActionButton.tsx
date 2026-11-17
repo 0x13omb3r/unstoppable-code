@@ -1,3 +1,4 @@
+import { ControlButton } from './Button';
 /**
  * Running-action chrome shared by the worktree top bar's git actions and any
  * other long-running button that should become its own cancel control: the
@@ -36,12 +37,12 @@ export interface RunningActionIconProps {
  * The 12px box is fixed so the label does not jump when the glyph swaps (the
  * spinner is 10px, the ✕ 12px).
  */
-export function RunningActionIcon({
+export function RunningActionSpinnerSlot({
   cancellationRequested,
   spinnerTone,
 }: RunningActionIconProps): JSX.Element {
   return (
-    <span className="mr-1 inline-flex h-3 w-3 shrink-0 items-center justify-center">
+    <span className="inline-flex h-3 w-4 shrink-0 items-center justify-center pr-1">
       <ThinkingSpinner
         tone={spinnerTone}
         quiet
@@ -65,13 +66,6 @@ export type CancelActionButtonTone =
   | 'destructive'
   | 'merged';
 
-const TONE_CLASS_NAMES: Record<CancelActionButtonTone, string> = {
-  accent: 'fg-accent hover:bg-accent-subtle hover:fg-accent-strong',
-  warning: 'fg-warning hover:bg-warning-subtle',
-  destructive: 'fg-destructive hover:bg-destructive-subtle',
-  merged: 'fg-special-strong hover:bg-special-subtle',
-};
-
 export interface CancelActionButtonProps {
   onCancel: () => void;
   /** Full action name, e.g. `Cancel Merge`. */
@@ -94,9 +88,8 @@ export interface CancelActionButtonProps {
  * `left-0.5` + half of 32 lands on 18. The group wrapper supplies the
  * positioning context.
  *
- * It stays a native `<button>` rather than `Button`: it is 24px tall inside
- * the 28px pill, below the smallest `Button` size, and its `merged` tone has
- * no `Button` variant.
+ * The cancel action preserves the 24px inset and the merged tone inside the 28px
+ * action. The surrounding action supplies the pill and reveal behavior.
  *
  * The action button underneath stays a cancel target too, so clicking the
  * label does the same thing. Being a sibling (not a child) means a click on
@@ -120,7 +113,7 @@ export function CancelActionButton({
     // translate landed on a subpixel (measured 1.8 top / 2.3 bottom).
     <span className="absolute left-0.5 top-0.5 hidden group-hover/gitaction:block">
       <Tooltip label={label}>
-        <button
+        <ControlButton
           type="button"
           onClick={onCancel}
           aria-label={label}
@@ -134,11 +127,14 @@ export function CancelActionButton({
           // is a 28px capsule and this sits 2px inside it top, bottom and
           // left, so a 24px capsule's end arc (radius 12) shares the centre
           // of the pill's end cap (radius 14) and the two stay concentric.
-          className={`electron-no-drag focus-ring flex h-6 w-8 items-center justify-center rounded-full transition-colors ${TONE_CLASS_NAMES[tone]}`}
+          presentation="cancel-action"
+          appearance={{ tone }}
         >
           <CloseMediumIcon />
-        </button>
+        </ControlButton>
       </Tooltip>
     </span>
   );
 }
+
+export { RunningActionSpinnerSlot as RunningActionIcon };

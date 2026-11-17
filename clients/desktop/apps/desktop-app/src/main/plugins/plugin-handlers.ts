@@ -38,6 +38,31 @@ import { registerIpcHandler } from '../ipc/register';
 import { reportCuratedPluginInstalled } from './curated-plugin-events';
 import { refreshInvocableInventoryAfterMutation } from './invocable-inventory-service';
 import { validateId } from '../lib/validation';
+import {
+  ITEM_INSTALL_HARNESSES,
+  harnessInstallItemKey,
+  isItemInstallHarness,
+  parseHarnessInstallItemRef,
+  parsePluginStandInCandidate,
+  type HarnessCompatibilityHarness,
+  type HarnessInstallItemRef,
+  type InstallItemForHarnessesRequest,
+  type ItemHarnessInstalls,
+  type MarketplaceInfo,
+  type PluginInfo,
+  type RetryItemHarnessInstallRequest,
+} from '@canopy/protocol/plugins';
+import {
+  installItemForHarnesses,
+  retryItemHarnessInstall,
+  withPluginHarnessInstalls,
+} from './harness-installs';
+import {
+  itemHarnessInstallDeps,
+  itemHarnessInstallStore,
+  resyncHarnessInstallsAfterUpdate,
+  servedPluginHarnessInstalls,
+} from './harness-install-runtime';
 import * as service from './plugin-service';
 import { installPluginForPrincipal } from './remote-install-source-gate';
 import { resolveRemoteBridgeSender } from '../remote-control/host/bridge-window';
@@ -170,26 +195,191 @@ export async function installBuiltInPluginForCaller(
   return result;
 }
 
-export function installPluginForCaller(request: {
+export async function installPluginForCaller(request: {
   marketplaceId: string;
   pluginName: string;
   sourceUrl: string;
   remote: boolean;
 }): Promise<Awaited<ReturnType<typeof service.installPlugin>>> {
-  return refreshAfterSuccess('plugins:install-plugin', () =>
+  const result = await refreshAfterSuccess('plugins:install-plugin', () =>
     installPluginForPrincipal(request, service.installPlugin),
   );
+  // Installing an installed plugin again is its update (CAN-6817).
+  if (result.success)
+    await resyncHarnessInstallsAfterUpdate({
+      plugins: {
+        marketplaceId: request.marketplaceId,
+        name: request.pluginName,
+      },
+    });
+  return result;
 }
 
-export function refreshMarketplacesForCaller(
+export async function refreshMarketplacesForCaller(
   providerUpdates: 'always' | 'if-stale' | undefined,
   progress?: MarketplaceProgress,
 ): Promise<Awaited<ReturnType<typeof service.refreshMarketplaces>>> {
-  return refreshAfterSuccess('plugins:refreshMarketplaces', () =>
+  const result = await refreshAfterSuccess('plugins:refreshMarketplaces', () =>
     service.refreshMarketplaces(progress, {
       providerUpdates: providerUpdates === 'always' ? 'always' : 'if-stale',
     }),
   );
+  // A refresh the user asked for updates every marketplace (CAN-6817).
+  if (result.success && providerUpdates === 'always')
+    await resyncHarnessInstallsAfterUpdate({ plugins: {} });
+  return result;
+}
+
+/** A marketplace update, for the window and App Advisor alike. */
+export async function updateMarketplaceForCaller(
+  id: string,
+  progress?: MarketplaceProgress,
+): Promise<Awaited<ReturnType<typeof service.updateMarketplace>>> {
+  const result = await refreshAfterSuccess('plugins:updateMarketplace', () =>
+    service.updateMarketplace(id, progress),
+  );
+  // Every harness copy of its plugins is rebuilt from the update (CAN-6817).
+  if (result.success)
+    await resyncHarnessInstallsAfterUpdate({ plugins: { marketplaceId: id } });
+  return result;
+}
+
+/** Adds the CAN-6816 records to rows served to a window; never persisted. */
+async function withServedHarnessInstalls<
+  T extends { success: boolean; data?: { marketplaces: MarketplaceInfo[] } },
+>(result: T): Promise<T> {
+  if (!result.success || result.data === undefined) return result;
+  const records = await itemHarnessInstallStore
+    .read()
+    .catch((): Record<string, never> => ({}));
+  return {
+    ...result,
+    data: withPluginHarnessInstalls(
+      result.data,
+      await servedPluginHarnessInstalls(records, result.data.marketplaces),
+    ),
+  };
+}
+
+/**
+ * Adds the CAN-6816 record to one plugin row a handler answers with, so a
+ * window that replaces its row with this one keeps the record. Never
+ * persisted.
+ */
+async function withServedPluginHarnessInstalls<
+  T extends { success: boolean; data?: PluginInfo },
+>(result: T): Promise<T> {
+  const plugin = result.data;
+  if (!result.success || plugin === undefined) return result;
+  const records = await itemHarnessInstallStore
+    .read()
+    .catch((): Record<string, never> => ({}));
+  const key = harnessInstallItemKey({
+    kind: 'plugin',
+    marketplaceId: plugin.marketplaceId,
+    pluginName: plugin.name,
+  });
+  const record = Object.prototype.hasOwnProperty.call(records, key)
+    ? records[key]
+    : undefined;
+  if (record === undefined) return result;
+  const served =
+    (await servedPluginRecord(key, record, plugin.marketplaceId)) ?? record;
+  return { ...result, data: { ...plugin, harnessInstalls: served } };
+}
+
+/** One plugin's record with outside changes flagged (CAN-6817). */
+async function servedPluginRecord(
+  key: string,
+  record: ItemHarnessInstalls,
+  marketplaceId: string,
+): Promise<ItemHarnessInstalls | undefined> {
+  const cache = await service.loadMarketplacesCacheOnly();
+  const marketplace = cache.success
+    ? cache.data?.marketplaces.find((entry) => entry.id === marketplaceId)
+    : undefined;
+  if (marketplace === undefined) return undefined;
+  return (await servedPluginHarnessInstalls({ [key]: record }, [marketplace]))[
+    key
+  ];
+}
+
+function parseHarnessList(value: unknown): HarnessCompatibilityHarness[] {
+  if (value === undefined) return [];
+  if (!Array.isArray(value) || value.length > ITEM_INSTALL_HARNESSES.length)
+    throw new Error('Invalid harness list.');
+  if (!value.every(isItemInstallHarness)) throw new Error('Unknown harness.');
+  return value;
+}
+
+function parseItemRef(value: unknown): HarnessInstallItemRef {
+  const item = parseHarnessInstallItemRef(value);
+  // The record key and the cache lookup are the only uses; a skill folder
+  // is resolved inside the skills root.
+  if (item === undefined) throw new Error('Invalid plugin or skill.');
+  return item;
+}
+
+function parseInstallForHarnessesRequest(
+  value: unknown,
+): InstallItemForHarnessesRequest {
+  if (typeof value !== 'object' || value === null || Array.isArray(value))
+    throw new Error('Invalid install request.');
+  const request: Record<string, unknown> = { ...value };
+  const pendingHarnesses = parseHarnessList(request.pendingHarnesses);
+  if (
+    request.mode !== undefined &&
+    request.mode !== 'add' &&
+    request.mode !== 'catch-up'
+  )
+    throw new Error('Invalid install mode.');
+  const item = parseItemRef(request.item);
+  // The publisher's MCP server for a plugin's ChatGPT app (CAN-6818). Main
+  // installs it only when the catalog lists that endpoint.
+  const standIn =
+    request.standIn === undefined
+      ? undefined
+      : parsePluginStandInCandidate(request.standIn);
+  if (request.standIn !== undefined && standIn === undefined)
+    throw new Error('Invalid stand-in MCP server.');
+  if (standIn !== undefined && item.kind !== 'plugin')
+    throw new Error('Only a plugin has a stand-in MCP server.');
+  return {
+    item,
+    harnesses: parseHarnessList(request.harnesses),
+    ...(pendingHarnesses.length > 0 ? { pendingHarnesses } : {}),
+    ...(request.mode !== undefined ? { mode: request.mode } : {}),
+    ...(standIn !== undefined ? { standIn } : {}),
+  };
+}
+
+/**
+ * A record an install or Try again answers with, served the way rows are
+ * (outside changes and stand-ins, CAN-6817 and CAN-6818), so the window that
+ * asked shows it without reloading. Never persisted.
+ */
+async function servedItemRecord(
+  item: HarnessInstallItemRef,
+  record: ItemHarnessInstalls,
+): Promise<ItemHarnessInstalls> {
+  if (item.kind !== 'plugin') return record;
+  const served = await servedPluginRecord(
+    harnessInstallItemKey(item),
+    record,
+    item.marketplaceId,
+  ).catch((): undefined => undefined);
+  return served ?? record;
+}
+
+function parseRetryHarnessInstallRequest(
+  value: unknown,
+): RetryItemHarnessInstallRequest {
+  if (typeof value !== 'object' || value === null || Array.isArray(value))
+    throw new Error('Invalid retry request.');
+  const request: Record<string, unknown> = { ...value };
+  if (!isItemInstallHarness(request.harness))
+    throw new Error('Unknown harness.');
+  return { item: parseItemRef(request.item), harness: request.harness };
 }
 
 export function registerPluginHandlers(): void {
@@ -350,11 +540,43 @@ export function registerPluginHandlers(): void {
     };
   };
 
-  registerIpcHandler(PLUGINS_CHANNELS.LOAD, (event) =>
-    service.loadMarketplacesForPresentation(progressFor(event)),
+  registerIpcHandler(PLUGINS_CHANNELS.LOAD, async (event) =>
+    withServedHarnessInstalls(
+      await service.loadMarketplacesForPresentation(progressFor(event)),
+    ),
   );
-  registerIpcHandler(PLUGINS_CHANNELS.LOAD_CACHE_ONLY, () =>
-    service.loadMarketplacesForPresentation(undefined, true),
+  registerIpcHandler(PLUGINS_CHANNELS.LOAD_CACHE_ONLY, async () =>
+    withServedHarnessInstalls(
+      await service.loadMarketplacesForPresentation(undefined, true),
+    ),
+  );
+  // One Add for every harness, for plugins and skills (CAN-6816). The
+  // renderer calls these only while the `customize-discovery` Labs
+  // experiment is on. Only the record file changes; the window that asked
+  // reloads the rows it shows.
+  registerIpcHandler(
+    PLUGINS_CHANNELS.INSTALL_FOR_HARNESSES,
+    async (_event, request: unknown) => {
+      const parsed = parseInstallForHarnessesRequest(request);
+      const record = await installItemForHarnesses(
+        itemHarnessInstallDeps,
+        parsed,
+      );
+      return record === null ? null : servedItemRecord(parsed.item, record);
+    },
+  );
+  registerIpcHandler(
+    PLUGINS_CHANNELS.RETRY_HARNESS_INSTALL,
+    async (event, request: unknown) => {
+      const parsed = parseRetryHarnessInstallRequest(request);
+      const record = await retryItemHarnessInstall(
+        itemHarnessInstallDeps,
+        parsed,
+        // A remote caller can check again but never fetch a plugin's source.
+        { restore: resolveRemoteBridgeSender(event.sender) === null },
+      );
+      return servedItemRecord(parsed.item, record);
+    },
   );
   // `providerUpdates` is caller-supplied rather than pinned to 'always'.
   // This channel has several renderer callers and not all are user gestures -
@@ -365,16 +587,16 @@ export function registerPluginHandlers(): void {
   // TTL-respecting default.
   registerIpcHandler(
     PLUGINS_CHANNELS.REFRESH,
-    (event, providerUpdates?: 'always' | 'if-stale') =>
-      refreshMarketplacesForCaller(providerUpdates, progressFor(event)),
+    async (event, providerUpdates?: 'always' | 'if-stale') =>
+      withServedHarnessInstalls(
+        await refreshMarketplacesForCaller(providerUpdates, progressFor(event)),
+      ),
   );
   registerIpcHandler(PLUGINS_CHANNELS.ADD, (event, repo: string) =>
     addMarketplaceForCaller(repo, progressFor(event)),
   );
   registerIpcHandler(PLUGINS_CHANNELS.UPDATE, (event, id: string) =>
-    refreshAfterSuccess('plugins:updateMarketplace', () =>
-      service.updateMarketplace(id, progressFor(event)),
-    ),
+    updateMarketplaceForCaller(id, progressFor(event)),
   );
   registerIpcHandler(
     PLUGINS_CHANNELS.REMOVE,
@@ -405,32 +627,60 @@ export function registerPluginHandlers(): void {
   );
   registerIpcHandler(
     PLUGINS_CHANNELS.INSTALL_PLUGIN,
-    (event, marketplaceId: string, pluginName: string, sourceUrl: string) =>
-      installPluginForCaller({
-        remote: resolveRemoteBridgeSender(event.sender) !== null,
-        marketplaceId,
-        pluginName,
-        sourceUrl,
-      }),
+    async (
+      event,
+      marketplaceId: string,
+      pluginName: string,
+      sourceUrl: string,
+    ) =>
+      withServedPluginHarnessInstalls(
+        await installPluginForCaller({
+          remote: resolveRemoteBridgeSender(event.sender) !== null,
+          marketplaceId,
+          pluginName,
+          sourceUrl,
+        }),
+      ),
   );
   registerIpcHandler(
     PLUGINS_CHANNELS.PREPARE_CODEX_COMPATIBILITY,
-    (_event, marketplaceId: string, pluginName: string) =>
-      refreshAfterSuccess('plugins:prepare-codex-compatibility', () =>
-        service.prepareCodexCompatibilityPlugin(marketplaceId, pluginName),
+    async (_event, marketplaceId: string, pluginName: string) =>
+      withServedPluginHarnessInstalls(
+        await refreshAfterSuccess('plugins:prepare-codex-compatibility', () =>
+          service.prepareCodexCompatibilityPlugin(marketplaceId, pluginName),
+        ),
       ),
   );
   registerIpcHandler(
     PLUGINS_CHANNELS.SET_CODEX_COMPAT_DISABLED,
-    (_event, marketplaceId: string, pluginName: string, disabled: boolean) =>
-      refreshAfterSuccess('plugins:set-codex-compat-disabled', () =>
-        service.setCodexCompatDisabled(marketplaceId, pluginName, disabled),
+    async (
+      _event,
+      marketplaceId: string,
+      pluginName: string,
+      disabled: boolean,
+    ) =>
+      withServedPluginHarnessInstalls(
+        await refreshAfterSuccess('plugins:set-codex-compat-disabled', () =>
+          service.setCodexCompatDisabled(marketplaceId, pluginName, disabled),
+        ),
       ),
   );
   registerIpcHandler(
     PLUGINS_CHANNELS.INSTALL_BUILT_IN_PLUGIN,
-    (event, request: InstallBuiltInPluginRequest) =>
-      installBuiltInPluginForCaller(request, progressFor(event)),
+    async (event, request: InstallBuiltInPluginRequest) => {
+      const result = await installBuiltInPluginForCaller(
+        request,
+        progressFor(event),
+      );
+      if (result.data === undefined) return result;
+      const served = await withServedPluginHarnessInstalls({
+        success: true,
+        data: result.data.plugin,
+      });
+      return served.data === undefined
+        ? result
+        : { ...result, data: { ...result.data, plugin: served.data } };
+    },
   );
   registerIpcHandler(
     PLUGINS_CHANNELS.SHARED_LIST,

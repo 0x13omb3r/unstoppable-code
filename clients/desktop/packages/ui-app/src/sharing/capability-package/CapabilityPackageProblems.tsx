@@ -231,12 +231,14 @@ export function CapabilityPackageProblems({
       )}
 
       {problems.length > 0 && onFixWithAI !== undefined && fixWithAIFailed && (
-        <ErrorBanner
-          errorSource="capability-package-problems-fix-with-ai-label"
-          className="mb-2"
-          error={FIX_WITH_AI_FAILURE_LABEL}
-          testId={`${testIdPrefix}-dependency-problems-fix-with-ai-error`}
-        />
+        <div className="pb-2 empty:hidden">
+          <ErrorBanner
+            errorSource="capability-package-problems-fix-with-ai-label"
+            className=""
+            error={FIX_WITH_AI_FAILURE_LABEL}
+            testId={`${testIdPrefix}-dependency-problems-fix-with-ai-error`}
+          />
+        </div>
       )}
 
       {single === undefined && problems.length > 0 && (

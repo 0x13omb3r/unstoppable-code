@@ -31,6 +31,7 @@ import type {
   RemoteControlPairingWindowCloseReason,
   RemoteControlRespondToPairingRequest,
   RemoteControlState,
+  RemoteControlUpdateHostRequest,
   RemoteIncomingPairing,
   RemoteOutgoingPairing,
 } from '@canopy/desktop-shared/types';
@@ -38,6 +39,7 @@ import {
   RemoteHostConnection,
   type PinnedHostSession,
 } from './client/host-connection';
+import type { LocalRelease } from './client/host-update';
 import {
   assertSafeToOpen,
   copyRemoteFile,
@@ -186,6 +188,11 @@ export interface RemoteControlServiceDeps {
   onRemoteUpdatesAllowedChange?: () => void;
   /** This computer's version; sessions need the same protocol on both sides. */
   version: RemoteVersion;
+  /**
+   * This computer's release flavor and shown version, for the notice when
+   * one of two paired computers needs an update.
+   */
+  release?: LocalRelease;
   createBridge: (
     controllerDeviceId: string,
     surface: RemoteSurface,
@@ -984,6 +991,7 @@ export class RemoteControlService {
           connection: connection?.status ?? 'idle',
           error: connection?.error ?? null,
           ended: connection?.ended ?? false,
+          update: connection?.update ?? null,
         };
       }),
       controllers: settings.pairedControllers.map((controller) => {
@@ -2251,6 +2259,15 @@ export class RemoteControlService {
     this.scheduleBroadcast();
   }
 
+  /**
+   * Runs an update step on a paired computer this one can't control because
+   * it runs an older protocol (CAN-5899).
+   */
+  async updateHost(request: RemoteControlUpdateHostRequest): Promise<void> {
+    await this.connectionForDevice(request.deviceId).updateHost(request.action);
+    this.scheduleBroadcast();
+  }
+
   /** Called when a remote window closes. */
   releaseMachine(deviceId: string): void {
     this.connections.get(deviceId)?.release();
@@ -2268,6 +2285,8 @@ export class RemoteControlService {
       }) ?? null;
     const connection: RemoteHostConnection = new RemoteHostConnection({
       version: this.deps.version,
+      ...(this.deps.release ? { release: this.deps.release } : {}),
+      ...(this.deps.log ? { log: this.deps.log } : {}),
       connect: (): Promise<SecureSession> => {
         const sessions = this.sessions;
         if (!sessions) {

@@ -13,9 +13,9 @@ const LAYOUT_CLASS = {
 const INDENT_CLASS = {
   none: '',
   /** Under a workspace header. */
-  group: 'ml-6',
+  group: 'pl-6',
   /** Under a worktree header. */
-  worktree: 'ml-12',
+  worktree: 'pl-12',
 } as const;
 
 /** The checkbox that selects a row in the resume dialog. */

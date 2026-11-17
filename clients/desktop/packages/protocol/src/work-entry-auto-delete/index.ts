@@ -34,8 +34,16 @@ export interface WorkEntryAutoDeleteArm {
   readonly unmergedLocalBranchDelete: WorkEntryAutoDeleteUnmergedBranch;
   readonly state: WorkEntryAutoDeleteState;
   readonly armedAt: string;
-  /** The initiating root chat, which receives failure reports. */
-  readonly armedBy: { readonly chatId: string };
+  /**
+   * The initiating root chat, which receives failure reports. projectId and
+   * worktreeId locate it when it lives outside the target (an Orchestrator
+   * chat arming another item); absent, the chat is in the target itself.
+   */
+  readonly armedBy: {
+    readonly chatId: string;
+    readonly projectId?: string;
+    readonly worktreeId?: string;
+  };
   /** Guards against removing a recreated target that reuses the id. */
   readonly identity: {
     readonly createdAt: string;

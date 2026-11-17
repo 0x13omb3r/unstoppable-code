@@ -107,22 +107,26 @@ export function TeamSubscriptionPricingSection({
         </p>
       </div>
       <div className={SETTINGS_CARD_GROUP_CLASS}>
-        <ErrorBanner
-          errorSource="team-subscription-pricing-section-load"
-          className="mt-3"
-          error={loadError?.copy}
-          details={loadError?.details}
-          onRetry={() => void loadPricing()}
-        />
-        <ErrorBanner
-          errorSource="team-subscription-pricing-section"
-          className="mt-3"
-          error={error?.copy}
-          details={error?.details}
-        />
+        <div className="pt-3 empty:hidden">
+          <ErrorBanner
+            errorSource="team-subscription-pricing-section-load"
+            className=""
+            error={loadError?.copy}
+            details={loadError?.details}
+            onRetry={() => void loadPricing()}
+          />
+        </div>
+        <div className="pt-3 empty:hidden">
+          <ErrorBanner
+            errorSource="team-subscription-pricing-section"
+            className=""
+            error={error?.copy}
+            details={error?.details}
+          />
+        </div>
 
         {loading ? (
-          <div className="mt-4">
+          <div className="pt-4">
             <DelayedLoadingPlaceholder>
               <Skeleton
                 loading

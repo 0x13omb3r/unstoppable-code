@@ -1,4 +1,5 @@
 import { readdir } from 'node:fs/promises';
+import { isBotProjectId } from '@canopy/protocol/chat-targets';
 import {
   APP_ADVISOR_PROJECT_ID,
   type ArchivedContainerManifest,
@@ -50,7 +51,7 @@ export async function resolveContainerRetentionDays(
   projectId: string,
 ): Promise<number> {
   validateId(projectId, 'projectId');
-  if (projectId === APP_ADVISOR_PROJECT_ID) {
+  if (isBotProjectId(projectId)) {
     const settings = await readAppAdvisorWorkspaceSettings();
     return resolveArchiveRetentionDays(
       'app-advisor',
@@ -100,10 +101,12 @@ async function listWorkspaceIds(): Promise<string[]> {
     entries = await readdir(getWorkspacesRootDir(), { withFileTypes: true });
   } catch (error) {
     if (isErrnoException(error) && error.code === 'ENOENT') {
+      // Default Bot only: the only Bot until the Bot registry lists the rest.
       return [APP_ADVISOR_PROJECT_ID];
     }
     throw error;
   }
+  // Default Bot only: the only Bot until the Bot registry lists the rest.
   const ids = new Set<string>([APP_ADVISOR_PROJECT_ID]);
   for (const entry of entries) {
     if (!entry.isDirectory()) continue;
@@ -120,7 +123,7 @@ async function listWorkspaceIds(): Promise<string[]> {
 async function retryTemporaryWorkspaceCleanup(
   projectId: string,
 ): Promise<void> {
-  if (projectId === APP_ADVISOR_PROJECT_ID) return;
+  if (isBotProjectId(projectId)) return;
   // Break the retention ↔ worktree-service initialization cycle; cleanup is
   // needed only after a purge makes a temporary workspace removable.
   const { retryDeferredTemporaryWorkspaceDeletion } =

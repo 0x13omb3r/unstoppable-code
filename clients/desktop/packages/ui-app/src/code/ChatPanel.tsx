@@ -4,6 +4,7 @@ import { isPlanModeReadOnly } from '@canopy/ui-shared/lib/plan-mode-suggestion';
 import { usePlanModeHintStore } from './composer/PlanModeHintContext';
 
 import type { ChatPlanReviewApproval } from '@canopy/protocol/portal';
+import { requestChatComposerText } from '@canopy/app-core';
 
 import {
   Suspense,
@@ -23,6 +24,7 @@ import {
   useRetainChatThread,
 } from '@canopy/app-state';
 import { portalChatMessageAttachmentsFromRefs } from '@canopy/protocol/portal';
+import { APP_ADVISOR_BOT_ID } from '@canopy/protocol/chat-targets';
 import type {
   PortalChatCloudAttachmentRef,
   PortalChatFileReference,
@@ -408,7 +410,7 @@ export function ChatPanel({
     () =>
       explicitContext ??
       (route?.scope === 'app_advisor'
-        ? { kind: 'bot', botId: 'app_advisor' }
+        ? { kind: 'bot', botId: APP_ADVISOR_BOT_ID }
         : route?.workspaceLocalId
           ? { kind: 'project', projectId: route.workspaceLocalId }
           : undefined),
@@ -1037,6 +1039,13 @@ export function ChatPanel({
               drafts.filter((candidate) => candidate !== draft),
             )
           }
+          onRestore={(draft): void => {
+            // Kept until this chat's composer takes it (CAN-6801).
+            if (requestChatComposerText({ chatId, text: draft.text }))
+              setUnsavedQueueEdits((drafts) =>
+                drafts.filter((candidate) => candidate !== draft),
+              );
+          }}
         />
         {(compactQueue ? [] : waitingQueuedMessages).map(renderQueuedEntry)}
       </div>
@@ -1076,11 +1085,14 @@ export function ChatPanel({
   // A queue on a chat with no messages is the start of the transcript (desktop
   // parity), unless the host's own empty state says the history is still
   // loading. A host footer status always means the transcript is live.
+  // A kept unsaved edit always leaves the empty state, so its card shows even
+  // when the cancelled message was the chat's only content (CAN-6801).
   const showPlaceholder =
     !renderTranscript &&
     messages.length === 0 &&
     deliveringMessages.length === 0 &&
     footerStatus == null &&
+    unsavedQueueEdits.length === 0 &&
     (queuedList === null || emptyState != null);
 
   return (
@@ -1234,6 +1246,7 @@ export function ChatPanel({
                   planMode={planMode}
                   onTogglePlanMode={() => setPlanMode(chatId, !planMode)}
                   draftKey={chatId}
+                  insertChatId={chatId}
                   planAvailable={onSend !== undefined && genuinePlanAvailable}
                   onEnablePlanMode={() => {
                     setPlanMode(chatId, true);

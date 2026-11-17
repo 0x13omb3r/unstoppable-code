@@ -1315,6 +1315,8 @@ pipeline:
 
     repo_compliance_review_claude:
       name: Repo Compliance Review Claude
+      # Reads the workspace only: a cloud run gives each review its own sandbox.
+      isolation: read_only
       needs:
         - review_workspace_details
         - instruction_scope
@@ -1531,6 +1533,8 @@ pipeline:
 
     repo_compliance_review_codex:
       name: Repo Compliance Review Codex
+      # Reads the workspace only: a cloud run gives each review its own sandbox.
+      isolation: read_only
       needs:
         - review_workspace_details
         - instruction_scope
@@ -1744,6 +1748,8 @@ pipeline:
 
     opus_methodical_reviewer:
       name: Opus Methodical Reviewer
+      # Reads the workspace only: a cloud run gives each review its own sandbox.
+      isolation: read_only
       needs:
         - review_workspace_details
         - instruction_scope
@@ -2011,6 +2017,8 @@ pipeline:
 
     gpt_methodical_reviewer:
       name: GPT Methodical Reviewer
+      # Reads the workspace only: a cloud run gives each review its own sandbox.
+      isolation: read_only
       needs:
         - review_workspace_details
         - instruction_scope
@@ -2275,6 +2283,8 @@ pipeline:
 
     codex_security_review:
       name: Codex Security Review
+      # Reads the workspace only: a cloud run gives each review its own sandbox.
+      isolation: read_only
       needs:
         - review_workspace_details
         - instruction_scope
@@ -2484,6 +2494,8 @@ pipeline:
 
     claude_security_review:
       name: Claude Security Review
+      # Reads the workspace only: a cloud run gives each review its own sandbox.
+      isolation: read_only
       needs:
         - review_workspace_details
         - instruction_scope
@@ -2710,6 +2722,8 @@ pipeline:
 
     custom_review_tracks:
       name: Custom Review / ${{ matrix.name }} / ${{ matrix.model }}
+      # Reads the workspace only: a cloud run gives each review its own sandbox.
+      isolation: read_only
       strategy:
         matrix: ${{ parseJson(needs.discover_review_tracks.outputs.matrix) }}
         max_parallel: 4

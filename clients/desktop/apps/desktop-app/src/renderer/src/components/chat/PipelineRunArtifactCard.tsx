@@ -42,7 +42,7 @@ import {
 import { collectVisibleExecutionTreeNodes } from '@/lib/executionTree';
 import { revealChatPanel } from '@/lib/panels/reveal-chat-panel';
 import { detectChatStoreSurface } from '@/stores/chat/surface';
-import { AdvisorEtaBadge } from '@/components/activity/AdvisorEtaBadge';
+import { AdvisorEtaStatus } from '@/components/activity/AdvisorEtaBadge';
 import { PipelineReportModal } from '@/components/activity/PipelineReportModal';
 import type { PipelinePluginCollectionRunContext } from '@/components/activity/PipelineTriggerModal';
 import { WatcherManagementButton } from '@/components/watchers/WatcherManagementButton';
@@ -563,7 +563,7 @@ export const PipelineRunArtifactCard = memo(function PipelineRunArtifactCard({
   }, []);
   const renderAdvisorBadge = useCallback(
     (summary: PipelineRunSummary): JSX.Element | null => (
-      <AdvisorEtaBadge
+      <AdvisorEtaStatus
         snapshot={advisorSnapshots[summary.id]}
         pipelineStatus={summary.status}
       />

@@ -42,7 +42,7 @@ export function PullRequestSection({
           read), so it stands above them rather than replacing one chip:
           a recorded DESIGN.md deviation (REG-3025 design notes). */}
       {refreshError !== undefined && (
-        <p className="mb-2 text-xs fg-warning" data-testid="activity-pr-error">
+        <p className="pb-2 text-xs fg-warning" data-testid="activity-pr-error">
           {refreshError} Showing the last status read.
         </p>
       )}

@@ -23,10 +23,8 @@
  * No `CollapsedTitlebarToggle` (the popout has no collapsible main-window
  * titlebar) and no PrStatusBar/git chrome.
  */
-import { Surface } from '@canopy/ui-shared/components';
-import { ORCHESTRATOR_LABEL } from '@canopy/protocol';
+import { OrchestratorTopBar } from '@canopy/ui-app/orchestrator/OrchestratorTopBar';
 import { memo, type JSX } from 'react';
-import { AppAdvisorIcon } from '@canopy/ui-shared/icons/AppIcons';
 import { useStandaloneChatStore } from '@/stores/standaloneChatStore';
 import { OpenDropdown } from '@/components/worktree/OpenDropdown';
 import { ArchivedChatsControl } from '@/components/chat/ArchivedChatsControl';
@@ -60,39 +58,25 @@ export const AppAdvisorTopBar = memo(function AppAdvisorTopBar({
     : 0;
 
   return (
-    <Surface
-      data-testid="app-advisor-top-bar"
-      // `@container/prbar` on the root: OpenDropdown's compact-mode label
-      // (`@[560px]/prbar:`) resolves only against an ancestor container —
-      // same wiring as the worktree and cowork top bars.
-      // The 43px row height is fixed by the titlebar corner overlay
-      // (`APP_ADVISOR_TITLEBAR_ROW_HEIGHT_PX`), not the cowork bar's 46px.
-      variant="well"
-      boundary="bottom"
-      extent="advisor-toolbar"
-      className="@container/prbar flex shrink-0 items-stretch"
-    >
-      <div
-        className="electron-drag shrink-0 self-stretch overflow-hidden transition-[width] duration-150 ease-out"
-        style={{ width: cornerWidth }}
-        data-testid="app-advisor-top-bar-corner"
-      />
-      <div className="electron-drag flex min-w-0 flex-1 items-center gap-1.5 px-3">
-        <AppAdvisorIcon size="sm" className="shrink-0 fg-secondary" />
-        <span className="select-none truncate text-xs font-medium fg-secondary">
-          {ORCHESTRATOR_LABEL}
-        </span>
-      </div>
-      <div className="electron-drag flex shrink-0 items-center gap-2 pr-2.25">
-        <ArchivedChatsControl
-          scope={{ projectId: workspaceId, worktreeId: activeWorkEntryId }}
-        />
-        <OpenDropdown projectId={workspaceId} worktreeId={activeWorkEntryId} />
-        <SaveLayoutDefaultControl
-          projectId={workspaceId}
-          worktreeId={activeWorkEntryId}
-        />
-      </div>
-    </Surface>
+    <OrchestratorTopBar
+      presentation="window"
+      testIdPrefix="app-advisor"
+      cornerWidth={cornerWidth}
+      actions={
+        <>
+          <ArchivedChatsControl
+            scope={{ projectId: workspaceId, worktreeId: activeWorkEntryId }}
+          />
+          <OpenDropdown
+            projectId={workspaceId}
+            worktreeId={activeWorkEntryId}
+          />
+          <SaveLayoutDefaultControl
+            projectId={workspaceId}
+            worktreeId={activeWorkEntryId}
+          />
+        </>
+      }
+    />
   );
 });

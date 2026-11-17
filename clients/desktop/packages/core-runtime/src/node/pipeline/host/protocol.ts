@@ -213,6 +213,17 @@ export type PipelineHostMessage =
       stream: 'stdout' | 'stderr';
       text: string;
     }
+  /**
+   * A child workflow of run `executionId` changed (CAN-6868): a
+   * `run-pipeline` step started it in the run's own executor, at any depth.
+   * Only a cloud runner's host runs children and posts these.
+   */
+  | {
+      kind: 'child';
+      executionId: string;
+      event: string;
+      execution: WorkerPipelineExecution;
+    }
   /** A desktop notification a step asked for (CAN-5868). */
   | {
       kind: 'notification';
@@ -285,6 +296,15 @@ export function isPipelineHostMessage(
         typeof value.executionId === 'string' &&
         typeof value.event === 'string' &&
         WorkerPipelineExecutionSchema.safeParse(value.execution).success
+      );
+    case 'child':
+      return (
+        typeof value.executionId === 'string' &&
+        typeof value.event === 'string' &&
+        WorkerPipelineExecutionSchema.safeParse(value.execution).success &&
+        isRecord(value.execution) &&
+        typeof value.execution.parentExecutionId === 'string' &&
+        value.execution.executionId !== value.executionId
       );
     case 'output':
       return (

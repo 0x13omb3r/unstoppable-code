@@ -148,6 +148,11 @@ interface WorkflowsRunPipelineModalProps {
     runOn: PipelineRunOn,
   ) => Promise<void>;
   isRunning?: boolean;
+  /**
+   * A cloud launch is waiting for its cloud worktree (CAN-6869): Run and the
+   * run settings stay off, while Cancel and close stay available.
+   */
+  waiting?: boolean;
   runError?: string | null;
   onClearError?: () => void;
   /** Changing it re-reads the pipelines and their saved owners. */
@@ -170,6 +175,7 @@ export function WorkflowsRunPipelineModal({
   onClose,
   onRun,
   isRunning = false,
+  waiting = false,
   runError = null,
   onClearError,
   reloadToken,
@@ -251,15 +257,16 @@ export function WorkflowsRunPipelineModal({
       const global = context.location === 'global';
       const runOn = runOnFor(pipeline);
       const cloud = runOn.value === 'cloud';
-      // Cloud runs start with no project only, for now (CP-36, CP-29).
+      // A task runs in the cloud at its pushed branch (CAN-6869), so it
+      // needs a Git worktree; a Cowork task has none.
       const cloudBlockedReason =
-        cloud && !global
+        cloud && !global && taskScope !== 'worktree'
           ? PIPELINE_RUN_CONTEXT_COPY.cloudDestinationUnavailable
           : undefined;
       return {
         fields: (
           <PipelineRunContextFields
-            disabled={isRunning}
+            disabled={isRunning || waiting}
             runOn={{
               capabilities: cloudRuns,
               value: runOn.value,
@@ -299,17 +306,20 @@ export function WorkflowsRunPipelineModal({
           global ||
           context.showLocation ||
           cloudRuns.pipelineCloudRuns === true,
-        runBlocked: context.runBlocked || cloudBlockedReason !== undefined,
+        runBlocked:
+          context.runBlocked || cloudBlockedReason !== undefined || waiting,
         ...(context.blockedReason !== undefined
           ? { blockedReason: context.blockedReason }
           : {}),
         // Repository, watcher and model choices apply to a run on this
         // computer; a cloud run takes its models from the cloud preflight.
         targeted: !global && !cloud,
+        // A task's cloud run goes with the repository picked here (CAN-6869).
+        repositoryApplies: !global,
         executesElsewhere: cloud,
       };
     },
-    [cloudRuns, isRunning, onClearError, resolve, runOnFor],
+    [cloudRuns, isRunning, onClearError, resolve, runOnFor, taskScope, waiting],
   );
 
   const handleRun = async (
@@ -322,11 +332,22 @@ export function WorkflowsRunPipelineModal({
     const context = resolve(pipeline);
     if (context.runBlocked) return;
     const runOn = runOnFor(pipeline).value;
-    if (runOn === 'cloud' && context.location !== 'global') return;
+    if (
+      runOn === 'cloud' &&
+      context.location !== 'global' &&
+      taskScope !== 'worktree'
+    )
+      return;
     let destination: PipelineRunDestination;
     if (context.location === 'current-task') {
       if (!currentTarget) return;
-      destination = { kind: 'current-task', ...currentTarget };
+      destination = {
+        kind: 'current-task',
+        ...currentTarget,
+        ...(runOn === 'cloud' && context.ownerValue !== null
+          ? { cloudOwner: context.ownerValue }
+          : {}),
+      };
     } else {
       const owner = context.ownerValue ?? '';
       destination = {
@@ -372,6 +393,7 @@ export function WorkflowsRunPipelineModal({
       onClose={onClose}
       onRun={handleRun}
       isRunning={isRunning}
+      settingsLocked={waiting}
       runError={runError}
       onClearError={onClearError}
       runLoadingLabel="Starting…"

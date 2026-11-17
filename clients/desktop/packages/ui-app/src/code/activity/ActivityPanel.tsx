@@ -626,7 +626,7 @@ const ACTIVITY_SECTION_DESCRIPTORS: Record<
       ).length;
       const percentage = (completed / items.length) * 100;
       return (
-        <div className="mt-1 flex items-center gap-2">
+        <div className="pt-1 flex items-center gap-2">
           <ProgressBar
             value={percentage}
             size="compact"

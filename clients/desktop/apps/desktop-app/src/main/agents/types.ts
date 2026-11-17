@@ -1,5 +1,6 @@
 import type { MaterializedCapabilityOverlay } from '@canopy/desktop-shared/node/delegation/agent-artifacts';
 import type { ManagedDelegationMode } from '@canopy/protocol/delegation/discovery';
+import type { ManagedDelegationSurface } from '@canopy/protocol/delegation';
 import type { InterfaceToolName } from '@canopy/protocol/canopy-core';
 import type { BrowserWindow } from 'electron';
 import type {
@@ -33,7 +34,7 @@ import type { PipelinePackageCapabilityOverlay } from '@canopy/execution-engine/
 export interface AgentSessionOptions {
   cwd: string;
   /** Host composition identifies the eligible parent surface. */
-  managedDelegationSurface?: 'worktree-chat';
+  managedDelegationSurface?: ManagedDelegationSurface;
   managedDelegationMode?: ManagedDelegationMode;
   managedDelegationMaxConcurrent?: number;
   managedDelegationMaxDepth?: number;

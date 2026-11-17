@@ -126,6 +126,14 @@ function onlyDesktop(component: string): void {
   });
 }
 
+/**
+ * The refusal of a paired computer's write while someone here picked a
+ * version. Released hosts send exactly this text under
+ * `core.update.invalidState`, so controllers recognize it by it; keep it.
+ */
+export const TARGETED_UPDATE_REFUSAL =
+  'Someone at this computer picked a specific version to install. Finish or cancel it there.';
+
 /** How many keyed results each operation keeps for retries. */
 const KEYED_RESULT_LIMIT = 64;
 
@@ -330,8 +338,7 @@ export function createCoreUpdateHandlers(
       throw new CanopyOperationError({
         kind: 'failed_precondition',
         code: 'core.update.invalidState',
-        message:
-          'Someone at this computer picked a specific version to install. Finish or cancel it there.',
+        message: TARGETED_UPDATE_REFUSAL,
         retry: { kind: 'never' },
       });
     }

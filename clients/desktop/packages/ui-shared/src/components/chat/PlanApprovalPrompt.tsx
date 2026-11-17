@@ -1,5 +1,6 @@
 'use client';
 
+import { ControlButton } from '../Button';
 import {
   forwardRef,
   useId,
@@ -15,7 +16,6 @@ import {
   COMPOSER_PROMPT_BOX_CLASS,
   COMPOSER_PROMPT_EDITOR_CONTAINER_CLASS,
   COMPOSER_PROMPT_HEADER_CLASS,
-  COMPOSER_PROMPT_ROW_CLASS,
   COMPOSER_PROMPT_ROW_GLYPH_CLASS,
   COMPOSER_PROMPT_ROWS_CLASS,
   COMPOSER_PROMPT_TEXT_ROW_WITH_GLYPH_CLASS,
@@ -53,11 +53,11 @@ export const ComposerPromptRowButton = forwardRef<
   Omit<ButtonHTMLAttributes<HTMLButtonElement>, 'className' | 'type'>
 >(function ComposerPromptRowButton(props, ref): JSX.Element {
   return (
-    <button
+    <ControlButton
       ref={ref}
       type="button"
       {...props}
-      className={COMPOSER_PROMPT_ROW_CLASS}
+      presentation="plan-approval-start"
     />
   );
 });

@@ -1,3 +1,4 @@
+import { APP_ERROR_CATALOG } from '@canopy/protocol/app-errors';
 import { BILLING_TOP_UP_MIN_USD } from '@canopy/protocol/billing';
 import type { ModelLibraryAccess } from '@canopy/protocol/models';
 import { formatCredits } from '../lib/billing-format';
@@ -8,9 +9,11 @@ import { formatCredits } from '../lib/billing-format';
  * usage-limit model switch. Desktop and web render the same strings, so each
  * path names the same step the same way.
  *
- * The product term is "AI Credits", capitalized, in labels and prose alike.
- * Every action that starts a purchase says {@link AI_CREDITS_PURCHASE_LABEL};
- * a guest's says {@link AI_CREDITS_GUEST_PURCHASE_LABEL}
+ * Credits are one provider among peers. Every action that starts a purchase
+ * says {@link AI_CREDITS_PURCHASE_LABEL}; a guest's says
+ * {@link AI_CREDITS_GUEST_PURCHASE_LABEL}. A purchase verb never takes the
+ * product term, and recovery and unlock copy say "credits" in lowercase.
+ * Billing and balance text keeps the product term "AI Credits"
  * (docs/ux-writing/labels.md#ai-credits-purchases).
  *
  * {@link creditsPromptCopy} keys the purchase action and default message by
@@ -27,13 +30,13 @@ import { formatCredits } from '../lib/billing-format';
 // ---------------------------------------------------------------------------
 
 /** The purchase action on every surface, and the checkout's title. */
-export const AI_CREDITS_PURCHASE_LABEL = 'Buy AI Credits';
+export const AI_CREDITS_PURCHASE_LABEL = 'Buy credits';
 
 /**
  * CAN-4766 — the purchase action a guest sees. A guest can't buy before
  * signing in, so no guest action carries the bare purchase label.
  */
-export const AI_CREDITS_GUEST_PURCHASE_LABEL = 'Sign in to buy AI Credits';
+export const AI_CREDITS_GUEST_PURCHASE_LABEL = 'Sign in to buy credits';
 
 /** The re-read after checkout, on every surface. */
 export const AI_CREDITS_CHECK_AGAIN_LABEL = 'Check again';
@@ -70,15 +73,15 @@ export function aiCreditsHandoffSentence(entry: {
 
 /** Paid, but the credits haven't arrived yet (docs/ux-writing/sign-in.md). */
 export const AI_CREDITS_PROCESSING_COPY =
-  "Payment received. Your AI Credits are still processing. You won't be charged again.";
+  "Payment received. Your credits are still processing. You won't be charged again.";
 
 /**
  * What the transcript says where a message stopped because nothing could pay
- * for it. The composer's banner is where the user chooses how to pay, so the
+ * for it. The composer's banner is where the user chooses a provider, so the
  * transcript only explains the stop and offers no action of its own.
  */
 export const AI_CREDITS_STOP_COPY =
-  'Chat stopped. Choose how to pay for this message to keep going.';
+  'Chat stopped. Choose a provider to keep going.';
 
 // ---------------------------------------------------------------------------
 // Recovery (CAN-4764): out of credits, held messages, dead ends
@@ -112,11 +115,15 @@ export const QUEUED_MESSAGE_RETAINED_COPY =
 /** The same, for someone who can't buy: an admin funds the pool. */
 const QUEUED_MESSAGE_SAVED_COPY = 'Your queued message is saved.';
 
-/** Saved queue status while the account needs credits. */
-export const CREDIT_HELD_MESSAGE_WARNING_COPY = QUEUED_MESSAGE_RETAINED_COPY;
+/**
+ * Saved queue status while the account needs credits. Queued notices offer
+ * no purchase (provider choice lives on the composer's notice, CAN-6860),
+ * so the line only says the message is saved.
+ */
+export const CREDIT_HELD_MESSAGE_WARNING_COPY = QUEUED_MESSAGE_SAVED_COPY;
 
 /** The out-of-credits recovery notice's title. */
-export const OUT_OF_CREDITS_TITLE = "You're out of AI Credits";
+export const OUT_OF_CREDITS_TITLE = "You're out of credits";
 
 /**
  * What happened to the user's message, so they know nothing was lost. The
@@ -147,40 +154,17 @@ export function retainedMessageCopy(
     : 'Your message is saved.';
 }
 
-/**
- * CAN-4769 — web chat is paid-only, so the recovery notice and the signed-out
- * entry name the two ways to keep going: buy credits, or bring a Claude or
- * ChatGPT subscription to the desktop app. Split so the host renders "desktop
- * app" as a link. Pick the lead by what comes before it:
- * - `lead` names buying itself, where nothing else on screen does.
- * - `leadWithoutPurchase` follows a sentence or button that offers another
- *   way on (a purchase button, which already names buying, or the
- *   contact-admin sentence), so the line never tells someone who can't buy
- *   to.
- * - `leadAfterStatement` follows a plain statement, such as "Your message is
- *   saved." with nothing to buy, where "Or" would have nothing to pair with.
- */
-export const PAID_ACCESS_ALTERNATIVE_COPY = {
-  lead: 'Buy AI Credits, or use the ',
-  leadWithoutPurchase: 'Or use the ',
-  leadAfterStatement: 'You can also use the ',
-  link: 'desktop app',
-  tail: ' with your Claude or ChatGPT subscription.',
-} as const;
-
 /** The organization's model policy allows nothing the user can run. */
 export const POLICY_ONLY_DEAD_END_COPY: CreditsRecoveryCopy = {
   title: 'No model available',
   message: `Your organization's model policy doesn't allow any model you can run right now, so ask your organization admin to allow a model you can use.`,
 };
 
-/** The organization only allows models paid for with AI Credits. */
-export function creditsOnlyDeadEndCopy(appName: string): CreditsRecoveryCopy {
-  return {
-    title: 'AI Credits required',
-    message: `Your organization only allows models that require ${appName} AI Credits.`,
-  };
-}
+/** The organization only allows models paid for with credits. */
+export const CREDITS_ONLY_DEAD_END_COPY: CreditsRecoveryCopy = {
+  title: 'Credits required',
+  message: 'Your organization only allows models that run on credits.',
+};
 
 /** Every model the organization allows needs a billing source. */
 export const POLICY_BILLING_DEAD_END_COPY: CreditsRecoveryCopy = {
@@ -194,13 +178,11 @@ export const DISPATCH_DEAD_END_COPY: CreditsRecoveryCopy = {
   message: 'No available model can be paid for right now.',
 };
 
-/** A turn already failed because AI Credits didn't cover it. */
-export function failedTurnCopy(appName: string): CreditsRecoveryCopy {
-  return {
-    title: 'Message not sent',
-    message: `Your ${appName} AI Credits didn't cover that message.`,
-  };
-}
+/** A turn already failed because credits didn't cover it. */
+export const FAILED_TURN_COPY: CreditsRecoveryCopy = {
+  title: 'Message not sent',
+  message: "Your credits didn't cover that message.",
+};
 
 /**
  * CAN-4766 — the action that connects a provider account, on every recovery
@@ -210,27 +192,23 @@ export function connectProviderLabel(providerLabel: string): string {
   return `Connect ${providerLabel}`;
 }
 
-/** Before sending: no provider connected and no AI Credits to fall back on. */
+/** Before sending: no provider connected and no credits to fall back on. */
 export function notSignedInCopy({
-  appName,
   providerLabel,
 }: {
-  readonly appName: string;
   readonly providerLabel: string;
 }): CreditsRecoveryCopy {
   return {
     title: `Not connected to ${providerLabel}`,
-    message: `You have no ${appName} AI Credits to cover this chat either.`,
+    message: 'You have no credits to cover this chat either.',
   };
 }
 
 /** An organization pool with nothing in it yet, for someone who can fund it. */
-export function emptyCreditPoolCopy(brandName: string): CreditsRecoveryCopy {
-  return {
-    title: 'No AI Credits yet',
-    message: `Buy AI Credits to let your team use ${brandName}'s AI features.`,
-  };
-}
+export const EMPTY_CREDIT_POOL_COPY: CreditsRecoveryCopy = {
+  title: 'No credits yet',
+  message: 'Buy credits so your team can use AI features.',
+};
 
 // ---------------------------------------------------------------------------
 // Advanced-model unlock
@@ -249,11 +227,11 @@ export const MODEL_LIBRARY_UNLOCK_HINTS: Readonly<
   Record<LockedModelLibraryAccess, string>
 > = {
   needs_sign_in: 'Unlock by signing in',
-  needs_sign_in_then_purchase: 'Unlock by signing in and buying AI Credits',
-  needs_purchase: 'Unlock by buying AI Credits',
+  needs_sign_in_then_purchase: 'Unlock by signing in and buying credits',
+  needs_purchase: 'Unlock by buying credits',
 };
 
-const PURCHASE_SCOPE_BODY = `Buy AI Credits (minimum $${BILLING_TOP_UP_MIN_USD}) to unlock Sonnet, Opus, Fable and more.`;
+const PURCHASE_SCOPE_BODY = `Buy credits (minimum $${BILLING_TOP_UP_MIN_USD}) to unlock Sonnet, Opus, Fable and more.`;
 
 /**
  * Recovery copy. "Advanced models", never "every model": provider, policy, and
@@ -270,7 +248,7 @@ export const MODEL_LIBRARY_UNLOCK_COPY = {
   purchaseBody: `${PURCHASE_SCOPE_BODY} We'll switch to your selected model once the purchase is complete.`,
   // Billing links and proxy recovery can open checkout without a pending model.
   purchaseBodyWithoutSelection: PURCHASE_SCOPE_BODY,
-  guestBody: 'Sign in, then buy AI Credits.',
+  guestBody: 'Sign in, then buy credits.',
   purchaseAction: AI_CREDITS_PURCHASE_LABEL,
   signInAction: 'Sign in',
   /** The row label when a purchase follows sign-in. */
@@ -290,9 +268,9 @@ export const MODEL_LIBRARY_UNLOCK_COPY = {
   checkingAction: 'Checking…',
   newPurchaseAction: 'Start a new purchase',
   dismissPaymentAction: 'Dismiss payment notice',
-  proxyRefusalTitle: 'This model needs an AI Credit purchase',
+  proxyRefusalTitle: 'This model needs credits',
   proxyRefusalBody:
-    'Buy AI Credits to unlock advanced models, then send your message again.',
+    'Choose a provider that offers this model, then send your message again.',
   /**
    * The in-chat confirmation after a confirmed unlock (CAN-5027). The number
    * is the refreshed available balance, never the amount purchased or
@@ -349,110 +327,6 @@ export function modelLibraryPendingBody(modelLabel?: string): string {
   return modelLabel === undefined
     ? "We'll unlock advanced models once the payment goes through."
     : `We'll switch to ${modelLabel} once the payment goes through.`;
-}
-
-// ---------------------------------------------------------------------------
-// Usage limit: continue on a model that can run on AI Credits
-// ---------------------------------------------------------------------------
-
-/** The action that moves the chat onto the credits model. */
-export function usageLimitModelSwitchActionLabel(
-  targetModelLabel: string,
-): string {
-  return `Continue on ${targetModelLabel}`;
-}
-
-export interface UsageLimitModelSwitchMessageInput {
-  /** The chat's current model, which can't run on AI Credits. */
-  readonly modelLabel: string;
-  /** The credits model to offer; omitted when it can't run on AI Credits either. */
-  readonly targetModelLabel?: string;
-  /** A preformatted balance, for example `1,234`. */
-  readonly creditsLeft?: string;
-  /** When the quota resets, for example `8:14 PM`. */
-  readonly resetsLabel?: string;
-  /** When a scheduled resume runs, for example `Tue 9:00 AM`. */
-  readonly scheduledForLabel?: string;
-}
-
-function notRoutableSentence(modelLabel: string): string {
-  return `${modelLabel} can't run on AI Credits.`;
-}
-
-function waitClause(resetsLabel: string | undefined): string {
-  return resetsLabel
-    ? `wait until ${resetsLabel}`
-    : 'wait for your quota to reset';
-}
-
-/** The notice message when credits could continue the chat on another model. */
-export function usageLimitModelSwitchMessage({
-  modelLabel,
-  targetModelLabel,
-  creditsLeft,
-  resetsLabel,
-  scheduledForLabel,
-}: UsageLimitModelSwitchMessageInput): string {
-  const gate = notRoutableSentence(modelLabel);
-  const credits = creditsLeft
-    ? `with your AI Credits (${creditsLeft} left)`
-    : 'with your AI Credits';
-  if (scheduledForLabel) {
-    const resumes = `This chat resumes automatically at ${scheduledForLabel}.`;
-    const next = targetModelLabel
-      ? `Continue on ${targetModelLabel} ${credits} to keep going now.`
-      : 'Choose a model that can run on AI Credits to keep going now.';
-    return `${resumes} ${gate} ${next}`;
-  }
-  const next = targetModelLabel
-    ? `Continue on ${targetModelLabel} ${credits}, or ${waitClause(resetsLabel)}.`
-    : `Choose a model that can, or ${waitClause(resetsLabel)}.`;
-  return `${gate} ${next}`;
-}
-
-export interface UsageLimitModelSwitchPurchaseMessageInput {
-  readonly modelLabel: string;
-  readonly targetModelLabel?: string;
-  readonly resetsLabel?: string;
-  readonly scheduledForLabel?: string;
-}
-
-/** The notice message when the user has no AI Credits to continue with yet. */
-export function usageLimitModelSwitchPurchaseMessage({
-  modelLabel,
-  targetModelLabel,
-  resetsLabel,
-  scheduledForLabel,
-}: UsageLimitModelSwitchPurchaseMessageInput): string {
-  const buy = targetModelLabel
-    ? `Buy AI Credits to continue on ${targetModelLabel}`
-    : 'Buy AI Credits and choose a model that can';
-  if (scheduledForLabel) {
-    const buyNow = targetModelLabel
-      ? buy
-      : 'Buy AI Credits and choose a model that can run on them';
-    return `This chat resumes automatically at ${scheduledForLabel}. ${notRoutableSentence(modelLabel)} ${buyNow} to keep going now.`;
-  }
-  const wait = resetsLabel
-    ? `wait for your quota to reset around ${resetsLabel}`
-    : 'wait for your quota to reset';
-  return `${notRoutableSentence(modelLabel)} ${buy}, or ${wait}.`;
-}
-
-export interface UsageLimitModelSwitchFailureDetailInput {
-  readonly targetModelLabel: string;
-  readonly resetsLabel?: string;
-}
-
-/** The detail line after the switch to the credits model failed. */
-export function usageLimitModelSwitchFailureDetail({
-  targetModelLabel,
-  resetsLabel,
-}: UsageLimitModelSwitchFailureDetailInput): string {
-  const failed = `Couldn't switch to ${targetModelLabel}.`;
-  return resetsLabel
-    ? `${failed} Try again or wait until ${resetsLabel}.`
-    : `${failed} Try again.`;
 }
 
 // ---------------------------------------------------------------------------
@@ -526,11 +400,13 @@ const CREDITS_PROMPT_COPY: Readonly<
     'org-member': { action: null, message: CONTACT_ORG_ADMIN_COPY },
     unknown: { ...BUYER, message: MODEL_LIBRARY_UNLOCK_COPY.purchaseBody },
   },
+  // Every audience gets the saved-only line: a held message's notice never
+  // carries the purchase for "after you buy more" to refer to (CAN-6860).
   queued_held: {
-    buyer: { ...BUYER, message: QUEUED_MESSAGE_RETAINED_COPY },
-    guest: { ...GUEST, message: QUEUED_MESSAGE_RETAINED_COPY },
+    buyer: { ...BUYER, message: QUEUED_MESSAGE_SAVED_COPY },
+    guest: { ...GUEST, message: QUEUED_MESSAGE_SAVED_COPY },
     'org-member': { action: null, message: QUEUED_MESSAGE_SAVED_COPY },
-    unknown: { ...BUYER, message: QUEUED_MESSAGE_RETAINED_COPY },
+    unknown: { ...BUYER, message: QUEUED_MESSAGE_SAVED_COPY },
   },
   top_up: {
     buyer: BUYER,
@@ -546,4 +422,20 @@ export function creditsPromptCopy(
   audience: CreditsCopyAudience,
 ): CreditsPromptCopy {
   return CREDITS_PROMPT_COPY[reason][audience];
+}
+
+/** Approved recovery copy; hosts express connection capability through actions. */
+export function outOfAiCreditsCopy(
+  canConnectClaude: boolean,
+  orgPoolUnavailable = false,
+): { title: string; message: string } {
+  return {
+    title: APP_ERROR_CATALOG['external.ai_credits_required'].copy.title,
+    message: orgPoolUnavailable
+      ? "Your team's credits aren't available right now. Buy your own or ask a team admin."
+      : canConnectClaude
+        ? 'Buy more credits or connect Claude to keep going.'
+        : (APP_ERROR_CATALOG['external.ai_credits_required'].copy.description ??
+          ''),
+  };
 }

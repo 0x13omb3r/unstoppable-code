@@ -132,16 +132,26 @@ export function clampThinkingLevel(
  * displays as Medium), so for a set whose only member is `low` it falls back
  * to `off`, a level the host never declared. Payload builders must use this
  * variant instead. An exactly declared level passes through unchanged, so a
- * Low the composer showed runs at Low. Otherwise it reuses the UI clamp, and
- * when that result is not in the declared set it returns the weakest declared
- * level — preserving `low` when it is the only declared option.
+ * Low the composer showed runs at Low. Off on a model without Off runs the
+ * weakest declared level, so the least thinking never becomes more than the
+ * model's least. Otherwise it reuses the UI clamp over the declared levels in
+ * their own order (never the order a model lists them in), and when that
+ * result is not in the declared set it returns the weakest declared level —
+ * preserving `low` when it is the only declared option.
+ *
+ * Pinned to fixtures/thinking-effort-clamp-cases.json, a copy of Agentic
+ * Core's table for its own clamp (CAN-6855).
  */
 export function clampThinkingLevelToDeclared(
   level: ThinkingLevel,
   declared: readonly ThinkingLevel[],
 ): ThinkingLevel {
   if (declared.includes(level)) return level;
-  const clamped = clampThinkingLevel(level, declared);
+  const ordered = THINKING_LEVELS.filter((candidate) =>
+    declared.includes(candidate),
+  );
+  if (level === 'off' && ordered[0] !== undefined) return ordered[0];
+  const clamped = clampThinkingLevel(level, ordered);
   if (declared.includes(clamped)) return clamped;
   // The UI clamp only leaves the set via its terminal `off` fallback, which is
   // reachable exactly when the declared set has no non-`low` member.

@@ -773,7 +773,7 @@ function TabContent({
                   />
                   {usage.billedCost.unpricedAccountCount > 0 ? (
                     <p
-                      className="mt-2 text-xs fg-secondary"
+                      className="pt-2 text-xs fg-secondary"
                       data-testid="subscriptions-unpriced-note"
                     >
                       {usage.billedCost.unpricedAccountCount} subscription
@@ -1928,7 +1928,7 @@ function Panel({
 }: PanelProps): JSX.Element {
   return (
     <Surface variant="raised" padding="default" data-testid={testId}>
-      <div className="mb-3 flex items-center justify-between gap-2">
+      <div className="pb-3 flex items-center justify-between gap-2">
         <div className="flex flex-col gap-0.5">
           <Heading level={3} variant="title">
             {title}

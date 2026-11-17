@@ -24,7 +24,10 @@ import type {
   AccountMcpConnection,
   AccountMcpUpstreamTool,
   DetectedMcpServerInfo,
+  InstallMcpServerForHarnessesRequest,
   McpHttpAuthHandler,
+  McpServerHarnessInstalls,
+  RetryMcpServerHarnessInstallRequest,
   McpOAuthConfigData,
   McpServerConfigData,
   McpServerConfigSummary,
@@ -730,4 +733,16 @@ export interface McpServersAPI {
     serverId: string,
     configId?: string,
   ): Promise<McpServerToolsCacheEntry | null>;
+  /**
+   * One Add for every harness (CAN-6815): stage a saved server for the
+   * set-up harnesses that can load it and record each result. Resolves
+   * `null` when none can. Absent on hosts that cannot install per harness.
+   */
+  installForHarnesses?(
+    request: InstallMcpServerForHarnessesRequest,
+  ): Promise<McpServerHarnessInstalls | null>;
+  /** Stage one harness of an earlier install again (CAN-6815). */
+  retryHarnessInstall?(
+    request: RetryMcpServerHarnessInstallRequest,
+  ): Promise<McpServerHarnessInstalls>;
 }

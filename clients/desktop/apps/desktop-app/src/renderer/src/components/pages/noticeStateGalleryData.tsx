@@ -26,9 +26,10 @@ import {
 import {
   FIRST_SEND_FAILED_CHOOSE_MODEL_LABEL,
   FIRST_SEND_FAILED_RETRY_LABEL,
-  usageLimitModelSwitchActionLabel,
-  usageLimitModelSwitchFailureDetail,
-  usageLimitModelSwitchMessage,
+  continueWithLabel,
+  resumeAtLabel,
+  SWITCH_PROVIDER_LABEL,
+  usageLimitMessage,
 } from '@canopy/ui-shared/components';
 import {
   FIRST_SEND_FAILED_TITLE,
@@ -268,103 +269,18 @@ export const NOTICE_GALLERY_SECTIONS: readonly NoticeGallerySection[] = [
         dismissible: true,
       },
       {
-        id: 'usage-limit-offer',
-        title: 'Usage limit reached: credits available',
-        note: 'Shown only when no purchase from this chat was recorded. The message ends with a question and the buttons answer it on their own row; the accent action is last. The per-chat action is the accent; the global action is never the accent.',
-        intent: 'attention',
-        heading: 'Claude usage limit reached',
-        message:
-          'Your quota resets around 6:00 PM. Do you want to use AI Credits to keep going?',
-        actions: [
-          { label: 'No, resume at 6:00 PM' },
-          { label: 'Always' },
-          { label: 'Just this chat', variant: 'primary' },
-        ],
-        actionsPlacement: 'below',
-        dismissible: true,
-      },
-      {
-        id: 'usage-limit-model-not-routable',
-        title: 'Usage limit reached: model cannot use credits',
-        note: "The chat's model has no AI Credits route, so no credits are offered. The accent action moves this chat onto the credits model and routes it through credits until the limit resets. Worktree chats only; other surfaces show the message without the button.",
-        intent: 'attention',
-        heading: 'Codex usage limit reached',
-        message: usageLimitModelSwitchMessage({
-          modelLabel: 'GPT 6 Sol',
-          targetModelLabel: 'GPT 6 Luna',
-          resetsLabel: '8:14 PM',
-        }),
-        actions: [
-          { label: 'Resume at 8:14 PM' },
-          {
-            label: usageLimitModelSwitchActionLabel('GPT 6 Luna'),
-            variant: 'primary',
-          },
-        ],
-        actionsPlacement: 'below',
-        dismissible: true,
-      },
-      {
-        id: 'usage-limit-model-switch-failed',
-        title: 'Usage limit reached: model switch failed',
-        note: 'The switch was rejected, so routing is untouched and the notice keeps focus.',
-        intent: 'attention',
-        heading: 'Codex usage limit reached',
-        message: usageLimitModelSwitchMessage({
-          modelLabel: 'GPT 6 Sol',
-          targetModelLabel: 'GPT 6 Luna',
-          resetsLabel: '8:14 PM',
-        }),
-        detail: usageLimitModelSwitchFailureDetail({
-          targetModelLabel: 'GPT 6 Luna',
-          resetsLabel: '8:14 PM',
-        }),
-        actions: [
-          { label: 'Resume at 8:14 PM' },
-          {
-            label: usageLimitModelSwitchActionLabel('GPT 6 Luna'),
-            variant: 'primary',
-          },
-        ],
-        actionsPlacement: 'below',
-        dismissible: true,
-      },
-      {
-        id: 'usage-limit-use-ai-credits',
-        title: 'Usage limit reached: credits unconfirmed',
-        note: 'Coverage is still loading or routing is already on; the accent action routes this chat through credits.',
-        intent: 'attention',
-        heading: 'Claude usage limit reached',
-        message: 'Do you want to use AI Credits until your quota resets?',
-        actions: [{ label: 'Use AI Credits', variant: 'primary' }],
-        actionsPlacement: 'below',
-        dismissible: true,
-      },
-      {
         id: 'usage-limit-arrival-routed',
         title: 'Credits bought: using AI Credits',
-        note: "Buy AI Credits routed this chat once the purchase landed. The purchase is the card's state until the first credits turn starts, so no balance repeats it; the reset time sits beside the secondary switch it explains.",
+        note: "Buy credits routed this chat once the purchase landed. The purchase is the card's state until the first credits turn starts, so no balance repeats it; the reset time sits beside the secondary switch it explains.",
         intent: 'positive',
         heading: '16 AI Credits added.',
         message: 'Ready to use in this chat.',
         aside: (
-          <span className="mr-1 shrink-0 whitespace-nowrap tabular-nums fg-tertiary">
+          <span className="pr-1 shrink-0 whitespace-nowrap tabular-nums fg-tertiary">
             Claude resets 5:30 PM
           </span>
         ),
         actions: [{ label: 'Switch to subscription' }],
-      },
-      {
-        id: 'usage-limit-arrival-fallback',
-        title: 'Credits bought: no per-chat choice',
-        note: 'The billing toggle is hidden or locked, so the chat cannot be routed and there is no per-chat action to take the accent. Both actions are secondary: a global action never takes the accent.',
-        intent: 'positive',
-        heading: '16 AI Credits added.',
-        message:
-          'Your quota resets around 6:00 PM. Do you want to use your credits to keep going?',
-        actions: [{ label: 'No, resume at 6:00 PM' }, { label: 'Always' }],
-        actionsPlacement: 'below',
-        dismissible: true,
       },
       {
         id: 'claude-turn-limit',
@@ -380,16 +296,11 @@ export const NOTICE_GALLERY_SECTIONS: readonly NoticeGallerySection[] = [
       {
         id: 'usage-limit-scheduled',
         title: 'Usage limit reached: resume scheduled',
-        note: 'After "No, resume at …" the message states the outcome and the used button is gone.',
+        note: 'After Resume at … the message states the outcome and the used button is gone; provider choice stays the way to keep going now.',
         intent: 'attention',
         heading: 'Codex usage limit reached',
-        message:
-          'This chat resumes automatically at Tue 9:00 AM. Do you want to use AI Credits to keep going now?',
-        actions: [
-          { label: 'Always' },
-          { label: 'Just this chat', variant: 'primary' },
-        ],
-        actionsPlacement: 'below',
+        message: 'This chat resumes automatically at Tue 9:00 AM.',
+        actions: [{ label: SWITCH_PROVIDER_LABEL, variant: 'primary' }],
         dismissible: true,
       },
       {
@@ -398,35 +309,44 @@ export const NOTICE_GALLERY_SECTIONS: readonly NoticeGallerySection[] = [
         note: 'Post-action feedback is the only thing that ever appears under the line.',
         intent: 'attention',
         heading: 'Codex usage limit reached',
-        message:
-          'Your quota resets around 6:00 PM. Do you want to use AI Credits to keep going?',
+        message: usageLimitMessage('6:00 PM'),
         detail: "Couldn't schedule the resume. Try again.",
         actions: [
-          { label: 'No, resume at 6:00 PM' },
-          { label: 'Always' },
-          { label: 'Just this chat', variant: 'primary' },
+          { label: resumeAtLabel('6:00 PM') },
+          { label: SWITCH_PROVIDER_LABEL, variant: 'primary' },
         ],
-        actionsPlacement: 'below',
         dismissible: true,
       },
       {
         id: 'usage-limit-pricing',
-        title: 'Usage limit reached: no credits to spend',
-        note: 'Names the credits its button gets, never a plan upgrade.',
+        title: 'Usage limit reached: switch provider',
+        note: 'Provider choice (CAN-6860): no single other provider is ready, so the one primary opens the provider list. Credits are one row there; nothing on the notice sells.',
         intent: 'attention',
         heading: 'Claude usage limit reached',
-        message:
-          'Buy AI Credits to keep going now, or wait for your quota to reset around 6:00 PM.',
+        message: usageLimitMessage('6:00 PM'),
         actions: [
-          { label: 'Resume at reset' },
-          { label: 'Buy AI Credits', variant: 'primary' },
+          { label: resumeAtLabel('6:00 PM') },
+          { label: SWITCH_PROVIDER_LABEL, variant: 'primary' },
+        ],
+        dismissible: true,
+      },
+      {
+        id: 'usage-limit-continue-with',
+        title: 'Usage limit reached: continue with another provider',
+        note: 'Exactly one other provider can keep this chat going now, so the primary names it.',
+        intent: 'attention',
+        heading: 'Claude usage limit reached',
+        message: usageLimitMessage('6:00 PM'),
+        actions: [
+          { label: resumeAtLabel('6:00 PM') },
+          { label: continueWithLabel('codex', 'Codex'), variant: 'primary' },
         ],
         dismissible: true,
       },
       {
         id: 'usage-limit-pricing-handoff',
         title: 'Usage limit reached: finishing checkout',
-        note: 'After Buy AI Credits opens the browser, the checkout step replaces the limit, as on every purchase path. Waiting is not a warning.',
+        note: 'After Buy credits in the provider list opens the browser, the checkout step replaces the limit, as on every purchase path. Waiting is not a warning.',
         intent: 'neutral',
         icon: <TimeslotIcon size={16} aria-hidden="true" />,
         heading: 'Finish checkout in your browser',
@@ -451,13 +371,13 @@ export const NOTICE_GALLERY_SECTIONS: readonly NoticeGallerySection[] = [
       {
         id: 'no-billing-source',
         title: 'No billing source: not connected',
-        note: 'The title names the missing half; the buttons carry both remedies, Connect first.',
+        note: 'The title names the missing half. Connect is the alternative; the one primary opens the provider list.',
         intent: 'attention',
         heading: 'Not connected to Claude',
-        message: `You have no ${brand} AI Credits to cover this chat either.`,
+        message: 'You have no credits to cover this chat either.',
         actions: [
-          { label: 'Connect Claude', variant: 'primary' },
-          { label: 'Buy AI Credits' },
+          { label: 'Connect Claude' },
+          { label: SWITCH_PROVIDER_LABEL, variant: 'primary' },
         ],
       },
       {
@@ -465,8 +385,8 @@ export const NOTICE_GALLERY_SECTIONS: readonly NoticeGallerySection[] = [
         title: 'No billing source: a send already failed',
         intent: 'attention',
         heading: 'Message not sent',
-        message: `Your ${brand} AI Credits didn't cover that message.`,
-        actions: [{ label: 'Buy AI Credits', variant: 'primary' }],
+        message: "Your credits didn't cover that message.",
+        actions: [{ label: SWITCH_PROVIDER_LABEL, variant: 'primary' }],
       },
       {
         id: 'no-billing-source-policy',
@@ -480,7 +400,7 @@ export const NOTICE_GALLERY_SECTIONS: readonly NoticeGallerySection[] = [
       {
         id: 'no-billing-source-handoff',
         title: 'No billing source: finishing checkout',
-        note: 'After Buy AI Credits opens the browser, the title and message name the step. Waiting is not a warning, and every action is a button on its own row.',
+        note: 'After Buy credits in the provider list opens the browser, the title and message name the step. Waiting is not a warning, and every action is a button on its own row.',
         intent: 'neutral',
         icon: <TimeslotIcon size={16} aria-hidden="true" />,
         heading: 'Finish checkout in your browser',
@@ -698,7 +618,7 @@ export const NOTICE_GALLERY_SECTIONS: readonly NoticeGallerySection[] = [
         heading: 'Using AI Credits',
         message: '1,240 credits left.',
         aside: (
-          <span className="mr-1 shrink-0 whitespace-nowrap tabular-nums fg-tertiary">
+          <span className="pr-1 shrink-0 whitespace-nowrap tabular-nums fg-tertiary">
             Claude resets 5:30 PM
           </span>
         ),

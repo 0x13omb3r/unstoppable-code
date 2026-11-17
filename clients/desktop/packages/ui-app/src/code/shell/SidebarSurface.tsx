@@ -1,6 +1,10 @@
 'use client';
 
 import {
+  ControlButton,
+  SidebarProjectsReturn,
+} from '@canopy/ui-shared/components';
+import {
   SidebarAutoDeleteProvider,
   SidebarAutoDeleteNotice,
   useSidebarAutoDeleteMenu,
@@ -10,6 +14,7 @@ import {
   Surface,
   Stack,
   Heading,
+  ListRow,
   workspaceChildUnitLabel,
 } from '@canopy/ui-shared/components';
 import { DEFAULT_ARCHIVE_RETENTION_DAYS } from '@canopy/protocol/archive-retention';
@@ -94,7 +99,6 @@ import {
 import {
   ArchiveBoxIcon,
   ArchiveIcon,
-  ChevronDownMediumIcon,
   ListChecks,
   EditBigIcon,
   PinFilledIcon,
@@ -140,7 +144,6 @@ import {
   SHARED_WITH_YOU_SECTION_LABEL,
 } from './sidebar';
 import { createPortal } from 'react-dom';
-import { prefersReducedMotion } from '@canopy/ui-shared/lib';
 import {
   deriveWorktreeMenuItems,
   foldWorktreeMenuIntoMore,
@@ -1754,19 +1757,35 @@ function SidebarNavItemRow({
       </NavItemTooltip>
     );
   }
+  if (!compact) {
+    return (
+      <SidebarNavRow
+        icon={def.icon}
+        touchTarget={touch ? 'always' : 'none'}
+        selected={action.active}
+        data-testid={testId}
+        aria-current={action.active ? 'page' : undefined}
+        data-selected={action.active || undefined}
+        onClick={(): void => activateSidebarNavItem(action)}
+      >
+        {def.label}
+      </SidebarNavRow>
+    );
+  }
   return (
     <NavItemTooltip label={def.label} compact={compact}>
-      <button
-        type="button"
+      <ControlButton
         onClick={(): void => activateSidebarNavItem(action)}
         data-testid={testId}
         aria-current={action.active ? 'page' : undefined}
         aria-label={ariaLabel}
         data-selected={action.active || undefined}
-        className={className}
+        presentation={
+          action.active ? 'sidebar-icon-selected' : 'sidebar-icon-idle'
+        }
       >
         {content}
-      </button>
+      </ControlButton>
     </NavItemTooltip>
   );
 }
@@ -3523,7 +3542,7 @@ function SidebarSurfaceContent(props: SidebarSurfaceProps): JSX.Element {
                       undefined,
                       'portal-worktree-pin-button',
                     ),
-                    className: 'pointer-coarse:hidden',
+                    visibility: 'fine-pointer' as const,
                   },
                 ]
               : []),
@@ -3539,7 +3558,7 @@ function SidebarSurfaceContent(props: SidebarSurfaceProps): JSX.Element {
                       undefined,
                       'portal-worktree-archive-button',
                     ),
-                    className: 'pointer-coarse:hidden',
+                    visibility: 'fine-pointer' as const,
                   },
                 ]
               : archiveBlockedReason !== undefined
@@ -3556,7 +3575,7 @@ function SidebarSurfaceContent(props: SidebarSurfaceProps): JSX.Element {
                         undefined,
                         'portal-worktree-archive-button',
                       ),
-                      className: 'pointer-coarse:hidden',
+                      visibility: 'fine-pointer' as const,
                     },
                   ]
                 : []),
@@ -4496,6 +4515,7 @@ function SidebarSurfaceContent(props: SidebarSurfaceProps): JSX.Element {
         props.workspacesSectionCollapsible
           ? {
               'data-onboarding-anchor': 'sidebar-workspaces',
+              'data-sidebar-projects-return-focus': '',
               'data-testid':
                 testIds?.workspacesSectionToggle ??
                 'portal-workspaces-section-toggle',
@@ -4590,18 +4610,29 @@ function SidebarSurfaceContent(props: SidebarSurfaceProps): JSX.Element {
     <>
       {chatSearchInNav && (
         <NavItemTooltip label="Search" compact={navStrip}>
-          <button
+          <ControlButton
             ref={chatSearchToggleRef}
-            type="button"
             onClick={toggleChatSearch}
             aria-expanded={chatSearchRevealed}
             aria-controls={chatSearchRevealed ? chatSearchInputId : undefined}
             aria-label={searchPresentation.ariaLabel}
             data-testid="portal-sidebar-chat-search-toggle"
-            className={searchPresentation.className}
+            presentation={
+              navStrip
+                ? chatSearchRevealed
+                  ? 'sidebar-icon-selected'
+                  : 'sidebar-icon-idle'
+                : chatSearchRevealed
+                  ? touch
+                    ? 'sidebar-nav-touch-selected'
+                    : 'sidebar-nav-selected'
+                  : touch
+                    ? 'sidebar-nav-touch-idle'
+                    : 'sidebar-nav-idle'
+            }
           >
             {searchPresentation.content}
-          </button>
+          </ControlButton>
         </NavItemTooltip>
       )}
       {navRegions.mainNav.map((key) => (
@@ -5016,25 +5047,22 @@ function SidebarSurfaceContent(props: SidebarSurfaceProps): JSX.Element {
                 <ul className="flex flex-col gap-0.5">
                   {chatSearchResults.map((result) => (
                     <li key={`${result.kind}-${result.chatId}`}>
-                      <button
-                        type="button"
+                      <ListRow
                         onClick={() => props.chatSearch?.onSelectResult(result)}
                         data-testid={`portal-sidebar-chat-search-result-${result.chatId}`}
-                        className={`focus-ring flex w-full flex-col items-start gap-0.5 rounded-md px-3 py-1.5 text-left hover:bg-subtle ${touch ? 'min-h-11 justify-center' : ''}`}
+                        touchTarget={touch}
+                        description={
+                          <span className={REPLAY_MASK_CLASS}>
+                            {result.kind === 'worktree-chat'
+                              ? `${result.workspaceName} · ${result.worktreeName}`
+                              : result.workspaceName}
+                          </span>
+                        }
                       >
-                        <span
-                          className={`${REPLAY_MASK_CLASS} w-full truncate text-s fg-primary`}
-                        >
+                        <span className={REPLAY_MASK_CLASS}>
                           {result.title}
                         </span>
-                        <span
-                          className={`${REPLAY_MASK_CLASS} w-full truncate text-xs fg-secondary`}
-                        >
-                          {result.kind === 'worktree-chat'
-                            ? `${result.workspaceName} · ${result.worktreeName}`
-                            : result.workspaceName}
-                        </span>
-                      </button>
+                      </ListRow>
                     </li>
                   ))}
                 </ul>
@@ -5121,34 +5149,27 @@ function SidebarSurfaceContent(props: SidebarSurfaceProps): JSX.Element {
           // it. Floating it over the viewport means masking the rows passing
           // underneath, and that mask is re-rasterised over a multi-thousand
           // pixel layer every scroll frame. Out here nothing renders behind it.
-          <button
+          <SidebarProjectsReturn
             ref={projectsPinRef}
-            type="button"
-            hidden
-            data-sidebar-projects-pin-bottom=""
-            data-testid="portal-projects-pin-bottom"
-            // The visible word is the section's name, which alone reads as a
-            // destination; the accessible name says what activating it does.
-            aria-label={`Back to ${WORKSPACE_LABEL_PLURAL}`}
-            className="flex shrink-0 items-center gap-1 px-4 py-1.5 text-left text-s font-normal fg-quaternary transition-colors hover:fg-secondary"
-            onClick={(): void => {
+            label={WORKSPACE_LABEL_PLURAL}
+            testId="portal-projects-pin-bottom"
+            resolveTarget={() => {
               const viewport = scrollViewportRef.current;
               const header = viewport?.querySelector<HTMLElement>(
                 PROJECTS_HEADER_SELECTOR,
               );
-              if (!viewport || !header) return;
-              viewport.scrollTo({
-                top:
-                  viewport.scrollTop +
-                  header.getBoundingClientRect().top -
-                  viewport.getBoundingClientRect().top,
-                behavior: prefersReducedMotion() ? 'auto' : 'smooth',
-              });
+              return viewport && header
+                ? {
+                    viewport,
+                    header,
+                    focusTarget:
+                      header.querySelector<HTMLElement>(
+                        '[data-sidebar-projects-return-focus]',
+                      ) ?? header,
+                  }
+                : null;
             }}
-          >
-            <span className="truncate">{WORKSPACE_LABEL_PLURAL}</span>
-            <ChevronDownMediumIcon size="sm" className="shrink-0" aria-hidden />
-          </button>
+          />
         )}
         {footerCallout !== null &&
           (footerCalloutHost === null

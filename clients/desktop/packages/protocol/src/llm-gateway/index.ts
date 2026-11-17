@@ -306,6 +306,25 @@ function readProxyErrorObject(raw: string): Record<string, unknown> | null {
  * set maintained alongside the proxy, and failing open there would put the raw
  * JSON back in front of the user the moment a fifth code is added.
  */
+/** Standalone wire bodies may arrive as assistant text, never as prose quotes. */
+export function isCanopyProxyErrorBody(message: string): boolean {
+  const raw = message
+    .trim()
+    .replace(/^(?:Error:\s*|API Error:\s*\d{3}\s*)/, '');
+  if (!raw.startsWith('{') || !raw.includes(AI_CREDITS_PROXY_ERROR_MARKER))
+    return false;
+  try {
+    const parsed: unknown = JSON.parse(raw);
+    return (
+      isProxyRecord(parsed) &&
+      isProxyRecord(parsed.error) &&
+      parsed.error.canopy_proxy === AI_CREDITS_PROXY_ERROR_MARKER
+    );
+  } catch {
+    return false;
+  }
+}
+
 export function parseCanopyProxyError(
   message: string,
 ): CanopyProxyError | null {

@@ -1,3 +1,4 @@
+import { ControlButton } from '@canopy/ui-shared/components';
 import { Surface } from '@canopy/ui-shared/components';
 import { type JSX, useState } from 'react';
 import type {
@@ -18,13 +19,10 @@ import {
   LinkIcon,
 } from '@canopy/ui-shared/icons/AppIcons';
 import { PipelineShareLabel } from './PipelineShareLabel';
-import { TriggerBadge } from './PipelineTriggerBadge';
+import { PipelineTriggerDetails } from './PipelineTriggerBadge';
 import { getTriggerMeta } from './pipeline-trigger-meta';
 import { PIPELINE_SOURCE_META } from './pipeline-source-meta';
-import {
-  PIPELINE_EXECUTION_SCOPE_BADGE_CLASS,
-  PIPELINE_EXECUTION_SCOPE_META,
-} from './pipeline-execution-scope-meta';
+import { PIPELINE_EXECUTION_SCOPE_META } from './pipeline-execution-scope-meta';
 import { readPipelineInfoScopes } from '@/lib/pipelineExecutionScope';
 import { resolveSharedPipelineUrl } from '@/lib/share-links';
 import { pipelineSharePath } from '@canopy/protocol/pipelines';
@@ -42,7 +40,7 @@ import {
 } from '@canopy/ui-shared/components';
 import { markdownDescriptionToPlainText } from '@canopy/ui-shared/lib/markdown-plain-text';
 
-function ExecutionScopeBadge({
+function ExecutionScopeDetails({
   scope,
 }: {
   scope: PipelineExecutionScope;
@@ -51,13 +49,13 @@ function ExecutionScopeBadge({
 
   return (
     <ActionTooltip title={meta.label} description={meta.description}>
-      <button
+      <ControlButton
         type="button"
         aria-label={`${meta.label}: ${meta.description}`}
-        className={`focus-ring ${PIPELINE_EXECUTION_SCOPE_BADGE_CLASS}`}
+        presentation="workflow-scope-info"
       >
-        {meta.label}
-      </button>
+        <Badge>{meta.label}</Badge>
+      </ControlButton>
     </ActionTooltip>
   );
 }
@@ -209,7 +207,7 @@ export function PipelineTableRow({
           data-testid={`pipeline-scope-${pipeline.id}`}
         >
           {executionScopes.map((scope) => (
-            <ExecutionScopeBadge key={`scope-${scope}`} scope={scope} />
+            <ExecutionScopeDetails key={`scope-${scope}`} scope={scope} />
           ))}
         </div>
       </DataTableCell>
@@ -219,7 +217,7 @@ export function PipelineTableRow({
         {triggers.length > 0 ? (
           <div className="flex items-center gap-1.5">
             {triggers.map((t) => (
-              <TriggerBadge key={t} type={t} />
+              <PipelineTriggerDetails key={t} type={t} />
             ))}
           </div>
         ) : (

@@ -222,7 +222,7 @@ function DemoBody({
                   <span className="min-w-0 flex-1 truncate fg-primary">
                     {row.label}
                     {row.detail && (
-                      <span className="ml-1.5 fg-secondary">{row.detail}</span>
+                      <span className="pl-1.5 fg-secondary">{row.detail}</span>
                     )}
                   </span>
                   {row.meta && (

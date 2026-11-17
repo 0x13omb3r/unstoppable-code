@@ -200,74 +200,85 @@ export function ProviderConnectorDetail({
   return (
     // No top padding: the shell's Back row owns the gap above. Keeping `p-4`
     // here stacked on top of it and pushed this panel 40px down.
-    <div className="px-4 pb-4" data-testid="provider-connector-detail">
-      {/* A connector stands in for the catalog entry it replaces, so it is
+    <div
+      className="flex flex-col px-4 pb-4"
+      data-testid="provider-connector-detail"
+    >
+      <div className="flex flex-col gap-6">
+        <div className="flex flex-col gap-4">
+          {/* A connector stands in for the catalog entry it replaces, so it is
           identified the same way that entry and every other capability detail
           is. Without this the panel opened on a bare text title, dropping the
           mark and vendor the card beside it had already resolved. */}
-      <div
-        className="mb-4 flex items-start gap-3"
-        data-testid="provider-connector-detail-header"
-      >
-        <McpServerLogoComponent
-          curatedKey={row?.curatedKey}
-          logoUrl={catalogEntry?.logoUrl}
-          name={displayName}
-          size={40}
-          fallback="monogram"
-          fit="contain"
-          imgTestId="provider-connector-detail-logo"
-          fallbackTestId="provider-connector-detail-logo-fallback"
-        />
-        <div className="min-w-0 flex-1">
-          <Heading level={3} variant="section">
-            <span className="inline-flex flex-wrap items-baseline gap-x-2">
-              {displayName}
-              <DetailEntityType />
-            </span>
-          </Heading>
-          {catalogEntry?.authorName && (
-            <p className="mt-0.5 text-xs fg-secondary">
-              By {catalogEntry.authorName}
+          <div
+            className="flex items-start gap-3"
+            data-testid="provider-connector-detail-header"
+          >
+            <McpServerLogoComponent
+              curatedKey={row?.curatedKey}
+              logoUrl={catalogEntry?.logoUrl}
+              name={displayName}
+              size={40}
+              fallback="monogram"
+              fit="contain"
+              imgTestId="provider-connector-detail-logo"
+              fallbackTestId="provider-connector-detail-logo-fallback"
+            />
+            <div className="min-w-0 flex-1">
+              <Heading level={3} variant="section">
+                <span className="inline-flex flex-wrap items-baseline gap-x-2">
+                  {displayName}
+                  <DetailEntityType />
+                </span>
+              </Heading>
+              {catalogEntry?.authorName && (
+                <p className="mt-0.5 text-xs fg-secondary">
+                  By {catalogEntry.authorName}
+                </p>
+              )}
+            </div>
+          </div>
+
+          <div className="flex flex-col gap-2">
+            {(catalogEntry?.longDescription ||
+              catalogEntry?.shortDescription) && (
+              <p className="max-w-2xl text-s leading-relaxed fg-secondary">
+                {catalogEntry.longDescription || catalogEntry.shortDescription}
+              </p>
+            )}
+            <p className="text-s leading-relaxed fg-secondary">
+              Connect {displayName} with{' '}
+              {mcpProviderAccountPhrase(providerLabels)}. {appName} never sees
+              these credentials, and the tools become available in any chat on
+              that provider.
             </p>
+          </div>
+
+          {(catalogEntry?.authorUrl || catalogEntry?.docsUrl) && (
+            <DetailFactList>
+              {catalogEntry.authorUrl && (
+                <DetailFact label="Website">
+                  <ExternalTextLink
+                    href={catalogEntry.authorUrl}
+                    label={catalogEntry.authorUrl
+                      .replace(/^https?:\/\/(www\.)?/, '')
+                      .replace(/\/$/, '')}
+                  />
+                </DetailFact>
+              )}
+              {catalogEntry.docsUrl && (
+                <DetailFact label="Docs">
+                  <ExternalTextLink
+                    href={catalogEntry.docsUrl}
+                    label="Open docs"
+                  />
+                </DetailFact>
+              )}
+            </DetailFactList>
           )}
         </div>
+        {providerRows}
       </div>
-
-      <div className="flex flex-col gap-2">
-        {(catalogEntry?.longDescription || catalogEntry?.shortDescription) && (
-          <p className="max-w-2xl text-s leading-relaxed fg-secondary">
-            {catalogEntry.longDescription || catalogEntry.shortDescription}
-          </p>
-        )}
-        <p className="text-s leading-relaxed fg-secondary">
-          Connect {displayName} with {mcpProviderAccountPhrase(providerLabels)}.{' '}
-          {appName} never sees these credentials, and the tools become available
-          in any chat on that provider.
-        </p>
-      </div>
-
-      {(catalogEntry?.authorUrl || catalogEntry?.docsUrl) && (
-        <DetailFactList placement="mt-4">
-          {catalogEntry.authorUrl && (
-            <DetailFact label="Website">
-              <ExternalTextLink
-                href={catalogEntry.authorUrl}
-                label={catalogEntry.authorUrl
-                  .replace(/^https?:\/\/(www\.)?/, '')
-                  .replace(/\/$/, '')}
-              />
-            </DetailFact>
-          )}
-          {catalogEntry.docsUrl && (
-            <DetailFact label="Docs">
-              <ExternalTextLink href={catalogEntry.docsUrl} label="Open docs" />
-            </DetailFact>
-          )}
-        </DetailFactList>
-      )}
-
-      <div className="mt-6">{providerRows}</div>
       {recheck}
     </div>
   );

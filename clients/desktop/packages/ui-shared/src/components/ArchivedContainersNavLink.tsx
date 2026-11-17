@@ -1,3 +1,4 @@
+import { ControlButton } from './Button';
 /**
  * Left-nav entry point for an overview page: a workspace's "Archived and
  * deleted" overview, and the recipient's "Past shares". Pure and
@@ -7,7 +8,6 @@
 import type { JSX } from 'react';
 import { ArrowUpRight } from '../icons/AppIcons';
 import {
-  SIDEBAR_ROW_GRID_CLASSNAME,
   SIDEBAR_ROW_LEADING_SLOT_CLASSNAME,
   SIDEBAR_ROW_TRAILING_CELL_CLASSNAME,
 } from './sidebar-item-classes';
@@ -56,10 +56,10 @@ export function SidebarOverviewNavLink({
     // `row` keeps the rows' own 1px rhythm above it; the compact link keeps
     // its 4px.
     <div
-      className={rowSized ? 'mt-px' : 'mt-1'}
+      className={rowSized ? 'pt-px' : 'pt-1'}
       data-testid={`${testId}-section`}
     >
-      <button
+      <ControlButton
         type="button"
         data-testid={testId}
         data-selected={selected ? 'true' : 'false'}
@@ -70,11 +70,8 @@ export function SidebarOverviewNavLink({
         // label under their titles. Both sizes take the rows' right inset, so
         // the count sits under their ages and the count beside the project
         // name.
-        className={`focus-ring flex pr-1.5 ${rowSized ? 'h-8 rounded-row' : 'h-7 rounded-md'} w-full items-center ${SIDEBAR_ROW_GRID_CLASSNAME} text-left ${size === 'item' ? 'text-s leading-snug' : 'text-xs'} transition-colors ${
-          selected
-            ? 'bg-fg-primary/[0.08] fg-primary'
-            : 'fg-secondary hover:bg-fg-primary/[0.04] hover:fg-primary'
-        }`}
+        presentation="archived-container-item"
+        appearance={{ rowSized, size, selected: !!selected }}
       >
         <span className={SIDEBAR_ROW_LEADING_SLOT_CLASSNAME} aria-hidden="true">
           {size === 'item' ? null : <ArrowUpRight size={12} />}
@@ -93,7 +90,7 @@ export function SidebarOverviewNavLink({
             {count}
           </span>
         )}
-      </button>
+      </ControlButton>
     </div>
   );
 }

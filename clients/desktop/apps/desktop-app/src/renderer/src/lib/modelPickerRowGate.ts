@@ -679,7 +679,7 @@ export function resolveModelRowGate(input: ModelRowGateInput): ModelRowGate {
     return {
       kind: 'hard-disabled',
       cause: 'no-billing-source',
-      reason: `${connectProviderLabel(getProviderLabel(provider))} or buy AI Credits to use these models.`,
+      reason: `${connectProviderLabel(getProviderLabel(provider))} or choose another provider to use these models.`,
     };
   }
 

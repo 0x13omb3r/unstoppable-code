@@ -26,6 +26,7 @@ import { parseArgs } from 'node:util';
 import { setTimeout as delay } from 'node:timers/promises';
 import {
   applyDevScriptSafetyWithWait,
+  DEV_SUITE_CONCURRENCY_ENV,
   MEMORY_PRESSURE_THRESHOLD_ENV,
 } from '../../../../scripts/lib/dev-script-safety.mjs';
 import {
@@ -1522,6 +1523,7 @@ export function requireLocalPhysicalMac(
     assert(
       ![
         MEMORY_PRESSURE_THRESHOLD_ENV,
+        DEV_SUITE_CONCURRENCY_ENV,
         'CANOPY_DEV_PERF_SUITE_MAX_RUN_CONCURRENCY',
         'CANOPY_DEV_E2E_SUITE_MAX_RUN_CONCURRENCY',
       ].includes(key),

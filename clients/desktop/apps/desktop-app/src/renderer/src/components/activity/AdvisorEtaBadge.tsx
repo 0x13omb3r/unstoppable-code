@@ -1,7 +1,6 @@
 import { type JSX } from 'react';
-import { RichHoverTooltip } from '@canopy/ui-shared/components';
+import { RichHoverTooltip, StatusBadge } from '@canopy/ui-shared/components';
 import { AgentAssistantIcon } from '@canopy/ui-shared/icons';
-import { statusBadgeClassName } from '@canopy/ui-shared/lib';
 import type {
   ExecutionSummary,
   PipelineAdvisorInefficiency,
@@ -15,7 +14,7 @@ import {
 } from './PipelineAdvisorEta';
 import { PipelineAdvisorMarkdownText } from './PipelineAdvisorMarkdown';
 
-export function AdvisorEtaBadge({
+export function AdvisorEtaStatus({
   snapshot,
   pipelineStatus,
   interactive = true,
@@ -33,7 +32,6 @@ export function AdvisorEtaBadge({
   const stale = advisorErrorIsStale(snapshot);
   // Shared pipeline-row status badge: active tint while the advisor is
   // healthy, the warning tint once its last update failed.
-  const className = statusBadgeClassName(stale ? 'warning' : 'active');
   // Hover or keyboard focus shows the health/inefficiency preview.
   return (
     <RichHoverTooltip
@@ -52,11 +50,13 @@ export function AdvisorEtaBadge({
         tabIndex={interactive ? 0 : undefined}
         role="status"
         aria-label="Workflow Advisor ETA"
-        className={interactive ? `${className} focus-ring` : className}
+        className={interactive ? 'focus-ring inline-flex' : 'inline-flex'}
       >
-        <AgentAssistantIcon size="sm" />
-        <span>{etaText}</span>
-        {stale ? <span aria-hidden="true">!</span> : null}
+        <StatusBadge variant={stale ? 'warning' : 'active'}>
+          <AgentAssistantIcon size="sm" />
+          <span>{etaText}</span>
+          {stale ? <span aria-hidden="true">!</span> : null}
+        </StatusBadge>
       </span>
     </RichHoverTooltip>
   );

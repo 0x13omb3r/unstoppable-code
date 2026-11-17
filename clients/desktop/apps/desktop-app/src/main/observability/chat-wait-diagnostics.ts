@@ -4,11 +4,8 @@ import {
   clearTimeout as nativeClearTimeout,
   setTimeout as nativeSetTimeout,
 } from 'node:timers';
-import { APP_ADVISOR_PROJECT_ID } from '@canopy/desktop-shared/types';
+import { isBotId, projectIdForBotId } from '@canopy/protocol/chat-targets';
 import type { SessionDiagnosticRecord } from './service';
-
-// `APP_ADVISOR_BOT_ID` of `@canopy/agent-actions`, without its schema imports.
-const APP_ADVISOR_BOT_ID = 'app_advisor';
 
 export interface ChatWaitScope {
   projectId?: string;
@@ -291,11 +288,12 @@ export function startChatWaitOperation(
     try {
       const owner = phase === 'queue_wait' ? queueOwner?.() : undefined;
       // Worktree purges match the top-level IDs: a canonical task scope names
-      // its worktree as `taskId`, and the Orchestrator bot's tasks live in its
-      // project.
-      const projectId =
-        scope.projectId ??
-        (scope.botId === APP_ADVISOR_BOT_ID ? APP_ADVISOR_PROJECT_ID : '');
+      // its worktree as `taskId`, and Bot tasks live in their project.
+      const botProjectId =
+        typeof scope.botId === 'string' && isBotId(scope.botId)
+          ? projectIdForBotId(scope.botId)
+          : '';
+      const projectId = scope.projectId ?? botProjectId;
       const worktreeId = scope.worktreeId ?? scope.taskId ?? '';
       (options.record ?? recordLocally)({
         version: 1,

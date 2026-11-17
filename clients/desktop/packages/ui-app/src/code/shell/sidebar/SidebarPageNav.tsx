@@ -139,23 +139,24 @@ export function SidebarPageNavGroup({
   const headingId = useId();
   if (label === null) {
     return (
-      <section aria-label={ariaLabel} className="mt-1" data-testid={testId}>
+      <section aria-label={ariaLabel} className="pt-1" data-testid={testId}>
         <div className="flex flex-col gap-px">{children}</div>
       </section>
     );
   }
   return (
-    <Stack
-      aria-labelledby={headingId}
-      as="section"
-      gap="tight"
-      className="mt-3"
-      data-testid={testId}
-    >
-      <div id={headingId} className="px-2 text-xs font-normal fg-tertiary">
-        {label}
-      </div>
-      <div className="flex flex-col gap-px">{children}</div>
-    </Stack>
+    <div className="pt-3 empty:hidden">
+      <Stack
+        aria-labelledby={headingId}
+        as="section"
+        gap="tight"
+        data-testid={testId}
+      >
+        <div id={headingId} className="px-2 text-xs font-normal fg-tertiary">
+          {label}
+        </div>
+        <div className="flex flex-col gap-px">{children}</div>
+      </Stack>
+    </div>
   );
 }

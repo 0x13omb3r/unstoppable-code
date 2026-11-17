@@ -1,7 +1,5 @@
-import {
-  APP_ADVISOR_PROJECT_ID,
-  type SidebarItem,
-} from '@canopy/desktop-shared/types';
+import { type SidebarItem } from '@canopy/desktop-shared/types';
+import { isBotProjectId } from '@canopy/protocol/chat-targets';
 import type { WorkspaceContext } from '@canopy/protocol/workspace-context';
 import {
   isSameWorkspaceContext,
@@ -44,9 +42,9 @@ export function scopeWorkspacesToContext<T extends ScopedWorkspace>(
 }
 
 /**
- * Whether `workspaceId` belongs to `context`. App Advisor is explicitly
- * global. Other ids with no loaded workspace fail closed: their owner cannot
- * be proven, so their titles and navigation targets must not cross contexts.
+ * Whether `workspaceId` belongs to `context`. Bot targets are global. Other
+ * ids with no loaded workspace fail closed: their owner cannot be proven, so
+ * their titles and navigation targets must not cross contexts.
  */
 export function isWorkspaceIdInContext(
   workspaceId: string,
@@ -56,7 +54,7 @@ export function isWorkspaceIdInContext(
 ): boolean {
   if (context === undefined) return true;
   const workspace = workspaces.find((item) => item.id === workspaceId);
-  if (workspace === undefined) return workspaceId === APP_ADVISOR_PROJECT_ID;
+  if (workspace === undefined) return isBotProjectId(workspaceId);
   return isWorkspaceInContext(workspace, context, new Set(linkedPersonalIds));
 }
 
@@ -91,7 +89,7 @@ export function isChatTabInScopingContext(
   const workspace = useProjectsStore
     .getState()
     .projects.find((item) => item.id === workspaceId);
-  if (workspace === undefined) return workspaceId === APP_ADVISOR_PROJECT_ID;
+  if (workspace === undefined) return isBotProjectId(workspaceId);
   if (workspace.owner?.type === 'organization') {
     return (
       context.kind === 'organization' &&

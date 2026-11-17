@@ -488,6 +488,10 @@ export {
   type PipelineRunStepTreeSelection,
 } from './code/activity/pipeline/PipelineRunStepTree';
 export {
+  PipelineRunChildRow,
+  type PipelineRunChildRowProps,
+} from './code/activity/pipeline/PipelineRunChildRow';
+export {
   ChangedFilesSection,
   type ChangedFileRow,
   type ChangedFilesSectionProps,
@@ -734,7 +738,6 @@ export {
   type WorktreeMenuCallbacks,
 } from './code/shell/worktree-menu-items';
 export {
-  getWorktreeBranchChoiceHint,
   getWorktreeDeleteLabels,
   type WorktreeDeleteLabels,
   type WorktreeRemovalMode,

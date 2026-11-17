@@ -86,6 +86,14 @@ export interface CanopyCapabilities {
   readonly inAppBrowserPanel?: boolean;
   /** Host publishes current provider account quotas and accepts refresh. Default-deny. */
   readonly providerQuotas?: boolean;
+  /**
+   * Host can connect and run subscription providers (Claude, Codex, Cursor,
+   * Copilot) for this chat, so the provider-choice list offers them. A host
+   * without it shows those rows as available in the desktop app. Nothing is
+   * tunneled, so a Portal chat on a paired desktop still reports unset.
+   * Default-deny.
+   */
+  readonly subscriptionProviders?: boolean;
   /** Local Cursor rule review and workspace opt-in. Unset is default-deny. */
   readonly repoRulesImport?: boolean;
   /** Human review and desktop preference API; execution also requires terminalPty. */

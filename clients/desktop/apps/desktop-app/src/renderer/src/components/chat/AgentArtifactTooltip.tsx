@@ -1,3 +1,4 @@
+import { Badge } from '@canopy/ui-shared/components';
 import { Badge as SharedBadge } from '@canopy/ui-shared/components/Badge';
 import { PipelineSourceLabel } from '@canopy/ui-shared/components/EntrySourceLabel';
 import { memo, type JSX, type ReactNode } from 'react';
@@ -32,10 +33,7 @@ import {
   SkillIcon,
 } from '@canopy/ui-shared/icons';
 import { formatDateTime } from '@canopy/ui-shared/lib';
-import {
-  PIPELINE_EXECUTION_SCOPE_BADGE_CLASS,
-  PIPELINE_EXECUTION_SCOPE_META,
-} from '@/components/pipeline/pipeline-execution-scope-meta';
+import { PIPELINE_EXECUTION_SCOPE_META } from '@/components/pipeline/pipeline-execution-scope-meta';
 import { PIPELINE_SOURCE_META } from '@/components/pipeline/pipeline-source-meta';
 import {
   PIPELINE_SCOPE_META,
@@ -161,12 +159,9 @@ function PipelineTooltip({ receipt }: PipelineTooltipProps): JSX.Element {
         <Fact label="Scope">
           {receipt.scopes.length > 0
             ? receipt.scopes.map((scope) => (
-                <span
-                  key={scope}
-                  className={PIPELINE_EXECUTION_SCOPE_BADGE_CLASS}
-                >
+                <Badge key={scope}>
                   {PIPELINE_EXECUTION_SCOPE_META[scope].label}
-                </span>
+                </Badge>
               ))
             : '—'}
         </Fact>

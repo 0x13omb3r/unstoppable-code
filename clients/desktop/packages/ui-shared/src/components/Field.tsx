@@ -1,5 +1,12 @@
 'use client';
 
+export { FIELD_INVALID_CLASS } from './control-button-shared';
+
+import { FIELD_EDGE_CLASS } from './control-button-shared';
+export { FIELD_EDGE_CLASS } from './control-button-shared';
+
+import { FIELD_CLASS, FIELD_SURFACE_CLASS } from './control-button-shared';
+
 import {
   forwardRef,
   useId,
@@ -14,7 +21,7 @@ import {
 import type { AppError } from '@canopy/protocol/app-errors';
 import { ChevronDownMediumIcon, WarningIcon } from '../icons/AppIcons';
 import { REPLAY_BLOCK_CLASS, REPLAY_MASK_CLASS } from '../lib/replay-privacy';
-import { DROPDOWN_TRIGGER_INTERACTION_CLASS } from './Button';
+import { ControlButton } from './Button';
 import { useDialogFormFieldDescribedBy } from './dialog-form-field-context';
 import { FLOATING_MENU_GAP } from './FloatingMenu';
 import {
@@ -50,7 +57,6 @@ import {
  * The field edge at rest. A composite field (`SearchField`) draws it on the
  * box around its input and swaps in {@link FIELD_FOCUS_WITHIN_CLASS}.
  */
-export const FIELD_EDGE_CLASS = 'shadow-field transition-shadow';
 
 /**
  * The neutral field focus, for a box whose input has focus. A field never
@@ -63,8 +69,6 @@ export const FIELD_FOCUS_WITHIN_CLASS = 'has-[input:focus]:shadow-field-focus';
  * destructive focus (edge + soft halo) while focused, never the grey focus
  * halo around a red edge. For a field whose own element is focused.
  */
-export const FIELD_INVALID_CLASS =
-  'aria-invalid:shadow-field-invalid aria-invalid:focus-visible:shadow-field-invalid-focus';
 
 /** The same for a box around an input (`TextInput` adornments). */
 const FIELD_INVALID_WITHIN_CLASS =
@@ -72,9 +76,6 @@ const FIELD_INVALID_WITHIN_CLASS =
 
 // Touch screens get 16px text: iOS Safari zooms the page into a focused
 // field set smaller than 16px.
-const FIELD_SURFACE_CLASS = `w-full bg-transparent text-s pointer-coarse:text-m fg-primary text-wrap placeholder:text-pretty placeholder:fg-tertiary outline-none ${FIELD_EDGE_CLASS} focus-visible:shadow-field-focus ${FIELD_INVALID_CLASS} disabled:cursor-not-allowed disabled:bg-disabled disabled:fg-disabled`;
-
-const FIELD_CLASS = `min-h-9 rounded-lg px-3 py-2 pointer-coarse:min-h-11 ${FIELD_SURFACE_CLASS}`;
 
 /**
  * Field size. `default` is the 36px form field (12px corners). `compact` is
@@ -384,8 +385,6 @@ TextArea.displayName = 'TextArea';
  * An open `Select` shows the focus edge (destructive when invalid) while
  * focus is in its menu, like the 28px dropdowns' `DROPDOWN_INVALID_CLASS`.
  */
-const SELECT_OPEN_EDGE_CLASS =
-  'aria-expanded:shadow-field-focus aria-invalid:aria-expanded:shadow-field-invalid-focus';
 
 export interface SelectOption {
   readonly value: string;
@@ -570,7 +569,7 @@ export const FieldPickerTrigger = forwardRef<
   Omit<ButtonHTMLAttributes<HTMLButtonElement>, 'className' | 'type'>
 >(function FieldPickerTrigger(props, ref): JSX.Element {
   return (
-    <button
+    <ControlButton
       {...props}
       ref={ref}
       type="button"
@@ -578,7 +577,7 @@ export const FieldPickerTrigger = forwardRef<
       // the transition keeps the focus edge and adds the press (the
       // press sets `scale`, not `transform`). Open, focus is in the menu,
       // so the trigger keeps the focus edge itself, as SettingsSelect does.
-      className={`${FIELD_CLASS.replace('transition-shadow', 'transition-[box-shadow,transform,scale]')} ${DROPDOWN_TRIGGER_INTERACTION_CLASS} ${SELECT_OPEN_EDGE_CLASS} flex cursor-pointer items-center pr-9 text-left disabled:pointer-events-none disabled:cursor-not-allowed`}
+      presentation="picker-field"
     />
   );
 });

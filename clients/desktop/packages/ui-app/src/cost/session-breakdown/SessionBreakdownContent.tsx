@@ -1,5 +1,6 @@
 'use client';
 
+import { ControlButton } from '@canopy/ui-shared/components';
 import {
   ContextUsagePlotSurface,
   CostSourceSwatch,
@@ -174,16 +175,15 @@ function SourceRow({
   return (
     <div className="flex flex-col">
       {canExpand ? (
-        <button
-          type="button"
+        <ControlButton
           data-testid={`session-breakdown-source-${source}`}
           aria-expanded={expanded}
           aria-controls={detailsId}
           onClick={(): void => setExpanded((previous) => !previous)}
-          className="focus-ring flex w-full items-center gap-2 rounded-md px-1 py-1.5 text-left text-xs transition-colors hover:bg-subtle pointer-coarse:min-h-11"
+          presentation="cost-source-disclosure"
         >
           {rowContent}
-        </button>
+        </ControlButton>
       ) : (
         <div
           data-testid={`session-breakdown-source-${source}`}

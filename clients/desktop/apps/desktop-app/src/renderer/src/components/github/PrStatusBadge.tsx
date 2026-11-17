@@ -2,6 +2,6 @@
 // web worktree headers render the same ones (REG-3025). Re-exported here to
 // keep existing `@/components/github/PrStatusBadge` import paths stable.
 export {
-  CiStatusBadge as CheckStatusBadge,
-  PrStateBadge,
+  CiStatusIndicator as CheckStatusBadge,
+  PrStateIndicator,
 } from '@canopy/ui-app/pull-requests';

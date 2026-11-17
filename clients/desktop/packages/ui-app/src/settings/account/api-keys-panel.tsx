@@ -295,61 +295,66 @@ export function ApiKeysManager({
         )}
       </div>
 
-      <ErrorBanner
-        errorSource="api-keys-manager-load"
-        className="mb-3"
-        error={loadError?.copy}
-        details={loadError?.details}
-        onRetry={() => void refresh()}
-      />
-      <ErrorBanner
-        errorSource="api-keys-manager"
-        className="mb-3"
-        error={error?.copy}
-        details={error?.details}
-      />
+      <div className="pb-3 empty:hidden">
+        <ErrorBanner
+          errorSource="api-keys-manager-load"
+          className=""
+          error={loadError?.copy}
+          details={loadError?.details}
+          onRetry={() => void refresh()}
+        />
+      </div>
+      <div className="pb-3 empty:hidden">
+        <ErrorBanner
+          errorSource="api-keys-manager"
+          className=""
+          error={error?.copy}
+          details={error?.details}
+        />
+      </div>
 
       {createdToken && (
-        <Surface
-          gap="item"
-          variant="group"
-          size="small"
-          padding="default"
-          className="mb-3"
-          aria-live="polite"
-        >
-          <Stack gap="tight">
-            <p className="text-s font-medium fg-primary">
-              Copy this API key now. It will not be shown again.
-            </p>
-            <p className="text-xs fg-secondary">
-              Name: {createdToken.userApiKey.name}
-            </p>
-          </Stack>
-          <div className="flex items-center gap-2">
-            <Surface
-              variant="card"
-              size="small"
-              className="flex-1 overflow-hidden"
-            >
-              <code
-                className={withPrivacyClass(
-                  'block overflow-x-auto px-3 py-2 font-mono text-xs fg-primary',
-                  blockClassName,
-                )}
+        <div className="pb-3 empty:hidden">
+          <Surface
+            gap="item"
+            variant="group"
+            size="small"
+            padding="default"
+            aria-live="polite"
+          >
+            <Stack gap="tight">
+              <p className="text-s font-medium fg-primary">
+                Copy this API key now. It will not be shown again.
+              </p>
+              <p className="text-xs fg-secondary">
+                Name: {createdToken.userApiKey.name}
+              </p>
+            </Stack>
+            <div className="flex items-center gap-2">
+              <Surface
+                variant="card"
+                size="small"
+                className="flex-1 overflow-hidden"
               >
-                {createdToken.token}
-              </code>
-            </Surface>
-            <Button size="compact" onClick={() => void handleCopy()}>
-              <Copy size={14} aria-hidden="true" />
-              {copied ? 'Copied' : 'Copy'}
-            </Button>
-            <Button size="compact" onClick={handleDoneToken}>
-              Done
-            </Button>
-          </div>
-        </Surface>
+                <code
+                  className={withPrivacyClass(
+                    'block overflow-x-auto px-3 py-2 font-mono text-xs fg-primary',
+                    blockClassName,
+                  )}
+                >
+                  {createdToken.token}
+                </code>
+              </Surface>
+              <Button size="compact" onClick={() => void handleCopy()}>
+                <Copy size={14} aria-hidden="true" />
+                {copied ? 'Copied' : 'Copy'}
+              </Button>
+              <Button size="compact" onClick={handleDoneToken}>
+                Done
+              </Button>
+            </div>
+          </Surface>
+        </div>
       )}
 
       {creating && (

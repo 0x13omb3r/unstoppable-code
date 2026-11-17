@@ -532,11 +532,11 @@ describe('cloud chat catalog over the web core (CAN-5972)', () => {
         libraryEligibility: 'available',
       },
     ]);
-    // Read at revision 2, the hosted catalog the web reads (CAN-6093).
+    // Revision 5 adds compatibility to the hosted model catalog (CAN-6807).
     expect(
       core.calls.find((call) => call.method === 'core.catalog.snapshot.get')
         ?.params,
-    ).toMatchObject({ revision: 2 });
+    ).toMatchObject({ revision: 5 });
   });
 
   it("names each row's source as the web core labels it and lists a curated skill once, through its plugin (CAN-6397)", async () => {

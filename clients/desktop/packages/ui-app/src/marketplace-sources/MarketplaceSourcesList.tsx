@@ -1,5 +1,6 @@
 'use client';
 
+import { ControlButton } from '@canopy/ui-shared/components';
 import { Badge } from '@canopy/ui-shared/components/Badge';
 import { useEffect, useRef, useState, type JSX, type ReactNode } from 'react';
 import type { MarketplaceSource } from '@canopy/app-core/client';
@@ -280,10 +281,9 @@ function MarketplaceSourceRow({
       aria-busy={busy}
     >
       <div className="flex items-start justify-between gap-3">
-        <button
-          type="button"
+        <ControlButton
           onClick={onOpen}
-          className="focus-ring min-w-0 flex-1 rounded text-left"
+          presentation="directory-entry-open"
           data-testid="marketplace-source-open"
         >
           <span className="flex items-center gap-2">
@@ -328,12 +328,12 @@ function MarketplaceSourceRow({
           </span>
           {source.description && (
             <span
-              className={`mt-1 line-clamp-2 block text-xs fg-secondary ${REPLAY_MASK_CLASS}`}
+              className={`pt-1 line-clamp-2 block text-xs fg-secondary ${REPLAY_MASK_CLASS}`}
             >
               {source.description}
             </span>
           )}
-        </button>
+        </ControlButton>
         <div className="flex shrink-0 items-center gap-2">
           {busyLabel && (
             <span

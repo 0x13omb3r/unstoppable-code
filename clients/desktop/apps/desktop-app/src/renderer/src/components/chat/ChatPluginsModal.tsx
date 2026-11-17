@@ -1,6 +1,13 @@
 import { DeferredPluginsControl } from '@canopy/ui-shared';
 import { DialogModal, ErrorBanner } from '@canopy/ui-shared/components';
-import { type JSX, useCallback, useEffect, useRef, useState } from 'react';
+import {
+  type JSX,
+  type RefObject,
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+} from 'react';
 import type {
   AgentProviderType,
   ChatTabPluginSelections,
@@ -18,6 +25,7 @@ import { Button } from '@canopy/ui-shared/components';
 
 interface ChatPluginsModalProps {
   initial: ChatTabPluginSelections;
+  restoreFocusRef?: RefObject<HTMLElement | null>;
   /**
    * `projectDefaults` is set when a recommendation applied in the modal
    * replaced the project defaults the chat inherits; split the saved set
@@ -120,6 +128,7 @@ function selectionsEqual(
 
 export function ChatPluginsModal({
   initial,
+  restoreFocusRef,
   onSave,
   onClose,
   projectId,
@@ -195,6 +204,8 @@ export function ChatPluginsModal({
       title="Plugins"
       maxWidth="2xl"
       inset="flush"
+      trapFocus
+      restoreFocusRef={restoreFocusRef}
       scrollableBody={false}
       closeOnBackdrop={!saving}
       closeButtonDisabled={saving}

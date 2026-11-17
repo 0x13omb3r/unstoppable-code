@@ -253,24 +253,26 @@ function ConfirmSummary({
           )}
           <p className="fg-secondary" data-testid={`${testId}-summary`}>
             {retentionSummary}
-            <RichHoverTooltip
-              content={
-                <span className="block text-xs leading-snug fg-primary">
-                  {retentionDetail}
-                </span>
-              }
-              surfaceClassName="w-72"
-              triggerWrapperClassName="ml-1 inline-flex h-5 items-center align-middle"
-            >
-              <Button
-                variant="ghost-quiet"
-                size="sm"
-                iconOnly
-                aria-label={`About restoring these ${unitLabel.plural}`}
+            <span className="inline-flex pl-1 align-middle">
+              <RichHoverTooltip
+                content={
+                  <span className="block text-xs leading-snug fg-primary">
+                    {retentionDetail}
+                  </span>
+                }
+                surfaceClassName="w-72"
+                triggerWrapperClassName="inline-flex h-5 items-center align-middle"
               >
-                <InfoIcon size={14} aria-hidden="true" />
-              </Button>
-            </RichHoverTooltip>
+                <Button
+                  variant="ghost-quiet"
+                  size="sm"
+                  iconOnly
+                  aria-label={`About restoring these ${unitLabel.plural}`}
+                >
+                  <InfoIcon size={14} aria-hidden="true" />
+                </Button>
+              </RichHoverTooltip>
+            </span>
           </p>
         </>
       )}

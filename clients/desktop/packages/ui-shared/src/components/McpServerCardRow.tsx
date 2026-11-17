@@ -1,6 +1,6 @@
 import type { JSX, ReactNode } from 'react';
 import { COMPACT_ACTIVITY_ITEM_CLASS_NAME } from './activity-item-density';
-import { Button, buttonClassName } from './Button';
+import { ControlButton, Button, buttonClassName } from './Button';
 import { Surface } from './Surface';
 
 /** Hosts resolve identities; the shared row only renders the supplied control. */
@@ -17,7 +17,7 @@ export function McpRowSettings({
 }): JSX.Element | null {
   if (!destination) return null;
   return (
-    <div className="mt-1.5 text-2xs">
+    <div className="pt-1.5 text-2xs">
       {destination.kind === 'button' ? (
         <Button
           variant="link"
@@ -103,14 +103,15 @@ export function McpServerCardRow({
             {name}
           </span>
         ) : destination.kind === 'button' ? (
-          <button
+          <ControlButton
             type="button"
-            className={controlClass}
+            presentation="mcp-card-title"
+            appearance={{ compact: !!compact }}
             onClick={destination.onActivate}
             data-testid="mcp-servers-card-name"
           >
             {name}
-          </button>
+          </ControlButton>
         ) : (
           <a
             className={controlClass}

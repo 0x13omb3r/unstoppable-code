@@ -137,7 +137,7 @@ export function isSpaceNotificationMuted(
 }
 
 /** The check-slot icon: a check, a spinner for the pending save, or none. */
-export function SpaceNotificationMenuRowIcon({
+export function SpaceNotificationMenuChoiceIndicator({
   row,
 }: {
   readonly row: SpaceNotificationMenuChoiceRow;
@@ -233,7 +233,7 @@ export function SpaceNotificationMenuItems({
           }}
         >
           <DropdownMenuItemIcon>
-            <SpaceNotificationMenuRowIcon row={row} />
+            <SpaceNotificationMenuChoiceIndicator row={row} />
           </DropdownMenuItemIcon>
           {row.label}
         </DropdownMenuItem>
@@ -267,12 +267,14 @@ export function SpaceNotificationMenuStatusLine({
 }): JSX.Element {
   if (status.tone === 'failure' && !status.loading) {
     return (
-      <ErrorBanner
-        errorSource="space-notification-menu-status-line"
-        className="m-1"
-        error={status.text}
-        testId={testId}
-      />
+      <div className="p-1 empty:hidden">
+        <ErrorBanner
+          errorSource="space-notification-menu-status-line"
+          className=""
+          error={status.text}
+          testId={testId}
+        />
+      </div>
     );
   }
   // A plain row, not `DropdownMenuLabel`: the label truncates to one line and
@@ -287,3 +289,5 @@ export function SpaceNotificationMenuStatusLine({
     </div>
   );
 }
+
+export { SpaceNotificationMenuChoiceIndicator as SpaceNotificationMenuRowIcon };

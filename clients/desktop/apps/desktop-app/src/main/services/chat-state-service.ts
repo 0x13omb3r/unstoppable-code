@@ -240,7 +240,6 @@ import {
 } from './chat-state-v2-repository';
 import { applyMutation } from './chat-state-reducer';
 import {
-  APP_ADVISOR_PROJECT_ID,
   CANOPY_USER_PROMPT_ACCEPTED_EVENT_TYPE,
   canSwitchProviderInPlace,
   CODE_REVIEW_CHAT_PROJECT_ID,
@@ -261,6 +260,7 @@ import {
   resolveModelAlias,
   resolveRuntimeModel,
 } from '@canopy/desktop-shared/types';
+import { isBotProjectId } from '@canopy/protocol/chat-targets';
 import {
   createPersistedChatTab,
   createPersistedFileTab,
@@ -2226,10 +2226,13 @@ function expectedRevisionForCommand(
 ): number | undefined {
   // A remote view acknowledges a particular observed message. Unlike local
   // desired-state metadata patches, it must not clear output committed since
-  // the portal adapter checked that message against its snapshot.
+  // the portal adapter checked that message against its snapshot. A guarded
+  // failure retry likewise must not send after that failure has been superseded.
   if (
     envelope.origin === 'portal' &&
-    envelope.command.type === 'chat.mark_read'
+    (envelope.command.type === 'chat.mark_read' ||
+      (envelope.command.type === 'chat.send_message' &&
+        envelope.expectedRevision !== undefined))
   ) {
     return envelope.expectedTabRevision ?? envelope.expectedRevision;
   }
@@ -8122,7 +8125,7 @@ export class ChatStateService implements ChatStateCommandPort {
         // Advisor hydration can change an empty tab's default before its first
         // dispatch. Commit that route before the prompt makes it a chat lock.
         const synchronizeAdvisorRouting =
-          request.projectId === APP_ADVISOR_PROJECT_ID &&
+          isBotProjectId(request.projectId) &&
           (existing.transcript?.messageCount ?? existing.messages.length) ===
             0 &&
           existing.executionHarnessExplicitlyChosen !== true;

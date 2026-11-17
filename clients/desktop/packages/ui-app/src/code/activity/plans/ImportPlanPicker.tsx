@@ -9,6 +9,7 @@ import {
 } from 'react';
 import { derivePlanTitle } from '@canopy/protocol/plans';
 import {
+  PickerMenuOption,
   Badge,
   Button,
   DelayedLoadingPlaceholder,
@@ -438,13 +439,15 @@ export function ImportPlanPicker({
       // focused row keeps focus and Escape still reaches the dialog. The
       // selected row is the combobox's active descendant, its keyboard focus,
       // so it keeps DESIGN.md's focus highlight rather than a checkmark.
-      <button
-        type="button"
+      <PickerMenuOption
         role="option"
+        active={selected}
+        activeTone="accent"
         id={optionIds.get(key)}
         tabIndex={-1}
         aria-selected={selected}
         aria-disabled={importing || undefined}
+        unavailable={importing}
         data-testid={testId}
         ref={(node): void => {
           if (node) optionRefs.current.set(key, node);
@@ -454,11 +457,7 @@ export function ImportPlanPicker({
           if (!importing) setSelectedKey(key);
         }}
         onDoubleClick={(): void => runPrimary(item)}
-        className={`${OPTION_ROW_CLASS} transition-colors aria-disabled:opacity-50 ${
-          selected
-            ? 'bg-accent-subtle fg-accent-strong'
-            : 'fg-primary hover:bg-secondary'
-        }`}
+        className="flex-1"
       >
         {content}
         {itemTrackedPlanId(item) ? (
@@ -466,7 +465,7 @@ export function ImportPlanPicker({
             Tracked
           </Badge>
         ) : null}
-      </button>
+      </PickerMenuOption>
     );
   }
 

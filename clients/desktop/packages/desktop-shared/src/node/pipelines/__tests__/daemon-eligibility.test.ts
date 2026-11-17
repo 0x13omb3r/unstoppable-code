@@ -197,6 +197,85 @@ describe('classifyDaemonPipeline', () => {
     ).toEqual(portable);
   });
 
+  it('admits same-target child workflows on a host that runs them, and expression models for the owner to admit (CAN-6868)', () => {
+    const child: Step = { uses: 'builtin/run-pipeline' };
+    expect(
+      classifyDaemonPipeline(oneStep(child), context, {
+        childPipelines: 'host',
+      }),
+    ).toEqual({
+      eligible: true,
+      modelSteps: 0,
+      modelHarnesses: [],
+      childPipelines: 1,
+    });
+    expect(
+      classifyDaemonPipeline(
+        oneStep({ ...child, target: { scope: 'inherit' } }),
+        context,
+        { childPipelines: 'host', modelSteps: 'claude_codex' },
+      ),
+    ).toMatchObject({ eligible: true, childPipelines: 1 });
+    // A child on another target is a delegated run, not this host's.
+    for (const target of [
+      { scope: 'worktree', workspace_id: 'w', worktree: { id: 't' } },
+      { scope: 'directory', path: 'sub' },
+      { scope: 'global' },
+    ] as const)
+      expect(
+        classifyDaemonPipeline(oneStep({ ...child, target }), context, {
+          childPipelines: 'host',
+        }),
+      ).toMatchObject({ eligible: false, reason: 'child_pipeline' });
+    // Part 3: a host whose owner runs it as a run of its own takes it, but
+    // never a folder target that names no folder.
+    for (const target of [
+      { scope: 'worktree', workspace_id: 'w', worktree: { id: 't' } },
+      { scope: 'global' },
+    ] as const)
+      expect(
+        classifyDaemonPipeline(oneStep({ ...child, target }), context, {
+          childPipelines: 'host',
+          delegatedChildren: 'owner',
+        }),
+      ).toMatchObject({ eligible: true, childPipelines: 1 });
+    // A folder of the run isn't served by its owner yet (part 3b).
+    for (const target of [
+      { scope: 'directory', path: 'sub' },
+      { scope: 'directory' },
+    ] as const)
+      expect(
+        classifyDaemonPipeline(oneStep({ ...child, target }), context, {
+          childPipelines: 'host',
+          delegatedChildren: 'owner',
+        }),
+      ).toMatchObject({ eligible: false, reason: 'child_pipeline' });
+    // Without children in the host, none is handed over either.
+    expect(
+      classifyDaemonPipeline(
+        oneStep({ ...child, target: { scope: 'global' } }),
+        context,
+        { delegatedChildren: 'owner' },
+      ),
+    ).toMatchObject({ eligible: false, reason: 'child_pipeline' });
+    // A matrix model is known only when the step runs.
+    const matrixModel = oneStep({
+      uses: 'builtin/agent-prompt',
+      with: { model: '${{ matrix.model }}', prompt: 'p' },
+    });
+    expect(
+      classifyDaemonPipeline(matrixModel, context, {
+        modelSteps: 'claude_codex',
+      }),
+    ).toMatchObject({ eligible: false, reason: 'dynamic_model' });
+    expect(
+      classifyDaemonPipeline(matrixModel, context, {
+        modelSteps: 'claude_codex',
+        expressionModels: 'owner',
+      }),
+    ).toEqual({ eligible: true, modelSteps: 1, modelHarnesses: [] });
+  });
+
   it('refuses unresolved and expression actions', () => {
     expect(
       classifyDaemonPipeline(

@@ -17,6 +17,7 @@ const APP_ADVISOR_HOME_KEY = `${APP_ADVISOR_PROJECT_ID}/${APP_ADVISOR_WORKTREE_I
  * layout the user already has.
  */
 export function usesSimplifiedMinimalDefaults(worktreeKey: string): boolean {
+  // Default Bot only: its home surface has no per-worktree layout mode.
   if (worktreeKey === APP_ADVISOR_HOME_KEY) return false;
   return true;
 }

@@ -802,7 +802,11 @@ the rebase state, the stash list and the status alone.
 
 CAN-5882 adds `head-sha`, `tracking-head-sha`, `stage-all`, `commit-message`
 and `push-head`. They run `rev-parse --verify`, `add -A`, `commit -m` and
-`push -u origin HEAD` only, without force or a child abort signal. Push takes
+`push -u origin HEAD` only, without force or a child abort signal. CAN-6869
+pins the push to the commit the worker checked: `push-head` carries its
+branch and head and runs `push origin <head>:refs/heads/<branch>`, and a
+`set-upstream` kind (`branch --set-upstream-to`) then tracks it, best effort,
+as `-u` did. Push takes
 the dispatch key, mints the daemon-owned GitHub authority's K3 `git-push`
 lease for `worker.git.push`, and spawns synchronously inside `lease.deliver`
 with the delivered `GH_TOKEN`. K10 refuses forwarded token, askpass and

@@ -354,13 +354,12 @@ export function BrowserAddressBar({
                         : 'Console and network'}
                     </span>
                     {errorCount > 0 ? (
-                      <DropdownMenuItemTrailing
-                        tone="destructive"
-                        className="ml-3"
-                      >
-                        {errorCount > 99 ? '99+' : errorCount}{' '}
-                        {errorCount === 1 ? 'error' : 'errors'}
-                      </DropdownMenuItemTrailing>
+                      <div className="pl-3 empty:hidden">
+                        <DropdownMenuItemTrailing tone="destructive">
+                          {errorCount > 99 ? '99+' : errorCount}{' '}
+                          {errorCount === 1 ? 'error' : 'errors'}
+                        </DropdownMenuItemTrailing>
+                      </div>
                     ) : null}
                   </DropdownMenuItem>
                 </>

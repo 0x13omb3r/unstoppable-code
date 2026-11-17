@@ -12,6 +12,7 @@ import {
   PLAN_EXPLORE_CHAT_PROJECT_ID,
   SHARED_CONTAINER_VIEWER_PROJECT_ID,
 } from '@canopy/desktop-shared/types';
+import { isBotProjectId } from '@canopy/protocol/chat-targets';
 import {
   normalizeActivitySectionOrder,
   type WorkspaceIndexSnapshot,
@@ -108,6 +109,7 @@ export interface StartupStreamRepairJob {
 }
 
 const APP_MANAGED_PROJECT_IDS: readonly string[] = [
+  // Default Bot only: the only Bot until the Bot registry lists the rest.
   APP_ADVISOR_PROJECT_ID,
   PLAN_EXPLORE_CHAT_PROJECT_ID,
   CODE_REVIEW_CHAT_PROJECT_ID,
@@ -119,7 +121,6 @@ const APP_MANAGED_PROJECT_IDS: readonly string[] = [
 // IDs can also be real indexed workspaces; in that case their index/manifest
 // is authoritative and their canonical root is workspaces/<id>.
 const PERMANENT_APP_MANAGED_PROJECT_IDS: readonly string[] = [
-  APP_ADVISOR_PROJECT_ID,
   SHARED_CONTAINER_VIEWER_PROJECT_ID,
 ];
 
@@ -287,7 +288,10 @@ async function authoritativeWorkspaceTypes(
     // The two hard-routed sentinels stay app-managed even if stale index rows
     // exist. Other reserved IDs use their canonical indexed workspace when
     // the index contains them.
-    if (PERMANENT_APP_MANAGED_PROJECT_IDS.some((id) => id === projectId))
+    if (
+      isBotProjectId(projectId) ||
+      PERMANENT_APP_MANAGED_PROJECT_IDS.some((id) => id === projectId)
+    )
       continue;
     try {
       const manifest = await readWorkspaceConfigDetailed(projectId);
@@ -555,7 +559,10 @@ async function indexedScopeCandidates(
       reportFailure();
       continue;
     }
-    if (PERMANENT_APP_MANAGED_PROJECT_IDS.some((id) => id === projectId))
+    if (
+      isBotProjectId(projectId) ||
+      PERMANENT_APP_MANAGED_PROJECT_IDS.some((id) => id === projectId)
+    )
       continue;
     const workspaceType = authoritativeTypes.get(projectId);
     if (workspaceType === undefined) continue;
@@ -665,9 +672,10 @@ async function appManagedScopeCandidates(
     projects = APP_MANAGED_PROJECT_IDS.filter(
       (id) =>
         existing.has(id) &&
-        (PERMANENT_APP_MANAGED_PROJECT_IDS.some(
-          (permanent) => permanent === id,
-        ) ||
+        (isBotProjectId(id) ||
+          PERMANENT_APP_MANAGED_PROJECT_IDS.some(
+            (permanent) => permanent === id,
+          ) ||
           (allowUnindexedReservedScopes && !indexedIds.has(id))),
     );
   } catch (error) {
@@ -686,7 +694,7 @@ async function appManagedScopeCandidates(
     }
     const workspaceIdentity = workspaceRead.identity;
 
-    if (projectId === APP_ADVISOR_PROJECT_ID) {
+    if (isBotProjectId(projectId)) {
       try {
         const registry = await readWorkEntriesAt(
           path.join(appWorkspaceDirectory, 'work-entries.json'),
@@ -702,8 +710,11 @@ async function appManagedScopeCandidates(
       } catch (error) {
         if (errnoCode(error) !== 'ENOENT') reportFailure();
       }
-      const global = await appAdvisorGlobalCandidate(reportFailure);
-      if (global) candidates.push(global);
+      // Default Bot only: the legacy global slot belongs to the Orchestrator.
+      if (projectId === APP_ADVISOR_PROJECT_ID) {
+        const global = await appAdvisorGlobalCandidate(reportFailure);
+        if (global) candidates.push(global);
+      }
       continue;
     }
 

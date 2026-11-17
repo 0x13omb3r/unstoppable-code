@@ -38,7 +38,10 @@ import type {
   PipelineRunArtifactReceiptV1,
   TurnDiffData,
 } from '@canopy/desktop-shared/types';
-import { APP_ADVISOR_PROJECT_ID } from '@canopy/desktop-shared/types';
+import {
+  botIdForProjectId,
+  isBotProjectId,
+} from '@canopy/protocol/chat-targets';
 import {
   ChatVisualHostProvider,
   ClaudeModLogNotices,
@@ -892,7 +895,7 @@ export function ChatMessageList({
   // archived or history transcript has no panel beside it and keeps the dialog.
   const chatVisualsKey =
     outputProjectId &&
-    outputProjectId !== APP_ADVISOR_PROJECT_ID &&
+    !isBotProjectId(outputProjectId) &&
     outputWorktreeId &&
     chatId &&
     !archivedContainerId &&
@@ -906,7 +909,7 @@ export function ChatMessageList({
   const chatVisualHost = useMemo(
     () =>
       outputProjectId &&
-      outputProjectId !== APP_ADVISOR_PROJECT_ID &&
+      !isBotProjectId(outputProjectId) &&
       outputWorktreeId &&
       chatId
         ? createDesktopChatVisualHost(
@@ -1058,15 +1061,15 @@ export function ChatMessageList({
     startingTurnUserMessageId !== undefined,
   );
   const receivingProjectId = worktreeTarget?.projectId;
-  const receivingContext = useMemo<AgentSentReceivingContext | undefined>(
-    () =>
-      receivingProjectId
-        ? receivingProjectId === APP_ADVISOR_PROJECT_ID
-          ? { kind: 'bot', botId: 'app_advisor' }
-          : { kind: 'project', projectId: receivingProjectId }
-        : undefined,
-    [receivingProjectId],
-  );
+  const receivingContext = useMemo<AgentSentReceivingContext | undefined>(():
+    | AgentSentReceivingContext
+    | undefined => {
+    if (!receivingProjectId) return undefined;
+    const botId = botIdForProjectId(receivingProjectId);
+    return botId
+      ? { kind: 'bot', botId }
+      : { kind: 'project', projectId: receivingProjectId };
+  }, [receivingProjectId]);
   useReconcileNativeTaskStops(chatTarget);
   const linkActions = useChatMessageLinkActions(worktreeTarget);
   const {

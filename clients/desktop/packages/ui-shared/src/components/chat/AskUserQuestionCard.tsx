@@ -23,11 +23,12 @@ import type {
 } from '@canopy/protocol/portal';
 import { validateQuestionControlAnswers } from '@canopy/protocol/portal';
 import { MessagesSquare, ChevronDownMediumIcon } from '../../icons/AppIcons';
-import { Button } from '../Button';
+import { ControlButton, Button } from '../Button';
 import { ChoiceField, ChoiceMark } from '../Choice';
 import { Kbd } from '../Kbd';
 import { Select, TextArea, TextInput, FieldError } from '../Field';
 import { Notice } from '../Notice';
+import { QuestionProgress } from './QuestionProgress';
 import { QuestionOptionText } from './QuestionOptionText';
 import {
   REPLAY_BLOCK_CLASS,
@@ -320,7 +321,6 @@ function initialForm(
     : seededForm(questions, defaultFirstOption);
 }
 
-const TOUCH_TARGET = 'pointer-coarse:min-h-11';
 /** Short `select` lists read faster as visible rows than behind a dropdown. */
 const SELECT_AS_ROWS_MAX_OPTIONS = 5;
 
@@ -353,7 +353,6 @@ function presentedControl(question: PortalAskUserQuestion): PresentedControl {
 
 // One 8px inset on every side: 8 + the 20px text line + 8 fills the 36px row,
 // and the 44px coarse-pointer row takes 12px so its content stays centred.
-const OPTION_ROW_CLASSES = `group/option flex min-h-9 w-full cursor-pointer items-start gap-2.5 rounded-lg px-2 py-2 pointer-coarse:py-3 text-left text-s fg-primary outline-none hover:bg-subtle focus-visible:bg-subtle has-[:focus-visible]:bg-subtle disabled:cursor-not-allowed disabled:fg-disabled has-[:disabled]:cursor-not-allowed has-[:disabled]:fg-disabled ${TOUCH_TARGET}`;
 
 /**
  * A row whose choice is a `ChoiceField`: the row keeps the hover and focus
@@ -781,19 +780,7 @@ function AskUserQuestionCardImpl({
             </div>
             <div className="-mr-1 -mt-1 flex shrink-0 items-center gap-3">
               {state.questions.length > 1 && (
-                <ol
-                  aria-label="Question progress"
-                  className="flex items-center gap-1.5"
-                >
-                  {state.questions.map((_, index) => (
-                    <li
-                      key={index}
-                      aria-label={`Question ${index + 1} of ${state.questions.length}`}
-                      aria-current={index === step ? 'step' : undefined}
-                      className={`h-1.5 w-1.5 shrink-0 rounded-full ${index === step ? 'bg-fg-primary' : 'bg-fg-quaternary'}`}
-                    />
-                  ))}
-                </ol>
+                <QuestionProgress count={state.questions.length} step={step} />
               )}
               <Button
                 variant="ghost"
@@ -868,7 +855,7 @@ function AskUserQuestionCardImpl({
               </div>
             ) : control === 'buttons' ? (
               q.options.map((option, optionIndex) => (
-                <button
+                <ControlButton
                   key={option}
                   type="button"
                   aria-labelledby={`${groupName}-option-${optionIndex}`}
@@ -881,7 +868,7 @@ function AskUserQuestionCardImpl({
                   aria-pressed={selected.has(option)}
                   disabled={controlsDisabled}
                   onClick={() => toggleOption(step, option, isMulti)}
-                  className={OPTION_ROW_CLASSES}
+                  presentation="ask-user-choice"
                 >
                   <ChoiceMark
                     kind={isMulti ? 'checkbox' : 'radio'}
@@ -895,7 +882,7 @@ function AskUserQuestionCardImpl({
                     />
                   </span>
                   <ChoiceShortcut index={optionIndex} />
-                </button>
+                </ControlButton>
               ))
             ) : (
               q.options.map((opt, optIdx) => {

@@ -104,7 +104,7 @@ function LastViewedContext({
     worktreeName !== destination &&
     worktreeName !== chatTitle;
   return (
-    <span className={`${REPLAY_MASK_CLASS} ml-2 fg-quaternary`}>
+    <span className={`${REPLAY_MASK_CLASS} pl-2 fg-quaternary`}>
       {showChat ? (
         <>
           <span data-testid="home-resume-chat-title">{chatTitle}</span>
@@ -215,7 +215,7 @@ function AttentionRow({
         </span>
         <span
           data-testid="home-continue-attention-context"
-          className={`${REPLAY_MASK_CLASS} ml-2 fg-quaternary`}
+          className={`${REPLAY_MASK_CLASS} pl-2 fg-quaternary`}
         >
           {isChat ? `${item.worktreeName} · ` : ''}
           {item.workspaceName}
@@ -309,7 +309,7 @@ export function ContinueSection({
                     : ''}{' '}
                   <span
                     data-testid="home-interrupted-sessions-context"
-                    className={`${REPLAY_MASK_CLASS} ml-2 fg-quaternary`}
+                    className={`${REPLAY_MASK_CLASS} pl-2 fg-quaternary`}
                   >
                     {interruptedContext(interruptedSession)}
                   </span>
@@ -396,7 +396,7 @@ export function ContinueSection({
               {lastViewed.activity ? (
                 <span
                   data-testid="home-resume-activity"
-                  className="ml-2 fg-secondary"
+                  className="pl-2 fg-secondary"
                 >
                   · {lastViewed.activity}
                 </span>

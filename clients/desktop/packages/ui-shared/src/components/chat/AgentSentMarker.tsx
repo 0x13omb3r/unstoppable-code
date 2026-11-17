@@ -30,7 +30,7 @@ export const AgentSentMarker = memo(function AgentSentMarker({
   const inline = layout === 'inline';
   const rowClass = inline
     ? 'flex min-w-0 max-w-full items-center gap-1.5 fg-tertiary'
-    : 'mb-1 flex min-w-0 max-w-full items-center gap-1.5 text-3xs font-medium fg-secondary';
+    : 'pb-1 flex min-w-0 max-w-full items-center gap-1.5 text-3xs font-medium fg-secondary';
   const iconSize = inline ? 14 : 11;
   if (agentSent.kind === 'managed_delegate') {
     return (

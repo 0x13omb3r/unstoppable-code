@@ -65,7 +65,7 @@ function actionId(action: HomeLinkAction): string {
 }
 
 /** Desktop host for the shared link destination chip (CAN-3606). */
-export function HomeLinkTargetChip({
+export function HomeLinkTarget({
   onChooseProject,
 }: HomeLinkTargetChipProps): JSX.Element | null {
   const { linkTarget, mode } = useHomeComposerStore(

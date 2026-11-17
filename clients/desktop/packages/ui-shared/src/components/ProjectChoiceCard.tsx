@@ -1,6 +1,7 @@
+import { ControlButton } from './Button';
 import type { JSX, ReactNode } from 'react';
 
-export interface ProjectChoiceCardProps {
+export type ProjectChoiceCardProps = {
   readonly testId: string;
   readonly selected: boolean;
   readonly disabled?: boolean;
@@ -8,39 +9,56 @@ export interface ProjectChoiceCardProps {
   readonly icon: JSX.Element;
   readonly title: string;
   readonly description: string;
-}
+} & (
+  | { readonly layout?: 'choice' }
+  | { readonly layout: 'destination'; readonly cardTestId: string }
+);
 
 /** One option in the dialog's top row; Personal and organizations share it. */
-export function ProjectChoiceCard({
-  testId,
-  selected,
-  disabled,
-  onSelect,
-  icon,
-  title,
-  description,
-}: ProjectChoiceCardProps): JSX.Element {
-  return (
-    <button
-      type="button"
-      data-testid={testId}
-      aria-pressed={selected}
-      disabled={disabled}
-      onClick={onSelect}
-      className={`focus-ring flex min-w-0 flex-col justify-start gap-1 rounded-xl border px-4 py-3 text-left transition-colors disabled:cursor-not-allowed disabled:opacity-60 ${
-        selected
-          ? 'border-line-accent bg-accent-subtle fg-primary'
-          : 'bg-secondary/10 fg-secondary hover:bg-secondary/20'
-      }`}
-    >
-      <div className="flex items-center gap-1.5 text-s font-medium fg-primary">
+export function ProjectChoiceCard(props: ProjectChoiceCardProps): JSX.Element {
+  const { testId, selected, disabled, onSelect, icon, title, description } =
+    props;
+  const isDestination = props.layout === 'destination';
+  const buttonProps = {
+    'data-testid': testId,
+    'aria-pressed': selected,
+    disabled,
+    onClick: onSelect,
+  };
+  const content = (
+    <>
+      <span
+        className={`flex items-center text-s font-medium fg-primary ${isDestination ? 'gap-2' : 'gap-1.5'} ${isDestination && disabled ? 'opacity-60' : ''}`}
+      >
         {icon}
         {title}
-      </div>
-      {/* An organization's tile names it here, and a name can be one long
-          word. */}
-      <div className="text-xs wrap-anywhere">{description}</div>
-    </button>
+      </span>
+      <span
+        className={`text-xs ${isDestination ? 'fg-secondary' : 'wrap-anywhere'} ${isDestination && disabled ? 'opacity-60' : ''}`}
+      >
+        {description}
+      </span>
+    </>
+  );
+
+  if (isDestination) {
+    return (
+      <ProjectDestinationCard active={selected} testId={props.cardTestId}>
+        <ControlButton {...buttonProps} presentation="project-destination">
+          {content}
+        </ControlButton>
+      </ProjectDestinationCard>
+    );
+  }
+
+  return (
+    <ControlButton
+      {...buttonProps}
+      presentation="project-choice"
+      appearance={{ selected }}
+    >
+      {content}
+    </ControlButton>
   );
 }
 

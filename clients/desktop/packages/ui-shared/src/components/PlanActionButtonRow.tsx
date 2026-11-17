@@ -57,7 +57,7 @@ export function PlanActionButtonRow({
   trailing,
 }: PlanActionButtonRowProps): JSX.Element {
   return (
-    <div className="mt-3 flex flex-wrap gap-2">
+    <div className="pt-3 flex flex-wrap gap-2">
       {items.map((item) => (
         <PlanActionButton key={item.label} item={item} />
       ))}

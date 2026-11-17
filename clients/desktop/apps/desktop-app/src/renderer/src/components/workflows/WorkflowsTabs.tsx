@@ -328,14 +328,15 @@ export function WorkflowsTabs({
           }}
         />
         <WorkflowsTabPanel>
-          <OnboardingTipSlot
-            placement="inline"
-            eligible={TAB_TIPS[tab]}
-            arrivalKey={tab}
-            onAction={TIP_ACTIONS}
-            className="mt-4"
-            data-testid="workflows-onboarding-tip"
-          />
+          <div className="has-[[data-testid=workflows-onboarding-tip]]:pt-4">
+            <OnboardingTipSlot
+              placement="inline"
+              eligible={TAB_TIPS[tab]}
+              arrivalKey={tab}
+              onAction={TIP_ACTIONS}
+              data-testid="workflows-onboarding-tip"
+            />
+          </div>
           {tab === 'workflows' ? (
             <WorkflowsRunsTab
               feed={feed}

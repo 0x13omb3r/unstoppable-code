@@ -130,14 +130,22 @@ export interface ErrorBannerProps {
  * validation uses {@link FieldError} instead.
  */
 export function ErrorBanner({
-  className = 'mb-4',
+  className,
   ...props
 }: ErrorBannerProps): JSX.Element | null {
   const { error } = props;
   if (!error) return null;
-  if (typeof error === 'string')
-    return <StringErrorBanner {...props} className={className} error={error} />;
-  return <AppErrorBanner {...props} className={className} error={error} />;
+  const banner =
+    typeof error === 'string' ? (
+      <StringErrorBanner {...props} className={className} error={error} />
+    ) : (
+      <AppErrorBanner {...props} className={className} error={error} />
+    );
+  return className === undefined ? (
+    <div className="pb-4">{banner}</div>
+  ) : (
+    banner
+  );
 }
 
 function StringErrorBanner({
@@ -670,6 +678,25 @@ export function EmptyStateRow({
       {title}
     </p>
   );
+}
+
+/**
+ * Missing secondary content in an otherwise populated row, preview or
+ * control group. Inherits the host's type size and has no row inset.
+ */
+export function EmptyStateText({
+  title,
+  tone = 'quiet',
+}: {
+  title: string;
+  tone?: 'inherit' | 'secondary' | 'quiet';
+}): JSX.Element {
+  const ink = {
+    inherit: '',
+    secondary: 'fg-secondary',
+    quiet: 'fg-tertiary',
+  }[tone];
+  return <span className={ink || undefined}>{title}</span>;
 }
 
 export function EmptyState({

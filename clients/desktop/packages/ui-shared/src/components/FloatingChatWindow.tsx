@@ -1,3 +1,4 @@
+import { ControlButton } from './Button';
 import {
   useRef,
   useState,
@@ -338,18 +339,18 @@ function FloatingChatTitleMenu({
       <Heading level={2} variant="sidebar" className="flex min-w-0">
         {/* `-ml-1.5` pulls the button's hover surface out to the left; its
             8px left padding keeps the text clear of that surface's edge. */}
-        <button
+        <ControlButton
           ref={triggerRef}
           type="button"
           data-testid={`${dataTestId}-title`}
           aria-haspopup="menu"
           aria-expanded={open}
           onClick={(): void => setOpen((wasOpen) => !wasOpen)}
-          className="focus-ring -ml-1.5 flex h-7 min-w-0 items-center gap-1 rounded-md pl-2 pr-1.5 fg-tertiary transition-colors hover:bg-subtle hover:fg-primary aria-expanded:bg-subtle aria-expanded:fg-primary"
+          presentation="floating-chat-menu"
         >
           <span className="min-w-0 truncate">{title}</span>
           <PickerTriggerChevron open={open} />
-        </button>
+        </ControlButton>
       </Heading>
       <FloatingMenu
         open={open}

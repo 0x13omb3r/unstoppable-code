@@ -8,7 +8,7 @@ import type {
   CoworkSidebarItem,
   WorkspaceIndexEntry,
 } from '@canopy/desktop-shared/types';
-import { APP_ADVISOR_PROJECT_ID } from '@canopy/desktop-shared/types';
+import { isBotProjectId } from '@canopy/protocol/chat-targets';
 import {
   DEFAULT_COWORK_WORKSPACE_ID,
   isOrgDefaultCoworkWorkspaceId,
@@ -381,7 +381,7 @@ async function resolveEligibleOwner(
   callerOwner: ProjectOwnerContext | null,
   memberships: ReadonlyMap<string, { id: string; name?: string }>,
 ): Promise<ProjectOwnerContext | null> {
-  if (item.id === APP_ADVISOR_PROJECT_ID) return null;
+  if (isBotProjectId(item.id)) return null;
   if (
     item.type === 'cowork' &&
     isOrgDefaultCoworkWorkspaceId(item.id) &&

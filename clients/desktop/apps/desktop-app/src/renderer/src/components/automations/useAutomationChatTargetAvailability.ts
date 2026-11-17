@@ -1,8 +1,6 @@
 import { useEffect, useState } from 'react';
-import {
-  APP_ADVISOR_PROJECT_ID,
-  getExecutionHarnessForModel,
-} from '@canopy/desktop-shared/types';
+import { getExecutionHarnessForModel } from '@canopy/desktop-shared/types';
+import { isBotProjectId } from '@canopy/protocol/chat-targets';
 import type { ScheduledActivity } from '@canopy/desktop-shared/types';
 import {
   getAutomationChatRunMode,
@@ -40,7 +38,7 @@ export function useAutomationChatTargetAvailability(
   const sessionWorkspaceId = existingTarget?.workspaceId ?? '';
   const sessionWorktreeId = existingTarget?.worktreeId ?? '';
   const sessionChatId = existingTarget?.chatId ?? '';
-  const sessionIsAppAdvisor = sessionWorkspaceId === APP_ADVISOR_PROJECT_ID;
+  const sessionIsAppAdvisor = isBotProjectId(sessionWorkspaceId);
   const sessionIsCowork = projects.some(
     (project) => project.id === sessionWorkspaceId && project.type === 'cowork',
   );

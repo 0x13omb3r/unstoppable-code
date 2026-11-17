@@ -669,7 +669,7 @@ export function WorkspaceSettingsDialog({
           )}
           {activeTab === 'claude-md' && (
             // The editor fills the page, so its insets match on every side.
-            <div className="my-2 flex min-h-48 flex-1 flex-col">
+            <div className="flex min-h-48 flex-1 flex-col py-2">
               <InstructionsEditor
                 value={content}
                 label={

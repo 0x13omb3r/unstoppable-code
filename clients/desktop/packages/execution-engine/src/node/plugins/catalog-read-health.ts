@@ -2,6 +2,7 @@ import * as fs from 'node:fs';
 import { z } from 'zod';
 import { isResourceOwner } from '@canopy/protocol/resource-owner';
 import type { ResourceOwner } from '@canopy/protocol/resource-owner';
+import { parseHarnessCompatibility } from '@canopy/protocol/plugins';
 import type { PluginsCache, PluginsCacheV1 } from '../../types/plugins';
 
 export type PluginReadHealth<Current, Legacy = never> =
@@ -139,6 +140,10 @@ const installStatus = z.looseObject({
   installError: optionalText,
 });
 const plugin = z.looseObject({
+  harnessCompatibility: z
+    .unknown()
+    .transform(parseHarnessCompatibility)
+    .optional(),
   ...metadata,
   marketplaceId: text,
   owner,

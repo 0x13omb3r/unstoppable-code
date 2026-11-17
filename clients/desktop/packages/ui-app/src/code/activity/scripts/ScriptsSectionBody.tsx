@@ -1,5 +1,6 @@
 'use client';
 
+import { ControlButton } from '@canopy/ui-shared/components';
 import { CompletedRunSurface } from '@canopy/ui-shared/components';
 import { useEffect, useState, type JSX, type ReactNode } from 'react';
 import {
@@ -865,16 +866,15 @@ export function ScriptsSectionBody({
           const expanded = expandedRepos.has(group.repoId) || running;
           return (
             <Stack gap="tight" key={`repo-group-${group.repoId}`}>
-              <button
-                type="button"
+              <ControlButton
                 onClick={(): void =>
                   setExpandedRepos((previous) => toggle(previous, group.repoId))
                 }
                 aria-expanded={expanded}
-                className={
+                presentation={
                   compact
-                    ? `focus-ring flex ${COMPACT_ACTIVITY_ITEM_CLASS_NAME} fg-primary`
-                    : 'focus-ring flex w-full items-center gap-1.5 rounded-lg border bg-fg-primary/[0.03] px-2.5 py-2 text-left text-xs font-medium fg-primary/80 transition-colors hover:bg-fg-primary/[0.05]'
+                    ? 'activity-group-disclosure-compact'
+                    : 'activity-group-disclosure'
                 }
                 data-testid="activity-scripts-repo-toggle"
               >
@@ -883,7 +883,7 @@ export function ScriptsSectionBody({
                 <span className="text-3xs font-normal fg-secondary/60">
                   {group.entries.length} scripts
                 </span>
-              </button>
+              </ControlButton>
               {expanded && (
                 <div className="pl-4 flex flex-col gap-1">
                   {group.entries.map((entry) =>

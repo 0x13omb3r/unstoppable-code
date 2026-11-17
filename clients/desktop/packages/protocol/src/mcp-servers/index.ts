@@ -19,6 +19,11 @@
 // app imports. It runs in the renderer, the main process, and the web app.
 // ---------------------------------------------------------------------------
 
+import type { HarnessCompatibility } from '../plugins/harness-compatibility';
+import type { McpServerHarnessInstalls } from './harness-installs';
+
+export * from './harness-installs';
+
 /** Server transport type */
 export type McpServerType = 'command' | 'http';
 
@@ -226,6 +231,13 @@ export interface McpServerConfigSummary {
 
 /** Index entry for mcp-servers/index.json */
 export interface McpServerIndexEntry {
+  harnessCompatibility?: HarnessCompatibility;
+  /**
+   * The harnesses one Add installed this server for (CAN-6815). Ephemeral:
+   * desktop main reads it from its own record file and adds it to the rows it
+   * serves; it is never written to the index.
+   */
+  harnessInstalls?: McpServerHarnessInstalls;
   /** Ephemeral account catalog data, never persisted on the device. */
   accountConnection?: AccountMcpConnection;
   deviceCopies?: McpServerIndexEntry[];

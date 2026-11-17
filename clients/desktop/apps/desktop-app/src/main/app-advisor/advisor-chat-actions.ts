@@ -9,6 +9,7 @@ import {
   type AppAdvisorActionResponse,
   type AppAdvisorWatcherDestination,
 } from '@canopy/desktop-shared/types';
+import { APP_ADVISOR_BOT_ID } from '@canopy/protocol/chat-targets';
 import { isAgentSenderContextError } from '../agent-messaging/sender-context';
 import {
   listWorkEntryIds,
@@ -77,13 +78,13 @@ export async function dispatchAdvisorChatAction(
           action.type === 'advisor-chat.create_entry'
             ? {
                 type: 'bots.create_task',
-                botId: 'app_advisor',
+                botId: APP_ADVISOR_BOT_ID,
                 ...(title ? { title } : {}),
                 initialMessage: action.text,
               }
             : {
                 type: 'bots.create_task_chat',
-                botId: 'app_advisor',
+                botId: APP_ADVISOR_BOT_ID,
                 taskId: action.workEntryId,
                 initialMessage: action.text,
               },
@@ -137,7 +138,7 @@ export async function dispatchAdvisorChatAction(
         await dispatchAgentChatSend(
           {
             type: 'bots.send_message',
-            botId: 'app_advisor',
+            botId: APP_ADVISOR_BOT_ID,
             taskId: owner.entryId,
             chatId: action.chatId,
             text: action.text,

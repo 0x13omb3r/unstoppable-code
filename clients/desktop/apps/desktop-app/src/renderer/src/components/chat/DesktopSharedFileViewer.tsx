@@ -1480,7 +1480,7 @@ function DesktopSharedFileViewerImpl({
       </div>
     ) : null;
   const localActionErrorNotice = visibleLocalActionError ? (
-    <div className="mx-1 min-w-0 max-w-64">
+    <div className="min-w-0 max-w-66 px-1">
       <ErrorBanner
         errorSource="file-viewer-local-action-error"
         error={visibleLocalActionError}

@@ -1,5 +1,6 @@
 'use client';
 
+import { ControlButton } from '../Button';
 import {
   createContext,
   useContext,
@@ -329,9 +330,9 @@ export function PanelTabListButton({
                       </span>
                     ) : null}
                     {closable ? (
-                      <button
+                      <ControlButton
                         type="button"
-                        className="canopy-panel-tab-list-close"
+                        presentation="panel-tab-list-close"
                         aria-label={`Close ${title}`}
                         data-testid={`panel-tab-list-close-${tab.panelId}`}
                         tabIndex={-1}
@@ -344,7 +345,7 @@ export function PanelTabListButton({
                         }}
                       >
                         <CloseMediumIcon size="sm" />
-                      </button>
+                      </ControlButton>
                     ) : null}
                   </span>
                 </div>

@@ -1,3 +1,4 @@
+import { ControlButton } from './Button';
 import {
   useMemo,
   useState,
@@ -20,7 +21,7 @@ import { RichHoverTooltip } from './RichHoverTooltip';
 import { Tooltip } from './Tooltip';
 
 export const SKILL_MARKDOWN_PROSE_CLASS =
-  'prose prose-sm [--tw-prose-body:var(--fg-primary)] dark:prose-invert max-w-none break-words prose-p:my-0.5 prose-pre:my-1.5 prose-pre:bg-fg-primary/[0.06] prose-pre:fg-primary/80 prose-code:fg-success prose-code:before:content-none prose-code:after:content-none prose-headings:fg-primary prose-a:fg-accent prose-strong:fg-primary prose-li:my-0.5';
+  'prose prose-sm [--tw-prose-body:var(--fg-primary)] dark:prose-invert max-w-none break-words prose-p:my-0.5 canopy-compact-prose prose-pre:bg-fg-primary/[0.06] prose-pre:fg-primary/80 prose-code:fg-success prose-code:before:content-none prose-code:after:content-none prose-headings:fg-primary prose-a:fg-accent prose-strong:fg-primary prose-li:my-0.5';
 
 export function SkillMarkdownBody({
   markdown,
@@ -68,23 +69,24 @@ export function FileTab({
         surfaceClassName="w-max max-w-72"
         surfacePadding="compact"
       >
-        <button
+        <ControlButton
           type="button"
           onClick={onSelect}
-          className={`focus-ring max-w-48 truncate rounded-md py-1 font-medium ${onClose ? 'pl-2.5 pr-1' : 'px-2.5'}`}
+          presentation="skill-file-tab"
+          appearance={{ closable: !!onClose }}
         >
           {label}
-        </button>
+        </ControlButton>
       </RichHoverTooltip>
       {onClose && (
-        <button
+        <ControlButton
           type="button"
           onClick={onClose}
           aria-label={`Close ${label}`}
-          className="focus-ring rounded p-0.5 fg-secondary opacity-60 transition-opacity hover:fg-primary hover:bg-base group-hover:opacity-100"
+          presentation="skill-file-close"
         >
           <AppCatalogCloseIcon size="sm" />
-        </button>
+        </ControlButton>
       )}
     </div>
   );
@@ -101,7 +103,11 @@ export interface SkillFileTabBarProps {
   onSelectMain: () => void;
   onSelectTab: (key: string) => void;
   onCloseTab: (key: string) => void;
-  treeToggle?: { open: boolean; onToggle: () => void; className?: string };
+  treeToggle?: {
+    open: boolean;
+    onToggle: () => void;
+    presentation?: 'toolbar' | 'detail';
+  };
   trailing?: ReactNode;
 }
 
@@ -121,20 +127,25 @@ export function SkillFileTabBar({
       data-testid="skill-file-tab-bar"
     >
       {treeToggle && (
-        <Tooltip label={treeToggle.open ? 'Hide files' : 'Show files'}>
-          <button
-            type="button"
-            onClick={treeToggle.onToggle}
-            aria-pressed={treeToggle.open}
-            data-testid="skill-file-tree-toggle"
-            className={
-              treeToggle.className ??
-              `focus-ring mr-1 shrink-0 rounded-md border p-1.5 transition-colors ${treeToggle.open ? 'bg-secondary fg-primary' : 'border-transparent fg-secondary hover:fg-primary hover:bg-secondary/50'}`
-            }
-          >
-            <FolderIcon size="sm" />
-          </button>
-        </Tooltip>
+        <div
+          className={treeToggle.presentation !== 'detail' ? 'pr-1' : undefined}
+        >
+          <Tooltip label={treeToggle.open ? 'Hide files' : 'Show files'}>
+            <ControlButton
+              type="button"
+              onClick={treeToggle.onToggle}
+              aria-pressed={treeToggle.open}
+              data-testid="skill-file-tree-toggle"
+              presentation="skill-file-tree"
+              appearance={{
+                presentation: treeToggle.presentation ?? 'toolbar',
+                open: treeToggle.open,
+              }}
+            >
+              <FolderIcon size="sm" />
+            </ControlButton>
+          </Tooltip>
+        </div>
       )}
       <FileTab
         label={SKILL_MAIN_FILE}

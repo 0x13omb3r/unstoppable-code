@@ -442,7 +442,9 @@ export function StatusView({
   return (
     <p role="status" data-testid="github-cloud-status" className="text-s">
       {status.progress ? (
-        <LoadingSpinner decorative quiet className="mr-2 align-middle" />
+        <span className="inline-flex pr-2 align-middle">
+          <LoadingSpinner decorative quiet />
+        </span>
       ) : null}
       <StatusText status={status} />
     </p>

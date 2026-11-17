@@ -26,6 +26,7 @@ export interface UnifiedTableProps {
   defaultSelectedFilter?: UnifiedTableSelectedFilter;
   hideSelectionSummary?: boolean;
   providerIconScope?: ProviderSupportScope;
+  autoFocusSearch?: boolean;
   toolbarTrailing?: ReactNode;
   selectionCopy?: SelectionTableCopy;
 }
@@ -60,6 +61,7 @@ export function UnifiedTable({
   defaultSelectedFilter,
   hideSelectionSummary,
   providerIconScope,
+  autoFocusSearch,
   toolbarTrailing,
   selectionCopy,
 }: UnifiedTableProps): JSX.Element {
@@ -82,6 +84,7 @@ export function UnifiedTable({
       defaultSelectedFilter={defaultSelectedFilter}
       hideSelectionSummary={hideSelectionSummary}
       providerIconScope={providerIconScope}
+      autoFocusSearch={autoFocusSearch}
       renderMcpLogo={renderMcpLogo}
       renderAppLogo={renderAppLogo}
       toolbarTrailing={toolbarTrailing}

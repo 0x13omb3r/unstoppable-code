@@ -214,6 +214,8 @@ export interface CanopyInjectedToolRuntime {
     delegationDepth?: number;
     /** Command-watch working directory when it differs from the action cwd. */
     cwd?: string;
+    /** Skip local repository discovery when the host requires explicit references. */
+    readonly githubRepositoryScope?: 'explicit-only';
   };
   /**
    * Present only for real worktree chats (not cowork, not the App Advisor /
@@ -981,7 +983,12 @@ async function executeWatchGitHubItems(
       isError: true,
     };
   }
-  const repoId = runtime.worktreeActionRuntime?.repoId;
+  // An explicit-only scope (managed Advisor children) sends no repository
+  // hint, so core resolves only the repositories the input names.
+  const repoId =
+    watcherRuntime.githubRepositoryScope === 'explicit-only'
+      ? undefined
+      : runtime.worktreeActionRuntime?.repoId;
   const report = await createWatcherReportThroughCore(
     destination,
     {

@@ -1,10 +1,10 @@
 import {
-  APP_ADVISOR_PROJECT_ID,
   type AutomationAction,
   type ChatAttachmentPromptContext,
   type FileReference,
   type ScheduledActivity,
 } from '@canopy/desktop-shared/types';
+import { isBotProjectId } from '@canopy/protocol/chat-targets';
 import { describeFiveFieldCron } from '@canopy/ui-shared/lib/cron-description';
 import type { QueuedChatMessage } from '@/stores/chatStore';
 import { formatUsageLimitTimeLabel } from './usage-limit-time-label';
@@ -157,10 +157,7 @@ function matchesWorktreeSessionPromptSchedule(
   // entries can change when a chat is recreated). Match project-wide and
   // let the per-chat filter scope by chatId, mirroring the transport rule
   // that chat-id targets resolve entries dynamically.
-  if (
-    workspaceId !== APP_ADVISOR_PROJECT_ID &&
-    action.worktreeId !== worktreeId
-  ) {
+  if (!isBotProjectId(workspaceId) && action.worktreeId !== worktreeId) {
     return false;
   }
   if (!activity.nextRunAt) return false;

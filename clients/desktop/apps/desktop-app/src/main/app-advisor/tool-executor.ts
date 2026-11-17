@@ -12,7 +12,7 @@ import {
   type AppAdvisorPipelineRunAction,
   type PipelineRunAction,
 } from '@canopy/agent-actions';
-import { APP_ADVISOR_PROJECT_ID } from '@canopy/desktop-shared/types';
+import { isBotProjectId } from '@canopy/protocol/chat-targets';
 import { validateId } from '../lib/validation';
 import { startSplitAgentSchema } from '../canopy-tools/definitions';
 import {
@@ -46,6 +46,7 @@ import {
   appAdvisorShowFilesSchema,
   appAdvisorGetFileCommentsSchema,
   appAdvisorRespondToFileCommentSchema,
+  appAdvisorSetProjectWorkEntryAutoDeleteSchema,
   dispatchActionSchema,
   getCurrentUiStateSchema,
   getPipelineDebugContextSchema,
@@ -95,6 +96,49 @@ function invalidArguments(
   };
 }
 
+/**
+ * SetProjectWorkEntryAutoDelete: arm another item by explicit target. The arm
+ * records this chat's scope so the sidebar names it and a user turning the
+ * arm off, or a failed removal, is reported back here. The chat's own work
+ * entry is refused so a mistaken target never removes this chat; that stays
+ * with SetWorkEntryAutoDelete.
+ */
+async function executeSetProjectWorkEntryAutoDelete(
+  rawArgs: unknown,
+  runtime: AppAdvisorToolRuntime,
+): Promise<CanopyInjectedToolTextResult> {
+  const parsed =
+    appAdvisorSetProjectWorkEntryAutoDeleteSchema.safeParse(rawArgs);
+  if (!parsed.success) return invalidArguments('SetProjectWorkEntryAutoDelete');
+  const { projectId, worktreeId, ...options } = parsed.data;
+  const chat = runtime.worktreeWatcherRuntime;
+  if (!chat)
+    return {
+      text: 'SetProjectWorkEntryAutoDelete is only available for chats in a work entry.',
+      isError: true,
+    };
+  if (chat.delegationId !== undefined)
+    return {
+      text: 'SetProjectWorkEntryAutoDelete is only available to a root chat, not to delegates.',
+      isError: true,
+    };
+  if (projectId === chat.projectId && worktreeId === chat.worktreeId)
+    return {
+      text: 'SetProjectWorkEntryAutoDelete does not target this chat’s own work entry. Use SetWorkEntryAutoDelete for that.',
+      isError: true,
+    };
+  const { setWorkEntryAutoDeleteFromAgent } =
+    await import('../lib/work-entry-auto-delete');
+  const result = await setWorkEntryAutoDeleteFromAgent({
+    workspaceId: projectId,
+    targetId: worktreeId,
+    chatId: chat.chatId,
+    chatScope: { projectId: chat.projectId, worktreeId: chat.worktreeId },
+    ...options,
+  });
+  return { text: result.message, isError: !result.ok };
+}
+
 function invalidSetupWatchersArguments(): CanopyInjectedToolTextResult {
   return {
     text: [
@@ -135,7 +179,7 @@ export function appAdvisorPipelineRunDispatch(
   } catch (error) {
     return { error: error instanceof Error ? error.message : String(error) };
   }
-  if (projectId === APP_ADVISOR_PROJECT_ID)
+  if (isBotProjectId(projectId))
     return {
       error: 'App Advisor ids do not identify a task. Pass a real task.',
     };
@@ -469,6 +513,9 @@ async function runAppAdvisorTool(
   ) {
     return executeCanopyInjectedTool(canonicalKey, rawArgs, runtime, context);
   }
+
+  if (canonicalKey === 'set_project_work_entry_auto_delete')
+    return executeSetProjectWorkEntryAutoDelete(rawArgs, runtime);
 
   if (
     canonicalKey === 'search_deferred_tools' ||

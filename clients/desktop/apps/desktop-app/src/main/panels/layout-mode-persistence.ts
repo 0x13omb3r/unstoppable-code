@@ -26,6 +26,7 @@ export class PanelLayoutModePersistenceStore {
     projectId: string,
     worktreeId: string,
   ): Promise<WorkspaceLayoutMode | null> {
+    // Default Bot only: its global panel has no per-worktree layout file.
     if (projectId === APP_ADVISOR_PROJECT_ID) return Promise.resolve(null);
     return readPanelLayoutModeFile(target(projectId, worktreeId));
   }
@@ -35,6 +36,7 @@ export class PanelLayoutModePersistenceStore {
     worktreeId: string,
     mode: WorkspaceLayoutMode,
   ): Promise<WorkspaceLayoutMode> {
+    // Default Bot only: its global panel always uses the advanced layout.
     if (projectId === APP_ADVISOR_PROJECT_ID) {
       return Promise.resolve('advanced');
     }
@@ -46,6 +48,7 @@ export class PanelLayoutModePersistenceStore {
     worktreeId: string,
     mode: WorkspaceLayoutMode,
   ): Promise<void> {
+    // Default Bot only: it has no per-worktree layout preference to save.
     if (projectId === APP_ADVISOR_PROJECT_ID) return Promise.resolve();
     return savePanelLayoutModeFile(target(projectId, worktreeId), mode);
   }

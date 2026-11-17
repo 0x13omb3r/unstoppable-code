@@ -1,4 +1,4 @@
-// Renderer-surface detection and sentinel chat-state single-writer policy
+// Renderer-surface detection and Bot chat-state single-writer policy
 // guards shared by the chat store modules.
 import {
   APP_ADVISOR_PROJECT_ID,
@@ -9,6 +9,7 @@ import {
   PLAN_EXPLORE_CHAT_PROJECT_ID,
   type ChatTabPluginSelections,
 } from '@canopy/desktop-shared/types';
+import { isBotProjectId } from '@canopy/protocol/chat-targets';
 import { withRequiredPipelineEditorSkill } from '@canopy/desktop-shared/lib/pipeline-editor-tools';
 import { canNavigateToWorktreeFromSidebarItems } from '@/lib/worktreeNavigation';
 import { isCoworkChatTarget } from '@/lib/cowork';
@@ -21,29 +22,28 @@ import { useNavigationStore } from '../navigationStore';
 export { withRequiredPipelineEditorSkill } from '@canopy/desktop-shared/lib/pipeline-editor-tools';
 
 // ---------------------------------------------------------------------------
-// Sentinel chat-state single-writer policy
+// Bot chat-state single-writer policy
 // ---------------------------------------------------------------------------
 //
-// The App Advisor sentinel `(APP_ADVISOR_PROJECT_ID, APP_ADVISOR_WORKTREE_ID)`
-// chat state lives in BOTH renderers (the main window keeps a read-only
-// mirror so the Sidebar can derive thinking/unread status; the App Advisor
-// window owns the authoritative writes). Without a guard, both renderers
+// Bot chat state lives in BOTH renderers (the main window keeps a read-only
+// mirror so the Sidebar can derive thinking/unread status; the Bot renderer
+// owns the authoritative writes). Without a guard, both renderers
 // would issue commands for the same target and race on
 // `activeTabId`/unread/tab metadata.
 //
 // `__chatStoreSurface` records which renderer this module instance is
 // running in (detected from the URL `surface` parameter at module load
-// time, matching `main.tsx`'s `getRendererSurface`). All sentinel writes
-// (typed commands, sentinel `activeTabId` mutations, sentinel
-// `attentionDismissedAt` persistence) are gated by `isSentinelWriteAllowed`
-// so only the App Advisor renderer ever issues the canonical persisted
-// state. The main renderer is restricted to nav-status-derivation
+// time, matching `main.tsx`'s `getRendererSurface`). All Bot writes
+// (typed commands, Bot `activeTabId` mutations, Bot `attentionDismissedAt`
+// persistence) are gated by `isSentinelWriteAllowed` so only the Bot renderer
+// ever issues the canonical persisted state. The main renderer is restricted
+// to nav-status-derivation
 // in-memory updates (tab `status`/`unread`/`attentionDismissedAt`/
 // `description`) — see Phase 8 of the frontend plan.
 //
 // Do NOT relax this guard to dual-writer behavior. Manual check 15 in the
 // plan ("send several messages while hidden, reopen, transcript matches
-// the nav-status implied") and the chat-store sentinel tests verify
+// the nav-status implied") and the chat-store single-writer tests verify
 // ownership stays one-sided.
 export function detectChatStoreSurface(): 'main' | 'app-advisor' {
   if (typeof window === 'undefined' || !window.location) return 'main';
@@ -59,23 +59,6 @@ export const __chatStoreSurface: 'main' | 'app-advisor' =
   detectChatStoreSurface();
 
 /**
- * Recognizes any App Advisor chat target. App Advisor chats are entry-keyed
- * `(app-advisor, <workEntryId>)` (the legacy read-only pre-entry slot keeps
- * `worktreeId === 'global'`), so recognition is PROJECT-ONLY. The reserved
- * `app-advisor` project id can never collide with a real workspace, so a
- * foreign project whose worktreeId happens to be `'global'` is never
- * misclassified — the `worktreeId` parameter exists only for call-site
- * symmetry with the other sentinel detectors.
- */
-export function isAppAdvisorChatTarget(
-  projectId: string,
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  _worktreeId?: string,
-): boolean {
-  return projectId === APP_ADVISOR_PROJECT_ID;
-}
-
-/**
  * The legacy pre-entry App Advisor slot `(app-advisor, 'global')`. Read-only:
  * it is not a valid destination for new messages and exists only so archived
  * pre-entry history remains browsable.
@@ -85,6 +68,7 @@ export function isLegacyAppAdvisorGlobalTarget(
   worktreeId: string,
 ): boolean {
   return (
+    // Default Bot only: the legacy global slot belongs to the Orchestrator.
     projectId === APP_ADVISOR_PROJECT_ID &&
     worktreeId === APP_ADVISOR_WORKTREE_ID
   );
@@ -120,17 +104,18 @@ export function withRequiredPluginSelectionsForTarget(
 
 /**
  * Returns true when this renderer is allowed to persist/mutate the
- * canonical chat state for `(projectId, worktreeId)`. For non-sentinel
- * targets this is always true; for the App Advisor sentinel target only
- * the App Advisor renderer (`__chatStoreSurface === 'app-advisor'`) may
- * write. The main renderer falls through to in-memory-only nav-status
+ * canonical chat state for `(projectId, worktreeId)`. For non-Bot targets
+ * this is always true; for Bot targets only the Bot renderer
+ * (`__chatStoreSurface === 'app-advisor'`) may write. The main renderer falls
+ * through to in-memory-only nav-status
  * derivation when this returns false.
  */
 export function isSentinelWriteAllowed(
   projectId: string,
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   worktreeId: string,
 ): boolean {
-  if (!isAppAdvisorChatTarget(projectId, worktreeId)) return true;
+  if (!isBotProjectId(projectId)) return true;
   return __chatStoreSurface === 'app-advisor';
 }
 
@@ -139,8 +124,7 @@ export function isReadOnlyAppAdvisorMirrorTarget(
   worktreeId: string,
 ): boolean {
   return (
-    isAppAdvisorChatTarget(projectId, worktreeId) &&
-    !isSentinelWriteAllowed(projectId, worktreeId)
+    isBotProjectId(projectId) && !isSentinelWriteAllowed(projectId, worktreeId)
   );
 }
 
@@ -152,7 +136,7 @@ export function isSyntheticChatTarget(
     isCoworkChatTarget(projectId) ||
     projectId === PLAN_EXPLORE_CHAT_PROJECT_ID ||
     projectId === CODE_REVIEW_CHAT_PROJECT_ID ||
-    isAppAdvisorChatTarget(projectId, worktreeId) ||
+    isBotProjectId(projectId) ||
     isPipelineEditorChatTarget(projectId, worktreeId)
   );
 }

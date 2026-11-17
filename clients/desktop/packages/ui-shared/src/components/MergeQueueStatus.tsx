@@ -14,7 +14,7 @@ import {
   GitMergeQueueIcon,
   WarningIcon,
 } from '../icons/AppIcons';
-import { OPERATIONAL_STATUS_COLORS } from '../lib/operational-status-colors';
+import { EmptyStateText } from './StatusBlocks';
 import { formatRelativeTime } from '../lib/format-relative-time';
 import { REPLAY_BLOCK_CLASS } from '../lib/replay-privacy';
 import {
@@ -25,7 +25,7 @@ import {
   type MergeQueueLabel,
   type MergeQueueStep,
 } from '../lib/merge-queue-display';
-import { Button } from './Button';
+import { ControlButton, Button } from './Button';
 import { FloatingMenu } from './FloatingMenu';
 import { RunSpinner } from './RunSpinner';
 import { Stack } from './Stack';
@@ -90,21 +90,7 @@ export interface MergeQueueStatusProps {
   readonly 'data-testid'?: string;
 }
 
-const TRIGGER_BASE =
-  'electron-no-drag focus-ring inline-flex h-7 shrink-0 items-center gap-1.5 whitespace-nowrap rounded-md px-2.5 text-xs font-normal transition-colors';
-
 type Tone = 'pending' | 'merging';
-
-const TONE_CLASS: Record<Tone, { idle: string; open: string }> = {
-  pending: {
-    idle: 'fg-warning hover:bg-warning-subtle',
-    open: 'bg-warning-subtle',
-  },
-  merging: {
-    idle: `${OPERATIONAL_STATUS_COLORS.merged.foreground} hover:bg-special-subtle`,
-    open: 'bg-special-subtle',
-  },
-};
 
 /** Rows shown after the worktree's own row before "Show more". */
 const ROWS_AFTER_CURRENT = 2;
@@ -240,9 +226,9 @@ const MergeQueueStatusTrigger = forwardRef<
   ref,
 ): JSX.Element {
   const parts = labelParts(label);
-  const tone = TONE_CLASS[parts.tone];
+
   return (
-    <button
+    <ControlButton
       ref={ref}
       type="button"
       aria-haspopup="dialog"
@@ -252,7 +238,8 @@ const MergeQueueStatusTrigger = forwardRef<
       data-testid={testId}
       data-merge-queue-label={label.kind}
       onClick={onToggle}
-      className={`${TRIGGER_BASE} ${tone.idle} ${open ? tone.open : ''}`}
+      presentation="merge-queue-trigger"
+      appearance={{ tone: parts.tone, open }}
     >
       {parts.glyph === 'merge' && (
         <GitMergeQueueIcon size="sm" className="shrink-0" />
@@ -283,7 +270,7 @@ const MergeQueueStatusTrigger = forwardRef<
         </>
       )}
       <ChevronDownIcon size={12} className="shrink-0 fg-tertiary" />
-    </button>
+    </ControlButton>
   );
 });
 
@@ -566,7 +553,9 @@ function EstimateHeadline({
   }
   if (remainingSeconds === null) {
     return (
-      <div className="text-m font-medium fg-secondary">No estimate yet</div>
+      <div className="text-m font-medium">
+        <EmptyStateText title="No estimate yet" tone="secondary" />
+      </div>
     );
   }
   return (

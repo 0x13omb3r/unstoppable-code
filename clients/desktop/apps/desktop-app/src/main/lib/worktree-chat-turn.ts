@@ -14,6 +14,7 @@ import { chatVisualsPromptEligible } from './chat-visuals-feature-flag';
 import { assertOpenCodeSelectionAvailable } from '../opencode/selection';
 import { assertCopilotModelAvailable } from '../copilot/connection';
 import { isAgentDelegationTranscript } from '@canopy/protocol/delegation';
+import { isBotProjectId } from '@canopy/protocol/chat-targets';
 import { beginChatTurnPreparation } from './chat-turn-cancel';
 import {
   activatePendingTurnRoute,
@@ -43,7 +44,6 @@ import { MEMORY_SEARCH_CAPABILITY } from '@canopy/protocol/memory';
 import { MAX_TELEMETRY_CLIENT_ID_LENGTH } from '@canopy/protocol/telemetry';
 import { clampId } from '@canopy/desktop-shared/lib/telemetry-mapping';
 import {
-  APP_ADVISOR_PROJECT_ID,
   CANOPY_AUTH_FAILURE_EVENT_TYPE,
   CODE_REVIEW_CHAT_PROJECT_ID,
   GLOBAL_INSTRUCTIONS_SNAPSHOT_EVENT_TYPE,
@@ -1705,7 +1705,7 @@ export async function prepareWorktreeTurnSession<
         !isLegacyStandalone &&
         !isPlanExplore &&
         !isCodeReview &&
-        options.projectId !== APP_ADVISOR_PROJECT_ID &&
+        !isBotProjectId(options.projectId) &&
         !options.hiddenDeferredContinuation &&
         (options.initiationSource === undefined ||
           options.initiationSource === 'user'),
@@ -3876,7 +3876,7 @@ async function dispatchHeldWorktreeChatTurn<
     if (
       options.startsNewTrackedChat &&
       !options.hiddenDeferredContinuation &&
-      options.projectId !== APP_ADVISOR_PROJECT_ID
+      !isBotProjectId(options.projectId)
     ) {
       await notifyCanonicalChatStarted(
         options,

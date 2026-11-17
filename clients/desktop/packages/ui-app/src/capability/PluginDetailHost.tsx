@@ -503,7 +503,7 @@ export function PluginDetailHost({
           {pluginDisplayName(plugin)}
         </Title>
         <DelayedLoadingPlaceholder slowNote="Still loading plugin…">
-          <CenteredLoadingSpinner className="my-12" />
+          <CenteredLoadingSpinner spacing="section" />
         </DelayedLoadingPlaceholder>
       </div>
     );
@@ -515,14 +515,15 @@ export function PluginDetailHost({
           {pluginDisplayName(plugin)}
         </Title>
         <ErrorBanner errorSource="plugin-detail-host" error={error} />
-        <Button
-          type="button"
-          onClick={() => void loadDetail()}
-          data-testid="plugin-detail-retry"
-          className="mt-3"
-        >
-          Try again
-        </Button>
+        <div className="pt-3 empty:hidden">
+          <Button
+            type="button"
+            onClick={() => void loadDetail()}
+            data-testid="plugin-detail-retry"
+          >
+            Try again
+          </Button>
+        </div>
       </div>
     );
   }
@@ -623,40 +624,44 @@ export function PluginDetailHost({
     ) : undefined;
   const metadataFooter = (
     <>
-      <ErrorBanner
-        errorSource="plugin-detail-host-compat"
-        className="mt-2"
-        error={compatError || compatibilityError}
-      />
+      <div className="pt-2 empty:hidden">
+        <ErrorBanner
+          errorSource="plugin-detail-host-compat"
+          className=""
+          error={compatError || compatibilityError}
+        />
+      </div>
       {plugin.providerSupport.codex === 'compat' && onToggleCodexCompat && (
-        <Surface variant="group" className="mt-4">
-          <div className="flex items-center justify-between gap-4 px-4 py-3">
-            <div className="pr-3">
-              <p className="text-xs font-medium fg-primary">
-                Codex compatibility mode
-              </p>
-              <p className="text-xs fg-secondary">
-                When off, this Claude plugin is not used under Codex.
-              </p>
+        <div className="pt-4 empty:hidden">
+          <Surface variant="group">
+            <div className="flex items-center justify-between gap-4 px-4 py-3">
+              <div className="pr-3">
+                <p className="text-xs font-medium fg-primary">
+                  Codex compatibility mode
+                </p>
+                <p className="text-xs fg-secondary">
+                  When off, this Claude plugin is not used under Codex.
+                </p>
+              </div>
+              <ToggleSwitch
+                label="Codex compatibility mode"
+                checked={plugin.codexCompatDisabled !== true}
+                disabled={compatBusy}
+                onChange={() => {
+                  setCompatBusy(true);
+                  setCompatError('');
+                  void onToggleCodexCompat(plugin.codexCompatDisabled !== true)
+                    .then((updated) => onPluginUpdated?.(updated))
+                    .catch((toggleFailure: unknown) =>
+                      setCompatError(errorMessage(toggleFailure)),
+                    )
+                    .finally(() => setCompatBusy(false));
+                }}
+                dataTestId="plugin-detail-codex-compat-disable-toggle"
+              />
             </div>
-            <ToggleSwitch
-              label="Codex compatibility mode"
-              checked={plugin.codexCompatDisabled !== true}
-              disabled={compatBusy}
-              onChange={() => {
-                setCompatBusy(true);
-                setCompatError('');
-                void onToggleCodexCompat(plugin.codexCompatDisabled !== true)
-                  .then((updated) => onPluginUpdated?.(updated))
-                  .catch((toggleFailure: unknown) =>
-                    setCompatError(errorMessage(toggleFailure)),
-                  )
-                  .finally(() => setCompatBusy(false));
-              }}
-              dataTestId="plugin-detail-codex-compat-disable-toggle"
-            />
-          </div>
-        </Surface>
+          </Surface>
+        </div>
       )}
     </>
   );
@@ -869,16 +874,18 @@ export function PluginDetailHost({
   return (
     <div data-testid="plugin-detail-host">
       {truncated && (
-        <Surface variant="group" className="mb-4">
-          <p
-            role="note"
-            data-testid="plugin-detail-truncated"
-            className="px-4 py-3 text-s fg-secondary"
-          >
-            Some content was truncated. Open this plugin in {brandName} for the
-            full detail.
-          </p>
-        </Surface>
+        <div className="pb-4 empty:hidden">
+          <Surface variant="group">
+            <p
+              role="note"
+              data-testid="plugin-detail-truncated"
+              className="px-4 py-3 text-s fg-secondary"
+            >
+              Some content was truncated. Open this plugin in {brandName} for
+              the full detail.
+            </p>
+          </Surface>
+        </div>
       )}
       <PluginDetailContent
         plugin={plugin}

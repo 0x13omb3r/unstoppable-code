@@ -1,5 +1,6 @@
 'use client';
 
+import { ControlButton } from '@canopy/ui-shared/components';
 import { ImageThumbnail } from '@canopy/ui-shared/components';
 import { Badge, Dot } from '@canopy/ui-shared/components/Badge';
 import { useEffect, useId, useMemo, useRef, useState, type JSX } from 'react';
@@ -481,9 +482,8 @@ export function SidebarContextRow({
         ref={rowRef}
         className="group/sidebar-item flex w-full items-center gap-0"
       >
-        <button
+        <ControlButton
           ref={triggerRef}
-          type="button"
           disabled={disabled}
           onClick={() => setOpen(!open)}
           data-testid={testIds?.row ?? 'sidebar-context-row'}
@@ -491,10 +491,8 @@ export function SidebarContextRow({
           aria-haspopup="menu"
           aria-controls={open ? menuId : undefined}
           aria-label={triggerLabel}
-          className={
-            atTop
-              ? `focus-ring flex h-8 w-full min-w-0 items-center gap-1.5 overflow-hidden whitespace-nowrap rounded-row py-0 pl-1 pr-2 text-left text-m font-bold fg-primary hover:bg-subtle focus-visible:bg-subtle aria-expanded:bg-subtle disabled:cursor-not-allowed disabled:opacity-40 pointer-coarse:min-h-11`
-              : 'focus-ring flex h-8 w-full min-w-0 items-center gap-2 overflow-hidden whitespace-nowrap rounded-row px-2 text-left text-s font-normal fg-primary hover:bg-subtle disabled:cursor-not-allowed disabled:opacity-40 pointer-coarse:min-h-11'
+          presentation={
+            atTop ? 'sidebar-context-picker-top' : 'sidebar-context-picker-row'
           }
         >
           <span
@@ -529,7 +527,7 @@ export function SidebarContextRow({
             aria-hidden="true"
             className="shrink-0 fg-secondary"
           />
-        </button>
+        </ControlButton>
       </div>
       <FloatingMenu
         id={menuId}
@@ -622,14 +620,15 @@ function InvitationAlert({
   if (placement === 'menu') {
     return (
       <>
-        <Notice
-          errorSource="sidebar-context-invitations-error"
-          intent="destructive"
-          className="mx-1 my-1"
-          data-testid="sidebar-context-invitations-error"
-        >
-          {error.message}
-        </Notice>
+        <div className="px-1 py-1">
+          <Notice
+            errorSource="sidebar-context-invitations-error"
+            intent="destructive"
+            data-testid="sidebar-context-invitations-error"
+          >
+            {error.message}
+          </Notice>
+        </div>
         {error.kind === 'follow-up' ? (
           <ActionMenuRowStyle>
             <DropdownMenuItem
@@ -647,30 +646,31 @@ function InvitationAlert({
     );
   }
   return (
-    <Notice
-      errorSource="sidebar-context-invitations-error"
-      intent="destructive"
-      className="mt-1"
-      data-testid="sidebar-context-invitations-error"
-      actionsPlacement="below"
-      onDismiss={onDismiss}
-      dismissTestId="sidebar-context-invitations-dismiss"
-      actions={
-        error.kind === 'follow-up' ? (
-          <NoticeButton
-            data-testid="sidebar-context-invitations-open-organizations"
-            onClick={(): void => {
-              onDismiss();
-              onReview();
-            }}
-          >
-            Open organizations
-          </NoticeButton>
-        ) : undefined
-      }
-    >
-      {error.message}
-    </Notice>
+    <div className="pt-1">
+      <Notice
+        errorSource="sidebar-context-invitations-error"
+        intent="destructive"
+        data-testid="sidebar-context-invitations-error"
+        actionsPlacement="below"
+        onDismiss={onDismiss}
+        dismissTestId="sidebar-context-invitations-dismiss"
+        actions={
+          error.kind === 'follow-up' ? (
+            <NoticeButton
+              data-testid="sidebar-context-invitations-open-organizations"
+              onClick={(): void => {
+                onDismiss();
+                onReview();
+              }}
+            >
+              Open organizations
+            </NoticeButton>
+          ) : undefined
+        }
+      >
+        {error.message}
+      </Notice>
+    </div>
   );
 }
 

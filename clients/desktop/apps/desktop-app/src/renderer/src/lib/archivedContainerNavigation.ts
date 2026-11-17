@@ -16,6 +16,7 @@ import type {
   ArchivedContainerViewerTab,
 } from '@canopy/desktop-shared/types';
 import { APP_ADVISOR_PROJECT_ID } from '@canopy/desktop-shared/types';
+import { isBotProjectId } from '@canopy/protocol/chat-targets';
 import { isCoworkChatTarget } from '@/lib/cowork';
 import { useNavigationStore } from '@/stores/navigationStore';
 import { useProjectsStore } from '@/stores/projectsStore';
@@ -40,6 +41,7 @@ export function openArchivedContainerSurface(
   useStandaloneChatStore.getState().closeArchiveOverlay();
   useSharedContainerReplicasStore.getState().closeViewer();
   useSharedContainerReplicasStore.getState().closePastShares();
+  // Default Bot only: its archived viewer uses the singleton Bot window stores.
   if (workspaceId === APP_ADVISOR_PROJECT_ID) {
     // The App Advisor viewer renders in the popout window, whose renderer has
     // its OWN store instances — route the open through the window-open
@@ -69,7 +71,7 @@ export function openArchivedOverviewSurface(workspaceId: string): void {
   useStandaloneChatStore.getState().closeArchiveOverlay();
   useSharedContainerReplicasStore.getState().closeViewer();
   useSharedContainerReplicasStore.getState().closePastShares();
-  if (workspaceId === APP_ADVISOR_PROJECT_ID) {
+  if (isBotProjectId(workspaceId)) {
     openOverview(workspaceId);
     return;
   }
@@ -123,6 +125,7 @@ export async function navigateToRestoredContainerDestination(
     return;
   }
   if (result.restoredEntryId !== undefined) {
+    // Default Bot only: restored entries return through its singleton window.
     if (workspaceId === APP_ADVISOR_PROJECT_ID) {
       // Reveal the restored entry in the popout window (whose renderer owns
       // the App Advisor stores) — even when this runs inside the popout, the

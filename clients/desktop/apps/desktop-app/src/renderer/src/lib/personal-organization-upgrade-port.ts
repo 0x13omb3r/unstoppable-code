@@ -86,9 +86,15 @@ export function desktopPersonalOrganizationUpgradePort(
       await guard();
       return window.api.personalOrganizationUpgrade.convert(request);
     },
-    status: async (operationId): Promise<PersonalProjectOperation | null> => {
+    status: async (
+      operationId,
+      acknowledgeTerminal,
+    ): Promise<PersonalProjectOperation | null> => {
       await guard();
-      return window.api.personalOrganizationUpgrade.status({ operationId });
+      return window.api.personalOrganizationUpgrade.status({
+        operationId,
+        acknowledgeTerminal,
+      });
     },
   };
 }

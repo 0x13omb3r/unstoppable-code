@@ -292,6 +292,12 @@ interface LiveHost {
   readonly pending: Map<number, Pending>;
   /** Executions this host runs that have not paused or ended. */
   readonly executions: Set<string>;
+  /**
+   * The child workflows each run started on this host (CAN-6868), by child
+   * id, to the run that holds them: a child's host requests are relayed
+   * while its run is held.
+   */
+  readonly children: Map<string, string>;
   /** Each step process the host reported, by registration id. */
   readonly processGroups: Map<string, number>;
   readonly observers: Map<string, Set<PipelineExecutionObserver>>;
@@ -1350,6 +1356,7 @@ export class PipelineHostSupervisor implements PipelineExecutionWorker {
       process,
       pending: new Map(),
       executions: new Set(),
+      children: new Map(),
       processGroups: new Map(),
       ownerRequestDeadlineMs: undefined,
       observers: new Map(),
@@ -1476,6 +1483,13 @@ export class PipelineHostSupervisor implements PipelineExecutionWorker {
           host.settledEarly.add(executionId);
         return;
       }
+      case 'child': {
+        const { executionId, event, execution } = message;
+        host.children.set(execution.executionId, executionId);
+        for (const observer of [...(host.observers.get(executionId) ?? [])])
+          observer.onChild?.(event, execution);
+        return;
+      }
       case 'output': {
         const { executionId, ...output } = message;
         for (const observer of [...(host.observers.get(executionId) ?? [])])
@@ -1522,11 +1536,11 @@ export class PipelineHostSupervisor implements PipelineExecutionWorker {
     request: WorkerPipelineHostRequest,
   ): Promise<void> {
     const { requestId, executionId } = request;
+    // A child's requests are its run's (CAN-6868).
+    const runId = host.children.get(executionId) ?? executionId;
     // A request can arrive in the same read as its start's answer.
     if (
-      !(
-        host.executions.has(executionId) || host.pendingStarts.has(executionId)
-      ) ||
+      !(host.executions.has(runId) || host.pendingStarts.has(runId)) ||
       host.hostCalls.has(requestId)
     )
       return;
@@ -1807,6 +1821,11 @@ export class PipelineHostSupervisor implements PipelineExecutionWorker {
 
   private releaseExecution(executionId: string): void {
     this.ownerBound.delete(executionId);
+    // A run let go lets go of its children; a resume reports them again.
+    const host = this.host;
+    if (host)
+      for (const [childId, runId] of host.children)
+        if (runId === executionId) host.children.delete(childId);
     const release = this.releases.get(executionId);
     this.releases.delete(executionId);
     release?.();

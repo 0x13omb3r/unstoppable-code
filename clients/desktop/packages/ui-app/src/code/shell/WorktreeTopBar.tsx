@@ -333,7 +333,7 @@ export function WorktreeTopBar({
               )}
               {primaryAction != null && (
                 // Desktop's solid cluster: an 8px standoff from the run.
-                <div className="ml-1 flex shrink-0 items-center gap-2 electron-no-drag">
+                <div className="pl-1 flex shrink-0 items-center gap-2 electron-no-drag">
                   {primaryAction}
                 </div>
               )}

@@ -1,13 +1,13 @@
 import { create } from 'zustand';
 import type { CanopyCapabilities } from '@canopy/app-core';
 import {
-  APP_ADVISOR_PROJECT_ID,
   CODE_REVIEW_CHAT_PROJECT_ID,
   PIPELINE_EDITOR_PROJECT_ID,
   PLAN_EXPLORE_CHAT_PROJECT_ID,
   type UsageLimitedChatTarget,
   type UsageLimitedChatItem,
 } from '@canopy/desktop-shared/types';
+import { isBotProjectId } from '@canopy/protocol/chat-targets';
 import { describeUsageLimitResumePromptKind } from '@canopy/execution-engine/lib/usage-limit-resume-prompt';
 import { latestRootUserMessageId } from './latest-root-user-message';
 import { getEffectiveClaudeChatInterfaceMode } from '@/lib/claude-tui-chats';
@@ -112,7 +112,6 @@ export function presentableInterruptedTurnResume(
 
 // Built-in chats outside the workspace index, which the resume cannot reach.
 const UNSUPPORTED_PROJECT_IDS: ReadonlySet<string> = new Set([
-  APP_ADVISOR_PROJECT_ID,
   CODE_REVIEW_CHAT_PROJECT_ID,
   PIPELINE_EDITOR_PROJECT_ID,
   PLAN_EXPLORE_CHAT_PROJECT_ID,
@@ -128,6 +127,7 @@ export function supportsInterruptedTurnResume(
 ): boolean {
   return (
     capabilities.chatWorkflows?.interruptedTurnResume === true &&
+    !isBotProjectId(target.projectId) &&
     !UNSUPPORTED_PROJECT_IDS.has(target.projectId)
   );
 }

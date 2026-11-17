@@ -397,7 +397,13 @@ export interface CreateMemberMultiRepoOrgProjectRequest {
   organizationId: string;
   /** Definition name; the local project's name. */
   name: string;
-  /** Opaque local workspace id of the multi-repo project; never a path. */
+  /**
+   * Opaque creation subject the server keys the member's receipt on; never a
+   * path. Usually the multi-repo project's local workspace id, but not
+   * necessarily one: a shared-container copy sends a subject derived from its
+   * creation key (`shared-container-fork:<key>`, CAN-4856) so a retry replays
+   * the same project while the local workspace gets an ordinary id.
+   */
   localWorkspaceId: string;
   /**
    * For each repository of the local project, in its order, the organization

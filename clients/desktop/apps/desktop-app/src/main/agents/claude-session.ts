@@ -793,7 +793,7 @@ async function resolveClaudeAiCreditsRouting(
       await emit({
         type: 'error',
         error_code: NO_BILLING_SOURCE_ERROR_CODE,
-        error: buildNoBillingSourceError('Claude', BRAND.displayName),
+        error: buildNoBillingSourceError('Claude'),
       });
       return AI_CREDITS_BACKSTOP_ABORT;
     }
@@ -2162,7 +2162,8 @@ export class ClaudeCodeProvider implements AgentProvider {
       if (
         currentHostedAiCreditsRouted &&
         isAiCreditsFailureEventShape(data, 'claude') &&
-        (hostedFailure !== null || readClaudeApiErrorStatus(data) === 402) &&
+        (hostedFailure?.code === 'no_billing_source' ||
+          readClaudeApiErrorStatus(data) === 402) &&
         !hasClaudeProxyFailureEvidence(data) &&
         !(creditsOwner
           ? creditsDiagnosticTurns.has(creditsOwner)
@@ -2184,9 +2185,10 @@ export class ClaudeCodeProvider implements AgentProvider {
           worktreeId: opts.worktreeId,
           chatId: opts.chatId,
           providerType: 'claude',
-          claudeAiCredits402Outcome: hostedFailure
-            ? 'inferred_no_billing_source'
-            : 'unmatched',
+          claudeAiCredits402Outcome:
+            hostedFailure?.code === 'no_billing_source'
+              ? 'inferred_no_billing_source'
+              : 'unmatched',
           ...(creditsOwnerId ? { turnUserMessageId: creditsOwnerId } : {}),
         });
       }

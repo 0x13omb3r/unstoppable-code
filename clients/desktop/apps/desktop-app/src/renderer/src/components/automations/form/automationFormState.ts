@@ -582,6 +582,7 @@ export function workspaceActionModeForType(
 export function isAppAdvisorSessionPrompt(state: FormState): boolean {
   return (
     state.actionType === 'worktree_session_prompt' &&
+    // Default Bot only: this category serializes as app_advisor_prompt.
     state.worktreeSessionTarget?.workspaceId === APP_ADVISOR_PROJECT_ID
   );
 }
@@ -688,6 +689,7 @@ export function applyChatTargetSelection(
   isCowork: boolean,
   target: WorktreeSessionTarget | undefined,
 ): FormState {
+  // Default Bot only: app_advisor_prompt carries the singleton bot_id.
   const isAppAdvisor = workspaceId === APP_ADVISOR_PROJECT_ID;
   const cleared: FormState = {
     ...state,
@@ -761,6 +763,7 @@ export function applyAppAdvisorRunModeSelection(
     existingWorktreeId: '',
     workEntryId: '',
     worktreeSessionTarget:
+      // Default Bot only: this action can clear only the singleton target.
       state.worktreeSessionTarget?.workspaceId === APP_ADVISOR_PROJECT_ID
         ? undefined
         : state.worktreeSessionTarget,

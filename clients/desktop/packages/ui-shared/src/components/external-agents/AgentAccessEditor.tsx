@@ -1,5 +1,6 @@
 'use client';
 
+import { DisclosureToggle } from '../Disclosure';
 import { Stack } from '../Stack';
 import { useState, type JSX } from 'react';
 import { Notice } from '../Notice';
@@ -212,19 +213,18 @@ function AgentAccessGroup({
       ) : null}
       {!unavailable ? (
         <>
-          <button
-            type="button"
-            aria-expanded={expanded}
-            aria-controls={toolsListId}
+          <DisclosureToggle
+            variant="tool-count"
+            open={expanded}
+            bodyId={toolsListId}
             disabled={disabled}
             data-testid={`agent-access-tools-toggle-${group.id}`}
             onClick={(): void =>
               setExpanded((current: boolean): boolean => !current)
             }
-            className="focus-ring w-fit rounded-md text-xs font-medium fg-secondary transition-colors hover:fg-primary disabled:cursor-not-allowed disabled:opacity-60"
           >
             {`Tools · ${toolCount} of ${group.tools.length} on`}
-          </button>
+          </DisclosureToggle>
           <div
             id={toolsListId}
             role="group"

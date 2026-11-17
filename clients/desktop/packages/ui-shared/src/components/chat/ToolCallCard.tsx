@@ -430,7 +430,7 @@ export function ToolCallCard({
           }
           // Blocked and interrupted say so at the row's end, in the
           // detail's grey; Failed stays after the words.
-          className="w-full"
+          extent="fill"
           trailing={
             denial != null ? (
               <span
@@ -453,11 +453,12 @@ export function ToolCallCard({
         />
       </StepTenseProvider>
       {isOpen && (
-        <div
-          className={`${STEP_ROW_BODY_CLASS}${expandedAction != null ? ' p-2 empty:p-0' : ''}`}
-          data-chat-reveal-body=""
-        >
-          {expandedAction ?? expandedSlot ?? (
+        <div className={STEP_ROW_BODY_CLASS} data-chat-reveal-body="">
+          {(expandedAction != null ? (
+            <div className="p-2 empty:p-0">{expandedAction}</div>
+          ) : (
+            expandedSlot
+          )) ?? (
             <Stack gap="tight">
               {shownInput != null && shownInput.length > 0 && (
                 <pre className={CLEAN_OUTPUT_CLASS}>{shownInput}</pre>

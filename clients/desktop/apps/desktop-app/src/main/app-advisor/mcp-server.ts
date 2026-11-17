@@ -26,6 +26,7 @@ import {
 } from './tool-executor';
 import {
   APP_ADVISOR_GET_SCRIPT_OUTPUT_DESCRIPTION,
+  APP_ADVISOR_SET_PROJECT_WORK_ENTRY_AUTO_DELETE_DESCRIPTION,
   APP_ADVISOR_READ_PIPELINE_YAML_DESCRIPTION,
   APP_ADVISOR_SHOW_FILES_DESCRIPTION,
   APP_ADVISOR_GET_FILE_COMMENTS_DESCRIPTION,
@@ -39,6 +40,7 @@ import {
   WATCH_GITHUB_ITEMS_DESCRIPTION,
   GET_GITHUB_PULL_REQUEST_STATUS_DESCRIPTION,
   appAdvisorGetScriptOutputSchema,
+  appAdvisorSetProjectWorkEntryAutoDeleteSchema,
   appAdvisorReadPipelineYamlBaseSchema,
   appAdvisorShowFilesSchema,
   appAdvisorGetFileCommentsSchema,
@@ -110,6 +112,12 @@ export function createAppAdvisorMcpServer(
         'set_work_entry_auto_delete',
         SET_WORK_ENTRY_AUTO_DELETE_DESCRIPTION,
         setWorkEntryAutoDeleteSchema.shape,
+        runtime,
+      ),
+      appAdvisorTool(
+        'set_project_work_entry_auto_delete',
+        APP_ADVISOR_SET_PROJECT_WORK_ENTRY_AUTO_DELETE_DESCRIPTION,
+        appAdvisorSetProjectWorkEntryAutoDeleteSchema.shape,
         runtime,
       ),
       appAdvisorTool(

@@ -202,11 +202,7 @@ export function calendarEventChipAttributes(
   return attributes;
 }
 
-/**
- * Tailwind classes for an event's border/background/text. Upcoming occurrences
- * are sky; runs are status-colored (green / red / grey / sky) so they read
- * distinctly from predicted fires. Disabled occurrences are dimmed + dashed.
- */
+/** Label ink for calendar events in the agenda. */
 export function calendarEventInk(event: CalendarEvent): string {
   if (event.kind !== 'run') return 'fg-info';
   switch (event.runStatus) {
@@ -223,32 +219,6 @@ export function calendarEventInk(event: CalendarEvent): string {
   }
 }
 
-export function calendarEventToneClasses(event: CalendarEvent): string {
-  if (event.kind === 'run') {
-    switch (event.runStatus) {
-      case 'success':
-        return 'border-fg-success-strong/50 bg-success-subtle fg-success-strong';
-      case 'failure':
-        return 'border-line-destructive bg-destructive-subtle fg-destructive';
-      case 'running':
-        return 'border-fg-info/50 bg-info-subtle fg-info';
-      case 'missed':
-        return 'bg-warning-subtle fg-warning';
-      case 'skipped':
-      case 'canceled':
-      default:
-        return 'bg-fg-primary/[0.06] fg-secondary';
-    }
-  }
-  const disabled = isPausedOccurrence(event) ? ' border-dashed opacity-50' : '';
-  return `border-fg-info/40 bg-info-subtle fg-info${disabled}`;
-}
-
-/**
- * A predicted fire of a paused automation. It rests at `opacity-50`
- * (`calendarEventToneClasses`), so its hover dim starts from there
- * (`calendarEventInteractionClasses`).
- */
 export function isPausedOccurrence(event: CalendarEvent): boolean {
   return (
     event.kind === 'occurrence' &&
@@ -257,25 +227,29 @@ export function isPausedOccurrence(event: CalendarEvent): boolean {
   );
 }
 
-/** Selection treatment matching the Triggered table's selected-row affordance. */
-export function calendarEventSelectedClasses(selected: boolean): string {
-  return selected
-    ? 'ring-2 ring-line-selected ring-offset-1 ring-offset-base'
-    : '';
-}
-
-/**
- * Cursor and hover classes for a grid chip. Hover dims one step below the
- * chip's resting opacity, instantly, and never brightens: 100% to 90%, and a
- * paused occurrence 50% to 40% rather than up to 90%.
- */
-export function calendarEventInteractionClasses(event: CalendarEvent): string {
-  if (!isCalendarEventClickable(event)) {
-    return 'cursor-default';
+/** Semantic color of a calendar event, including a paused prediction. */
+export function calendarEventTone(
+  event: CalendarEvent,
+):
+  | 'success'
+  | 'failure'
+  | 'running'
+  | 'missed'
+  | 'neutral'
+  | 'scheduled'
+  | 'paused' {
+  if (event.kind !== 'run') {
+    return isPausedOccurrence(event) ? 'paused' : 'scheduled';
   }
-  return isPausedOccurrence(event)
-    ? 'cursor-pointer hover:opacity-40'
-    : 'cursor-pointer hover:opacity-90';
+  switch (event.runStatus) {
+    case 'success':
+    case 'failure':
+    case 'running':
+    case 'missed':
+      return event.runStatus;
+    default:
+      return 'neutral';
+  }
 }
 
 /** Short local time label, e.g. "9:00 AM". */

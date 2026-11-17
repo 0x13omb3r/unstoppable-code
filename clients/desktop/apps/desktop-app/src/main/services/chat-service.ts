@@ -70,6 +70,7 @@ import type {
   PortalChatTabPluginSelections,
   PortalChatTurnGroup,
 } from '@canopy/desktop-shared/types';
+import { isBotProjectId } from '@canopy/protocol/chat-targets';
 import {
   chatAgentSent,
   type AgentSentInfo,
@@ -1214,8 +1215,7 @@ async function withCurrentTargetApprovalSettings(
   request: ChatSendMessageRequest,
 ): Promise<ChatSendMessageRequest> {
   const provenance = request.agentSenderProvenance;
-  if (!provenance || request.projectId === APP_ADVISOR_PROJECT_ID)
-    return request;
+  if (!provenance || isBotProjectId(request.projectId)) return request;
   // A pipeline run a user started keeps the approval override it was
   // admitted with (D2); one an agent started runs as that agent's (D11).
   const agentOriginated =
@@ -1436,7 +1436,7 @@ async function dispatchHostQueuedWorktreeChatMessageNow(
   const specialNativeTarget =
     origin === 'desktop' &&
     (isCoworkWorkspace(dispatchRequest.projectId) ||
-      dispatchRequest.projectId === APP_ADVISOR_PROJECT_ID ||
+      isBotProjectId(dispatchRequest.projectId) ||
       dispatchRequest.projectId === PIPELINE_EDITOR_PROJECT_ID);
   if (
     !specialNativeTarget &&
@@ -2747,6 +2747,7 @@ async function emitTargetChatSummary(input: {
   order: number;
   owner?: { value: WorkOwner | undefined };
 }): Promise<void> {
+  // Default Bot only: this summary writer publishes the app_advisor identity.
   if (input.workspaceId === APP_ADVISOR_PROJECT_ID) {
     // App Advisor chats project as `app_advisor_chat` entities, never as
     // worktree-scoped `chat_summary` rows keyed on the sentinel ids
@@ -3165,11 +3166,15 @@ async function sendWorktreeChatMessageNow(
     );
   }
 
-  if (request.projectId === APP_ADVISOR_PROJECT_ID) {
-    if (request.worktreeId === APP_ADVISOR_WORKTREE_ID) {
+  if (isBotProjectId(request.projectId)) {
+    // Default Bot only: only the Orchestrator reserves the legacy global slot.
+    if (
+      request.projectId === APP_ADVISOR_PROJECT_ID &&
+      request.worktreeId === APP_ADVISOR_WORKTREE_ID
+    ) {
       throw new Error('App Advisor legacy global chats are read-only.');
     }
-    const entryIds = await listWorkEntryIds(APP_ADVISOR_PROJECT_ID);
+    const entryIds = await listWorkEntryIds(request.projectId);
     if (!entryIds.includes(request.worktreeId)) {
       throw new Error(`Unknown App Advisor Work Entry ${request.worktreeId}.`);
     }
@@ -3349,11 +3354,10 @@ async function sendWorktreeChatMessageNow(
     (existingTab.transcript?.messageCount ??
       existingTab.transcript?.committedMessageCount ??
       existingTab.messages.length) === 0;
-  const isAppAdvisorTarget = request.projectId === APP_ADVISOR_PROJECT_ID;
-  const appAdvisorSurfaces = isAppAdvisorTarget
+  const appAdvisorSurfaces = isBotProjectId(request.projectId)
     ? options.appAdvisorSurfaces
     : undefined;
-  if (isAppAdvisorTarget && !appAdvisorSurfaces) {
+  if (isBotProjectId(request.projectId) && !appAdvisorSurfaces) {
     throw new Error(
       'Cannot dispatch an App Advisor scheduled message without App Advisor surfaces.',
     );
@@ -3515,7 +3519,7 @@ async function sendWorktreeChatMessageNow(
   const isPipelineEditorTarget =
     request.projectId === PIPELINE_EDITOR_PROJECT_ID &&
     request.worktreeId === PIPELINE_EDITOR_WORKTREE_ID;
-  if (!isAppAdvisorTarget && !isPipelineEditorTarget) {
+  if (!isBotProjectId(request.projectId) && !isPipelineEditorTarget) {
     void latchFirstTaskSubmitted(new Date().toISOString());
   }
 
@@ -3610,7 +3614,7 @@ async function sendWorktreeChatMessageNow(
         ? { automationName: request.automationName }
         : {}),
     };
-    const getScheduledPromptWindow = isAppAdvisorTarget
+    const getScheduledPromptWindow = isBotProjectId(request.projectId)
       ? options.appAdvisorSurfaces?.getAppAdvisorWindow
       : options.getWindow;
     const presentationKey = presentationChatKey({
@@ -4915,6 +4919,7 @@ async function countArmedAppAdvisorWatchersByChatId(): Promise<
     for (const watcher of watchers) {
       if (
         watcher.status !== 'active' ||
+        // Default Bot only: this loop projects the Orchestrator watcher list.
         watcher.destination.projectId !== APP_ADVISOR_PROJECT_ID
       ) {
         continue;

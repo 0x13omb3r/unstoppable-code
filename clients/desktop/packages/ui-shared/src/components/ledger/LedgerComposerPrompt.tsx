@@ -1,5 +1,6 @@
 'use client';
 
+import { ControlButton } from '../Button';
 import { useId, type JSX } from 'react';
 import { Tooltip } from '../Tooltip';
 import { LedgerActorAvatar } from './LedgerActorAvatar';
@@ -55,16 +56,17 @@ export function LedgerComposerPrompt({
         allowShrink
         className="flex-1"
       >
-        <button
+        <ControlButton
           type="button"
           data-testid={testId}
           aria-disabled={disabled || undefined}
           aria-describedby={disabled ? reasonId : undefined}
           onClick={disabled ? undefined : onOpen}
-          className={`focus-ring min-w-0 flex-1 truncate rounded-full bg-subtle px-4 py-2 text-left fg-tertiary ${disabled ? 'cursor-not-allowed opacity-40' : 'hover:bg-secondary'} ${page ? 'text-s' : 'text-xs'}`}
+          presentation="ledger-composer-prompt"
+          appearance={{ disabled: !!disabled, page: !!page }}
         >
           {label}
-        </button>
+        </ControlButton>
       </Tooltip>
       {disabled && (
         <span id={reasonId} className="sr-only">

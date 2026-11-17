@@ -65,7 +65,87 @@ export interface SetupJournalV1 {
   conversion?: { previousOwnershipTransfer?: WorkspaceOwnershipTransfer };
   /** Existing checkout adoption: nothing at `finalPath` was created by setup. */
   adoption?: { createdRepo?: true };
+  /**
+   * A new organization copy of a multi-repo share (CAN-4856). `finalPath` is
+   * the root the fork staged, unindexed; the bind registers it as a bound
+   * workspace with these repositories. The fork owns the staged root: only the
+   * marker-proven sweep removal ever deletes it on this journal's behalf.
+   */
+  copy?: SetupJournalCopy;
 }
+
+/** A copy repository: `repository` is `null` for a snapshot (no holder). */
+export interface SetupJournalCopyRepository {
+  relativePath: string;
+  name: string;
+  repository: OrgProjectRepository | null;
+}
+
+/** A repository a bound copy registers (CAN-4856); the marker's own entry. */
+export type BoundCopyRepository = SetupJournalCopyRepository;
+
+export interface SetupJournalCopy {
+  /** The 64-hex creation key; ties the journal to its staged root. */
+  creationKey: string;
+  name: string;
+  repositories: SetupJournalCopyRepository[];
+}
+
+/**
+ * A multi-repo root's child path, as `multiRepoSetupRelativePath` writes it.
+ * Every reader validates against this one pattern.
+ */
+export const MULTI_REPO_CHILD_RELATIVE_PATH =
+  /^repos\/r[0-9]{2}-[a-z0-9_-]{1,64}$/;
+
+/** A malformed marker rejects the whole journal; it never reads as plain v1. */
+function normalizeSetupJournalCopy(value: unknown): SetupJournalCopy | null {
+  if (typeof value !== 'object' || value === null || Array.isArray(value))
+    return null;
+  const record: Record<string, unknown> = Object.fromEntries(
+    Object.entries(value),
+  );
+  const { creationKey, name, repositories } = record;
+  if (
+    typeof creationKey !== 'string' ||
+    !/^[0-9a-f]{64}$/.test(creationKey) ||
+    typeof name !== 'string' ||
+    !name.trim() ||
+    !Array.isArray(repositories) ||
+    repositories.length < 1 ||
+    repositories.length > 32
+  )
+    return null;
+  const entries: unknown[] = repositories;
+  const paths = new Set<string>();
+  const normalized: SetupJournalCopyRepository[] = [];
+  for (const entry of entries) {
+    if (
+      typeof entry !== 'object' ||
+      entry === null ||
+      !('relativePath' in entry) ||
+      typeof entry.relativePath !== 'string' ||
+      !MULTI_REPO_CHILD_RELATIVE_PATH.test(entry.relativePath) ||
+      paths.has(entry.relativePath) ||
+      !('name' in entry) ||
+      typeof entry.name !== 'string' ||
+      !entry.name.trim() ||
+      !('repository' in entry) ||
+      // Identities need not be unique: two share repositories can resolve to
+      // one holder project.
+      (entry.repository !== null && !isOrgProjectRepository(entry.repository))
+    )
+      return null;
+    paths.add(entry.relativePath);
+    normalized.push({
+      relativePath: entry.relativePath,
+      name: entry.name,
+      repository: entry.repository,
+    });
+  }
+  return { creationKey, name, repositories: normalized };
+}
+
 export interface MultiRepoSetupRepository {
   repository: OrgProjectRepository;
   relativePath: string;
@@ -75,7 +155,7 @@ export interface MultiRepoSetupRepository {
 /** Fresh setup only: a v2 journal cannot authorize adoption or conversion. */
 export interface SetupJournalV2 extends Omit<
   SetupJournalV1,
-  'version' | 'conversion' | 'adoption'
+  'version' | 'conversion' | 'adoption' | 'copy'
 > {
   version: 2;
   accountId: string;
@@ -86,6 +166,7 @@ export interface SetupJournalV2 extends Omit<
   repositories: MultiRepoSetupRepository[];
   conversion?: never;
   adoption?: never;
+  copy?: never;
 }
 export type SetupJournal = SetupJournalV1 | SetupJournalV2;
 
@@ -119,6 +200,14 @@ export function isSetupPhase(value: unknown): value is SetupPhase {
     'cancelled',
   ].some((phase) => phase === value);
 }
+/**
+ * A new organization copy's journal (CAN-4856) is written as version 3 and
+ * read back as a v1 journal carrying `copy`. A build without CAN-4856 accepts
+ * only versions 1 and 2, so it keeps the file as unreadable instead of
+ * dropping `copy` and resuming the copy as plain single-repo setup.
+ */
+const COPY_JOURNAL_FILE_VERSION = 3;
+
 /** Corrupt journals never authorize filesystem mutations. */
 export function normalizeSetupJournal(value: unknown): SetupJournal | null {
   if (
@@ -127,8 +216,9 @@ export function normalizeSetupJournal(value: unknown): SetupJournal | null {
     'version' in value &&
     value.version === 2
   ) {
-    if ('conversion' in value || 'adoption' in value) return null;
-    const base = normalizeSetupJournalV1({ ...value, version: 1 });
+    if ('conversion' in value || 'adoption' in value || 'copy' in value)
+      return null;
+    const base = normalizeSetupJournalV1({ ...value, version: 1 }, false);
     if (
       !base ||
       !('accountId' in value) ||
@@ -166,7 +256,7 @@ export function normalizeSetupJournal(value: unknown): SetupJournal | null {
         !isOrgProjectRepository(entry.repository) ||
         !('relativePath' in entry) ||
         typeof entry.relativePath !== 'string' ||
-        !/^repos\/r[0-9]{2}-[a-z0-9_-]{1,64}$/.test(entry.relativePath) ||
+        !MULTI_REPO_CHILD_RELATIVE_PATH.test(entry.relativePath) ||
         !('validated' in entry) ||
         typeof entry.validated !== 'boolean'
       )
@@ -194,8 +284,8 @@ export function normalizeSetupJournal(value: unknown): SetupJournal | null {
       })
     )
       return null;
-    const { conversion, adoption, ...freshBase } = base;
-    if (conversion || adoption) return null;
+    const { conversion, adoption, copy, ...freshBase } = base;
+    if (conversion || adoption || copy) return null;
     return {
       ...freshBase,
       version: 2,
@@ -207,10 +297,37 @@ export function normalizeSetupJournal(value: unknown): SetupJournal | null {
       repositories,
     };
   }
-  return normalizeSetupJournalV1(value);
+  if (
+    typeof value === 'object' &&
+    value !== null &&
+    'version' in value &&
+    value.version === COPY_JOURNAL_FILE_VERSION
+  ) {
+    const journal = normalizeSetupJournalV1({ ...value, version: 1 }, true);
+    return journal?.copy === undefined ? null : journal;
+  }
+  return normalizeSetupJournalV1(value, false);
 }
 
-function normalizeSetupJournalV1(value: unknown): SetupJournalV1 | null {
+/** A journal as it is written to disk; see {@link COPY_JOURNAL_FILE_VERSION}. */
+export function serializeSetupJournal(journal: SetupJournal): string {
+  return JSON.stringify(
+    journal.version === 1 && journal.copy !== undefined
+      ? { ...journal, version: COPY_JOURNAL_FILE_VERSION }
+      : journal,
+  );
+}
+
+/** Whether `journal`, as written to disk, reads back as a valid journal. */
+export function isPersistableSetupJournal(journal: SetupJournal): boolean {
+  const written: unknown = JSON.parse(serializeSetupJournal(journal));
+  return normalizeSetupJournal(written) !== null;
+}
+
+function normalizeSetupJournalV1(
+  value: unknown,
+  copyFile: boolean,
+): SetupJournalV1 | null {
   if (typeof value !== 'object' || value === null || Array.isArray(value))
     return null;
   const record: Record<string, unknown> = Object.fromEntries(
@@ -234,7 +351,10 @@ function normalizeSetupJournalV1(value: unknown): SetupJournalV1 | null {
     errorCode,
     conversion,
     adoption,
+    copy,
   } = record;
+  const copyMarker =
+    copy === undefined ? undefined : normalizeSetupJournalCopy(copy);
   const conversionRecord: Record<string, unknown> | undefined =
     typeof conversion === 'object' &&
     conversion !== null &&
@@ -287,6 +407,11 @@ function normalizeSetupJournalV1(value: unknown): SetupJournalV1 | null {
     (conversion !== undefined && conversionRecord === undefined) ||
     (adoption !== undefined && adoptionRecord === undefined) ||
     (conversionRecord !== undefined && adoptionRecord !== undefined) ||
+    copyMarker === null ||
+    // Only a copy file carries the marker, and it always does.
+    (copyMarker !== undefined) !== copyFile ||
+    (copyMarker !== undefined &&
+      (conversionRecord !== undefined || adoptionRecord !== undefined)) ||
     (adoptionRecord?.createdRepo !== undefined &&
       adoptionRecord.createdRepo !== true)
   )
@@ -325,6 +450,7 @@ function normalizeSetupJournalV1(value: unknown): SetupJournalV1 | null {
           adoption:
             adoptionRecord.createdRepo === true ? { createdRepo: true } : {},
         }),
+    ...(copyMarker === undefined ? {} : { copy: copyMarker }),
   };
   try {
     setupOwner(journal);

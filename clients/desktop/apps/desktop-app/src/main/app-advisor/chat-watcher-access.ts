@@ -8,10 +8,10 @@ import {
   type UnresolvedLegacyChatWatcher,
 } from '@canopy/desktop-shared/lib/chat-watcher-contracts';
 import {
-  APP_ADVISOR_PROJECT_ID,
   COWORK_HOME_WORKTREE_ID,
   type ProjectOwnerContext,
 } from '@canopy/desktop-shared/types';
+import { isBotProjectId } from '@canopy/protocol/chat-targets';
 import { isRetiredPlanChatScope } from '@canopy/desktop-shared/lib/retired-chat-scopes';
 import { getWorkspaceContextService } from '../lib/workspace-context-service';
 import {
@@ -93,7 +93,7 @@ function callerFor(
   ) {
     throw new ChatWatcherAccessError('runtime_unavailable');
   }
-  return destination.projectId === APP_ADVISOR_PROJECT_ID
+  return isBotProjectId(destination.projectId)
     ? { kind: 'app_advisor', chatId: destination.chatId }
     : {
         kind: 'project_agent',

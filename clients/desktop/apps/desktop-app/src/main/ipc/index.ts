@@ -26,7 +26,7 @@ import type {
   ChatWindowCommand,
   ChatStateCommandPort,
 } from '@canopy/desktop-shared/types';
-import { APP_ADVISOR_PROJECT_ID } from '@canopy/desktop-shared/types';
+import { isBotProjectId } from '@canopy/protocol/chat-targets';
 import { isOllamaSupportedOnPlatform } from '@canopy/desktop-shared/platform-capabilities';
 import { registerPreferenceHandlers } from './preferences';
 import { registerClaudeModsHandlers } from './claude-mods';
@@ -424,7 +424,7 @@ export function registerAllIpcHandlers(
       getMainWindow,
       getBrowserService() ?? undefined,
       (projectId) =>
-        projectId === APP_ADVISOR_PROJECT_ID
+        isBotProjectId(projectId)
           ? accessors.getAppAdvisorWindow()
           : getMainWindow(),
       accessors.onBrowserViewAttached,

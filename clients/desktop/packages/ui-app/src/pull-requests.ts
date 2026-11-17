@@ -52,10 +52,10 @@ export {
   type PullRequestProgressTarget,
 } from './code/pull-requests/PullRequestActions';
 export {
-  CiStatusBadge,
+  CiStatusIndicator,
   CiStatusBadgeWithPopover,
-  MultiRepoPrBadge,
-  PrStateBadge,
+  MultiRepoPrControl,
+  PrStateIndicator,
   PullRequestStateBadgeWithTooltip,
 } from './code/pull-requests/PullRequestBadges';
 export { CheckDetailsList } from './code/pull-requests/CheckDetailsList';

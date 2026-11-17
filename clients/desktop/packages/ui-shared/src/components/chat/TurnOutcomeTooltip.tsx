@@ -1,3 +1,4 @@
+import { ControlButton } from '../Button';
 import type { JSX } from 'react';
 import type {
   TurnOutcomeCounts,
@@ -135,14 +136,14 @@ function TurnOutcomeTooltipEntry({
     );
   }
   return (
-    <button
+    <ControlButton
       type="button"
-      className={`focus-ring text-left transition-colors hover:bg-subtle ${rowClass}`}
+      presentation="turn-outcome-step"
       data-turn-outcome-step={step.toolUseId}
       onClick={(): void => onSelectStep(step.toolUseId)}
     >
       {body}
-    </button>
+    </ControlButton>
   );
 }
 

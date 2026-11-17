@@ -74,7 +74,7 @@ export function SourceTranscriptView({
           <Heading level={2} variant="section">
             Private source transcript
           </Heading>
-          <p className="mt-2 text-s leading-6 fg-secondary">
+          <p className="pt-2 text-s leading-6 fg-secondary">
             This source is privately owned. Organization administrators can see
             the extracted evidence and source metadata, but not the private
             transcript.
@@ -101,7 +101,7 @@ export function SourceTranscriptView({
             </Heading>
             <p
               className={withPrivacyClass(
-                'mt-1 text-xs fg-secondary',
+                'pt-1 text-xs fg-secondary',
                 blockClassName,
               )}
             >
@@ -119,7 +119,7 @@ export function SourceTranscriptView({
         ) : (
           <div
             className={withPrivacyClass(
-              'mt-5 flex flex-col gap-3',
+              'pt-5 flex flex-col gap-3',
               blockClassName,
             )}
           >

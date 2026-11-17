@@ -1574,7 +1574,7 @@ export function FileViewer(props: FileViewerProps): JSX.Element {
                   props.request.relativePath}
                 {session?.dirty === true && (
                   <span
-                    className="ml-1 fg-warning"
+                    className="pl-1 fg-warning"
                     data-testid="file-viewer-dirty"
                   >
                     •
@@ -2329,7 +2329,7 @@ function FileViewerBody({
   const dirtyMarker =
     !suppressStatusChrome && session.dirty ? (
       <span
-        className="ml-1 shrink-0 fg-warning"
+        className="pl-1 shrink-0 fg-warning"
         data-testid="file-viewer-dirty"
       >
         •

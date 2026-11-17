@@ -553,6 +553,37 @@ export interface OrganizationInviteListResponse {
   enabled: boolean;
 }
 
+/**
+ * One share of an organization worktree or Cowork Work Entry with someone
+ * outside the organization (CAN-3420), as Owners and Admins review it.
+ *
+ * An email recipient is always `invited`, whether or not the address has an
+ * account, so the list never reveals account existence. `account` is a person
+ * who joined through the share link; only their display name is shown, as in
+ * the owner's Recipients list.
+ */
+export interface OrganizationExternalShare {
+  /** The grant or invitation id; pass it to the remove operation. */
+  id: string;
+  /** When the share was created (ISO 8601). */
+  sharedAt: string;
+  container: {
+    id: string;
+    title: string;
+    kind: 'worktree' | 'work_entry';
+  };
+  owner: { userId: string; name: string | null };
+  recipient:
+    | { kind: 'email'; email: string; status: 'invited' }
+    | { kind: 'account'; name: string | null; status: 'joined' };
+}
+
+/** Body of `GET /api/account/organizations/:orgId/external-shares`. */
+export interface OrganizationExternalShareListResponse {
+  items: OrganizationExternalShare[];
+  nextCursor: string | null;
+}
+
 /** `201` body of `POST /api/account/invites`. */
 export interface OrganizationCreatedInvite extends OrganizationInvite {
   emailQueued: boolean;
@@ -700,6 +731,37 @@ export const organizationInviteListShape = z.looseObject({
       role: organizationRoleSchema.nullable(),
       invitedEmail: z.string().nullable(),
       seatPaymentState: inviteSeatPaymentStateSchema,
+    }),
+  ),
+});
+
+export const organizationExternalShareListShape = z.looseObject({
+  nextCursor: z.string().nullable(),
+  items: z.array(
+    z.looseObject({
+      id: z.string(),
+      sharedAt: z.string(),
+      container: z.looseObject({
+        id: z.string(),
+        title: z.string(),
+        kind: z.enum(['worktree', 'work_entry']),
+      }),
+      owner: z.looseObject({
+        userId: z.string(),
+        name: z.string().nullable(),
+      }),
+      recipient: z.union([
+        z.looseObject({
+          kind: z.literal('email'),
+          email: z.string(),
+          status: z.literal('invited'),
+        }),
+        z.looseObject({
+          kind: z.literal('account'),
+          name: z.string().nullable(),
+          status: z.literal('joined'),
+        }),
+      ]),
     }),
   ),
 });

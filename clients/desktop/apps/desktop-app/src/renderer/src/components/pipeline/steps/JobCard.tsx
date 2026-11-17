@@ -1,3 +1,4 @@
+import { ControlButton } from '@canopy/ui-shared/components';
 import {
   WorkflowEditorJob,
   WorkflowEditorJobHeader,
@@ -83,14 +84,14 @@ export function JobCard({
       <WorkflowEditorJobHeader onClick={() => onSelectJob(jobId)}>
         {/* Drag handle */}
         {!readonly && (
-          <button
+          <ControlButton
             {...attributes}
             {...listeners}
-            className="shrink-0 cursor-grab active:cursor-grabbing p-0.5 fg-secondary hover:fg-primary touch-none"
+            presentation="workflow-job-handle"
             onClick={(e) => e.stopPropagation()}
           >
             <DragHandleIcon size="sm" />
-          </button>
+          </ControlButton>
         )}
 
         {/* Collapse toggle */}

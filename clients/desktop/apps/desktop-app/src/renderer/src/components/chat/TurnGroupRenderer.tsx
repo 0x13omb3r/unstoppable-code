@@ -1,8 +1,10 @@
+import { ControlButton } from '@canopy/ui-shared/components';
 import {
   StickyTurnBacking,
   RevertedTurnSurface,
 } from '@canopy/ui-shared/components/chat';
 import { ORCHESTRATOR_LABEL } from '@canopy/protocol';
+import { isBotProjectId } from '@canopy/protocol/chat-targets';
 import { useScopeCapabilities } from '@/hooks/useScopeCapabilities';
 import { BrandLogo } from '@/components/BrandLogo';
 import { WorkflowIcon } from '@/components/activity/WorkflowIcon';
@@ -46,7 +48,6 @@ import type {
   ApprovalRequestEvent,
 } from '@canopy/desktop-shared/types';
 import {
-  APP_ADVISOR_PROJECT_ID,
   CODE_REVIEW_CHAT_PROJECT_ID,
   PIPELINE_EDITOR_PROJECT_ID,
   PLAN_EXPLORE_CHAT_PROJECT_ID,
@@ -1639,7 +1640,7 @@ export const TurnGroupRenderer = memo(function TurnGroupRenderer({
     selectedWorktreeProjectId !== undefined &&
     selectedWorktreeWorktreeId !== undefined &&
     !isCoworkChatTarget(selectedWorktreeProjectId) &&
-    selectedWorktreeProjectId !== APP_ADVISOR_PROJECT_ID &&
+    !isBotProjectId(selectedWorktreeProjectId) &&
     selectedWorktreeProjectId !== PIPELINE_EDITOR_PROJECT_ID &&
     selectedWorktreeProjectId !== PLAN_EXPLORE_CHAT_PROJECT_ID;
   const watcherButton =
@@ -1879,12 +1880,12 @@ export const TurnGroupRenderer = memo(function TurnGroupRenderer({
 
   if (isReverted && isRevertedCollapsed) {
     return wrapReverted(
-      <button
+      <ControlButton
         type="button"
         onClick={(): void => setIsRevertedCollapsed(false)}
         aria-expanded={false}
         aria-label="Expand reverted turn"
-        className="focus-ring flex w-full items-center gap-2 rounded-md border bg-fg-primary/[0.02] px-3 py-1.5 text-left text-xs fg-secondary transition-colors hover:bg-fg-primary/[0.04]"
+        presentation="reverted-turn-toggle"
       >
         <span className="flex-shrink-0">
           <ChevronRightIcon />
@@ -1893,19 +1894,19 @@ export const TurnGroupRenderer = memo(function TurnGroupRenderer({
         {userPromptPreview ? (
           <span className="truncate">— {userPromptPreview}</span>
         ) : null}
-      </button>,
+      </ControlButton>,
     );
   }
 
   return wrapReverted(
     <ToolApprovalWaitProvider value={approvalWait}>
       {isReverted && (
-        <button
+        <ControlButton
           type="button"
           onClick={(): void => setIsRevertedCollapsed(true)}
           aria-expanded={true}
           aria-label="Collapse reverted turn"
-          className="focus-ring flex w-full items-center gap-2 rounded-md border bg-fg-primary/[0.02] px-3 py-1.5 text-left text-xs fg-secondary transition-colors hover:bg-fg-primary/[0.04]"
+          presentation="reverted-turn-toggle"
         >
           <span className="flex-shrink-0">
             <ChevronDownIcon />
@@ -1914,7 +1915,7 @@ export const TurnGroupRenderer = memo(function TurnGroupRenderer({
           {userPromptPreview ? (
             <span className="truncate">— {userPromptPreview}</span>
           ) : null}
-        </button>
+        </ControlButton>
       )}
       {!hideUserMessage && (
         <ChatMessageItem

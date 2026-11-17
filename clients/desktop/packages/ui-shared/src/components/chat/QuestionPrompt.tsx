@@ -19,6 +19,7 @@ import { Markdown } from '../Markdown';
 import { Notice, NoticeButton } from '../Notice';
 import { OverlayScrollArea } from '../OverlayScrollArea';
 import { TextInput } from '../Field';
+import { QuestionProgress } from './QuestionProgress';
 import { ComposerIconButton } from './ComposerIconButton';
 import {
   COMPOSER_PROMPT_HEADER_CLASS,
@@ -251,21 +252,11 @@ export function QuestionPrompt({
             </div>
             <div className="flex shrink-0 items-center gap-2">
               {stepCount > 1 && (
-                <ol
-                  aria-label="Question progress"
-                  className="flex items-center gap-2 px-1"
-                >
-                  {Array.from({ length: stepCount }, (_, index) => (
-                    <li
-                      key={index}
-                      aria-label={`Question ${index + 1} of ${stepCount}`}
-                      aria-current={index === step ? 'step' : undefined}
-                      className={`size-1.25 rounded-full ${
-                        index === step ? 'bg-fg-primary' : 'bg-fg-quaternary'
-                      }`}
-                    />
-                  ))}
-                </ol>
+                <QuestionProgress
+                  count={stepCount}
+                  step={step}
+                  density="compact"
+                />
               )}
               <ComposerIconButton
                 capsule

@@ -3,10 +3,8 @@ import {
   assertWorkingDirectoryAvailable,
   withWorkingDirectoryReadCheck,
 } from '@canopy/desktop-shared/node/lib/working-directory';
-import {
-  APP_ADVISOR_PROJECT_ID,
-  SHARED_CONTAINER_VIEWER_PROJECT_ID,
-} from '@canopy/desktop-shared/types';
+import { SHARED_CONTAINER_VIEWER_PROJECT_ID } from '@canopy/desktop-shared/types';
+import { isBotProjectId } from '@canopy/protocol/chat-targets';
 import { getDataDir } from './paths';
 import {
   resolveWorktreeCwd,
@@ -28,7 +26,7 @@ export async function isWorktreeObservationTarget(
   if (retiring()) return false;
   try {
     if (
-      target.projectId !== APP_ADVISOR_PROJECT_ID &&
+      !isBotProjectId(target.projectId) &&
       target.projectId !== SHARED_CONTAINER_VIEWER_PROJECT_ID &&
       !isCoworkWorkspace(target.projectId)
     ) {

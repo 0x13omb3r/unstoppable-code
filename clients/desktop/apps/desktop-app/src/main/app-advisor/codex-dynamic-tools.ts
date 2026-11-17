@@ -20,6 +20,7 @@ import { defineCodexFunctionToolSpec } from '../codex/dynamic-tool-spec';
 import {
   APP_ADVISOR_ADD_LEDGER_ENTRY_DESCRIPTION,
   APP_ADVISOR_GET_SCRIPT_OUTPUT_DESCRIPTION,
+  APP_ADVISOR_SET_PROJECT_WORK_ENTRY_AUTO_DELETE_DESCRIPTION,
   APP_ADVISOR_READ_PIPELINE_YAML_DESCRIPTION,
   APP_ADVISOR_SEARCH_LEDGER_ENTRIES_DESCRIPTION,
   APP_ADVISOR_SHOW_FILES_DESCRIPTION,
@@ -35,6 +36,7 @@ import {
   WATCH_GITHUB_ITEMS_DESCRIPTION,
   GET_GITHUB_PULL_REQUEST_STATUS_DESCRIPTION,
   appAdvisorGetScriptOutputJsonSchema,
+  appAdvisorSetProjectWorkEntryAutoDeleteJsonSchema,
   appAdvisorReadPipelineYamlJsonSchema,
   appAdvisorShowFilesJsonSchema,
   appAdvisorGetFileCommentsJsonSchema,
@@ -93,6 +95,8 @@ const descriptions = {
   schedule_wakeup: SCHEDULE_WAKEUP_DESCRIPTION,
   set_auto_archive: SET_AUTO_ARCHIVE_DESCRIPTION,
   set_work_entry_auto_delete: SET_WORK_ENTRY_AUTO_DELETE_DESCRIPTION,
+  set_project_work_entry_auto_delete:
+    APP_ADVISOR_SET_PROJECT_WORK_ENTRY_AUTO_DELETE_DESCRIPTION,
   start_forked_agent: APP_ADVISOR_START_FORKED_AGENT_DESCRIPTION,
   search_deferred_tools: SEARCH_DEFERRED_TOOLS_DESCRIPTION,
   load_deferred_tools: LOAD_DEFERRED_TOOLS_DESCRIPTION,
@@ -121,6 +125,8 @@ const schemas = {
   schedule_wakeup: scheduleWakeupJsonSchema,
   set_auto_archive: setAutoArchiveJsonSchema,
   set_work_entry_auto_delete: setWorkEntryAutoDeleteJsonSchema,
+  set_project_work_entry_auto_delete:
+    appAdvisorSetProjectWorkEntryAutoDeleteJsonSchema,
   start_forked_agent: startSplitAgentJsonSchema,
   search_deferred_tools: searchDeferredToolsJsonSchema,
   load_deferred_tools: loadDeferredToolsJsonSchema,

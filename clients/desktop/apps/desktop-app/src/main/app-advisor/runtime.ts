@@ -78,6 +78,7 @@ import {
   type ShowFilesRendererResult,
   type ShowFilesWorkspaceTarget,
 } from '@canopy/desktop-shared/types';
+import { isBotProjectId } from '@canopy/protocol/chat-targets';
 
 import { BRAND } from '@canopy/brand/current';
 import {
@@ -313,11 +314,6 @@ function resolveSnapshotWorktree(
   return { projectId: selected.projectId, worktreeId: selected.worktreeId };
 }
 
-function isAppAdvisorSentinel(projectId: string, worktreeId: string): boolean {
-  void worktreeId;
-  return projectId === APP_ADVISOR_PROJECT_ID;
-}
-
 async function resolveWorktreeToolTarget(
   projectId: string | undefined,
   worktreeId: string | undefined,
@@ -354,7 +350,7 @@ async function resolveWorktreeToolTarget(
     };
   }
 
-  if (isAppAdvisorSentinel(target.projectId, target.worktreeId)) {
+  if (isBotProjectId(target.projectId)) {
     return {
       error: `App Advisor sentinel ids do not identify a real ${BRAND.displayName} worktree.`,
     };
@@ -493,8 +489,10 @@ export function createAppAdvisorToolRuntime(
             signal?: AbortSignal,
           ): Promise<unknown> => {
             if (
-              destination.projectId !== APP_ADVISOR_PROJECT_ID ||
-              destination.worktreeId === APP_ADVISOR_WORKTREE_ID
+              !isBotProjectId(destination.projectId) ||
+              // Default Bot only: the legacy global slot belongs to the Orchestrator.
+              (destination.projectId === APP_ADVISOR_PROJECT_ID &&
+                destination.worktreeId === APP_ADVISOR_WORKTREE_ID)
             ) {
               throw new Error(
                 'Starting an Orchestrator fork requires a Work Entry chat.',
@@ -649,7 +647,7 @@ export function createAppAdvisorToolRuntime(
         worktreeId: destination.worktreeId,
       };
       return requestShowFilesThroughInterfaceTool(
-        target.projectId === APP_ADVISOR_PROJECT_ID
+        isBotProjectId(target.projectId)
           ? 'ui.app_advisor.show_files'
           : 'ui.show_files',
         {
@@ -660,6 +658,7 @@ export function createAppAdvisorToolRuntime(
             worktreeId: destination.worktreeId,
             chatTabId: destination.chatId,
           },
+          // Default Bot only: its default directory is the Orchestrator home.
           ...(target.projectId === APP_ADVISOR_PROJECT_ID
             ? { cwd: getAppAdvisorHomeDir() }
             : {}),
@@ -817,10 +816,9 @@ export function createAppAdvisorToolRuntime(
             },
             cwd: getAppAdvisorHomeDir(),
             executionScope: 'directory',
-            getWindow:
-              projectId === APP_ADVISOR_PROJECT_ID
-                ? surfaces.getAppAdvisorWindow
-                : surfaces.getMainWindow,
+            getWindow: isBotProjectId(projectId)
+              ? surfaces.getAppAdvisorWindow
+              : surfaces.getMainWindow,
           },
           signal,
         );
@@ -2293,8 +2291,7 @@ export function createAppAdvisorToolRuntime(
         (cached ? resolveSnapshotWorktree(cached) : null) ??
         resolveSnapshotWorktree(await runtime.requestUiState());
       const repositoryCandidates =
-        selected &&
-        !isAppAdvisorSentinel(selected.projectId, selected.worktreeId)
+        selected && !isBotProjectId(selected.projectId)
           ? await resolveGitHubRepositoryCandidates(selected)
           : [];
       return getAppAdvisorWatcherService().watchGitHubItems(

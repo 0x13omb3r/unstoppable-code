@@ -82,7 +82,7 @@ export function XlsxPreview({
           data-testid="xlsx-preview-loading"
         >
           <DelayedLoadingPlaceholder>
-            <CenteredLoadingSpinner className="my-12" />
+            <CenteredLoadingSpinner spacing="section" />
           </DelayedLoadingPlaceholder>
         </div>
       </div>

@@ -1,7 +1,5 @@
-import {
-  APP_ADVISOR_PROJECT_ID,
-  PIPELINE_EDITOR_PROJECT_ID,
-} from '@canopy/desktop-shared/types';
+import { PIPELINE_EDITOR_PROJECT_ID } from '@canopy/desktop-shared/types';
+import { isBotProjectId } from '@canopy/protocol/chat-targets';
 import { useChatStore } from '@/stores/chatStore';
 import { worktreeKey } from '@/stores/chat/utils';
 
@@ -11,10 +9,9 @@ export interface ChatReadStateServices {
   onSetChatUnread: (chatTabId: string, unread: boolean) => void;
 }
 
-// Embedded scopes keep their own read paths and are refused by the Portal
-// adapter, so their tab menus offer no read item.
+// Bot and embedded scopes keep their own read paths and are refused by the
+// Portal adapter, so their tab menus offer no read item.
 const EMBEDDED_CHAT_SCOPES: ReadonlySet<string> = new Set([
-  APP_ADVISOR_PROJECT_ID,
   PIPELINE_EDITOR_PROJECT_ID,
 ]);
 
@@ -27,7 +24,8 @@ export function chatReadStateServices(
   projectId: string,
   worktreeId: string,
 ): ChatReadStateServices | undefined {
-  if (EMBEDDED_CHAT_SCOPES.has(projectId)) return undefined;
+  if (isBotProjectId(projectId) || EMBEDDED_CHAT_SCOPES.has(projectId))
+    return undefined;
   return {
     // Read when the menu opens; the menu is transient, so no subscription.
     getChatReadState: (chatTabId): 'read' | 'unread' | undefined => {

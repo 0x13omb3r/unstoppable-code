@@ -1,3 +1,4 @@
+import { ControlButton } from '@canopy/ui-shared/components';
 import {
   lazy,
   memo,
@@ -425,7 +426,7 @@ export const ArchivedChatsControl = memo(function ArchivedChatsControl({
       className={`relative shrink-0 ${className}`.trimEnd()}
       onPointerLeave={() => setArchivePopoverOpen(false)}
     >
-      <button
+      <ControlButton
         type="button"
         data-testid="chat-tab-archive"
         data-unread={hasUnreadArchived ? 'true' : undefined}
@@ -443,9 +444,8 @@ export const ArchivedChatsControl = memo(function ArchivedChatsControl({
         // chrome) — hand-rolled rather than the shared component because the
         // count badge renders as a child, and hovering opens the archive
         // popover, which the component's built-in tooltip would fight.
-        className={`electron-no-drag focus-ring relative flex h-7 w-7 shrink-0 items-center justify-center rounded-md transition-colors enabled:hover:bg-subtle enabled:hover:fg-primary ${
-          hasUnreadArchived ? 'text-amber-400' : 'fg-secondary'
-        }`}
+        presentation="archive-chats-trigger"
+        appearance={hasUnreadArchived}
         aria-label={`Archived ${CHAT_UNIT_LABEL}s (${archivedSummaries.length})`}
         aria-haspopup="dialog"
       >
@@ -456,7 +456,7 @@ export const ArchivedChatsControl = memo(function ArchivedChatsControl({
           data-testid="chat-tab-archive-count"
           className="pointer-events-none absolute -right-1 -top-1"
         />
-      </button>
+      </ControlButton>
       {archivePopoverOpen && (
         <ArchivedChatsPopover
           summaries={archivedSummaries}

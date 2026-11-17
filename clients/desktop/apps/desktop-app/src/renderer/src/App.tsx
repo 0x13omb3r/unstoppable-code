@@ -621,6 +621,7 @@ function App(): JSX.Element {
   // thinking/unread status while the App Advisor window is hidden.
   const appAdvisorThinking = useChatSidebarStore((s) => {
     for (const [key, wc] of Object.entries(s.worktrees)) {
+      // Default Bot only: the floating bubble reports Orchestrator activity.
       if (!key.startsWith(`${APP_ADVISOR_PROJECT_ID}/`)) continue;
       if (wc.tabs.some((tab) => tab.status === 'streaming')) return true;
     }
@@ -628,6 +629,7 @@ function App(): JSX.Element {
   });
   const appAdvisorHasUnread = useChatSidebarStore((s) => {
     for (const [key, wc] of Object.entries(s.worktrees)) {
+      // Default Bot only: the floating bubble reports Orchestrator activity.
       if (!key.startsWith(`${APP_ADVISOR_PROJECT_ID}/`)) continue;
       if (wc.tabs.some((tab) => tab.unread === true)) return true;
     }

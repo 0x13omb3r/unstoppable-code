@@ -1,6 +1,6 @@
+import { ControlButton } from '@canopy/ui-shared/components';
 import { ScheduledSendCapsule } from '@canopy/ui-shared/components/chat';
 import type { JSX } from 'react';
-import { CAPSULE_TOUCH_FLOOR_CLASS } from '@canopy/ui-shared';
 import {
   CloseMediumIcon,
   ScheduleIcon,
@@ -36,7 +36,7 @@ export interface ScheduledSendChipProps {
  * and names the problem, with the reason in its tooltip, so the box never
  * grows a line for it.
  */
-export function ScheduledSendChip({
+export function ScheduledSendControl({
   runAt,
   error,
   editable,
@@ -58,7 +58,7 @@ export function ScheduledSendChip({
         surfacePadding="relaxed"
         content={<span className="text-xs fg-primary">{tooltip}</span>}
       >
-        <button
+        <ControlButton
           type="button"
           onClick={onEdit}
           disabled={!editable}
@@ -68,7 +68,7 @@ export function ScheduledSendChip({
               ? `Scheduled send, ${formatScheduledSendFullLabel(date)}`
               : `Scheduled send failed: ${error}`
           }
-          className={`focus-ring flex h-8 items-center gap-1.5 rounded-full pl-2.5 pr-1 whitespace-nowrap disabled:cursor-default ${CAPSULE_TOUCH_FLOOR_CLASS}`}
+          presentation="scheduled-send-edit"
         >
           <ScheduleIcon size="sm" className="shrink-0" />
           {error !== null
@@ -78,17 +78,17 @@ export function ScheduledSendChip({
             : compact
               ? formatScheduledSendCompactLabel(date, now)
               : formatScheduledSendLabel(date, now)}
-        </button>
+        </ControlButton>
       </RichHoverTooltip>
-      <button
+      <ControlButton
         type="button"
         onClick={onClear}
         aria-label="Clear scheduled send"
         data-testid="chat-input-scheduled-send-clear"
-        className="focus-ring flex h-8 items-center rounded-full pl-1 pr-2.5"
+        presentation="scheduled-send-clear"
       >
         <CloseMediumIcon size="sm" aria-hidden />
-      </button>
+      </ControlButton>
     </ScheduledSendCapsule>
   );
 }

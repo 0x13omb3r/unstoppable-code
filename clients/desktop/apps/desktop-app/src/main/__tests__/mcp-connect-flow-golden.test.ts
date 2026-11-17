@@ -1,8 +1,12 @@
 import { createServer, type Server } from 'node:http';
-import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
-import { getMcpServerFilePath } from '../lib/paths';
+import {
+  getMcpHarnessInstallsFilePath,
+  getMcpServerFilePath,
+  getMcpServersIndexFilePath,
+} from '../lib/paths';
 import type { McpServerFile } from '@canopy/execution-engine/types/mcp-servers';
 import { MCP_SERVER_CHANNELS } from '@canopy/desktop-shared/constants/mcp-server-channels';
 import type * as ToolDiscovery from '../mcp/tool-discovery';
@@ -13,6 +17,8 @@ import type * as ToolDiscovery from '../mcp/tool-discovery';
 jest.mock('../canopy-cloud/mcp-connections', () => ({}));
 jest.mock('../mcp/account-catalog', () => ({
   accountMcpConnectionsEnabled: (): boolean => false,
+  withAccountMcpInventory: (index: unknown): Promise<unknown> =>
+    Promise.resolve(index),
   normalizeAccountMcpSelections: (selections: unknown): Promise<unknown> =>
     Promise.resolve(selections),
 }));
@@ -55,6 +61,7 @@ jest.mock('../mcp/oauth-token-store', () => ({
     hasStoredToken: false,
   }),
   getMcpOAuthTokenRevision: jest.fn().mockResolvedValue(0),
+  clearMcpOAuthToken: jest.fn().mockResolvedValue(undefined),
 }));
 jest.mock('../lib/main-process-logging', () => ({}));
 jest.mock('../lib/window-send', () => ({}));
@@ -62,7 +69,12 @@ jest.mock('../plugins/plugin-service', () => ({}));
 jest.mock('../plugins/plugin-resolver', () => ({}));
 jest.mock('../lib/open-external', () => ({}));
 jest.mock('../mcp/provider-connectors', () => ({}));
-jest.mock('../services/desktop-inventory-sync-signals', () => ({}));
+jest.mock('../services/desktop-inventory-sync-signals', () => ({
+  notifyDesktopInventoryChanged: jest.fn(),
+}));
+jest.mock('../installed-items/installed-item-events', () => ({
+  notifyInstalledItemsChanged: jest.fn(),
+}));
 jest.mock('../mcp/curated-catalog', () => ({}));
 jest.mock('../mcp/curated-plugin-binding', () => ({}));
 jest.mock('../mcp/remote-image-cache', () => ({}));
@@ -84,9 +96,35 @@ jest.mock('../agents/session-manager', () => ({
     throw new Error('No-auth Connect must not refresh agent sessions');
   },
 }));
-jest.mock('../mcp/server-ref-rewrite-outcome', () => ({}));
+jest.mock('../mcp/server-ref-rewrite-outcome', () => ({
+  // Removal runs its steps through this phase marker; pass them through.
+  inMcpRefRewritePhase: <T>(
+    _phase: string,
+    run: () => Promise<T>,
+  ): Promise<T> => run(),
+}));
 jest.mock('../portal/adapters/mcp-adapter', () => ({
   refreshProjectedPortalMcpServers: jest.fn().mockResolvedValue(undefined),
+}));
+// One Add for every harness (CAN-6815) confirms set-up harnesses itself;
+// no harness runtime is installed here, so main confirms none of them.
+jest.mock('../cursor/feature-flag', () => ({
+  isCursorHarnessEnabled: (): boolean => false,
+}));
+jest.mock('../copilot/feature-flag', () => ({
+  isCopilotHarnessEnabled: (): boolean => false,
+}));
+jest.mock('../opencode/feature-flag', () => ({
+  isOpenCodeHarnessEnabled: (): boolean => false,
+}));
+jest.mock('../auth/provider-auth-state', () => ({
+  getCachedClaudeAuthStatusObserved: (): Promise<{ authenticated: boolean }> =>
+    Promise.resolve({ authenticated: false }),
+  getCachedCodexAuthStatusObserved: (): Promise<{ authenticated: boolean }> =>
+    Promise.resolve({ authenticated: false }),
+}));
+jest.mock('../agents/user-supplied-credential', () => ({
+  hasUserSuppliedProviderCredential: (): boolean => false,
 }));
 jest.mock('../ipc/register', () => ({ registerIpcHandler: jest.fn() }));
 
@@ -362,3 +400,111 @@ test('a command MCP server request that reuses a pending id is not read as the r
     }),
   );
 }, 30_000);
+
+// One Add for every harness (CAN-6815): the registered handlers stage the
+// saved server through each harness's own adapter and record the result
+// beside the index, which they never rewrite.
+test('one Add installs a saved MCP server for every set-up harness and retries one (CAN-6815)', async () => {
+  const registrations = jest.mocked(registerIpcHandler).mock.calls;
+  const install = registrations.find(
+    ([channel]) => channel === MCP_SERVER_CHANNELS.INSTALL_FOR_HARNESSES,
+  )?.[1];
+  const retry = registrations.find(
+    ([channel]) => channel === MCP_SERVER_CHANNELS.RETRY_HARNESS_INSTALL,
+  )?.[1];
+  if (!install || !retry) throw new Error('Missing harness install handlers');
+  const serverBefore = await readFile(getMcpServerFilePath(serverId), 'utf8');
+  const harnesses = ['claude', 'codex', 'cursor', 'copilot', 'opencode'];
+  const timeout = jest.spyOn(globalThis, 'setTimeout');
+  const clear = jest.spyOn(globalThis, 'clearTimeout');
+  let installed: unknown;
+  try {
+    installed = await Reflect.apply(install, undefined, [
+      null,
+      { serverId, configId, harnesses },
+    ]);
+    // Successful admission must release every readiness deadline.
+    const deadlines = timeout.mock.calls.flatMap(([, delay], index) =>
+      delay === 15_000 ? [timeout.mock.results[index]] : [],
+    );
+    expect(deadlines.length).toBeGreaterThan(0);
+    for (const deadline of deadlines)
+      expect(clear).toHaveBeenCalledWith(deadline.value);
+  } finally {
+    timeout.mockRestore();
+    clear.mockRestore();
+  }
+  const statuses: Record<string, unknown> = {};
+  for (const harness of harnesses)
+    statuses[harness] = expect.objectContaining({ status: 'installed' });
+  expect(installed).toEqual(
+    expect.objectContaining({ configId, harnesses: statuses }),
+  );
+  // Staging hands adapters the URL alone: no request reaches the server, no
+  // header leaves the server file, and the server file is not rewritten.
+  expect(requests).toBe(1);
+  expect(JSON.stringify(installed)).not.toContain('X-Context');
+  expect(await readFile(getMcpServerFilePath(serverId), 'utf8')).toBe(
+    serverBefore,
+  );
+  const retried: unknown = await Reflect.apply(retry, undefined, [
+    null,
+    { serverId, harness: 'cursor' },
+  ]);
+  const cursor: unknown = expect.objectContaining({ status: 'installed' });
+  const retriedHarnesses: unknown = expect.objectContaining({ cursor });
+  expect(retried).toEqual(
+    expect.objectContaining({ harnesses: retriedHarnesses }),
+  );
+  await expect(
+    Reflect.apply(install, undefined, [
+      null,
+      { serverId, configId, harnesses: ['antigravity'] },
+    ]),
+  ).rejects.toThrow();
+});
+
+test('the index serves the record, and removing the server removes it from every harness (CAN-6815)', async () => {
+  const registrations = jest.mocked(registerIpcHandler).mock.calls;
+  const loadIndex = registrations.find(
+    ([channel]) => channel === MCP_SERVER_CHANNELS.LOAD_INDEX,
+  )?.[1];
+  const deleteServer = registrations.find(
+    ([channel]) => channel === MCP_SERVER_CHANNELS.DELETE_SERVER,
+  )?.[1];
+  if (!loadIndex || !deleteServer)
+    throw new Error('Missing MCP index or delete handler');
+  const index = JSON.stringify({
+    version: 1,
+    servers: [
+      {
+        id: serverId,
+        name: 'Fixture',
+        description: '',
+        type: 'http',
+        configs: [{ id: configId, name: 'Default', enabled: true }],
+        urlHost: '127.0.0.1',
+        urlScheme: 'http',
+        updatedAt: '2026-01-01T00:00:00.000Z',
+      },
+    ],
+  });
+  await writeFile(getMcpServersIndexFilePath(), index);
+  const served: unknown = await Reflect.apply(loadIndex, undefined, [null]);
+  const record: unknown = expect.objectContaining({ configId });
+  expect(served).toEqual(
+    expect.objectContaining({
+      servers: [
+        expect.objectContaining({ id: serverId, harnessInstalls: record }),
+      ],
+    }),
+  );
+  // Serving the record never writes it into the index.
+  expect(await readFile(getMcpServersIndexFilePath(), 'utf8')).toBe(index);
+  await Reflect.apply(deleteServer, undefined, [null, serverId]);
+  const records: unknown = JSON.parse(
+    await readFile(getMcpHarnessInstallsFilePath(), 'utf8'),
+  );
+  expect(records).toEqual({ version: 1, servers: {} });
+  await rm(getMcpServersIndexFilePath(), { force: true });
+});

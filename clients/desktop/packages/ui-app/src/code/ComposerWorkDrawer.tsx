@@ -441,10 +441,11 @@ export function ComposerWorkDrawer({
                       ref={labelRef}
                       className="inline-flex items-center gap-1.5"
                     >
-                      {shownKind?.label}{' '}
-                      {shownKind?.count === undefined ? null : (
+                      {shownKind?.label}
+                      {shownKind?.key !== 'queued' &&
+                      shownKind?.count !== undefined ? (
                         <Count value={shownKind.count} />
-                      )}
+                      ) : null}
                     </span>
                     <div className="ml-auto flex items-center gap-0">
                       {/* The card's own actions show on hover, focus or

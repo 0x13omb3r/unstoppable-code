@@ -142,11 +142,12 @@ export function OrgMemorySettings(): JSX.Element {
         />
       </SettingsGroup>
       {available && optInOrganizationId !== null && (
-        <DesktopDataSharingOptIn
-          feature="organization-memory"
-          organizationId={optInOrganizationId}
-          className="mt-2"
-        />
+        <div className="pt-2 empty:hidden">
+          <DesktopDataSharingOptIn
+            feature="organization-memory"
+            organizationId={optInOrganizationId}
+          />
+        </div>
       )}
     </SettingsSection>
   );

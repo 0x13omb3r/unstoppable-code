@@ -210,6 +210,7 @@ describe('pipeline owner requests', () => {
 
   it('the request schema admits each owner action and refuses extras', () => {
     const call = { callId: 'c', tool: 't', arguments: {} };
+    const variantId = '0f8fad5b-d9cb-469f-a165-70867728950e';
     const minimal: Record<
       (typeof WORKER_PIPELINE_OWNER_ACTIONS)[number],
       object
@@ -257,6 +258,24 @@ describe('pipeline owner requests', () => {
       'owner.precommit.failure': {
         repositories: [{ error: 'hook failed', precommitFailureError: 'lint' }],
       },
+      'owner.pipeline.childCapabilities': {
+        childExecutionId: 'child-1',
+        document: '{"name":"Child"}',
+      },
+      'owner.isolatedJob.write': {
+        side: 'request',
+        variantId,
+        payload: { sha256: 'a'.repeat(64), byteSize: 4 },
+        offset: 0,
+        chunk: 'e30=',
+      },
+      'owner.isolatedJob.read': { side: 'request', offset: 0 },
+      'owner.isolatedJob.run': {
+        variantId,
+        commit: 'b'.repeat(40),
+        request: { sha256: 'a'.repeat(64), byteSize: 4 },
+        logicalJobId: 'review',
+      },
     };
     for (const action of WORKER_PIPELINE_OWNER_ACTIONS) {
       expect(
@@ -279,6 +298,24 @@ describe('pipeline owner requests', () => {
         check: 'blocked',
       }).success,
     ).toBe(false);
+    // CAN-6892: the parent names its variant's request and reads its
+    // outcome; the variant's own host names no variant.
+    for (const [action, body] of [
+      [
+        'owner.isolatedJob.write',
+        { ...minimal['owner.isolatedJob.write'], side: 'outcome' },
+      ],
+      ['owner.isolatedJob.read', { side: 'request', variantId, offset: 0 }],
+      ['owner.isolatedJob.read', { side: 'outcome', offset: 0 }],
+      [
+        'owner.isolatedJob.run',
+        { ...minimal['owner.isolatedJob.run'], variantId: 'not-a-uuid' },
+      ],
+    ] as const)
+      expect(
+        WorkerPipelineHostActionRequestSchema.safeParse({ action, ...body })
+          .success,
+      ).toBe(false);
     // CAN-6168: a bind names a server and a hash; no OAuth field crosses.
     expect(
       WorkerPipelineHostActionRequestSchema.safeParse({

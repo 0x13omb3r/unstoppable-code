@@ -24,9 +24,7 @@ import {
 } from '@canopy/execution-engine/lib/cursor-models';
 import type { BrowserWindow } from 'electron';
 import { createHash, randomBytes } from 'node:crypto';
-import { constants } from 'node:fs';
-import { access, stat } from 'node:fs/promises';
-import { delimiter, dirname, isAbsolute, join, resolve } from 'node:path';
+import { dirname, join } from 'node:path';
 import {
   APP_ADVISOR_TOOL_REGISTRY,
   type AppAdvisorToolKey,
@@ -79,6 +77,10 @@ import {
   authorizeCursorTool,
 } from '../cursor/tool-approval';
 import { buildCursorMcpServers } from '../cursor/mcp-servers';
+import {
+  recordCursorMcpCapabilities,
+  resolveMcpExecutable,
+} from '../cursor/mcp-executable';
 import { getManagedCursorRuntime } from '../cursor/connection';
 import { cursorDataPolicyMessage } from '../cursor/model-data-policy';
 import { broadcastModelRegistryUpdated } from '../models/model-registry';
@@ -152,41 +154,6 @@ import { createOwnedTurnState } from './owned-turn-state';
  * message rather than the next app start.
  */
 let lastInheritedFingerprint: string | undefined;
-
-/**
- * Resolves an MCP server command the way the Cursor child would find it: bare
- * names against the child's PATH, relative paths against the definition's own
- * directory when it declares one (a plugin's root), otherwise the worktree.
- * ACP requires an absolute executable path. macOS-only today, like the turn
- * itself (see the platform gate below): Windows would need `PATHEXT`
- * expansion and its own path separators before that gate lifts.
- */
-async function resolveMcpExecutable(
-  command: string,
-  pathValue: string | undefined,
-  cwd: string,
-  fallbackCwd: string,
-): Promise<string | null> {
-  if (command.includes('\0') || command.length === 0) return null;
-  // A relative declared directory must never widen the search to the
-  // Electron process's own cwd; fall back to the worktree instead.
-  const candidates = command.includes('/')
-    ? [resolve(isAbsolute(cwd) ? cwd : fallbackCwd, command)]
-    : (pathValue ?? '')
-        .split(delimiter)
-        .filter(Boolean)
-        .map((directory) => join(directory, command));
-  for (const candidate of candidates) {
-    try {
-      if (!(await stat(candidate)).isFile()) continue;
-      await access(candidate, constants.X_OK);
-      return candidate;
-    } catch {
-      /* Try the next PATH entry. */
-    }
-  }
-  return null;
-}
 
 function isAppAdvisorToolKey(key: string): key is AppAdvisorToolKey {
   return Object.prototype.hasOwnProperty.call(APP_ADVISOR_TOOL_REGISTRY, key);
@@ -872,6 +839,7 @@ export class CursorProvider implements AgentProvider {
               capabilities,
               gates: CursorTurnGates,
             ): Promise<CursorTurnMcpSetup> => {
+              recordCursorMcpCapabilities(capabilities);
               // The app's route (and its bearer token) exists only for turns
               // whose CLI can actually receive an HTTP MCP server.
               let canopy: {

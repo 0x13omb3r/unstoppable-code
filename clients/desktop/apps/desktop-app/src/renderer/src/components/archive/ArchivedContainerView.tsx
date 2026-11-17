@@ -109,7 +109,7 @@ import {
   RichHoverTooltip,
   type WorktreeRowPrStatus,
 } from '@canopy/ui-shared/components';
-import { PrStateBadge } from '@/components/github/PrStatusBadge';
+import { PrStateIndicator } from '@/components/github/PrStatusBadge';
 import { isPrReadyToMerge } from '@/lib/pr-mergeability';
 import {
   getArchivedContainerDiskUsageBytes,
@@ -874,7 +874,7 @@ export function ArchivedContainerView({
                   )
                 }
               >
-                <PrStateBadge state={state} prNumber={number} prUrl={url} />
+                <PrStateIndicator state={state} prNumber={number} prUrl={url} />
               </RichHoverTooltip>
             </span>
           );

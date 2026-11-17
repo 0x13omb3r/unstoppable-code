@@ -1,5 +1,6 @@
 'use client';
 
+import { ControlButton } from '@canopy/ui-shared/components';
 import { memo, type JSX, type MouseEvent, type ReactNode } from 'react';
 import type { WorktreeLabel } from '@canopy/app-state';
 import { Button, Tooltip } from '@canopy/ui-shared/components';
@@ -66,11 +67,10 @@ function OverviewCardImpl({
     >
       <div className="flex flex-col gap-0.5 px-3 py-2 text-left">
         {onClick && (
-          <button
-            type="button"
+          <ControlButton
             onClick={onClick}
             aria-label={openLabel}
-            className="absolute inset-0 z-0 rounded-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-line-accent/60"
+            presentation="card-open"
             data-testid={`${dataTestId}-open`}
           />
         )}

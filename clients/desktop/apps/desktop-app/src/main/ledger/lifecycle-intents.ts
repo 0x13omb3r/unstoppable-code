@@ -241,6 +241,7 @@ function parseContainer(value: unknown): LedgerContainer | null {
     }
     case 'advisor_entry': {
       const entryId = safeId(value.entryId);
+      // Default Bot only: the Ledger intent contract pins this workspace ID.
       return value.appWorkspaceId !== APP_ADVISOR_PROJECT_ID || entryId === null
         ? null
         : {

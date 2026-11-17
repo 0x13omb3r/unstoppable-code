@@ -152,8 +152,10 @@ export type PipelineScheduleWorkflow = z.output<
 
 /**
  * Where a scheduled run goes, as the desktop's `worktree_pipeline` target
- * names it. Ids are the desktop's until CP-47 re-points them at cloud
- * projects and tasks.
+ * names it. A desktop moving a schedule here re-points a project, task or
+ * new worktree at the owner's cloud project and task (CAN-6917, CP-47); a
+ * record stored before that may still name a desktop's ids, which the
+ * scheduler refuses.
  */
 export const PipelineScheduleDestinationSchema = z.discriminatedUnion('kind', [
   z.strictObject({ kind: z.literal('global') }),
@@ -177,6 +179,21 @@ export const PipelineScheduleDestinationSchema = z.discriminatedUnion('kind', [
 export type PipelineScheduleDestination = z.output<
   typeof PipelineScheduleDestinationSchema
 >;
+
+/**
+ * Schema revision 2 (CAN-6917, plan CP-47): the single-fire guard of a
+ * schedule that moves between a desktop and the cloud. A create may name the
+ * last slot the desktop fired (`firedThrough`), and the cloud never fires a
+ * slot at or before it. A create, get or delete that sends `revision: 2` is
+ * answered with `firedThrough`: the latest slot fired in either place, which
+ * a desktop taking the schedule back fires only after; and `runDefinitionId`,
+ * the definition id each run reads, which the model preflight takes. Slots are compared as
+ * instants, so neither side's clock decides. A caller that doesn't send the
+ * revision gets the previous output exactly.
+ */
+export const PIPELINE_SCHEDULE_FIRED_THROUGH_REVISION = 2;
+
+const revision2 = z.literal(PIPELINE_SCHEDULE_FIRED_THROUGH_REVISION);
 
 const name = z.string().trim().min(1).max(MAX_SHARED_AUTOMATION_NAME_LENGTH);
 const runCondition = z
@@ -204,6 +221,18 @@ export const PipelineScheduleSchema = z.strictObject({
   destination: PipelineScheduleDestinationSchema,
   createdAt: timestamp,
   updatedAt: timestamp,
+  /**
+   * Revision 2 only: the latest slot fired anywhere, as an instant (the slot
+   * the desktop fired last before the move, or the cloud's since); null
+   * when none has.
+   */
+  firedThrough: timestamp.nullable().optional(),
+  /**
+   * Revision 2 only: the definition id each scheduled run reads, as
+   * `core.pipeline.cloudModels.preflight` and `save` take it with the
+   * `scheduleId` (a snapshot's id is derived server-side).
+   */
+  runDefinitionId: id.optional(),
 });
 export type PipelineSchedule = z.output<typeof PipelineScheduleSchema>;
 
@@ -220,6 +249,12 @@ export const PipelineScheduleCreateParamsSchema = z.strictObject({
   enabled: z.boolean(),
   inputs: WorkerPipelineLaunchInputsSchema.optional(),
   destination: PipelineScheduleDestinationSchema,
+  /**
+   * Revision 2: the last slot the desktop fired or passed before the move;
+   * the cloud fires only slots after it.
+   */
+  firedThrough: timestamp.optional(),
+  revision: revision2.optional(),
   _meta: keyedMeta,
 });
 export type PipelineScheduleCreateParams = z.output<
@@ -228,6 +263,7 @@ export type PipelineScheduleCreateParams = z.output<
 
 export const PipelineScheduleGetParamsSchema = z.strictObject({
   scheduleId: z.uuid(),
+  revision: revision2.optional(),
   _meta: CanopyQueryRequestMetadataSchema.optional(),
 });
 export type PipelineScheduleGetParams = z.output<
@@ -273,6 +309,7 @@ export const PipelineScheduleDeleteParamsSchema = z.strictObject({
   scheduleId: z.uuid(),
   /** Deletes only at this revision when given. */
   expectedRevision: z.number().int().min(1).optional(),
+  revision: revision2.optional(),
   _meta: keyedMeta,
 });
 export type PipelineScheduleDeleteParams = z.output<

@@ -10,6 +10,10 @@ import {
   type WorktreeData,
 } from '@canopy/desktop-shared/types';
 import {
+  APP_ADVISOR_BOT_ID,
+  isBotProjectId,
+} from '@canopy/protocol/chat-targets';
+import {
   PipelineHostRefusal,
   type MoveToGroupInputs,
 } from '@canopy/execution-engine/pipelines/host-actions';
@@ -31,7 +35,7 @@ export type PipelineHostTarget =
       taskId?: string;
       workspaceType: WorkspaceType;
     }
-  | { kind: 'bot'; botId: 'app_advisor'; taskId: string };
+  | { kind: 'bot'; botId: typeof APP_ADVISOR_BOT_ID; taskId: string };
 
 /**
  * Owner-policy seam. Throw `PipelineHostRefusal` to refuse; a cross-owner
@@ -53,8 +57,6 @@ export interface ResolvedHostProject {
   workspaceId: string;
   workspaceType: WorkspaceType;
 }
-
-const APP_ADVISOR_BOT_ID = 'app_advisor';
 
 export function taskNotInProject(taskId: string, projectId: string): string {
   return `Task \`${taskId}\` isn't in project \`${projectId}\``;
@@ -137,7 +139,7 @@ export async function readProjectType(
 export async function resolveHostProject(
   projectId: string,
 ): Promise<ResolvedHostProject> {
-  if (projectId === APP_ADVISOR_PROJECT_ID || !isWritableScope(projectId)) {
+  if (isBotProjectId(projectId) || !isWritableScope(projectId)) {
     throw new PipelineHostRefusal('not_found', projectUnavailable(projectId));
   }
   const workspaceId = resolveCoworkWorkspaceId(projectId);
@@ -169,6 +171,7 @@ export async function resolveTask(
   task: MoveToGroupInputs['task'],
 ): Promise<ResolvedTask> {
   if (task.kind === 'bot') {
+    // Default Bot only: the current pipeline task contract pins this bot id.
     if (task.botId !== APP_ADVISOR_BOT_ID) {
       throw new PipelineHostRefusal('not_found', botUnavailable(task.botId));
     }

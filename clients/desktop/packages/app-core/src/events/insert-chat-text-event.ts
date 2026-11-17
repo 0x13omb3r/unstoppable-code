@@ -53,3 +53,54 @@ export function isInsertChatTextDetail(
     typeof value.markHandled === 'function'
   );
 }
+
+/**
+ * Whether a web composer takes an insert request (CAN-6801). One that takes
+ * only its own chat's requests (a cloud composer) takes those naming
+ * `chatId`; any other takes a request naming its chat or none. `chatId` is
+ * the chat the composer inserts for, which a host that keys its drafts by
+ * something else can name on its own.
+ */
+export function insertChatTextIsFor(
+  detail: InsertChatTextDetail,
+  composer: {
+    readonly chatId: string | undefined;
+    readonly ownChatOnly: boolean;
+  },
+): boolean {
+  if (composer.ownChatOnly)
+    return (
+      composer.chatId !== undefined && detail.targetChatId === composer.chatId
+    );
+  return (
+    detail.targetChatId === undefined || detail.targetChatId === composer.chatId
+  );
+}
+
+/**
+ * Hands `text` to the composer of the chat `chatId` names (CAN-6801), as an
+ * unsaved queued edit's Restore does. Answers whether a live composer took
+ * it: when none did, the caller keeps the text where it is. Empty text has
+ * nothing to restore and is never sent, so a cleared edit never brings back
+ * a draft's old text.
+ *
+ * Desktop composers match the request by tab and web composers by chat; a
+ * chat's tab id is its chat id, so both are set.
+ */
+export function requestChatComposerText(input: {
+  readonly chatId: string;
+  readonly text: string;
+}): boolean {
+  if (input.text.length === 0 || typeof document === 'undefined') return false;
+  let handled = false;
+  const detail: InsertChatTextDetail = {
+    text: input.text,
+    targetTabId: input.chatId,
+    targetChatId: input.chatId,
+    markHandled: (): void => {
+      handled = true;
+    },
+  };
+  document.dispatchEvent(new CustomEvent(INSERT_CHAT_TEXT_EVENT, { detail }));
+  return handled;
+}

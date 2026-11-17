@@ -1,5 +1,6 @@
 'use client';
 
+import { CompositeListRow } from './ListRow';
 import type { WorkEntryAutoDeleteRowState } from '@canopy/protocol';
 import { SidebarAutoDeleteBadge } from './SidebarAutoDeleteBadge';
 
@@ -616,9 +617,9 @@ function WorkEntryRowImpl({
   const coarseReserveClassName = hasTrailingStatus
     ? ''
     : coarseActionCount === 2
-      ? 'pointer-coarse:mr-11.5'
+      ? 'pointer-coarse:pr-11.5'
       : coarseActionCount === 1
-        ? 'pointer-coarse:mr-5.5'
+        ? 'pointer-coarse:pr-5.5'
         : '';
   const menuContext: WorkEntryRowMenuContext = {
     close: closeMenu,
@@ -641,13 +642,11 @@ function WorkEntryRowImpl({
     : undefined;
 
   return (
-    <div
+    <CompositeListRow
       ref={dragBinding?.ref}
       style={dragBinding?.style}
       {...dragBinding?.attributes}
-      role="button"
       aria-pressed={multiSelect?.selectMode ? multiSelected : undefined}
-      tabIndex={0}
       data-testid={testIdFor('')}
       data-standalone-chat-id={isPinnedCopy ? undefined : entryId}
       data-sidebar-selected-item={selected && !isPinnedCopy ? '' : undefined}
@@ -693,11 +692,15 @@ function WorkEntryRowImpl({
       onContextMenu={hasMenu ? handleContextMenu : undefined}
       onPointerDown={dragBinding ? handlePointerDown : undefined}
       onKeyDown={handleKeyDown}
-      className={`group group/sidebar-item relative flex ${touchTarget ? 'min-h-11' : 'h-8'} w-full items-center gap-1.5 rounded-row px-1.5 py-0 text-left text-s transition-opacity ${
-        dragBinding ? 'touch-none select-none' : ''
-      } ${multiSelected ? 'bg-muted fg-primary' : selected && !multiSelect?.active ? 'bg-muted fg-primary' : `fg-secondary hover:bg-subtle${menuOpen && marksRowWhileMenuOpen ? ' bg-subtle' : ''}`} ${
-        removing ? 'pointer-events-none opacity-50' : ''
-      } ${dragBinding?.isDragging === true ? 'opacity-50' : ''}`}
+      presentation="work-entry"
+      appearance={{
+        touchTarget: !!touchTarget,
+        draggable: !!dragBinding,
+        dragging: dragBinding?.isDragging === true,
+        selected: multiSelected || (selected && !multiSelect?.active),
+        menuMarked: menuOpen && marksRowWhileMenuOpen,
+        removing: !!removing,
+      }}
     >
       {multiSelected && <span className="sr-only">Selected</span>}
       {multiSelect?.selectMode ? (
@@ -770,17 +773,25 @@ function WorkEntryRowImpl({
       {/* Persistent metadata, outside the leading slot's priority contest:
           neither pinning nor shared-ness may hide the live status glyph. */}
       {pinnedBadge && (
-        <SidebarPinnedBadge
-          testId={`worktree-row-pinned-badge${pinnedSuffix}`}
-          className={sharedWithTeammates ? undefined : coarseReserveClassName}
-        />
+        <span
+          className={
+            sharedWithTeammates
+              ? 'contents'
+              : `inline-flex ${coarseReserveClassName}`
+          }
+        >
+          <SidebarPinnedBadge
+            testId={`worktree-row-pinned-badge${pinnedSuffix}`}
+          />
+        </span>
       )}
       {sharedWithTeammates && (
-        <SharedWithTeammatesBadge
-          fadeOnRowHover
-          testIdSuffix={pinnedSuffix}
-          className={coarseReserveClassName}
-        />
+        <span className={`inline-flex ${coarseReserveClassName}`}>
+          <SharedWithTeammatesBadge
+            fadeOnRowHover
+            testIdSuffix={pinnedSuffix}
+          />
+        </span>
       )}
       {/* Beside the age, 6px off its 24px cell: the hover Archive button
           takes the age's cell and Pin (2px gap, 4px glyph inset) lands
@@ -869,14 +880,14 @@ function WorkEntryRowImpl({
       {unreadAnchorRect !== null &&
         hasUnread &&
         renderUnreadPreview?.(unreadAnchorRect)}
-    </div>
+    </CompositeListRow>
   );
 }
 
 /**
  * The title's share of the action reserve, 28px per revealed rail button.
  * The title carries it only while no status renders; otherwise the status
- * slot's margin does, so the status slides left beside the revealed buttons.
+ * slot's padding does, so the status slides left beside the revealed buttons.
  * On a coarse pointer a metadata badge (pin or shared) keeps its footprint
  * and carries the coarse reserve instead, so the title drops its own (two
  * would stack).
@@ -1060,7 +1071,7 @@ export interface WorkEntryRowTrailingStatusProps {
 /**
  * The status slot: the Working spinner beside at most one attention dot, in
  * action-button-sized w-6 slots whose last center sits under the right-most
- * 24px button (-mr-0.5). A hover margin parks the cluster flush beside the
+ * 24px button (-mr-0.5). On hover, padding parks the cluster flush beside the
  * revealed buttons, so it stays visible next to them.
  */
 export function WorkEntryRowTrailingStatus({
@@ -1092,9 +1103,9 @@ export function WorkEntryRowTrailingStatus({
     <span
       className={
         actionCount === 2
-          ? 'inline-flex h-5 shrink-0 items-center justify-end -mr-0.5 pointer-fine:group-hover:mr-13.5 pointer-fine:group-focus-within:mr-13.5 pointer-coarse:mr-11.5'
+          ? 'inline-flex h-5 shrink-0 items-center justify-end -mr-0.5 pointer-fine:group-hover:pr-14 pointer-fine:group-focus-within:pr-14 pointer-coarse:pr-12'
           : actionCount === 1
-            ? 'inline-flex h-5 shrink-0 items-center justify-end -mr-0.5 pointer-fine:group-hover:mr-6.5 pointer-fine:group-focus-within:mr-6.5 pointer-coarse:mr-5.5'
+            ? 'inline-flex h-5 shrink-0 items-center justify-end -mr-0.5 pointer-fine:group-hover:pr-7 pointer-fine:group-focus-within:pr-7 pointer-coarse:pr-6'
             : 'inline-flex h-5 shrink-0 items-center justify-end -mr-0.5'
       }
       data-testid={testIdFor('-status-slot')}
@@ -1250,7 +1261,7 @@ function WorkEntryRowCompactActions({
           tone="neutral"
           hoverSurface
           revealOnItemHover
-          className="pointer-coarse:hidden"
+          visibility="fine-pointer"
           onClick={(event): void => {
             event.stopPropagation();
             onTogglePin(!pinned);
@@ -1269,7 +1280,7 @@ function WorkEntryRowCompactActions({
           tone="neutral"
           hoverSurface
           revealOnItemHover
-          className="pointer-coarse:hidden"
+          visibility="fine-pointer"
           onClick={(event): void => {
             event.stopPropagation();
             onArchive();

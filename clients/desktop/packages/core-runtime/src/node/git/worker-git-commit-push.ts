@@ -23,7 +23,14 @@ export interface GitCommitPushPort {
   trackingHead(this: void, branch: string): Promise<string | null>;
   stageAll(this: void): Promise<void>;
   commit(this: void, message: string): Promise<string>;
-  push(this: void): Promise<void>;
+  /**
+   * Pushes exactly `headSha` to `branch` on origin and tracks it there:
+   * never whatever HEAD is by the time the push runs.
+   */
+  push(
+    this: void,
+    target: { readonly branch: string; readonly headSha: string },
+  ): Promise<void>;
 }
 
 export interface WorkerGitCommitPushHost<
@@ -203,7 +210,11 @@ export function createWorkerGitCommitPushHandlers<Checkout>(
             'The remote branch changed. Start a new push.',
           );
         if (context.signal.aborted) throw canopyCancelledError();
-        await port.push();
+        // The commit just checked, not HEAD as it may stand by then.
+        await port.push({
+          branch: params.branch,
+          headSha: params.expectedLocalHeadSha,
+        });
       }),
   };
 }

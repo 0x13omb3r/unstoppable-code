@@ -1,6 +1,7 @@
 import type { IpcRendererEvent } from 'electron';
 import { ipcRenderer } from '../ipc-router';
 import { PLUGINS_CHANNELS } from '@canopy/desktop-shared/constants/plugin-channels';
+import type { ItemHarnessInstalls } from '@canopy/protocol/plugins';
 import type {
   InstallBuiltInPluginRequest,
   MarketplaceOperationProgress,
@@ -73,6 +74,10 @@ export function createPluginsAPI(): PluginsAPI {
       ),
     installBuiltInPlugin: (request: InstallBuiltInPluginRequest) =>
       ipcRenderer.invoke(PLUGINS_CHANNELS.INSTALL_BUILT_IN_PLUGIN, request),
+    installForHarnesses: (request): Promise<ItemHarnessInstalls | null> =>
+      ipcRenderer.invoke(PLUGINS_CHANNELS.INSTALL_FOR_HARNESSES, request),
+    retryHarnessInstall: (request): Promise<ItemHarnessInstalls> =>
+      ipcRenderer.invoke(PLUGINS_CHANNELS.RETRY_HARNESS_INSTALL, request),
     listShared: (request) =>
       ipcRenderer.invoke(PLUGINS_CHANNELS.SHARED_LIST, request),
     getShared: (request) =>

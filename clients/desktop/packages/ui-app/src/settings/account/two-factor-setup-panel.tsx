@@ -526,11 +526,13 @@ export function TwoFactorSetupPanel({
           </form>
         )}
 
-        <ErrorBanner
-          errorSource="two-factor-setup-panel"
-          className="mb-3"
-          error={error}
-        />
+        <div className="pb-3 empty:hidden">
+          <ErrorBanner
+            errorSource="two-factor-setup-panel"
+            className=""
+            error={error}
+          />
+        </div>
       </>
     </SettingsCard>
   );

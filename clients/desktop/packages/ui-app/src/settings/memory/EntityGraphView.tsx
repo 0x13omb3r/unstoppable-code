@@ -549,42 +549,48 @@ export function EntityGraphView({ orgId }: EntityGraphViewProps): JSX.Element {
                 </span>
               </Heading>
               {selectedFactIds.length === 0 ? (
-                <p className="mt-2 text-s fg-secondary">
+                <p className="pt-2 text-s fg-secondary">
                   Click an entity or connection to inspect its facts. Drag to
                   rearrange, scroll to zoom, hover to highlight neighbors.
                 </p>
               ) : selectedFactsError !== null && selectedFacts.length === 0 ? (
-                <ErrorBanner
-                  errorSource="entity-graph-selected-facts"
-                  className="mt-4"
-                  error={selectedFactsError?.copy}
-                  details={selectedFactsError?.details}
-                  onRetry={retrySelectedFacts}
-                />
+                <div className="pt-4 empty:hidden">
+                  <ErrorBanner
+                    errorSource="entity-graph-selected-facts"
+                    className=""
+                    error={selectedFactsError?.copy}
+                    details={selectedFactsError?.details}
+                    onRetry={retrySelectedFacts}
+                  />
+                </div>
               ) : selectedFacts.length === 0 ? (
-                <DelayedLoadingPlaceholder className="mt-4">
-                  <FactCardsSkeleton layout="column" />
-                </DelayedLoadingPlaceholder>
+                <div className="pt-4 empty:hidden">
+                  <DelayedLoadingPlaceholder>
+                    <FactCardsSkeleton layout="column" />
+                  </DelayedLoadingPlaceholder>
+                </div>
               ) : (
-                <Stack gap="item" className="mt-4">
-                  {selectedFactsError !== null && (
-                    <Notice
-                      intent="attention"
-                      actions={
-                        selectedFactsError.details !== undefined ? (
-                          <CopyDetailsButton
-                            details={selectedFactsError.details}
-                          />
-                        ) : undefined
-                      }
-                    >
-                      {selectedFactsError.copy}
-                    </Notice>
-                  )}
-                  {selectedFacts.map((fact) => (
-                    <FactCard key={fact.id} fact={fact} />
-                  ))}
-                </Stack>
+                <div className="pt-4 empty:hidden">
+                  <Stack gap="item">
+                    {selectedFactsError !== null && (
+                      <Notice
+                        intent="attention"
+                        actions={
+                          selectedFactsError.details !== undefined ? (
+                            <CopyDetailsButton
+                              details={selectedFactsError.details}
+                            />
+                          ) : undefined
+                        }
+                      >
+                        {selectedFactsError.copy}
+                      </Notice>
+                    )}
+                    {selectedFacts.map((fact) => (
+                      <FactCard key={fact.id} fact={fact} />
+                    ))}
+                  </Stack>
+                </div>
               )}
             </aside>
           </Surface>

@@ -28,6 +28,9 @@ export const PLUGINS_CHANNELS = {
   INSTALL_BUILT_IN_PLUGIN: 'plugins:install-built-in-plugin',
   PREPARE_CODEX_COMPATIBILITY: 'plugins:prepare-codex-compatibility',
   SET_CODEX_COMPAT_DISABLED: 'plugins:set-codex-compat-disabled',
+  // One Add for every harness, for plugins and skills (CAN-6816).
+  INSTALL_FOR_HARNESSES: 'plugins:install-for-harnesses',
+  RETRY_HARNESS_INSTALL: 'plugins:retry-harness-install',
   // Shared Canopy Cloud plugin registry. Requests carry portable refs and
   // display metadata only; the main process resolves the singleton Cloud
   // backend and never sends local paths or credentials in the payload.

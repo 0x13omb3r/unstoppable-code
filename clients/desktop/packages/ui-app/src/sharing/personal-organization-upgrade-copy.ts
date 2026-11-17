@@ -77,12 +77,15 @@ export function invitingLabel(email: string): string {
 
 export const CONTEXT_SWITCH_PENDING =
   'Switch to it from the organization menu.';
+const INVALID_CONFIG_MESSAGE = "Couldn't read repository configuration.";
 
 /** Short status for one project in the outcome list. */
 export function projectOutcomeLabel(
   outcome: PersonalProjectOutcome['outcome'],
   team: string,
+  reasonCode?: PersonalProjectOutcome['reasonCode'],
 ): string {
+  if (reasonCode === 'invalid-canopy-json') return INVALID_CONFIG_MESSAGE;
   switch (outcome) {
     case 'pending':
       return 'Moving…';
@@ -173,6 +176,7 @@ export function promotionFailureMessage(
   }
 }
 
-export function conversionFailureMessage(): string {
+export function conversionFailureMessage(code?: string | null): string {
+  if (code === 'invalid-canopy-json') return INVALID_CONFIG_MESSAGE;
   return "Couldn't reach the desktop app to move projects. The team is ready; retry the projects when the desktop app is open.";
 }

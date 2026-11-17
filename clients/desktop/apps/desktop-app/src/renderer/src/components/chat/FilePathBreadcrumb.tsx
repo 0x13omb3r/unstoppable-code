@@ -1,3 +1,4 @@
+import { ControlButton } from '@canopy/ui-shared/components';
 /**
  * FilePathBreadcrumb — the interactive path shown in a file panel's header.
  *
@@ -145,14 +146,14 @@ function BreadcrumbDirectory({
           const expanded = expandedDirs.has(child.relativePath);
           return (
             <div key={child.relativePath}>
-              <button
+              <ControlButton
                 type="button"
                 onClick={(): void => onToggleDir(child.relativePath)}
                 data-testid="file-breadcrumb-entry"
                 data-entry-kind="directory"
                 data-relative-path={child.relativePath}
                 aria-expanded={expanded}
-                className="flex w-full items-center gap-1.5 px-2 py-1 text-left text-xs fg-primary transition-colors hover:bg-fg-primary/[0.06]"
+                presentation="breadcrumb-folder"
                 style={{ paddingLeft: `${8 + depth * 14}px` }}
               >
                 {expanded ? (
@@ -168,7 +169,7 @@ function BreadcrumbDirectory({
                 )}
                 <FolderIcon size="sm" className="shrink-0 fg-secondary" />
                 <span className="min-w-0 truncate">{child.name}</span>
-              </button>
+              </ControlButton>
               {expanded && (
                 <BreadcrumbDirectory
                   projectId={projectId}
@@ -187,16 +188,15 @@ function BreadcrumbDirectory({
         }
         const highlighted = child.relativePath === highlightPath;
         return (
-          <button
+          <ControlButton
             key={child.relativePath}
             type="button"
             onClick={(): void => onPickFile(child)}
             data-testid="file-breadcrumb-entry"
             data-entry-kind="file"
             data-relative-path={child.relativePath}
-            className={`flex w-full items-center gap-1.5 px-2 py-1 text-left text-xs transition-colors hover:bg-fg-primary/[0.06] ${
-              highlighted ? 'bg-accent-subtle fg-primary' : 'fg-primary'
-            }`}
+            presentation="breadcrumb-file"
+            appearance={highlighted}
             style={{ paddingLeft: `${8 + depth * 14 + 16}px` }}
           >
             <FileTypeIcon
@@ -205,7 +205,7 @@ function BreadcrumbDirectory({
               className="shrink-0"
             />
             <span className="min-w-0 truncate">{child.name}</span>
-          </button>
+          </ControlButton>
         );
       })}
     </>

@@ -183,6 +183,15 @@ export const DAEMON_ALIAS_MODEL_ACTIONS: ReadonlySet<string> = new Set([
 ]);
 
 /** What a pipeline model alias names for one run, as its core resolved it (CAN-5832). */
+/**
+ * What the classifier reads of a definition: a parsed pipeline, or a stored
+ * execution's normalized snapshot (a child's resume, CAN-6868).
+ */
+export type DaemonClassifiedPipeline = Pick<
+  Pipeline,
+  'jobs' | 'defaults' | 'model_aliases' | 'plugin_collections'
+>;
+
 export interface DaemonModelAliasResolution {
   readonly base: string;
   /** The alias adds plugins (an inline plugin collection or an Agent's plugins). */
@@ -216,6 +225,37 @@ export interface DaemonPipelineClassifierOptions {
    * definition and the run's inputs fix it (CAN-6316 G4).
    */
   readonly compositeModels?: 'refuse' | 'resolve';
+  /**
+   * `'refuse'` (default): a `send-agent-message` step's `attachments` are
+   * `host_paths`. `'copy'`: they are portable, for a host whose remote owner
+   * gets a copy of each file with the request (a cloud runner, CAN-6857).
+   */
+  readonly hostAttachments?: 'refuse' | 'copy';
+  /**
+   * `'refuse'` (default): every `run-pipeline` step is `child_pipeline`.
+   * `'host'`: a child on the run's own target (no step `target`, or
+   * `scope: inherit`) runs in this host's executor, which checks the child
+   * when it starts (`ExecutionRuntime.admitChildPipeline`); a child on
+   * another target stays `child_pipeline` (CAN-6868).
+   */
+  readonly childPipelines?: 'refuse' | 'host';
+  /**
+   * `'refuse'` (default): a child on another target is `child_pipeline`.
+   * `'owner'`: with `childPipelines: 'host'`, a child on another worktree,
+   * a folder or the global scope is handed to the host's owner, which
+   * checks the target and runs it as a run of its own
+   * (`ExecutionRuntime.delegateChildPipeline`, CAN-6868 part 3).
+   */
+  readonly delegatedChildren?: 'refuse' | 'owner';
+  /**
+   * `'refuse'` (default): a model step whose model is an expression the
+   * classifier can't resolve is `dynamic_model`. `'owner'`: it is admitted,
+   * for a host whose owner admits each model when the step asks for its
+   * route, as a cloud runner's web core does. Only a child's check uses it
+   * (CAN-6868): no preflight lists a child's models, so the owner's step-time
+   * admission is the gate for every one of them, written or expression.
+   */
+  readonly expressionModels?: 'refuse' | 'owner';
 }
 
 export type DaemonPipelineClassification =
@@ -227,6 +267,8 @@ export type DaemonPipelineClassification =
       readonly modelHarnesses: readonly DaemonModelHarness[];
       /** Admitted host steps, composite steps included; only under `hostSteps: 'owner'` (CAN-5771). */
       readonly hostSteps?: number;
+      /** Admitted same-target child workflows; only under `childPipelines: 'host'` (CAN-6868). */
+      readonly childPipelines?: number;
     }
   | {
       readonly eligible: false;
@@ -420,7 +462,35 @@ function tsxRuntime(
 /** Host steps a pipeline may hold, and how many were found (CAN-5771). */
 interface HostStepTally {
   readonly admit: boolean;
+  /** A step's `attachments` cross as copies (`hostAttachments: 'copy'`). */
+  readonly copyAttachments: boolean;
   count: number;
+  /** Same-target child workflows run here (`childPipelines: 'host'`, CAN-6868). */
+  readonly admitChildren: boolean;
+  /** Children on another target go to the owner (`delegatedChildren: 'owner'`). */
+  readonly delegateChildren: boolean;
+  children: number;
+}
+
+/**
+ * A `run-pipeline` step (CAN-6868): portable on a host that runs children,
+ * when the child runs on the run's own target. A child on another worktree,
+ * a named folder or the global scope is `child_pipeline`, unless the host
+ * hands it to its owner (`delegatedChildren: 'owner'`, part 3).
+ */
+function classifyChildPipelineStep(
+  step: Step,
+  hosts: HostStepTally,
+): DaemonPipelineRefusalReason | null {
+  if (!hosts.admitChildren) return 'child_pipeline';
+  const { target } = step;
+  if (target !== undefined && target.scope !== 'inherit') {
+    // A folder of the run isn't served by its owner yet (CAN-6868 part 3b).
+    const delegated = target.scope === 'worktree' || target.scope === 'global';
+    if (!hosts.delegateChildren || !delegated) return 'child_pipeline';
+  }
+  hosts.children += 1;
+  return null;
 }
 
 /** `send-agent-message` inputs that hold host paths; they never cross (D14). */
@@ -464,7 +534,11 @@ function classifyHostStep(
   if (name === null || !isPipelineHostActionId(name)) return 'host_step';
   if (
     name === 'send-agent-message' &&
-    SEND_HOST_PATH_INPUTS.some((input) => step.with?.[input] !== undefined)
+    SEND_HOST_PATH_INPUTS.some(
+      (input) =>
+        step.with?.[input] !== undefined &&
+        !(input === 'attachments' && hosts.copyAttachments),
+    )
   )
     return 'host_paths';
   if (
@@ -523,7 +597,7 @@ function classifyStep(
     case 'host':
       return classifyHostStep(step, uses, resolved, context, hosts);
     case 'pipeline':
-      return 'child_pipeline';
+      return classifyChildPipelineStep(step, hosts);
     case 'tsx':
       return tsxRuntime(context);
     case 'node':
@@ -570,6 +644,8 @@ interface ModelStepTally {
   readonly actions: ReadonlyMap<string, readonly DaemonModelHarness[]>;
   /** Whether a composite's model steps read its inputs (`compositeModels: 'resolve'`). */
   readonly compositeModels: boolean;
+  /** Whether the owner admits an expression model at step time (`expressionModels: 'owner'`). */
+  readonly expressionModels: boolean;
 }
 
 function stepModelValue(
@@ -596,7 +672,7 @@ function stepModelValue(
 
 /** The model checks for a step of portable model action `name` (CAN-5095 D5a, CAN-5831, CAN-5832). */
 function classifyModelStep(
-  pipeline: Pipeline,
+  pipeline: DaemonClassifiedPipeline,
   step: Step,
   definition: ActionDefinition,
   name: string,
@@ -631,7 +707,13 @@ function classifyModelStep(
       step.with?.model === undefined
         ? null
         : staticWithValue(value, inputs, context);
-    if (resolved === null) return 'dynamic_model';
+    if (resolved === null) {
+      if (!tally.expressionModels) return 'dynamic_model';
+      // Its owner admits the model it names when the step asks for its route;
+      // the step's harness is that model's, known only then.
+      tally.count += 1;
+      return null;
+    }
     value = resolved;
   }
   let model = value.trim();
@@ -692,7 +774,7 @@ function classifyModelStep(
 }
 
 function classifyStepAdmittingModels(
-  pipeline: Pipeline,
+  pipeline: DaemonClassifiedPipeline,
   step: Step,
   context: DaemonPipelineClassifierContext,
   depth: number,
@@ -728,7 +810,7 @@ function classifyStepAdmittingModels(
     case 'host':
       return classifyHostStep(step, uses, resolved, context, hosts);
     case 'pipeline':
-      return 'child_pipeline';
+      return classifyChildPipelineStep(step, hosts);
     case 'tsx':
       return tsxRuntime(context);
     case 'node':
@@ -770,7 +852,7 @@ function classifyStepAdmittingModels(
 }
 
 function classifyStepsAdmittingModels(
-  pipeline: Pipeline,
+  pipeline: DaemonClassifiedPipeline,
   steps: readonly Step[],
   context: DaemonPipelineClassifierContext,
   depth: number,
@@ -809,7 +891,7 @@ function classifyStepsAdmittingModels(
  * Fails closed on anything unknown.
  */
 export function classifyDaemonPipeline(
-  pipeline: Pipeline,
+  pipeline: Pipeline | DaemonClassifiedPipeline,
   context: DaemonPipelineClassifierContext,
   options?: DaemonPipelineClassifierOptions,
 ): DaemonPipelineClassification {
@@ -824,10 +906,17 @@ export function classifyDaemonPipeline(
           ? DAEMON_OWNER_HOOK_PORTABLE_MODEL_ACTIONS
           : DAEMON_PORTABLE_MODEL_ACTIONS,
     compositeModels: options?.compositeModels === 'resolve',
+    expressionModels: options?.expressionModels === 'owner',
   };
   const hosts: HostStepTally = {
     admit: options?.hostSteps === 'owner',
+    copyAttachments: options?.hostAttachments === 'copy',
     count: 0,
+    admitChildren: options?.childPipelines === 'host',
+    delegateChildren:
+      options?.childPipelines === 'host' &&
+      options.delegatedChildren === 'owner',
+    children: 0,
   };
   for (const [jobId, job] of Object.entries(pipeline.jobs)) {
     const jobShell = job.defaults?.run?.shell ?? pipeline.defaults?.run?.shell;
@@ -860,5 +949,6 @@ export function classifyDaemonPipeline(
     modelSteps: tally.count,
     modelHarnesses: [...tally.harnesses].sort(),
     ...(hosts.admit && { hostSteps: hosts.count }),
+    ...(hosts.admitChildren && { childPipelines: hosts.children }),
   };
 }

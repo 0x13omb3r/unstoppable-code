@@ -1,5 +1,10 @@
 import type { AgentExecutionHarness } from '@canopy/protocol/models';
-import type { PluginProviderSupport } from '@canopy/protocol/plugins';
+import type {
+  HarnessCompatibilityPart,
+  ItemHarnessInstalls,
+  ItemHarnessStandIn,
+  PluginProviderSupport,
+} from '@canopy/protocol/plugins';
 import type { PluginHookMember } from './types';
 import { opencodeSupportsCommandHook } from './opencode-support';
 import {
@@ -86,6 +91,11 @@ export interface PluginHarnessRow {
   id: PluginHarnessId;
   name: string;
   installation: PluginHarnessInstallation;
+  /**
+   * What one Add for every harness recorded for this harness (CAN-6816):
+   * what it left out, why it was skipped, or why installing failed.
+   */
+  note?: string;
 }
 
 type PluginHarnessFacetProvider = 'claude' | 'codex';
@@ -116,6 +126,113 @@ export interface PluginHarnessRowsInput {
    * passes {@link PLUGIN_HARNESSES}.
    */
   harnesses: readonly PluginHarnessId[];
+  /**
+   * One Add for every harness's record (CAN-6816), when there is one. It
+   * marks the harnesses it installed for and notes what each left out or
+   * why it was skipped; without it the rows are unchanged.
+   */
+  harnessInstalls?: ItemHarnessInstalls;
+}
+
+const PART_NOUNS: Record<HarnessCompatibilityPart, string> = {
+  skills: 'Skills',
+  commands: 'Commands',
+  agents: 'Agents',
+  apps: 'Apps',
+  hooks: 'Hooks',
+  mods: 'Mods',
+  mcpServers: 'MCP servers',
+  lspServers: 'Language servers',
+};
+
+/**
+ * "Hooks don't run in Cursor." for the parts a harness left out. A ChatGPT
+ * app it left out reads "ChatGPT app only." (CAN-6818), or, where the
+ * plugin's own copy loads the publisher's MCP server, says so.
+ */
+function leftOutNote(
+  id: PluginHarnessId,
+  leftOut: readonly HarnessCompatibilityPart[],
+  standIn: ItemHarnessStandIn | undefined,
+): string | undefined {
+  const app = leftOut.includes('apps') ? standInNote(id, standIn) : undefined;
+  const rest = partsNote(
+    id,
+    leftOut.filter((part) => part !== 'apps'),
+  );
+  const sentences = [app, rest].filter(
+    (sentence): sentence is string => sentence !== undefined,
+  );
+  return sentences.length === 0 ? undefined : sentences.join(' ');
+}
+
+// The same sentences as `@canopy/protocol/plugins` (`CHATGPT_APP_ONLY`,
+// `standInSentence`); this package takes no runtime protocol dependency, so
+// they are spelled here.
+const CHATGPT_APP_ONLY = 'ChatGPT app only.';
+
+/** The harness's product name, as the record's sentences name it. */
+function harnessProductName(id: PluginHarnessId): string {
+  return id === 'claude' ? 'Claude Code' : pluginHarnessLabel(id);
+}
+
+function standInSentence(name: string, id: PluginHarnessId): string {
+  return `Uses the ${name} MCP server in ${harnessProductName(id)}.`;
+}
+
+/** What a harness that can't run a ChatGPT app gets instead (CAN-6818). */
+function standInNote(
+  id: PluginHarnessId,
+  standIn: ItemHarnessStandIn | undefined,
+): string {
+  return standIn === undefined
+    ? CHATGPT_APP_ONLY
+    : standInSentence(standIn.name, id);
+}
+
+function partsNote(
+  id: PluginHarnessId,
+  leftOut: readonly HarnessCompatibilityPart[],
+): string | undefined {
+  if (leftOut.length === 0) return undefined;
+  const nouns = leftOut.map((part, index) =>
+    index === 0 ? PART_NOUNS[part] : PART_NOUNS[part].toLowerCase(),
+  );
+  const list =
+    nouns.length === 1
+      ? nouns[0]
+      : `${nouns.slice(0, -1).join(', ')} and ${nouns[nouns.length - 1]}`;
+  return `${list} don't run in ${pluginHarnessLabel(id)}.`;
+}
+
+/** Applies one harness's recorded result to its row (CAN-6816). */
+function withRecordedInstall(
+  row: PluginHarnessRow,
+  record: ItemHarnessInstalls | undefined,
+): PluginHarnessRow {
+  const state = record?.harnesses[row.id];
+  if (state === undefined) return row;
+  const standIn = record?.standIns?.[row.id];
+  switch (state.status) {
+    case 'installed': {
+      const note = leftOutNote(row.id, state.leftOut ?? [], standIn);
+      return {
+        ...row,
+        installation: 'Installed',
+        ...(note !== undefined ? { note } : {}),
+      };
+    }
+    case 'skipped':
+      return { ...row, installation: 'Not supported', note: state.reason };
+    case 'failed':
+      // A copy changed outside the app still loads; one removed outside the
+      // app keeps the provider's install state (CAN-6817).
+      if (state.outsideChange === 'changed')
+        return { ...row, installation: 'Installed', note: state.reason };
+      if (state.outsideChange === 'removed')
+        return { ...row, note: state.reason };
+      return { ...row, note: `Couldn't install: ${state.reason}` };
+  }
 }
 
 function isInstalledFor(
@@ -161,7 +278,14 @@ export function pluginHarnessRows(
         ? 'Installed'
         : 'Not installed',
   });
-  return PLUGIN_HARNESSES.filter((id) => harnesses.includes(id)).map((id) => {
+  return PLUGIN_HARNESSES.filter((id) => harnesses.includes(id)).map((id) =>
+    // The current Codex compatibility setting outranks an older record:
+    // with it off, Codex sessions refuse the plugin whatever was recorded.
+    id === 'codex' && codexCompatDisabled
+      ? baseRow(id)
+      : withRecordedInstall(baseRow(id), input.harnessInstalls),
+  );
+  function baseRow(id: PluginHarnessId): PluginHarnessRow {
     switch (id) {
       case 'claude':
         return row(id, providerSupport.claude !== 'none', 'claude');
@@ -186,5 +310,5 @@ export function pluginHarnessRows(
           facetSupport.provider,
         );
     }
-  });
+  }
 }

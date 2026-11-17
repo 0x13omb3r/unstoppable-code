@@ -1,5 +1,6 @@
 'use client';
 
+import { ControlButton } from '@canopy/ui-shared/components';
 import {
   useRef,
   useState,
@@ -71,17 +72,17 @@ export function AvatarEditor({
 
   return (
     <div className="flex flex-col items-center gap-1">
-      <button
-        type="button"
+      <ControlButton
         data-settings-control="media"
         data-testid="profile-avatar-edit"
         onClick={() => inputRef.current?.click()}
         disabled={busy}
         aria-label="Change profile photo"
-        className={withPrivacyClass(
-          'group relative rounded-full disabled:cursor-not-allowed',
-          blockClassName,
-        )}
+        presentation={
+          blockClassName === ''
+            ? 'profile-photo-edit'
+            : 'profile-photo-edit-private'
+        }
         style={{ width: px, height: px }}
       >
         <MemberAvatar name={name} image={image} size={size} />
@@ -92,7 +93,7 @@ export function AvatarEditor({
             <Camera size={Math.max(16, Math.round(px / 4))} />
           )}
         </MediaEditOverlay>
-      </button>
+      </ControlButton>
       <input
         ref={inputRef}
         type="file"

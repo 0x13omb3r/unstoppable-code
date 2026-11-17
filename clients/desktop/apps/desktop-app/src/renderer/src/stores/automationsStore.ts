@@ -14,6 +14,7 @@ import { useWorkspaceContextStore } from './workspaceContextStore';
 // `mutationError` so consumer UIs can render them inline.
 
 import { create } from 'zustand';
+import { reportClientAppError } from '@canopy/desktop-instrumentation/client';
 import type {
   ApproveAutomationSharedPipelineReviewRequest,
   ApproveAutomationSharedPipelineReviewResponse,
@@ -22,6 +23,8 @@ import type {
   AutomationDeleteRequest,
   AutomationMutationResponse,
   AutomationRunNowRequest,
+  AutomationScheduleMoveRequest,
+  AutomationScheduleMoveResponse,
   AutomationUpdateRequest,
   ScheduledActivity,
   ScheduledActivityRun,
@@ -60,6 +63,14 @@ export interface AutomationsStore {
   updateActivity: (
     request: AutomationUpdateRequest,
   ) => Promise<AutomationMutationResponse>;
+  /**
+   * Move a workflow schedule to the cloud or back (CAN-6917). The answer
+   * may ask for a cloud place or models; the caller shows that, not the
+   * page-level `mutationError`.
+   */
+  moveSchedule: (
+    request: AutomationScheduleMoveRequest,
+  ) => Promise<AutomationScheduleMoveResponse>;
   /**
    * Forward a delete request to the main process. `keepPipeline` keeps a
    * workflow page whose last schedule this is; `workflow` deletes the whole
@@ -236,6 +247,20 @@ export const useAutomationsStore = create<AutomationsStore>((set, get) => ({
       ...(options?.workflow ? { workflow: true } : {}),
     };
     return await runMutation(set, (api) => api.delete(payload));
+  },
+  moveSchedule: async (request): Promise<AutomationScheduleMoveResponse> => {
+    const api = getApi();
+    if (!api) return { ok: false, error: 'Automations IPC unavailable.' };
+    try {
+      return await api.moveSchedule(request);
+    } catch (error: unknown) {
+      // Main answers its refusals; a throw is the IPC failing.
+      reportClientAppError(error);
+      return {
+        ok: false,
+        error: error instanceof Error ? error.message : String(error),
+      };
+    }
   },
   runNow: async (id): Promise<AutomationMutationResponse> => {
     const payload: AutomationRunNowRequest = { id };

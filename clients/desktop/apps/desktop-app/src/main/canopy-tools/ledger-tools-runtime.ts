@@ -161,6 +161,7 @@ export function ledgerChatContainerFor(
   target: Pick<LedgerChatTarget, 'projectId' | 'worktreeId' | 'assistantMode'>,
   host: Pick<LedgerToolsHost, 'workspaceType'> = DESKTOP_LEDGER_TOOLS_HOST,
 ): LedgerContainer | null {
+  // Default Bot only: the advisor_entry contract pins appWorkspaceId to app-advisor.
   if (target.projectId === APP_ADVISOR_PROJECT_ID) {
     return target.assistantMode === 'app-advisor' &&
       isSafeLedgerContainerId(target.worktreeId)

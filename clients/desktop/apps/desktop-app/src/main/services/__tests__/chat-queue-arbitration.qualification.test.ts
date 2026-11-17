@@ -33,6 +33,38 @@ function queuedRowIds(harness: QueueHarness): string[] {
 }
 
 describe('chat queue arbitration (CAN-4112)', () => {
+  it('auto-sends a credit-held message once funding is confirmed, never at zero', async () => {
+    let funded = false;
+    const harness = createQueueHarness({
+      readCreditFunding: () => Promise.resolve(funded),
+    });
+    harness.service.hydratePersistedInput(
+      queuedRequest(target, 'held-credit'),
+      'held-credit',
+      'portal',
+      1,
+      undefined,
+      undefined,
+      { creditRefused: true },
+    );
+    harness.service.releaseInputOwnership(target);
+    await harness.flush();
+    expect(harness.dispatches).toHaveLength(0);
+    funded = true;
+    await Promise.all([
+      harness.service.refreshCreditHolds(),
+      harness.service.refreshCreditHolds(),
+      harness.service.refreshCreditHolds(),
+    ]);
+    await harness.flush();
+    expect(harness.dispatches).toHaveLength(1);
+    expect(harness.dispatches[0]?.request.userMessageId).toBe('held-credit');
+    await harness.service.refreshCreditHolds();
+    await harness.service.refreshCreditHolds();
+    await harness.flush();
+    expect(harness.dispatches).toHaveLength(1);
+  });
+
   it('only one admitted turn executes per chat', async () => {
     const harness = createQueueHarness();
     seed(harness, 3);

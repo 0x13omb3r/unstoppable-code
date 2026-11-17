@@ -1,3 +1,4 @@
+import { ControlButton } from '@canopy/ui-shared/components';
 import { type JSX } from 'react';
 import { ActionTooltip } from '@canopy/ui-shared';
 import type { PipelineTriggerType } from '@canopy/execution-engine/types/pipeline';
@@ -22,7 +23,9 @@ export const PIPELINE_TRIGGER_GLYPHS: Readonly<
   workflow: <WorkflowIcon size="sm" />,
 };
 
-export function TriggerBadge({ type }: TriggerBadgeProps): JSX.Element {
+export function PipelineTriggerDetails({
+  type,
+}: TriggerBadgeProps): JSX.Element {
   const meta = getTriggerMeta(type);
 
   if (!meta) {
@@ -31,13 +34,14 @@ export function TriggerBadge({ type }: TriggerBadgeProps): JSX.Element {
 
   return (
     <ActionTooltip title={meta.label} description={meta.description}>
-      <button
+      <ControlButton
         type="button"
         aria-label={`${meta.label}: ${meta.description}`}
-        className={`focus-ring shrink-0 inline-flex items-center justify-center w-5 h-5 rounded ${meta.badgeClass}`}
+        presentation="workflow-trigger-info"
+        appearance={type}
       >
         {PIPELINE_TRIGGER_GLYPHS[type]}
-      </button>
+      </ControlButton>
     </ActionTooltip>
   );
 }

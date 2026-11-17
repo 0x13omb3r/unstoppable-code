@@ -27,6 +27,33 @@ export function CalendarDayNumber({
   );
 }
 
+/** A calendar date gets the same red emphasis as the current day marker. */
+export function CalendarAgendaDayLabel({
+  date,
+  today,
+}: {
+  readonly date: Date;
+  readonly today: boolean;
+}): JSX.Element {
+  const year = String(date.getFullYear()).padStart(4, '0');
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+
+  return (
+    <time
+      dateTime={`${year}-${month}-${day}`}
+      aria-current={today ? 'date' : undefined}
+      className={`text-s font-semibold ${today ? 'fg-destructive' : 'fg-primary'}`}
+    >
+      {date.toLocaleDateString(undefined, {
+        weekday: 'long',
+        month: 'long',
+        day: 'numeric',
+      })}
+    </time>
+  );
+}
+
 /** An agenda entry's dot has the same status ink and fill as its event. */
 export function CalendarAgendaDot({
   statusClasses,

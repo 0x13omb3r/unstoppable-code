@@ -1,3 +1,4 @@
+import { ControlButton } from './Button';
 import {
   createContext,
   useCallback,
@@ -24,7 +25,6 @@ import {
   thinkingControlLevels,
   advanceThinkingControlLevel,
 } from '../lib/chat-thinking';
-import { CAPSULE_TOUCH_FLOOR_CLASS } from './ChatComposerToolbar';
 import { DropdownMenuItem } from './DropdownMenu';
 import { COMPOSER_ROW_MENU_GAP, FloatingMenu } from './FloatingMenu';
 import { FoldReveal } from './FoldReveal';
@@ -229,15 +229,12 @@ export function ThinkingLevelControl(
       label={labelVisible ? TOOLTIP_LABEL : `${TOOLTIP_LABEL}: ${labelText}`}
       delay="long"
     >
-      <button
+      <ControlButton
         type="button"
         onClick={handleAdvance}
         disabled={disabled}
-        className={`flex shrink-0 items-center transition-colors hover:bg-subtle disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-transparent ${
-          capsule
-            ? `h-8 gap-1.5 rounded-full px-2.5 text-xs ${CAPSULE_TOUCH_FLOOR_CLASS}`
-            : 'gap-1 rounded-md px-1.5 py-0.5 text-2xs'
-        } ${isActive ? 'fg-primary' : 'fg-secondary hover:fg-primary'}`}
+        presentation="thinking-level-cycle"
+        appearance={{ capsule: !!capsule, isActive }}
         aria-label={ariaLabel ?? `Thinking: ${labelText}; click to cycle`}
         data-testid={testId}
         data-thinking-level={normalizedValue ?? 'default'}
@@ -259,7 +256,7 @@ export function ThinkingLevelControl(
         >
           <span className={capsule ? 'pl-1.5' : 'pl-1'}>{labelText}</span>
         </FoldReveal>
-      </button>
+      </ControlButton>
     </Tooltip>
   );
 }

@@ -1,3 +1,4 @@
+import { ControlButton } from './Button';
 import { Dot } from './Badge';
 import {
   useCallback,
@@ -308,14 +309,6 @@ export interface WorkspaceSectionHeaderProps {
  * The layout group survives rest, so a focused trailing control keeps its
  * reserved space even after the hover-reveal group has been retired.
  */
-const DEFERRED_ACTION_PADDING: readonly string[] = [
-  '',
-  'pointer-fine:group-hover/sidebar-item:pr-8 pointer-fine:group-focus-within/sidebar-item:pr-8 pointer-fine:workspace-header-actions-focused:pr-8',
-  'pointer-fine:group-hover/sidebar-item:pr-15 pointer-fine:group-focus-within/sidebar-item:pr-15 pointer-fine:workspace-header-actions-focused:pr-15',
-  'pointer-fine:group-hover/sidebar-item:pr-22 pointer-fine:group-focus-within/sidebar-item:pr-22 pointer-fine:workspace-header-actions-focused:pr-22',
-  'pointer-fine:group-hover/sidebar-item:pr-29 pointer-fine:group-focus-within/sidebar-item:pr-29 pointer-fine:workspace-header-actions-focused:pr-29',
-  'pointer-fine:group-hover/sidebar-item:pr-36 pointer-fine:group-focus-within/sidebar-item:pr-36 pointer-fine:workspace-header-actions-focused:pr-36',
-];
 
 export function WorkspaceSectionHeader({
   name,
@@ -437,10 +430,7 @@ export function WorkspaceSectionHeader({
       onAdd,
     ].filter((handler) => handler !== undefined).length +
     (showCollapseChevron ? 1 : 0);
-  const deferredActionPadding =
-    DEFERRED_ACTION_PADDING[
-      Math.min(deferredControlCount, DEFERRED_ACTION_PADDING.length - 1)
-    ];
+
   // The inline chevron is the row's disclosure affordance, so the trailing
   // controls stop doubling as one.
   const usesInlineChevron =
@@ -732,25 +722,27 @@ export function WorkspaceSectionHeader({
     : `Collapse project ${displayName}`;
   const badge =
     usesInlineChevron && !onSelectBadge ? (
-      <button
+      <ControlButton
         type="button"
-        className={badgeBaseClass}
+        presentation="workspace-header-badge"
+        appearance={{ clickable: !!onSelectBadge && !!disableDrag }}
         aria-label={iconToggleLabel}
         onClick={onToggleCollapse}
       >
         {badgeContent}
-      </button>
+      </ControlButton>
     ) : badgeClickable ? (
-      <button
+      <ControlButton
         type="button"
-        className={badgeBaseClass}
+        presentation="workspace-header-badge"
+        appearance={{ clickable: !!onSelectBadge && !!disableDrag }}
         aria-label={
           onSelectBadge ? `Select ${displayName}` : `Reorder ${displayName}`
         }
         onClick={onSelectBadge}
       >
         {badgeContent}
-      </button>
+      </ControlButton>
     ) : (
       <span className={badgeBaseClass} aria-hidden="true">
         {badgeContent}
@@ -804,7 +796,7 @@ export function WorkspaceSectionHeader({
       >
         {dragHandleSlot !== undefined ? dragHandleSlot : badge}
 
-        <button
+        <ControlButton
           type="button"
           onClick={(event): void => {
             if (nameTogglesCollapse) onToggleCollapse();
@@ -813,9 +805,13 @@ export function WorkspaceSectionHeader({
           }}
           disabled={nameTogglesCollapse && !computedCanToggle}
           {...(primaryButtonDataAttrs ?? {})}
-          className={`focus-ring flex min-w-0 flex-1 items-center gap-2 text-left ${primaryButtonIsDragActivator ? 'cursor-default ' : ''}disabled:cursor-default${
-            defersPointerHoverActions ? ` ${deferredActionPadding}` : ''
-          }${touchTarget ? ' min-h-11 self-stretch' : ''}`}
+          presentation="workspace-header-primary"
+          appearance={{
+            primaryButtonIsDragActivator: !!primaryButtonIsDragActivator,
+            defersPointerHoverActions,
+            deferredControlCount,
+            touchTarget: !!touchTarget,
+          }}
           aria-label={`${nameTogglesCollapse ? collapseLabel : `Select ${displayName}`}${
             pinnedToTop ? `, ${SIDEBAR_PINNED_LABEL}` : ''
           }`}
@@ -844,7 +840,7 @@ export function WorkspaceSectionHeader({
           ) : (
             sidebarCounter
           )}
-        </button>
+        </ControlButton>
 
         {backendPip}
 
@@ -977,7 +973,7 @@ export function WorkspaceSectionHeader({
         </div>
       </div>
       {isMultiRepo && repoCount !== undefined && textScale !== 'sidebar' && (
-        <div className="ml-6 -mt-1.5">
+        <div className="-mt-1.5 pl-6">
           <RepoCountWithTooltip
             count={repoCount}
             repoNames={repoNames}
@@ -1114,13 +1110,14 @@ function RepoTooltipTrigger({
         </div>
       }
     >
-      <button
+      <ControlButton
         type="button"
         aria-label={`Repositories: ${repoNames.join(', ')}`}
-        className={`focus-ring rounded-sm border-0 bg-transparent p-0 ${textScale === 'sidebar' ? 'text-s' : 'text-xs'} fg-secondary/60 underline-offset-2 hover:underline focus:underline`}
+        presentation="workspace-header-repo"
+        appearance={{ textScale }}
       >
         {label}
-      </button>
+      </ControlButton>
     </RichHoverTooltip>
   );
 }

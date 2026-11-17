@@ -36,6 +36,7 @@ export function ledgerWorkEntryContainer(
   workspaceId: string,
   entryId: string,
 ): LedgerContainer {
+  // Default Bot only: advisor_entry pins appWorkspaceId to this literal.
   return workspaceId === APP_ADVISOR_PROJECT_ID
     ? {
         kind: 'advisor_entry',

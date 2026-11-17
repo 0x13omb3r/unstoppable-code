@@ -2,10 +2,8 @@ import {
   startClientOperation,
   succeedClientOperation,
 } from '@canopy/desktop-instrumentation/client';
-import {
-  APP_ADVISOR_PROJECT_ID,
-  PIPELINE_EDITOR_PROJECT_ID,
-} from '@canopy/desktop-shared/types';
+import { PIPELINE_EDITOR_PROJECT_ID } from '@canopy/desktop-shared/types';
+import { isBotProjectId } from '@canopy/protocol/chat-targets';
 import { isCoworkChatTarget } from './cowork';
 
 /**
@@ -42,7 +40,7 @@ export function chatMessageSendSurfaceForProject(
   projectId: string,
 ): Exclude<ChatMessageSendSurface, 'home'> | null {
   if (projectId === PIPELINE_EDITOR_PROJECT_ID) return null;
-  if (projectId === APP_ADVISOR_PROJECT_ID) return 'app_advisor';
+  if (isBotProjectId(projectId)) return 'app_advisor';
   return isCoworkChatTarget(projectId) ? 'standalone_chat' : 'worktree_chat';
 }
 

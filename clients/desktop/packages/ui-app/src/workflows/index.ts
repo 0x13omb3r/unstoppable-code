@@ -13,6 +13,7 @@ export * from './PipelineTriggers';
 export * from './SharedPipelineNotice';
 export * from './edit-shell';
 export * from './PipelineRunContextFields';
+export * from './ScheduleRunOnField';
 export * from './pipeline-input-form';
 export * from './PipelineInputField';
 export * from './cloud-runs';

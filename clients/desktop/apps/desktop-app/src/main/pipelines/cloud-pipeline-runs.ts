@@ -21,6 +21,7 @@ import type {
 import {
   CLOUD_MODEL_UNCONFIRMED_CODE,
   CLOUD_PIPELINE_RUN_TARGET_ID,
+  CLOUD_RUN_WORKTREE_PREPARING_CODE,
   CORE_PIPELINE_CLOUD_MODEL_QUERY_DEFINITIONS,
   CORE_PIPELINE_CLOUD_RUN_INSTRUCTION_DEFINITIONS,
   CORE_PIPELINE_RUN_READ_QUERY_DEFINITIONS,
@@ -31,10 +32,12 @@ import {
   WORKER_PIPELINE_QUERY_DEFINITIONS,
   composeCanopyInstructionRegistries,
   composeCanopyQueryRegistries,
+  type CanopyCallerDescriptor,
   type CanopyErrorPayload,
   type CanopyInstructionDefinitionMap,
   type CanopyQueryDefinitionMap,
   type CloudModelPreflightResult,
+  type CloudPipelineRunCheckout,
   type CloudPipelineRunStartParams,
   type CloudPipelineRunStartResult as WireStartResult,
   type CoreRuntimeManifestOperation,
@@ -44,6 +47,15 @@ import {
   type WebCoreBindingOptions,
 } from '../canopy-cloud/web-core-connection';
 import { desktopWebCoreBindingOptions } from '../ipc/cloud-chats';
+import { LOCAL_DESKTOP_AUTHORITY_ID } from '../canopy-runtime/desktop-runtime-identity';
+import { getWorktreePathForCaller } from '../ipc/open-in';
+import {
+  githubRepositoryOfRemote,
+  LOCAL_CHECKOUT_COPY,
+  LOCAL_CHECKOUT_GIT,
+  resolveLocalCheckout,
+  type LocalCheckoutGit,
+} from './cloud-run-local-checkout';
 
 /**
  * Cloud runs started from this computer (CAN-6187, plan CP-37).
@@ -317,54 +329,94 @@ function refused(
 // "No project" is the Run dialog's label for a run with no destination
 // (`NO_PROJECT_LABEL` in @canopy/ui-app, which main doesn't import).
 export const CLOUD_RUN_DESTINATION_UNAVAILABLE =
-  'Cloud runs can only use No project for now. Choose No project, or run on this computer.';
+  "Cloud runs can use No project or a task's Git worktree. Choose one, or run on this computer.";
 export const CLOUD_RUN_TARGET_UNAVAILABLE =
   "This computer can't run workflows there.";
+export const CLOUD_RUN_PROJECT_MODELS_UNAVAILABLE =
+  "This project workflow has steps whose models need a cloud model, which can't be chosen for a project workflow yet. Pick cloud models in the workflow file, or run it on this computer.";
 export const CLOUD_RUN_SOURCE_UNAVAILABLE =
   'Only shared and curated workflows can run in the cloud for now. Run this one on this computer.';
 
+/** A task's worktree a cloud run goes with (CAN-6869). */
+export interface CloudRunLocalTask {
+  readonly projectId: string;
+  readonly worktreeId: string;
+  readonly repoId?: string;
+}
+
 /**
- * The refusal for a destination a cloud run can't use yet, or null. Version
- * 1 starts runs with no project only; a task or project run in the cloud is
- * CP-36 and CP-29.
+ * Where a cloud start goes: no project, a task's worktree (CAN-6869, which
+ * runs at its pushed branch), or the refusal for any other destination.
  */
-export function cloudRunDestinationRefusal(
+export function cloudRunDestinationOf(
   request: Pick<
     CloudPipelineRunRequest,
-    'scope' | 'target' | 'cwd' | 'projectId' | 'worktreeId'
+    'scope' | 'target' | 'cwd' | 'projectId' | 'worktreeId' | 'cloudRepoId'
   >,
-): CloudPipelineRunStartResult | null {
-  const global =
+): 'global' | CloudRunLocalTask | CloudPipelineRunStartResult {
+  if (
     request.scope === 'global' &&
     (request.target === undefined || request.target.scope === 'global') &&
     request.cwd === undefined &&
     request.projectId === undefined &&
-    request.worktreeId === undefined;
-  return global
-    ? null
-    : refused(
-        'cloud_destination_unavailable',
-        CLOUD_RUN_DESTINATION_UNAVAILABLE,
-      );
+    request.worktreeId === undefined &&
+    request.cloudRepoId === undefined
+  )
+    return 'global';
+  if (
+    request.scope === 'worktree' &&
+    (request.target === undefined || request.target.scope === 'worktree') &&
+    request.projectId !== undefined &&
+    request.worktreeId !== undefined
+  )
+    return {
+      projectId: request.projectId,
+      worktreeId: request.worktreeId,
+      ...(request.cloudRepoId === undefined
+        ? {}
+        : { repoId: request.cloudRepoId }),
+    };
+  return refused(
+    'cloud_destination_unavailable',
+    CLOUD_RUN_DESTINATION_UNAVAILABLE,
+  );
 }
 
 /**
- * Why a Portal run with a `targetId` is refused: Portal runs go to a task,
- * which a cloud run can't use yet, so it never runs on this computer.
+ * A Portal run in the cloud: Portal runs go to a task, whose run in the
+ * cloud needs the push warning only this computer's Run dialog shows
+ * (CAN-6869), so the Portal can't start one yet.
+ */
+export const PORTAL_CLOUD_RUN_UNAVAILABLE =
+  "Cloud runs of a task start from this computer's Run dialog for now. Run on this computer, or start it there.";
+
+/**
+ * Why a Portal run with a `targetId` is refused: it never runs on this
+ * computer instead.
  */
 export function portalRunLocationRefusal(targetId: string): string {
   return targetId === CLOUD_PIPELINE_RUN_TARGET_ID
-    ? CLOUD_RUN_DESTINATION_UNAVAILABLE
+    ? PORTAL_CLOUD_RUN_UNAVAILABLE
     : CLOUD_RUN_TARGET_UNAVAILABLE;
 }
 
-/** The web core's definition id for a workflow it can read, or null. */
-function cloudDefinitionId(request: CloudPipelineRunRequest): string | null {
+/**
+ * The web core's definition id for a workflow it can read, or null. A task's
+ * run also reads its project workflows (`project--<path>`), from the pushed
+ * branch (CAN-6869, CAN-6672).
+ */
+function cloudDefinitionId(
+  request: CloudPipelineRunRequest,
+  inCheckout: boolean,
+): string | null {
   if (request.sharedPipeline !== undefined)
     return request.sharedPipeline.serverId === CANOPY_CLOUD_SERVER_ID
       ? `shared:${CANOPY_CLOUD_SERVER_ID}:${request.sharedPipeline.remoteId}`
       : null;
-  return request.pipelineId.startsWith('curated:') ? request.pipelineId : null;
+  if (request.pipelineId.startsWith('curated:')) return request.pipelineId;
+  return inCheckout && request.pipelineId.startsWith('project--')
+    ? request.pipelineId
+    : null;
 }
 
 function payloadOf(error: unknown): CanopyErrorPayload | null {
@@ -421,6 +473,10 @@ function failure(
   destination?: CloudRunAgentDestination,
 ): CloudPipelineRunStartResult {
   const payload = payloadOf(error);
+  // A task's cloud worktree still being set up recorded nothing: the Run
+  // dialog sends the same start again shortly (CAN-6869).
+  if (payload?.code === CLOUD_RUN_WORKTREE_PREPARING_CODE)
+    return refused('cloud_worktree_preparing', payload.message);
   // No payload, an outcome that may have been recorded, or one the web core
   // says to retry with the same key: the Run dialog keeps the launch's key.
   if (
@@ -465,14 +521,11 @@ function cloudStartOf(
   request: CloudPipelineRunRequest,
   destination: CloudRunAgentDestination | undefined,
   chat?: CloudRunAgentChat,
+  checkout?: CloudPipelineRunCheckout,
 ): CloudStart | CloudPipelineRunStartResult {
   if (request.targetId !== CLOUD_PIPELINE_RUN_TARGET_ID)
     return refused('cloud_target_unavailable', CLOUD_RUN_TARGET_UNAVAILABLE);
-  if (destination === undefined) {
-    const refusal = cloudRunDestinationRefusal(request);
-    if (refusal !== null) return refusal;
-  }
-  const definitionId = cloudDefinitionId(request);
+  const definitionId = cloudDefinitionId(request, checkout !== undefined);
   if (definitionId === null)
     return refused('cloud_source_unavailable', CLOUD_RUN_SOURCE_UNAVAILABLE);
   const owner = request.requestedOwner ?? '';
@@ -505,6 +558,7 @@ function cloudStartOf(
                 : { repoId: destination.repoId }),
             }),
       },
+      ...(checkout === undefined ? {} : { checkout }),
       definitionId,
       owner,
       ...(request.inputs === undefined ? {} : { inputs: request.inputs }),
@@ -552,12 +606,185 @@ function askForModels(
  * nothing. Only then does main read the model preflight, so the Run dialog
  * asks for the models before any run starts. Nothing runs on this computer.
  */
-export function startCloudPipelineRun(
+export async function startCloudPipelineRun(
   request: CloudPipelineRunRequest,
   source: CloudPipelineRunCalls = productionCalls(),
+  local: CloudRunLocalCheckoutDeps = PRODUCTION_LOCAL_CHECKOUT,
 ): Promise<CloudPipelineRunStartResult> {
-  return startCloudRun(request, undefined, source);
+  const destination = cloudRunDestinationOf(request);
+  if (destination === 'global')
+    return startCloudRun(request, undefined, source);
+  if ('success' in destination) return destination;
+  // A task runs at its pushed branch (CAN-6869): its worktree's folder comes
+  // from its project and task, never from the request.
+  if (request.targetId !== CLOUD_PIPELINE_RUN_TARGET_ID)
+    return refused('cloud_target_unavailable', CLOUD_RUN_TARGET_UNAVAILABLE);
+  let cwd: string;
+  try {
+    cwd = await local.worktreePath(destination);
+  } catch {
+    return refused(
+      'cloud_destination_unavailable',
+      CLOUD_RUN_DESTINATION_UNAVAILABLE,
+    );
+  }
+  // A resend after a start that may have been recorded, or one waiting for
+  // its cloud worktree, sends the checkout that start sent, so it replays
+  // rather than changing under its key; one whose task moved since is
+  // refused, never sent at another repository, branch or head.
+  const key = request.cloudIdempotencyKey;
+  const sent =
+    key === undefined ? undefined : resolvedCheckouts.get(key)?.checkout;
+  if (key !== undefined && sent !== undefined) {
+    const [origin, branch, head] = await Promise.all([
+      local.git.originUrl(cwd).catch(() => null),
+      local.git.branch(cwd).catch(() => ''),
+      local.git.head(cwd).catch(() => null),
+    ]);
+    const repository =
+      origin === null ? null : githubRepositoryOfRemote(origin);
+    if (
+      repository?.toLowerCase() !== sent.repository.toLowerCase() ||
+      branch.trim() !== sent.branch ||
+      head !== sent.headSha
+    )
+      return refused(
+        'cloud_destination_unavailable',
+        LOCAL_CHECKOUT_COPY.movedSinceSent,
+      );
+    return settle(
+      key,
+      await startCloudRun(request, undefined, source, undefined, sent),
+    );
+  }
+  const outcome = await resolveLocalCheckout(
+    cwd,
+    request.cloudCheckoutConfirmed,
+    (confirmed) => local.push(destination, cwd, confirmed),
+    local.git,
+  ).catch((error: unknown) => ({
+    kind: 'refused' as const,
+    message:
+      error instanceof Error
+        ? `Couldn't push this task's branch: ${error.message}`
+        : "Couldn't read this task's branch.",
+  }));
+  if (outcome.kind === 'refused')
+    return refused('cloud_destination_unavailable', outcome.message);
+  if (outcome.kind === 'confirm')
+    return {
+      success: false,
+      errorCode: 'cloud_checkout_unconfirmed',
+      error:
+        'The cloud runs only what this branch has on GitHub. Confirm before it runs.',
+      checkout: outcome.state,
+    };
+  const result = await startCloudRun(
+    request,
+    undefined,
+    source,
+    undefined,
+    outcome.checkout,
+  );
+  if (key === undefined) return result;
+  rememberCheckout(key, outcome.checkout);
+  return settle(key, result);
 }
+
+/**
+ * Keeps a launch's checkout until its run starts, once any send of it came
+ * back uncertain (it may be recorded) or preparing (it is being resent): a
+ * later resend then goes at exactly that checkout, or is refused if the task
+ * moved, whatever came back in between. A launch that never had such an
+ * answer forgets it on a refusal, so the next send reads the task afresh.
+ */
+function settle(
+  key: string,
+  result: CloudPipelineRunStartResult,
+): CloudPipelineRunStartResult {
+  const entry = resolvedCheckouts.get(key);
+  if (result.success) resolvedCheckouts.delete(key);
+  else if (
+    result.errorCode === 'cloud_start_uncertain' ||
+    result.errorCode === 'cloud_worktree_preparing'
+  ) {
+    if (entry !== undefined) entry.held = true;
+  } else if (entry?.held !== true) resolvedCheckouts.delete(key);
+  return result;
+}
+
+/** The most launches whose resolved checkout main keeps for their resends. */
+const RESOLVED_CHECKOUTS_MAX = 64;
+/** A launch's resolved checkout, and whether a send of it may be recorded or resent. */
+const resolvedCheckouts = new Map<
+  string,
+  { readonly checkout: CloudPipelineRunCheckout; held: boolean }
+>();
+
+function rememberCheckout(
+  key: string,
+  checkout: CloudPipelineRunCheckout,
+): void {
+  resolvedCheckouts.delete(key);
+  resolvedCheckouts.set(key, { checkout, held: false });
+  for (const oldest of resolvedCheckouts.keys()) {
+    if (resolvedCheckouts.size <= RESOLVED_CHECKOUTS_MAX) break;
+    resolvedCheckouts.delete(oldest);
+  }
+}
+
+/** A task's worktree folder, its Git and its push; the real ones in production. */
+export interface CloudRunLocalCheckoutDeps {
+  worktreePath(task: CloudRunLocalTask): Promise<string>;
+  readonly git: LocalCheckoutGit;
+  /** Pushes exactly the confirmed commit, through the task's worker. */
+  push(
+    task: CloudRunLocalTask,
+    cwd: string,
+    confirmed: { readonly branch: string; readonly headSha: string },
+  ): Promise<void>;
+}
+
+/**
+ * Main's own trusted caller for a confirmed push: the Run dialog's warning
+ * is the person's authorization, as the Portal's Git actions are theirs.
+ */
+const CLOUD_RUN_PUSH_CALLER: CanopyCallerDescriptor = {
+  principalId: 'core',
+  clientInstanceId: 'electron-main-cloud-run-push',
+  authorityId: LOCAL_DESKTOP_AUTHORITY_ID,
+  interfaceKind: 'desktop',
+  grants: [],
+};
+
+const PRODUCTION_LOCAL_CHECKOUT: CloudRunLocalCheckoutDeps = {
+  worktreePath: (task) =>
+    Promise.resolve().then(() =>
+      getWorktreePathForCaller({
+        projectId: task.projectId,
+        worktreeId: task.worktreeId,
+        ...(task.repoId === undefined ? {} : { repoId: task.repoId }),
+      }),
+    ),
+  git: LOCAL_CHECKOUT_GIT,
+  async push(task, cwd, confirmed) {
+    const [{ getActiveDesktopRuntime }, { pushConfirmedWorktreeHead }] =
+      await Promise.all([
+        import('../canopy-runtime/desktop-runtime'),
+        import('../canopy-runtime/worker-git-commit-push-dispatch'),
+      ]);
+    await pushConfirmedWorktreeHead(
+      getActiveDesktopRuntime(),
+      CLOUD_RUN_PUSH_CALLER,
+      { projectId: task.projectId, worktreeId: task.worktreeId },
+      {
+        repoPath: cwd,
+        ...(task.repoId === undefined ? {} : { repoId: task.repoId }),
+      },
+      confirmed,
+    );
+  },
+};
 
 /** The chat whose agent starts a cloud run, as desktop names it. */
 export interface CloudRunAgentChat {
@@ -579,6 +806,20 @@ export function startAgentCloudPipelineRun(
   chat: CloudRunAgentChat | undefined,
   source: CloudPipelineRunCalls = productionCalls(),
 ): Promise<CloudPipelineRunStartResult> {
+  // An agent's run goes with no project, or to its chat's place through
+  // `destination`; the request itself never names one.
+  if (destination === undefined) {
+    const named = cloudRunDestinationOf(request);
+    if (named !== 'global')
+      return Promise.resolve(
+        'success' in named
+          ? named
+          : refused(
+              'cloud_destination_unavailable',
+              CLOUD_RUN_DESTINATION_UNAVAILABLE,
+            ),
+      );
+  }
   return startCloudRun(request, destination, source, chat);
 }
 
@@ -587,8 +828,9 @@ async function startCloudRun(
   destination: CloudRunAgentDestination | undefined,
   source: CloudPipelineRunCalls,
   chat?: CloudRunAgentChat,
+  checkout?: CloudPipelineRunCheckout,
 ): Promise<CloudPipelineRunStartResult> {
-  const start = cloudStartOf(request, destination, chat);
+  const start = cloudStartOf(request, destination, chat, checkout);
   if (!('params' in start)) return start;
   const { definitionId, owner } = start;
   try {
@@ -609,6 +851,11 @@ async function startCloudRun(
     if (payloadOf(error)?.code !== CLOUD_MODEL_UNCONFIRMED_CODE)
       return failure(error, destination);
   }
+  // The cloud model preflight reads shared and curated workflows only: a
+  // project workflow is in the task's pushed branch, which the preflight
+  // can't name yet (a CAN-6672 follow-up), so the dialog can't ask.
+  if (definitionId.startsWith('project--'))
+    return refused('cloud_run_refused', CLOUD_RUN_PROJECT_MODELS_UNAVAILABLE);
   try {
     return askForModels(
       request.cloudModelChoices === undefined

@@ -9,10 +9,10 @@ import {
   validateAutomationTrigger,
 } from '@canopy/desktop-shared/lib/automations';
 import {
-  APP_ADVISOR_PROJECT_ID,
   type AutomationTrigger,
   type ScheduledActivity,
 } from '@canopy/desktop-shared/types';
+import { isBotProjectId } from '@canopy/protocol/chat-targets';
 import {
   canonicalSource,
   AgentChatSendError,
@@ -81,7 +81,7 @@ async function scheduleMessage(
   const source = await canonicalSource(trustedCaller.source);
   if (
     (trustedCaller.kind === 'app_advisor') !==
-    (source.projectId === APP_ADVISOR_PROJECT_ID)
+    isBotProjectId(source.projectId)
   )
     throw new AgentChatSendError(
       'validation_failed',

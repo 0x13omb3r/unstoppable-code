@@ -28,7 +28,6 @@ import {
 } from '../plugins/plugin-defaults-revision';
 import { workerProviderRuntimeFor } from '../agent-runs/worker-provider-runtimes';
 import {
-  APP_ADVISOR_PROJECT_ID,
   DEFAULT_CLAUDE_SESSION_IDLE_TIMEOUT_MINUTES,
   resolveKnownModel,
   getExecutionHarnessForModel,
@@ -45,6 +44,7 @@ import {
   type ChatTabPluginSelections,
   type UsageLimitedChatEntry,
 } from '@canopy/desktop-shared/types';
+import { isBotProjectId } from '@canopy/protocol/chat-targets';
 import type { ActivityLiveBgTask } from '@canopy/desktop-shared/types/activity-panel';
 import {
   isGatewayOnlyModel,
@@ -1523,6 +1523,11 @@ function getSessionChangedOptionNames(
   includeCapabilitySnapshot = true,
 ): string[] {
   const comparisons: [string, unknown, unknown][] = [
+    [
+      'managedDelegationSurface',
+      existing.managedDelegationSurface,
+      opts.managedDelegationSurface,
+    ],
     ['providerType', existing.providerType, context.providerType],
     ['executionHarness', existing.executionHarness, opts.executionHarness],
     ['executionContext', existing.executionContext, opts.executionContext],
@@ -1708,6 +1713,16 @@ function sessionIdentityMatchesOptions(
 ): boolean {
   return (
     getSessionChangedOptionNames(existing, opts, context, false).length === 0
+  );
+}
+
+function isRecognizedManagedDelegationSurface(
+  surface: AgentSessionOptions['managedDelegationSurface'],
+): boolean {
+  return (
+    surface === 'worktree-chat' ||
+    surface === 'cowork-chat' ||
+    surface === 'app-advisor-chat'
   );
 }
 
@@ -3978,7 +3993,7 @@ export function markManagedDelegationSessionsForNextTurnRecreation(
 ): void {
   for (const [key, entry] of Array.from(sessions.entries())) {
     if (
-      entry.managedDelegationSurface === 'worktree-chat' &&
+      isRecognizedManagedDelegationSurface(entry.managedDelegationSurface) &&
       !managedDelegationModesShareProviderSession(
         entry.managedDelegationMode,
         nextMode,
@@ -4000,12 +4015,11 @@ export function markCodexSessionsForNextTurnRecreation(
     }
 
     const { projectId } = parseSessionKey(key);
-    const sessionScope =
-      projectId === APP_ADVISOR_PROJECT_ID
-        ? 'app-advisor'
-        : isCoworkWorkspace(projectId)
-          ? 'standalone'
-          : 'worktree';
+    const sessionScope = isBotProjectId(projectId)
+      ? 'app-advisor'
+      : isCoworkWorkspace(projectId)
+        ? 'standalone'
+        : 'worktree';
     if (scope !== 'all' && scope !== sessionScope) continue;
 
     markSessionEntryForNextTurnRecreation(key, entry, 'codex_preferences');

@@ -4,16 +4,17 @@ import {
   DELEGATE_OUTPUT_PAGE_MAX_LIMIT,
 } from './output-page';
 import {
-  CLAUDE_DELEGATION_SPAWN_FEED_SCHEMA,
   CLAUDE_DELEGATION_SPAWN_SCHEMA,
-  CODEX_DELEGATION_SPAWN_FEED_SCHEMA,
-  CODEX_DELEGATION_SPAWN_SCHEMA,
+  getClaudeDelegationSpawnSchema,
+  getCodexDelegationSpawnSchema,
   parseClaudeDelegationSpawn,
   parseCodexDelegationSpawn,
 } from '@canopy/protocol/delegation/spawn-projections';
 import {
   AGENT_DELEGATION_INPUT_LIMITS,
   DELEGATION_NOT_DESCENDANT_ERROR,
+  filterManagedDelegationCapabilities,
+  getManagedDelegationSurfacePolicy,
   parseGetDelegateOutputRequest,
   parseManageDelegateWorktreeRequest,
   parseMessageDelegateRequest,
@@ -23,6 +24,7 @@ import {
   type AgentDelegationFeedSummary,
   type AgentDelegationSnapshot,
   type AgentDelegationSpawnRequest,
+  type DelegationCapabilityChoice,
   type DelegationListFilter,
   type DelegationStopReason,
   type GetDelegateOutputRequest,
@@ -30,10 +32,10 @@ import {
   type ManageDelegateWorktreeRequest,
   type MessageDelegateRequest,
   type RequestSteeringRequest,
+  type ManagedDelegationSurface,
 } from '@canopy/protocol/delegation';
 
 import type { DelegationModelDiscovery } from '@canopy/protocol/delegation/discovery';
-import type { DelegationCapabilityChoice } from '@canopy/protocol/delegation';
 import {
   hasValidDelegationLineage,
   type DelegationParentContext,
@@ -156,6 +158,13 @@ function isDelegationId(value: unknown): value is string {
   );
 }
 
+function capabilityUnavailable(message: string): AgentDelegationResult<never> {
+  return {
+    ok: false,
+    error: { code: 'capability_unavailable', message, retryable: false },
+  };
+}
+
 /** Classify the exact JSON envelope used by the Codex delegation adapter. */
 function codexOutputFits(
   result: AgentDelegationResult<GetDelegateOutputValue>,
@@ -271,6 +280,8 @@ export function createDelegationProjection(
       signal?: AbortSignal,
     ) => Promise<DelegationCapabilityDiscovery>;
     enableDelegationTools?: boolean;
+    /** Trusted host-owned surface profile; omitted generic callers use Code. */
+    surface?: ManagedDelegationSurface;
     requestSteering?: (
       parent: DelegationParentContext,
       request: RequestSteeringRequest,
@@ -304,6 +315,16 @@ export function createDelegationProjection(
     message: `${namespace}_message_delegate`,
     requestSteering: `${namespace}_request_steering`,
   };
+  const surface = options.surface ?? 'worktree-chat';
+  const surfacePolicy = getManagedDelegationSurfacePolicy(surface);
+  const spawnSchemaOptions = {
+    includeFeed: options.includeFeed === true,
+    surface,
+  };
+  const spawnSchema =
+    harness === 'codex'
+      ? getCodexDelegationSpawnSchema(spawnSchemaOptions)
+      : getClaudeDelegationSpawnSchema(spawnSchemaOptions);
   const delegationToolsEnabled = options.enableDelegationTools !== false;
   const readSummary = async (
     parent: DelegationParentContext,
@@ -368,7 +389,9 @@ export function createDelegationProjection(
           : []),
         ...(delegationToolsEnabled
           ? [
-              ...(names.manageWorktree && broker.manageWorktree
+              ...(surfacePolicy.allowWorktree &&
+              names.manageWorktree &&
+              broker.manageWorktree
                 ? [
                     {
                       name: names.manageWorktree,
@@ -433,21 +456,16 @@ export function createDelegationProjection(
                 description: [
                   options.developmentProbe
                     ? 'Development probe: start a fresh read-only delegated task using a logical model. No provider process is launched.'
-                    : 'Start a delegated task using a model ID, bare Agent ID, or agent_model_<id>@<model-id> route from List Delegates with includeModels: true. Agents are listed separately with their runnable model routes. Pass the route in model to choose its model; a bare Agent ID uses its default. An Agent carries its system instructions and selected plugins, skills and MCP servers. Children start with your plugins, skills and MCP servers by default; set inherit_capabilities: false to start one without them (a configured Agent keeps its own). To give a child more, pass capabilities IDs from List Delegates with includeCapabilities: true. Grant writes explicitly with permissions.writePaths (relative files/directories, or a dot for the workspace); omitted grants allow read/search only. Parent approval settings always apply to commands and MCP tools too. isolation defaults to shared_worktree; choose worktree only when isolation is wanted. Supply a self-contained prompt with paths, scope and expected output. Every call returns a durable ID promptly. When the concurrency limit is reached, the task waits in a queue (phase queued, with its position) and starts automatically; set if_busy to reject to fail at once with capacity_exceeded instead. The lifetime limit refuses new tasks with lifetime_limit_reached instead of queueing. When a run finishes, its parent receives an automatic completion notice naming the delegate and status; use Get Delegate Output with the resultIndex from the notice to read the result. Reads share the live working tree and can observe parent edits; returned revision and dirty state describe launch-time observation, not an immutable snapshot.',
+                    : surfacePolicy.allowWorktree
+                      ? 'Start a delegated task using a model ID, bare Agent ID, or agent_model_<id>@<model-id> route from List Delegates with includeModels: true. Agents are listed separately with their runnable model routes. Pass the route in model to choose its model; a bare Agent ID uses its default. An Agent carries its system instructions and selected plugins, skills and MCP servers. Children start with your plugins, skills and MCP servers by default; set inherit_capabilities: false to start one without them (a configured Agent keeps its own). To give a child more, pass capabilities IDs from List Delegates with includeCapabilities: true. Grant writes explicitly with permissions.writePaths (relative files/directories, or a dot for the workspace); omitted grants allow read/search only. Parent approval settings always apply to commands and MCP tools too. isolation defaults to shared_worktree; choose worktree only when isolation is wanted. Supply a self-contained prompt with paths, scope and expected output. Every call returns a durable ID promptly. When the concurrency limit is reached, the task waits in a queue (phase queued, with its position) and starts automatically; set if_busy to reject to fail at once with capacity_exceeded instead. The lifetime limit refuses new tasks with lifetime_limit_reached instead of queueing. When a run finishes, its parent receives an automatic completion notice naming the delegate and status; use Get Delegate Output with the resultIndex from the notice to read the result. Reads share the live working tree and can observe parent edits; returned revision and dirty state describe launch-time observation, not an immutable snapshot.'
+                      : 'Start a delegated task using a model ID, bare Agent ID, or agent_model_<id>@<model-id> route from List Delegates with includeModels: true. Agents are listed separately with their runnable model routes. Pass the route in model to choose its model; a bare Agent ID uses its default. An Agent carries its system instructions and selected plugins, skills and MCP servers. Children start with your plugins, skills and MCP servers by default; set inherit_capabilities: false to start one without them (a configured Agent keeps its own). To give a child more, pass capabilities IDs from List Delegates with includeCapabilities: true. Grant writes explicitly with permissions.writePaths (relative files/directories, or a dot for the workspace); omitted grants allow read/search only. Parent approval settings always apply to commands and MCP tools too. Children run in the same shared working folder as you. Supply a self-contained prompt with paths, scope and expected output. Every call returns a durable ID promptly. When the concurrency limit is reached, the task waits in a queue (phase queued, with its position) and starts automatically; set if_busy to reject to fail at once with capacity_exceeded instead. The lifetime limit refuses new tasks with lifetime_limit_reached instead of queueing. When a run finishes, its parent receives an automatic completion notice naming the delegate and status; use Get Delegate Output with the resultIndex from the notice to read the result. Reads share the live working folder and can observe parent edits.',
                   ...(options.includeFeed
                     ? [
                         `Before delegating, add the delegate’s tasks and subtasks under their operation in Feed and pass their task UUIDs as ${harness === 'codex' ? 'task_ids' : 'taskIds'}; the delegate receives those tasks when admitted. After a delegate settles, read its Feed summary and resolve anything it left open.`,
                       ]
                     : []),
                 ].join(' '),
-                inputSchema:
-                  harness !== 'codex'
-                    ? options.includeFeed
-                      ? CLAUDE_DELEGATION_SPAWN_FEED_SCHEMA
-                      : CLAUDE_DELEGATION_SPAWN_SCHEMA
-                    : options.includeFeed
-                      ? CODEX_DELEGATION_SPAWN_FEED_SCHEMA
-                      : CODEX_DELEGATION_SPAWN_SCHEMA,
+                inputSchema: spawnSchema,
               },
               {
                 name: names.output,
@@ -521,6 +539,10 @@ export function createDelegationProjection(
             retryable: false,
           },
         };
+      if (!surfacePolicy.allowWorktree && name === names.manageWorktree)
+        return capabilityUnavailable(
+          'Manage Delegate Worktree is unavailable on this delegation surface.',
+        );
       if (/(?:^|__)WaitDelegates$|(?:^|_)wait_delegates$/.test(name))
         return {
           ok: false,
@@ -536,8 +558,9 @@ export function createDelegationProjection(
           ok: false,
           error: {
             code: 'invalid_request',
-            message:
-              'Manage Delegate is no longer available. Use Message Delegate for follow-up, steering, or interruption, and Manage Delegate Worktree for apply or discard.',
+            message: surfacePolicy.allowWorktree
+              ? 'Manage Delegate is no longer available. Use Message Delegate for follow-up, steering, or interruption, and Manage Delegate Worktree for apply or discard.'
+              : 'Manage Delegate is no longer available. Use Message Delegate for follow-up, steering, or interruption.',
             retryable: false,
           },
         };
@@ -561,9 +584,11 @@ export function createDelegationProjection(
           harness !== 'codex'
             ? parseClaudeDelegationSpawn(input, {
                 includeFeed: options.includeFeed === true,
+                surface,
               })
             : parseCodexDelegationSpawn(input, {
                 includeFeed: options.includeFeed === true,
+                surface,
               });
         return parsed.ok
           ? withAssignment(
@@ -628,13 +653,30 @@ export function createDelegationProjection(
         const includeCapabilities = input.includeCapabilities === true;
         if (!includeModels && !includeCapabilities)
           return { ok: true, value: delegations() };
+        // Keep the child snapshot at invocation time while discovery is pending.
+        const listedDelegations = delegations();
+        const discoveredModels =
+          includeModels && options.discoverModels
+            ? await options.discoverModels(parent, signal)
+            : undefined;
+        const projectedModels =
+          discoveredModels && !surfacePolicy.allowWorktree
+            ? {
+                ...discoveredModels,
+                models: discoveredModels.models.map((model) => ({
+                  ...model,
+                  capabilities: filterManagedDelegationCapabilities(
+                    surface,
+                    model.capabilities,
+                  ),
+                })),
+              }
+            : discoveredModels;
         return {
           ok: true,
           value: {
-            delegations: delegations(),
-            ...(includeModels && options.discoverModels
-              ? await options.discoverModels(parent, signal)
-              : {}),
+            delegations: listedDelegations,
+            ...(projectedModels ?? {}),
             ...(includeCapabilities && options.discoverCapabilities
               ? await options.discoverCapabilities(parent, signal)
               : {}),

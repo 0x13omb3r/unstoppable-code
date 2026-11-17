@@ -49,7 +49,6 @@ import {
   type WorkerFilesystemSearchResult,
 } from '@canopy/protocol/canopy-core';
 import {
-  APP_ADVISOR_PROJECT_ID,
   CODE_REVIEW_CHAT_PROJECT_ID,
   PLAN_EXPLORE_CHAT_PROJECT_ID,
   SHARED_CONTAINER_VIEWER_PROJECT_ID,
@@ -332,13 +331,12 @@ export interface ObservedDaemonFilesRoute extends DaemonFilesRoute {
 }
 
 /**
- * Scopes that keep their existing route: App Advisor and the sealed
+ * Scopes that keep their existing route: Bots and the sealed
  * shared-container viewer, and the plan-explore/code-review aliases, whose
  * daemon support is CAN-4399.
  */
 export const DAEMON_FILES_EXCLUDED_WORKSPACE_IDS: ReadonlySet<string> = new Set(
   [
-    APP_ADVISOR_PROJECT_ID,
     SHARED_CONTAINER_VIEWER_PROJECT_ID,
     PLAN_EXPLORE_CHAT_PROJECT_ID,
     CODE_REVIEW_CHAT_PROJECT_ID,

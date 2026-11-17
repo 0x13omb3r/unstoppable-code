@@ -12,6 +12,7 @@ import {
   type CoworkWorkEntryResolveChatResponse,
   type CoworkWorkEntryUpdateRequest,
 } from '@canopy/desktop-shared/types';
+import { isBotProjectId } from '@canopy/protocol/chat-targets';
 import { getActiveChatIds } from '../agents/session-manager';
 import {
   createWorkEntry,
@@ -40,7 +41,7 @@ let stopWorkEntryListProjection: (() => void) | null = null;
  * to the portal. The emitter no-ops without an active portal session.
  */
 function projectWorkEntryListChanges(workspaceId: string): void {
-  if (workspaceId === APP_ADVISOR_PROJECT_ID) return;
+  if (isBotProjectId(workspaceId)) return;
   // Keep the large standalone-chat service graph off Electron startup, as the
   // handlers below do; the projection is only needed once an entry changes.
   void import('../services/standalone-chat-service')
@@ -91,6 +92,7 @@ export function registerWorkEntryHandlers(): void {
       const workspaceId = assertWorkEntryWorkspace(request.projectId);
       request.entryIds.forEach((entryId) => validateId(entryId, 'entryId'));
       await reorderWorkEntries(workspaceId, request.entryIds);
+      // Default Bot only: this projection publishes the Orchestrator Portal section.
       if (workspaceId === APP_ADVISOR_PROJECT_ID) {
         const { projectAllAppAdvisorChatSummaries } =
           await import('../services/chat-service');

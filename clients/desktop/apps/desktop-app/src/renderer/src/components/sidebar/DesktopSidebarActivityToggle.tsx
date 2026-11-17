@@ -40,11 +40,16 @@ export function DesktopSidebarActivityToggle({
     [activity, getWorktreeNotificationSettings],
   );
   return (
-    <SidebarActivityModeToggle
-      host={host}
-      capabilities={ipcCanopyClient.capabilities}
-      foreground={foreground}
-      className={foreground === 'titlebar' ? 'ml-1' : undefined}
-    />
+    <span
+      className={
+        foreground === 'titlebar' ? 'inline-flex pl-1 empty:hidden' : 'contents'
+      }
+    >
+      <SidebarActivityModeToggle
+        host={host}
+        capabilities={ipcCanopyClient.capabilities}
+        foreground={foreground}
+      />
+    </span>
   );
 }

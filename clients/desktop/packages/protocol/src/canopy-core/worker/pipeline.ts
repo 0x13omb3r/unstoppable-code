@@ -32,6 +32,7 @@ import {
   WORKER_PIPELINE_HOST_TEXT_MAX,
   WorkerPipelineChatAddressSchema,
   WorkerPipelineChatSendRecordSchema,
+  WorkerPipelineHostAttachmentsSchema,
   WorkerPipelinePromptReferenceSchema,
   WorkerPipelineSendSettingsSchema,
 } from './pipeline-host-values';
@@ -293,6 +294,25 @@ export const WorkerPipelineExecutionEventsItemSchema = z.discriminatedUnion(
       stepId: id,
       title: z.string().max(WORKER_PIPELINE_NOTIFICATION_TITLE_MAX_LENGTH),
       body: z.string().max(WORKER_PIPELINE_NOTIFICATION_BODY_MAX_LENGTH),
+    }),
+    /**
+     * A child workflow a `run-pipeline` step of this run started on its own
+     * host, at any depth (CAN-6868): each lifecycle change of the child, as
+     * the run's own items report the run. Its `parentExecutionId` names the
+     * execution that started it. Never dropped. Only a cloud runner's host
+     * runs children and reports them; every other worker's runs keep their
+     * children in process and report none.
+     */
+    z.strictObject({
+      kind: z.literal('child'),
+      event: z.string().min(1).max(128),
+      execution: WorkerPipelineExecutionSchema.refine(
+        (execution) => execution.parentExecutionId !== null,
+        {
+          path: ['parentExecutionId'],
+          message: 'A child names the execution that started it.',
+        },
+      ),
     }),
   ],
 );
@@ -965,7 +985,50 @@ export const WORKER_PIPELINE_HOST_ACTIONS = [
   'create-bot-entry',
   'send-agent-message',
   'wait-for-agent-reply',
+  // A child workflow on another target, run as a run of its own (CAN-6868).
+  'run-pipeline',
 ] as const;
+
+/** The longest child workflow document a `run-pipeline` request carries. */
+export const WORKER_PIPELINE_HOST_CHILD_DOCUMENT_MAX = 1_048_576;
+/** The most inputs a delegated child workflow takes. */
+export const WORKER_PIPELINE_HOST_CHILD_INPUTS_MAX = 256;
+
+/**
+ * Where a delegated child workflow runs (CAN-6868 part 3): a worktree of a
+ * project, a folder, or the global scope. Its owner checks the target
+ * against the run's owner before anything runs.
+ */
+export const WorkerPipelineChildTargetSchema = z.discriminatedUnion('scope', [
+  z.strictObject({
+    scope: z.literal('worktree'),
+    workspaceId: id,
+    worktreeId: id,
+  }),
+  z.strictObject({
+    scope: z.literal('directory'),
+    /**
+     * A folder of the run's own checkout, relative to it: never a host path
+     * (absolute, a drive, a backslash) and never out of it (`..`).
+     */
+    path: z
+      .string()
+      .min(1)
+      .max(4096)
+      .refine(
+        (path) =>
+          !path.startsWith('/') &&
+          !path.includes('\\') &&
+          !/^[A-Za-z]:/.test(path) &&
+          !path.split('/').includes('..'),
+        'A child folder is a path within the run, never a host path.',
+      ),
+  }),
+  z.strictObject({ scope: z.literal('global') }),
+]);
+export type WorkerPipelineChildTarget = z.output<
+  typeof WorkerPipelineChildTargetSchema
+>;
 
 export const WORKER_PIPELINE_HOST_FAILURE_REASONS = [
   'not_found',
@@ -979,6 +1042,7 @@ export const WORKER_PIPELINE_HOST_FAILURE_REASONS = [
   'needs_host',
   'setup_failed',
   'setup_timed_out',
+  'turn_failed',
   'reply_timed_out',
 ] as const;
 
@@ -1111,59 +1175,96 @@ export const WorkerPipelineHostActionRequestSchema = z.discriminatedUnion(
       title: z.string().min(1).max(200).optional(),
       group: name.optional(),
     }),
-    z.strictObject({
-      action: z.literal('send-agent-message'),
-      target: z.discriminatedUnion('kind', [
-        z.strictObject({
-          kind: z.literal('project'),
-          projectId: id,
-          taskId: id,
-          chatId: id.optional(),
-        }),
-        z.strictObject({
-          kind: z.literal('bot'),
-          botId: id,
-          taskId: id,
-          chatId: id.optional(),
-        }),
-      ]),
-      /** The text to send, `text_file` already read. */
-      text: z.string().min(1).max(WORKER_PIPELINE_HOST_TEXT_MAX),
-      mode: z.enum(['queue', 'steer']),
-      settings: WorkerPipelineSendSettingsSchema,
-      textReferences: z
-        .array(WorkerPipelinePromptReferenceSchema)
-        .max(1024)
-        .optional(),
-      /**
-       * How many attachments the step sends. Their paths are host paths: the
-       * worker contained them in the step's working folder, and they stay
-       * on its host.
-       */
-      attachmentCount: z.number().int().min(1).max(1024).optional(),
-      /**
-       * A converted chat automation's composer payload (CAN-5479): absolute
-       * attachment paths, their prompt contexts and legacy file references.
-       * Each holds host paths, so only its count crosses.
-       */
-      attachmentPathCount: z.number().int().min(1).max(1024).optional(),
-      attachmentPromptContextCount: z
-        .number()
-        .int()
-        .min(1)
-        .max(1024)
-        .optional(),
-      fileReferenceCount: z.number().int().min(1).max(1024).optional(),
-      inputMode: z.enum(['typed', 'voice']).optional(),
-      literalText: z.literal(true).optional(),
-      replaceEmptyChat: z.literal(true).optional(),
-      newChat: z.literal(true).optional(),
-    }),
+    z
+      .strictObject({
+        action: z.literal('send-agent-message'),
+        target: z.discriminatedUnion('kind', [
+          z.strictObject({
+            kind: z.literal('project'),
+            projectId: id,
+            taskId: id,
+            chatId: id.optional(),
+          }),
+          z.strictObject({
+            kind: z.literal('bot'),
+            botId: id,
+            taskId: id,
+            chatId: id.optional(),
+          }),
+        ]),
+        /** The text to send, `text_file` already read. */
+        text: z.string().min(1).max(WORKER_PIPELINE_HOST_TEXT_MAX),
+        mode: z.enum(['queue', 'steer']),
+        settings: WorkerPipelineSendSettingsSchema,
+        textReferences: z
+          .array(WorkerPipelinePromptReferenceSchema)
+          .max(1024)
+          .optional(),
+        /**
+         * How many attachments the step sends. Their paths are host paths: the
+         * worker contained them in the step's working folder, and they stay
+         * on its host.
+         */
+        attachmentCount: z.number().int().min(1).max(1024).optional(),
+        /**
+         * A copy of each attached file, for an owner that can't read the
+         * step's host paths (the cloud, CAN-6857); one per `attachmentCount`.
+         * A host whose owner reads its paths never sends them.
+         */
+        attachmentFiles: WorkerPipelineHostAttachmentsSchema.optional(),
+        /**
+         * A converted chat automation's composer payload (CAN-5479): absolute
+         * attachment paths, their prompt contexts and legacy file references.
+         * Each holds host paths, so only its count crosses.
+         */
+        attachmentPathCount: z.number().int().min(1).max(1024).optional(),
+        attachmentPromptContextCount: z
+          .number()
+          .int()
+          .min(1)
+          .max(1024)
+          .optional(),
+        fileReferenceCount: z.number().int().min(1).max(1024).optional(),
+        inputMode: z.enum(['typed', 'voice']).optional(),
+        literalText: z.literal(true).optional(),
+        replaceEmptyChat: z.literal(true).optional(),
+        newChat: z.literal(true).optional(),
+      })
+      .refine(
+        (send) =>
+          send.attachmentFiles === undefined ||
+          send.attachmentFiles.length === send.attachmentCount,
+        'Each attachment carries one copy.',
+      ),
     z.strictObject({
       action: z.literal('wait-for-agent-reply'),
       chat: WorkerPipelineChatAddressSchema,
       messageId: id.optional(),
       replyTimeoutMinutes: z.number().positive().max(720),
+    }),
+    /**
+     * A child workflow on another target, which its owner runs as a run of
+     * its own in a sandbox for that target (CAN-6868 part 3). The request
+     * settles with the child's end: its status and its jobs' outputs.
+     */
+    z.strictObject({
+      action: z.literal('run-pipeline'),
+      /** The child's execution id, kept across resends and handoffs. */
+      childExecutionId: id,
+      pipelineId: id,
+      /** The child's definition as the worker resolved it, as JSON. */
+      document: z.string().min(1).max(WORKER_PIPELINE_HOST_CHILD_DOCUMENT_MAX),
+      inputs: z
+        .record(
+          z.string().max(256),
+          z.string().max(WORKER_PIPELINE_HOST_TEXT_MAX),
+        )
+        .refine(
+          (inputs) =>
+            Object.keys(inputs).length <= WORKER_PIPELINE_HOST_CHILD_INPUTS_MAX,
+          'Too many child inputs.',
+        ),
+      target: WorkerPipelineChildTargetSchema,
     }),
     ...WORKER_PIPELINE_OWNER_REQUEST_MEMBERS,
   ],

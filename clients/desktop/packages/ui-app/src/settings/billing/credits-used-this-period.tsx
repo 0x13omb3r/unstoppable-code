@@ -45,7 +45,7 @@ export function CreditsUsedThisPeriod({
   }
 
   return (
-    <p className="mt-3 text-xs fg-secondary" data-testid={testId}>
+    <p className="pt-3 text-xs fg-secondary" data-testid={testId}>
       {usageLabel(formatCredits(usedCredits), summary)}
     </p>
   );

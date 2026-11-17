@@ -852,6 +852,18 @@ export function getTransientRetryStateSnapshot(): TransientRetryStateSnapshotEnt
   }));
 }
 
+/** Includes a retry whose async admission has begun but has no entry yet. */
+export function hasActiveTransientRetryForChat(
+  target: UsageLimitedChatTarget,
+): boolean {
+  const key = chatKey(target);
+  const entry = retryEntries.get(key);
+  return (
+    pendingRetryStarts.has(key) ||
+    (entry !== undefined && entry.phase !== 'exhausted')
+  );
+}
+
 export function cancelTransientRetryForChat(
   target: UsageLimitedChatTarget & { userMessageId?: string },
   _reason: string,

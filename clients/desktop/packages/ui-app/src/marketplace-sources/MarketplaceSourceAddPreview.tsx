@@ -33,7 +33,7 @@ function MarketplaceSourceAddPluginPreview({
           plugin.sourceUrl !== null ||
           plugin.securityAudit !== null) && (
           <p
-            className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs fg-secondary"
+            className="pt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs fg-secondary"
             data-testid="cloud-marketplace-plugin-provenance"
           >
             {plugin.license !== null && (
@@ -56,7 +56,7 @@ function MarketplaceSourceAddPluginPreview({
         )}
         {plugin.syncError && (
           <p
-            className={`mt-1 ${REPLAY_BLOCK_CLASS}`}
+            className={`pt-1 ${REPLAY_BLOCK_CLASS}`}
             data-testid="cloud-marketplace-plugin-error"
           >
             <StatusLabel size="xs">{plugin.syncError}</StatusLabel>
@@ -64,7 +64,7 @@ function MarketplaceSourceAddPluginPreview({
         )}
         {plugin.hooksStripped && (
           <p
-            className="mt-1 text-xs fg-secondary"
+            className="pt-1 text-xs fg-secondary"
             data-testid="cloud-marketplace-plugin-warning"
           >
             Hooks will be omitted in cloud sessions.
@@ -72,7 +72,7 @@ function MarketplaceSourceAddPluginPreview({
         )}
         {plugin.mcpOnly && (
           <p
-            className="mt-1 text-xs fg-secondary"
+            className="pt-1 text-xs fg-secondary"
             data-testid="cloud-marketplace-plugin-warning"
           >
             MCP-only plugins are not yet available in cloud sessions.

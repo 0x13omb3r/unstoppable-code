@@ -71,6 +71,11 @@ export interface PipelineExecutionObserver {
   /** A desktop notification a step asked for (CAN-5868). */
   /** Whether this observer delivered it; one nobody delivers is kept for the next stream. */
   onNotification?(notification: PipelineExecutionNotification): boolean;
+  /**
+   * A child workflow the run started on its own host changed (CAN-6868);
+   * only a cloud runner's host reports these.
+   */
+  onChild?(event: string, execution: WorkerPipelineExecution): void;
   /** The worker can no longer follow this execution, such as when its host process ended. */
   onEnd?(error: CanopyErrorPayload): void;
 }
@@ -1126,6 +1131,13 @@ export function createWorkerPipelineHandlers(
             if (ended) return false;
             flushHeld();
             return emitNotification(notification);
+          },
+          // Never budgeted or dropped, like a lifecycle item (CAN-6868).
+          onChild: (event, execution) => {
+            if (ended) return;
+            flushHeld();
+            flushGap();
+            emit({ kind: 'child', event, execution });
           },
           onEnd: (error) => {
             if (ended) return;

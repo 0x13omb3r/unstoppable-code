@@ -154,10 +154,10 @@ type GuardedCommitOutcome =
  * action is the same as every other blocked commit: try again.
  */
 /** The one line every no-credits state leads with. */
-const OUT_OF_CREDITS_COPY = "You're out of AI Credits.";
+const OUT_OF_CREDITS_COPY = "You're out of credits.";
 /** Case C's lead: the chat keeps its current billing until credits exist. */
 const OUT_OF_CREDITS_BILLING_MODE_COPY =
-  "You're out of AI Credits, so this chat stays on your subscription for now.";
+  "You're out of credits, so this chat stays on your subscription for now.";
 /** Case C's title: what the user asked to do, not the model they are on. */
 const BILLING_MODE_TITLE = 'Bill this chat to AI Credits';
 
@@ -1658,7 +1658,7 @@ function ModelRecoveryAttempt({
     return shell(
       modelLabel,
       <span data-testid="model-recovery-guest">
-        {`Sign in, then buy AI Credits to use ${modelLabel}.`}
+        {`Sign in, then buy credits to use ${modelLabel}.`}
         {creditsRecoveryView}
       </span>,
       <>
@@ -1726,8 +1726,8 @@ function ModelRecoveryAttempt({
         : signInProvider
           ? coverage.showPurchase
             ? OUT_OF_CREDITS_COPY
-            : `To use ${modelLabel}, connect ${getProviderLabel(signInProvider)} or add ${brandText.appName} AI Credits.`
-          : `This model runs on ${brandText.appName} AI Credits. Buy AI Credits to start using it.`}
+            : `To use ${modelLabel}, connect ${getProviderLabel(signInProvider)} or choose another provider.`
+          : `${modelLabel} runs on credits. Choose a provider to start using it.`}
       {creditsRecoveryView}
     </span>,
     <>

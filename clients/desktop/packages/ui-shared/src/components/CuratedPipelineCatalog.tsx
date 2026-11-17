@@ -199,7 +199,7 @@ export function CuratedPipelineCatalog(
                       {detail.package.resources.map((resource) => (
                         <li key={resource.id} className="text-s fg-primary">
                           {resource.displayName}
-                          <span className="ml-1 text-xs fg-secondary">
+                          <span className="pl-1 text-xs fg-secondary">
                             {pipelinePackageKindLabel(resource.kind)}
                           </span>
                         </li>

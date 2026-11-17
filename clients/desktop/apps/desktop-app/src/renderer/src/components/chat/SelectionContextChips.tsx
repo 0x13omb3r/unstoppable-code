@@ -1,3 +1,4 @@
+import { ControlButton } from '@canopy/ui-shared/components';
 import { Badge } from '@canopy/ui-shared/components/Badge';
 import { memo, useEffect, useMemo, useRef, useState, type JSX } from 'react';
 import { useShallow } from 'zustand/shallow';
@@ -237,7 +238,7 @@ export const SelectionContextChips = memo(function SelectionContextChips({
             <Tooltip
               label={`${selection.displayPath}:${selection.startLine}-${selection.endLine}${staleNote}`}
             >
-              <button
+              <ControlButton
                 type="button"
                 data-testid="selection-context-chip"
                 onFocus={(): void => onReveal(selection)}
@@ -248,7 +249,7 @@ export const SelectionContextChips = memo(function SelectionContextChips({
                     onRemove(selection.id);
                   }
                 }}
-                className="focus-ring block rounded-xl"
+                presentation="attachment-preview"
               >
                 <AttachmentCardTile
                   kind="selection"
@@ -266,7 +267,7 @@ export const SelectionContextChips = memo(function SelectionContextChips({
                   name={label}
                   badge={badge}
                 />
-              </button>
+              </ControlButton>
             </Tooltip>
             <AttachmentTileRemoveButton
               label={label}

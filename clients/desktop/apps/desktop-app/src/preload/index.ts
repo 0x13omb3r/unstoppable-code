@@ -243,6 +243,7 @@ import {
   type AutomationCreateRequest,
   type AutomationDeleteRequest,
   type AutomationRunNowRequest,
+  type AutomationScheduleMoveRequest,
   type AutomationRunHistoryRequest,
   type AutomationsListRequest,
   type AutomationCancelRunRequest,
@@ -6267,6 +6268,8 @@ const canopyApi: CanopyApi = {
       ipcRenderer.invoke(IPC_CHANNELS.automationsDelete, request),
     runNow: (request: AutomationRunNowRequest) =>
       ipcRenderer.invoke(IPC_CHANNELS.automationsRunNow, request),
+    moveSchedule: (request: AutomationScheduleMoveRequest) =>
+      ipcRenderer.invoke(IPC_CHANNELS.automationsMoveSchedule, request),
     cancelRun: (request: AutomationCancelRunRequest) =>
       ipcRenderer.invoke(IPC_CHANNELS.automationsCancelRun, request),
     generateCron: (request: AutomationCronGenerateRequest) =>

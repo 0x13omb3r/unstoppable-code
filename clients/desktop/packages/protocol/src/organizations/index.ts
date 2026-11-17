@@ -115,6 +115,25 @@ export const PersonalProjectSchema = z.object({
   workspaceId: WorkspaceId,
   name: z.string(),
   kind: z.enum(['single-repo', 'multi-repo']),
+  /** A local checkout refusal, independent of the destination team. */
+  moveBlock: z
+    .enum([
+      'already-org-project',
+      'overlaps-project',
+      'linked-worktree',
+      'multi-repo',
+      'unreadable',
+    ])
+    .optional(),
+  /** Repositories not yet held by the team and the Personal projects that can supply them. */
+  moveRequirements: z
+    .union([
+      z.array(
+        z.object({ name: z.string(), singleProjectIds: z.array(WorkspaceId) }),
+      ),
+      z.literal('unavailable'),
+    ])
+    .optional(),
 });
 export type PersonalProject = z.infer<typeof PersonalProjectSchema>;
 export const PersonalProjectListSchema = z.object({
@@ -162,6 +181,8 @@ export const PersonalProjectOutcomeSchema = z.object({
   projectId: z.uuid().optional(),
   /** Persisted before creation; distinguishes unknown writes from batches waiting on them. */
   creationStarted: z.boolean().optional(),
+  /** Safe to persist and return to a paired browser. */
+  reasonCode: z.literal('invalid-canopy-json').optional(),
   reason: z.string().optional(),
   refreshWarning: z.boolean().optional(),
 });
@@ -176,6 +197,10 @@ export const PersonalProjectOperationSchema = z
     desktopSessionId: z.string().min(1).optional(),
     selection: z.array(WorkspaceId).max(1000),
     projects: z.array(PersonalProjectOutcomeSchema),
+    /** The desktop ended this run and removed its journal. */
+    terminalReason: z.literal('invalid-canopy-json').optional(),
+    /** False for a client-side placeholder without a confirmed desktop journal. */
+    journaled: z.literal(false).optional(),
     updatedAt: z.string().datetime(),
   })
   .refine((operation) => {
@@ -199,8 +224,14 @@ export type PersonalProjectOperation = z.infer<
   typeof PersonalProjectOperationSchema
 >;
 export const PersonalProjectStatusRequestSchema = z
-  .object({ operationId: z.uuid() })
+  .object({
+    operationId: z.uuid(),
+    acknowledgeTerminal: z.literal(true).optional(),
+  })
   .strict();
+export type PersonalProjectStatusRequest = z.infer<
+  typeof PersonalProjectStatusRequestSchema
+>;
 export const PersonalOrganizationPromotionOutcomeSchema = z.object({
   promotion: UpgradePersonalOrganizationResultSchema,
   contextSwitched: z.boolean(),

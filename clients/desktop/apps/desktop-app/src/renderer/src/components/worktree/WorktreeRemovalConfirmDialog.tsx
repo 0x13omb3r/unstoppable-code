@@ -2,10 +2,7 @@ import type { JSX } from 'react';
 import { WorktreeRemovalDialog } from '@canopy/ui-shared/components';
 import type { DiffStats } from '@canopy/desktop-shared/types';
 import { useCurrentUiStateReporter } from '@/hooks/useCurrentUiStateReporter';
-import {
-  getWorktreeBranchChoiceHint,
-  type WorktreeDeleteLabels,
-} from '@canopy/ui-app';
+import { type WorktreeDeleteLabels } from '@canopy/ui-app';
 
 /** The row identity a removal confirmation was opened for. */
 export interface WorktreeArchiveConfirmationTarget {
@@ -26,11 +23,6 @@ export interface WorktreeRemovalConfirmDialogProps {
   archiveInProgress: boolean;
   /** Removal cannot run (active session, split lock, identity drift). */
   blocked: boolean;
-  /**
-   * The branch handling an App Advisor request asked for. It presets the
-   * branch switch and the note names it; the user still makes the final choice.
-   */
-  requestedDeleteBranch?: boolean;
   /** Suffix for the automation ids on a pinned row copy. */
   testIdSuffix?: string;
   onCancel: () => void;
@@ -50,7 +42,6 @@ export function WorktreeRemovalConfirmDialog({
   stats,
   archiveInProgress,
   blocked,
-  requestedDeleteBranch,
   testIdSuffix = '',
   onCancel,
   onConfirm,
@@ -87,8 +78,6 @@ export function WorktreeRemovalConfirmDialog({
       retentionDetail={
         hasLocalWork ? labels.localWorkRetentionDetail : labels.retentionDetail
       }
-      branchChoiceHint={getWorktreeBranchChoiceHint(requestedDeleteBranch)}
-      requestedDeleteBranch={requestedDeleteBranch}
       disabled={blocked || archiveInProgress}
       testIdSuffix={testIdSuffix}
       onCancel={onCancel}

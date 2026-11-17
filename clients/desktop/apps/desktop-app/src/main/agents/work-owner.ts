@@ -13,12 +13,12 @@ import {
 } from '@canopy/protocol/workspace-context';
 import {
   type AiCreditsScopeRequest,
-  APP_ADVISOR_PROJECT_ID,
   CODE_REVIEW_CHAT_PROJECT_ID,
   PIPELINE_EDITOR_PROJECT_ID,
   PLAN_EXPLORE_CHAT_PROJECT_ID,
   STANDALONE_CHAT_PROJECT_ID,
 } from '@canopy/desktop-shared/types';
+import { isBotProjectId } from '@canopy/protocol/chat-targets';
 import { getWorkspaceContextService } from '../lib/workspace-context-service';
 import { validateWorktreeChatScope } from '../lib/validation';
 import { CLIENT_FEATURE_FLAGS } from '@canopy/protocol/feature-flags';
@@ -118,7 +118,7 @@ async function resolveWorkOwnerWithEvidence(
   }
   if (
     !projectId ||
-    projectId === APP_ADVISOR_PROJECT_ID ||
+    (projectId !== undefined && isBotProjectId(projectId)) ||
     projectId === PIPELINE_EDITOR_PROJECT_ID ||
     (projectId === STANDALONE_CHAT_PROJECT_ID && !worktreeId)
   ) {

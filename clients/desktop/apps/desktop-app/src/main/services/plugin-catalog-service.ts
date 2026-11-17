@@ -1,6 +1,9 @@
 import {
   getShareablePluginRefKey,
+  harnessInstallItemKey,
   officialMarketplaceRelativePackageUrl,
+  parseHarnessCompatibility,
+  type ItemHarnessInstalls,
 } from '@canopy/protocol/plugins';
 import { listAdvertisedProviderConnectors } from '../mcp/provider-connectors';
 import {
@@ -231,6 +234,9 @@ async function readCatalogPlugins(): Promise<PortalPluginCatalogPlugin[]> {
         rows.push({
           marketplaceId: plugin.marketplaceId,
           pluginName: plugin.name,
+          harnessCompatibility: parseHarnessCompatibility(
+            plugin.harnessCompatibility,
+          ),
           name: plugin.name,
           description: plugin.description ?? '',
           marketplaceName: marketplace.name,
@@ -266,6 +272,9 @@ async function readCachedCatalogPlugins(): Promise<
         rows.push({
           marketplaceId: plugin.marketplaceId,
           pluginName: plugin.name,
+          harnessCompatibility: parseHarnessCompatibility(
+            plugin.harnessCompatibility,
+          ),
           name: plugin.name,
           description: plugin.description ?? '',
           marketplaceName: marketplace.name,
@@ -476,6 +485,9 @@ function toPluginRow(
   const installed = isPluginInstalled(plugin);
   const logoUrl = sanitizePortalArtworkUrl(plugin.logoUrl);
   return {
+    harnessCompatibility: parseHarnessCompatibility(
+      plugin.harnessCompatibility,
+    ),
     name: plugin.name,
     marketplaceId: plugin.marketplaceId,
     providerSupport: plugin.providerSupport,
@@ -811,6 +823,34 @@ function resolvePluginDetails(
 }
 
 /** Build the `portal.plugins.get_plugin_detail` result (cache-only + README read). */
+/**
+ * One plugin's CAN-6816 record, with copies changed outside the app flagged
+ * as the window serves it (CAN-6817); a read failure leaves it out.
+ */
+async function readPluginHarnessInstalls(
+  marketplace: MarketplaceInfo,
+  pluginName: string,
+): Promise<ItemHarnessInstalls | undefined> {
+  const { itemHarnessInstallStore, servedPluginHarnessInstalls } =
+    await import('../plugins/harness-install-runtime');
+  const records = await itemHarnessInstallStore
+    .read()
+    .catch((): Record<string, never> => ({}));
+  const key = harnessInstallItemKey({
+    kind: 'plugin',
+    marketplaceId: marketplace.id,
+    pluginName,
+  });
+  const record = Object.prototype.hasOwnProperty.call(records, key)
+    ? records[key]
+    : undefined;
+  if (record === undefined) return undefined;
+  const served = await servedPluginHarnessInstalls({ [key]: record }, [
+    marketplace,
+  ]).catch((): Record<string, ItemHarnessInstalls> => ({}));
+  return served[key] ?? record;
+}
+
 export async function getPortalPluginDetail(
   marketplaceId: string,
   pluginName: string,
@@ -847,6 +887,10 @@ export async function getPortalPluginDetail(
   }
 
   const homepage = sanitizePortalUrl(plugin.homepage);
+  const harnessInstalls = await readPluginHarnessInstalls(
+    marketplace,
+    plugin.name,
+  );
   const complete: PortalPluginDetailResult = {
     marketplaceId: marketplace.id,
     marketplaceName: marketplace.name,
@@ -873,6 +917,8 @@ export async function getPortalPluginDetail(
     ...(plugin.codexCompatDisabled === true
       ? { codexCompatDisabled: true }
       : {}),
+    // One Add for every harness (CAN-6816): the record, when there is one.
+    ...(harnessInstalls !== undefined ? { harnessInstalls } : {}),
     ...(homepage !== undefined ? { homepage } : {}),
   };
   // Deterministic degrade ladder: shrink the README body (by SERIALIZED

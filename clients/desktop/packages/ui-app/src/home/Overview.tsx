@@ -103,7 +103,7 @@ export function OverviewSectionHeader({
   actions,
 }: OverviewSectionHeaderProps): JSX.Element {
   return (
-    <div className="mb-1.5 flex items-center justify-between gap-3">
+    <div className="pb-1.5 flex items-center justify-between gap-3">
       <div className="flex min-w-0 items-center gap-2">
         <Heading level={2} variant="label">
           {title}
@@ -201,13 +201,11 @@ export function Overview({
   return (
     <div className={rootClass} data-testid="overview">
       {layout === 'page' ? (
-        <PageHeader
-          className="mb-6"
-          title="Overview"
-          description={OVERVIEW_DESCRIPTION}
-        />
+        <div className="pb-6 empty:hidden">
+          <PageHeader title="Overview" description={OVERVIEW_DESCRIPTION} />
+        </div>
       ) : (
-        <header className="mb-4">
+        <header className="pb-4">
           <Heading level={1} variant="page">
             Overview
           </Heading>

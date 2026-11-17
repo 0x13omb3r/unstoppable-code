@@ -11,6 +11,7 @@ import {
   DEFAULT_MOCK_BASE_URL,
   getScenarioActivity,
   registerScenario,
+  seedCoworkWorkspace,
   seedWorktreeChat,
 } from './seeders/index.mjs';
 
@@ -149,6 +150,598 @@ test.describe('Home chat send', () => {
         window.getByTestId('panel-content-chat').getByText(prompt).first(),
       ).toBeVisible({ timeout: 30_000 });
       await expect(window.getByTestId('worktree-error-notice')).toHaveCount(0);
+    } finally {
+      await closeCanopy(electronApp, userDataDir);
+    }
+  });
+
+  test('New task keeps an unsent draft, and a send a reload cut off before it was dispatched, across a reload (CAN-6798)', async () => {
+    test.setTimeout(120_000);
+    const userDataDir = mkdtempSync(
+      path.join(os.tmpdir(), 'canopy-home-draft-reload-'),
+    );
+    seedDemoWorkspaces({
+      userDataDir,
+      apps: [DEMO_APP_ID],
+      createWorktrees: false,
+    });
+    const { electronApp } = await launchCanopy({ userDataDir });
+    try {
+      const window = await electronApp.firstWindow();
+      const app = new CanopyAppDriver(window);
+      await app.waitForShell({ timeout: 30_000 });
+      const openHome = async () => {
+        await window.getByTestId('sidebar-create-task').click();
+        const home = window.getByTestId('page-home');
+        await waitForHomeWorkspaceSelection(home);
+        return home;
+      };
+      let home = await openHome();
+      const prompt = 'Draft the release notes for the health-check fix.';
+      await home.getByTestId('home-composer-editor').fill(prompt);
+
+      // An unsent draft comes back in New task.
+      await window.reload();
+      await app.waitForShell({ timeout: 30_000 });
+      home = await openHome();
+      await expect(home.getByTestId('home-composer-editor')).toContainText(
+        prompt,
+      );
+
+      // A send whose worktree is still being created when the window
+      // reloads was never dispatched: it is still a draft, and comes back
+      // as one.
+      await electronApp.evaluate(({ ipcMain }) => {
+        globalThis.__homeWorktreeCreate = { called: false };
+        ipcMain.removeHandler('worktree:create');
+        ipcMain.handle('worktree:create', () => {
+          globalThis.__homeWorktreeCreate.called = true;
+          return new Promise(() => {});
+        });
+      });
+      await home.getByTestId('home-send-button').click();
+      await expect
+        .poll(() =>
+          electronApp.evaluate(() => globalThis.__homeWorktreeCreate.called),
+        )
+        .toBe(true);
+      // Nothing was dispatched, so nothing is in the outbox; the record,
+      // under this account's own key, keeps the draft.
+      await expect
+        .poll(() =>
+          window.evaluate(() => {
+            const key = Object.keys(window.localStorage).find((each) =>
+              each.startsWith('canopy:home-draft:v1:'),
+            );
+            const record =
+              key === undefined
+                ? null
+                : JSON.parse(window.localStorage.getItem(key) ?? '{}');
+            return {
+              draft: record?.draft?.text ?? null,
+              dispatched: record?.outbox !== undefined,
+            };
+          }),
+        )
+        .toEqual({ draft: prompt, dispatched: false });
+      await window.reload();
+      await app.waitForShell({ timeout: 30_000 });
+      home = await openHome();
+      await expect(home.getByTestId('home-composer-editor')).toContainText(
+        prompt,
+      );
+      await expect(home.locator('[data-testid^="home-outbox-"]')).toHaveCount(
+        0,
+      );
+      await expect(window.getByTestId('worktree-row')).toHaveCount(0);
+    } finally {
+      await closeCanopy(electronApp, userDataDir);
+    }
+  });
+
+  test('New task brings nothing back after a reload when a Cowork first message was taken before its work entries refreshed (CAN-6798)', async () => {
+    test.setTimeout(120_000);
+    const userDataDir = mkdtempSync(
+      path.join(os.tmpdir(), 'canopy-home-cowork-reload-'),
+    );
+    seedCoworkWorkspace({
+      userDataDir,
+      workspaceId: 'cowork-reload',
+      name: 'Reload notes',
+      collapsed: false,
+      seedMessage: false,
+    });
+    const { electronApp } = await launchCanopy({ userDataDir });
+    try {
+      const window = await electronApp.firstWindow();
+      const app = new CanopyAppDriver(window);
+      await app.waitForShell({ timeout: 30_000 });
+      // Once main accepts the first message, hold the work-entry list the
+      // Cowork send refreshes after it, so the window reloads mid-send.
+      await electronApp.evaluate(({ ipcMain }) => {
+        const state = { accepted: false, holding: false };
+        globalThis.__homeCoworkSend = state;
+        const send = ipcMain._invokeHandlers.get('chat:send-message');
+        const list = ipcMain._invokeHandlers.get('work-entries:list');
+        if (!send || !list)
+          throw new Error('Cowork send handlers are missing.');
+        ipcMain.removeHandler('chat:send-message');
+        ipcMain.handle('chat:send-message', async (...args) => {
+          const result = await send(...args);
+          state.accepted = true;
+          state.holding = true;
+          return result;
+        });
+        ipcMain.removeHandler('work-entries:list');
+        ipcMain.handle('work-entries:list', (...args) =>
+          state.holding ? new Promise(() => {}) : list(...args),
+        );
+      });
+      let home = await app.openHomeForProject('cowork-reload');
+      const prompt = 'Summarise the reload notes for the team.';
+      await home.getByTestId('home-composer-editor').fill(prompt);
+      await home.getByTestId('home-send-button').click();
+      await expect
+        .poll(() =>
+          electronApp.evaluate(() => globalThis.__homeCoworkSend.accepted),
+        )
+        .toBe(true);
+
+      // The reloaded window lists its work entries again.
+      await electronApp.evaluate(() => {
+        globalThis.__homeCoworkSend.holding = false;
+      });
+      await window.reload();
+      await app.waitForShell({ timeout: 30_000 });
+      await window.getByTestId('sidebar-create-task').click();
+      home = window.getByTestId('page-home');
+      await expect(home.getByTestId('home-surface')).toBeVisible();
+      // It left New task as it was dispatched, and its chat took it: no
+      // draft of it was kept, so nothing comes back to be sent twice.
+      await expect
+        .poll(() =>
+          window.evaluate(() => {
+            const key = Object.keys(window.localStorage).find((each) =>
+              each.startsWith('canopy:home-draft:v1:'),
+            );
+            const record =
+              key === undefined
+                ? null
+                : JSON.parse(window.localStorage.getItem(key) ?? '{}');
+            return {
+              draft: record?.draft?.text ?? null,
+              outbox: record?.outbox ?? null,
+            };
+          }),
+        )
+        .toEqual({ draft: null, outbox: null });
+      await expect(home.getByTestId('home-composer-editor')).not.toContainText(
+        prompt,
+      );
+    } finally {
+      await closeCanopy(electronApp, userDataDir);
+    }
+  });
+
+  test('New task never clears a newer draft when an earlier Cowork send finishes, even the same text in another project (CAN-6798)', async () => {
+    test.setTimeout(120_000);
+    const userDataDir = mkdtempSync(
+      path.join(os.tmpdir(), 'canopy-home-newer-draft-'),
+    );
+    seedCoworkWorkspace({
+      userDataDir,
+      workspaceId: 'cowork-first',
+      name: 'First notes',
+      chatId: 'cowork-first-chat',
+      collapsed: false,
+      seedMessage: false,
+    });
+    seedCoworkWorkspace({
+      userDataDir,
+      workspaceId: 'cowork-second',
+      name: 'Second notes',
+      chatId: 'cowork-second-chat',
+      collapsed: false,
+      seedMessage: false,
+      mergeIndex: true,
+    });
+    const { electronApp } = await launchCanopy({ userDataDir });
+    try {
+      const window = await electronApp.firstWindow();
+      const app = new CanopyAppDriver(window);
+      await app.waitForShell({ timeout: 30_000 });
+      // Hold the first message in main until released, so its send is still
+      // under way while the person starts a new draft.
+      await electronApp.evaluate(({ ipcMain }) => {
+        const state = { called: false, done: false, release: () => {} };
+        globalThis.__homeHeldSend = state;
+        const send = ipcMain._invokeHandlers.get('chat:send-message');
+        if (!send) throw new Error('The send handler is missing.');
+        ipcMain.removeHandler('chat:send-message');
+        ipcMain.handle('chat:send-message', async (...args) => {
+          state.called = true;
+          await new Promise((resolve) => {
+            state.release = resolve;
+          });
+          const result = await send(...args);
+          state.done = true;
+          return result;
+        });
+      });
+      const prompt = 'Summarise the notes for the team.';
+      let home = await app.openHomeForProject('cowork-first');
+      await home.getByTestId('home-composer-editor').fill(prompt);
+      await home.getByTestId('home-send-button').click();
+      await expect
+        .poll(() =>
+          electronApp.evaluate(() => globalThis.__homeHeldSend.called),
+        )
+        .toBe(true);
+
+      // The message left New task as it went: what the person types now,
+      // in another project and with the same text, is a new draft.
+      home = await app.openHomeForProject('cowork-second');
+      await home.getByTestId('home-composer-editor').fill(prompt);
+      await electronApp.evaluate(() => {
+        globalThis.__homeHeldSend.release();
+      });
+      await expect
+        .poll(() => electronApp.evaluate(() => globalThis.__homeHeldSend.done))
+        .toBe(true);
+
+      // The earlier send's end leaves the new draft alone.
+      home = await app.openHomeForProject('cowork-second');
+      await expect(home.getByTestId('home-composer-editor')).toContainText(
+        prompt,
+      );
+      await expect
+        .poll(
+          () =>
+            window.evaluate(() => {
+              const key = Object.keys(window.localStorage).find((each) =>
+                each.startsWith('canopy:home-draft:v1:'),
+              );
+              const record =
+                key === undefined
+                  ? null
+                  : JSON.parse(window.localStorage.getItem(key) ?? '{}');
+              return {
+                draft: record?.draft?.text ?? null,
+                outbox: record?.outbox ?? null,
+              };
+            }),
+          { timeout: 5_000 },
+        )
+        .toEqual({ draft: prompt, outbox: null });
+    } finally {
+      await closeCanopy(electronApp, userDataDir);
+    }
+  });
+
+  test('New task brings back a Cowork first message main refused as a draft, into an empty New task or else kept beside a newer one (CAN-6798)', async () => {
+    test.setTimeout(120_000);
+    const userDataDir = mkdtempSync(
+      path.join(os.tmpdir(), 'canopy-home-refused-kept-'),
+    );
+    seedCoworkWorkspace({
+      userDataDir,
+      workspaceId: 'cowork-refused',
+      name: 'Refused notes',
+      chatId: 'cowork-refused-chat',
+      collapsed: false,
+      seedMessage: false,
+    });
+    const { electronApp } = await launchCanopy({ userDataDir });
+    try {
+      const window = await electronApp.firstWindow();
+      const app = new CanopyAppDriver(window);
+      await app.waitForShell({ timeout: 30_000 });
+      // Main holds each first message until released, then refuses it.
+      await electronApp.evaluate(({ ipcMain }) => {
+        const state = { calls: 0, release: () => {} };
+        globalThis.__homeRefusedSend = state;
+        ipcMain.removeHandler('chat:send-message');
+        ipcMain.handle('chat:send-message', async () => {
+          state.calls += 1;
+          await new Promise((resolve) => {
+            state.release = resolve;
+          });
+          throw new Error('Main refused this message.');
+        });
+      });
+      const prompt = 'Summarise the refused notes for the team.';
+      const newer = 'Pricing notes for later.';
+      const record = () =>
+        window.evaluate(() => {
+          const key = Object.keys(window.localStorage).find((each) =>
+            each.startsWith('canopy:home-draft:v1:'),
+          );
+          const saved =
+            key === undefined
+              ? null
+              : JSON.parse(window.localStorage.getItem(key) ?? '{}');
+          return {
+            kept: (saved?.kept ?? []).map((each) => each.text),
+            outbox: saved?.outbox ?? null,
+          };
+        });
+      let home = await app.openHomeForProject('cowork-refused');
+      await home.getByTestId('home-composer-editor').fill(prompt);
+      await home.getByTestId('home-send-button').click();
+      await expect
+        .poll(() =>
+          electronApp.evaluate(() => globalThis.__homeRefusedSend.calls),
+        )
+        .toBe(1);
+      // Refused while New task is free: it comes back there, to edit and send.
+      await electronApp.evaluate(() => {
+        globalThis.__homeRefusedSend.release();
+      });
+      home = await app.openHomeForProject('cowork-refused');
+      await expect(home.getByTestId('home-composer-editor')).toContainText(
+        prompt,
+        { timeout: 15_000 },
+      );
+      await expect.poll(record).toEqual({ kept: [], outbox: null });
+
+      // Sent again, and refused again while New task holds a newer draft.
+      await home.getByTestId('home-send-button').click();
+      await expect
+        .poll(() =>
+          electronApp.evaluate(() => globalThis.__homeRefusedSend.calls),
+        )
+        .toBe(2);
+      // The message left New task as it went; a newer draft takes its place.
+      home = await app.openHomeForProject('cowork-refused');
+      await home.getByTestId('home-composer-editor').fill(newer);
+      await electronApp.evaluate(() => {
+        globalThis.__homeRefusedSend.release();
+      });
+
+      // Never lost, never merged: it comes back as its own kept draft.
+      await expect(home.getByTestId('home-kept-draft')).toContainText(prompt, {
+        timeout: 15_000,
+      });
+      await expect(home.getByTestId('home-composer-editor')).toContainText(
+        newer,
+      );
+      await expect.poll(record).toEqual({ kept: [prompt], outbox: null });
+      // Once New task is free, it moves back.
+      await home.getByTestId('home-composer-editor').fill('');
+      await home.getByTestId('home-kept-draft-move').click();
+      await expect(home.getByTestId('home-composer-editor')).toContainText(
+        prompt,
+      );
+    } finally {
+      await closeCanopy(electronApp, userDataDir);
+    }
+  });
+
+  test('New task holds a local first message main failed to take exactly once, as develop does, while its chat shows it failed (CAN-6798)', async () => {
+    test.setTimeout(150_000);
+    const userDataDir = mkdtempSync(
+      path.join(os.tmpdir(), 'canopy-home-held-by-chat-'),
+    );
+    seedDemoWorkspaces({
+      userDataDir,
+      apps: [DEMO_APP_ID],
+      createWorktrees: false,
+    });
+    const { electronApp } = await launchCanopy({ userDataDir });
+    try {
+      const window = await electronApp.firstWindow();
+      const app = new CanopyAppDriver(window);
+      await app.waitForShell({ timeout: 30_000 });
+      const openHome = async () => {
+        await window.getByTestId('sidebar-create-task').click();
+        const page = window.getByTestId('page-home');
+        await waitForHomeWorkspaceSelection(page);
+        return page;
+      };
+      // Main holds the first message until released, then fails it.
+      await electronApp.evaluate(({ ipcMain }) => {
+        const state = { calls: 0, release: () => {} };
+        globalThis.__homeHeldByChat = state;
+        ipcMain.removeHandler('chat:send-message');
+        ipcMain.handle('chat:send-message', async () => {
+          state.calls += 1;
+          await new Promise((resolve) => {
+            state.release = resolve;
+          });
+          throw new Error('Main refused this message.');
+        });
+      });
+      const prompt = 'Draft the release notes for the failed send.';
+      const home = await openHome();
+      await home.getByTestId('home-composer-editor').fill(prompt);
+      await home.getByTestId('home-send-button').click();
+      await expect
+        .poll(
+          () => electronApp.evaluate(() => globalThis.__homeHeldByChat.calls),
+          { timeout: 60_000 },
+        )
+        .toBe(1);
+      // New task is untouched when the failure comes.
+      await electronApp.evaluate(() => {
+        globalThis.__homeHeldByChat.release();
+      });
+
+      // Its chat shows it failed, with no way to send it from there...
+      await expect(window.getByText('Main refused this message.')).toBeVisible({
+        timeout: 15_000,
+      });
+      await expect(
+        window.getByTestId('first-send-failed-notice-retry'),
+      ).toHaveCount(0);
+      // ...and New task holds it again, once, to edit and send.
+      const later = await openHome();
+      await expect(later.getByTestId('home-composer-editor')).toContainText(
+        prompt,
+        { timeout: 15_000 },
+      );
+      await expect(later.getByTestId('home-kept-draft')).toHaveCount(0);
+      await expect
+        .poll(() =>
+          window.evaluate((text) => {
+            const key = Object.keys(window.localStorage).find((each) =>
+              each.startsWith('canopy:home-draft:v1:'),
+            );
+            const saved =
+              key === undefined
+                ? null
+                : JSON.parse(window.localStorage.getItem(key) ?? '{}');
+            return {
+              draft: saved?.draft?.text ?? null,
+              kept: (saved?.kept ?? []).length,
+              outbox: saved?.outbox ?? null,
+            };
+          }, prompt),
+        )
+        .toEqual({ draft: prompt, kept: 0, outbox: null });
+    } finally {
+      await closeCanopy(electronApp, userDataDir);
+    }
+  });
+
+  test("New task never writes one account's Cowork first message into another's record when the account changes while its chat is created, and sweeps the first account's record (CAN-6798)", async () => {
+    test.setTimeout(150_000);
+    const userDataDir = mkdtempSync(
+      path.join(os.tmpdir(), 'canopy-home-account-switch-'),
+    );
+    seedCoworkWorkspace({
+      userDataDir,
+      workspaceId: 'cowork-account',
+      name: 'Account notes',
+      chatId: 'cowork-account-chat',
+      collapsed: false,
+      seedMessage: false,
+    });
+    const { electronApp } = await launchCanopy({ userDataDir });
+    try {
+      const window = await electronApp.firstWindow();
+      const app = new CanopyAppDriver(window);
+      await app.waitForShell({ timeout: 30_000 });
+      // Main answers the saved-account read as account A, later B, and can
+      // hold the Cowork chat's creation.
+      await electronApp.evaluate(({ ipcMain }) => {
+        const state = {
+          who: 'acct-a',
+          hold: false,
+          held: false,
+          created: false,
+          release: () => {},
+        };
+        globalThis.__homeAccountSwitch = state;
+        const load = ipcMain._invokeHandlers.get(
+          'settings:load-canopy-cloud-account',
+        );
+        const create = ipcMain._invokeHandlers.get('work-entries:create');
+        if (!load || !create)
+          throw new Error('The account or create handler is missing.');
+        ipcMain.removeHandler('settings:load-canopy-cloud-account');
+        ipcMain.handle(
+          'settings:load-canopy-cloud-account',
+          async (...args) => {
+            const real = await load(...args);
+            // A whole account record: the window renders it, not just New task.
+            return {
+              ...(real ?? {}),
+              read: 'ok',
+              account: {
+                name: `Account ${state.who}`,
+                email: `${state.who}@example.test`,
+                role: 'DEVELOPER',
+                ...(real?.account ?? {}),
+                id: state.who,
+              },
+            };
+          },
+        );
+        ipcMain.removeHandler('work-entries:create');
+        ipcMain.handle('work-entries:create', async (...args) => {
+          if (state.hold) {
+            state.held = true;
+            await new Promise((resolve) => {
+              state.release = resolve;
+            });
+          }
+          const result = await create(...args);
+          state.created = true;
+          return result;
+        });
+      });
+      const keys = () =>
+        window.evaluate(() =>
+          Object.keys(window.localStorage).filter((each) =>
+            each.startsWith('canopy:home-draft:v1:'),
+          ),
+        );
+      // New task reads account A from the start.
+      await window.reload();
+      await app.waitForShell({ timeout: 30_000 });
+      const prompt = 'Account A private plan for the launch.';
+      let home = await app.openHomeForProject('cowork-account');
+      await home.getByTestId('home-composer-editor').fill(prompt);
+      await expect.poll(keys).toEqual(['canopy:home-draft:v1:account:acct-a']);
+
+      await electronApp.evaluate(() => {
+        globalThis.__homeAccountSwitch.hold = true;
+      });
+      await home.getByTestId('home-send-button').click();
+      await expect
+        .poll(() =>
+          electronApp.evaluate(() => globalThis.__homeAccountSwitch.held),
+        )
+        .toBe(true);
+      // Account B signs in while A's chat is being created.
+      const context = await window.evaluate(() =>
+        window.api.workspaceContext.get(),
+      );
+      await electronApp.evaluate(({ BrowserWindow }, state) => {
+        globalThis.__homeAccountSwitch.who = 'acct-b';
+        for (const each of BrowserWindow.getAllWindows())
+          each.webContents.send('workspace-context:changed', {
+            ...state,
+            reason: 'account-change',
+          });
+      }, context);
+      await electronApp.evaluate(() => {
+        globalThis.__homeAccountSwitch.release();
+      });
+      await expect
+        .poll(() =>
+          electronApp.evaluate(() => globalThis.__homeAccountSwitch.created),
+        )
+        .toBe(true);
+
+      // Nothing of A's is written under B, and A's record is swept once B
+      // is the account signed in.
+      await expect
+        .poll(
+          () =>
+            window.evaluate((text) => {
+              const found = Object.keys(window.localStorage).filter((each) =>
+                each.startsWith('canopy:home-draft:v1:'),
+              );
+              return {
+                accountA: found.includes('canopy:home-draft:v1:account:acct-a'),
+                textUnderB: found.some(
+                  (each) =>
+                    each !== 'canopy:home-draft:v1:account:acct-a' &&
+                    (window.localStorage.getItem(each) ?? '').includes(text),
+                ),
+              };
+            }, prompt),
+          { timeout: 15_000 },
+        )
+        .toEqual({ accountA: false, textUnderB: false });
+      home = await app.openHomeForProject('cowork-account');
+      await expect(home.getByTestId('home-composer-editor')).not.toContainText(
+        prompt,
+      );
+      await expect(
+        home.locator('[data-testid^="home-outbox-"]', { hasText: prompt }),
+      ).toHaveCount(0);
     } finally {
       await closeCanopy(electronApp, userDataDir);
     }

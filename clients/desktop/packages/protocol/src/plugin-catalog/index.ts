@@ -1,3 +1,4 @@
+import type { HarnessCompatibility } from '../plugins/harness-compatibility';
 // ---------------------------------------------------------------------------
 // Curated plugin catalog — wire contracts (protocol layer).
 //
@@ -21,8 +22,8 @@
 //
 // Style mirrors `packages/protocol/src/mcp-catalog/index.ts` (pure
 // interfaces, `as const` where needed, a `VERSION` const, no zod). This
-// module is intentionally DEPENDENCY-FREE: it has ZERO imports so the
-// dependency direction stays desktop-shared → protocol.
+// module has no runtime dependencies; its optional compatibility contract is
+// imported as a type so the dependency direction stays desktop-shared → protocol.
 // ---------------------------------------------------------------------------
 
 /**
@@ -65,6 +66,7 @@ export interface CuratedPluginSkillManifest {
  * concern and is not part of this wire shape.
  */
 export interface CuratedPluginEntry {
+  harnessCompatibility?: HarnessCompatibility;
   key: string;
   name: string;
   shortDescription: string;

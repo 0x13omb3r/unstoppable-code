@@ -18,6 +18,7 @@ import {
   APP_ADVISOR_WORKTREE_ID,
   type ScheduledActivityRun,
 } from '@canopy/desktop-shared/types';
+import { isBotProjectId } from '@canopy/protocol/chat-targets';
 import { brandText } from '@/lib/brand';
 import { useChatStore } from '@/stores/chatStore';
 import { useNavigationStore } from '@/stores/navigationStore';
@@ -131,7 +132,7 @@ export function resolveAutomationRunDestination(
   if (result.chatId) {
     const projectId = result.projectId ?? run.target?.workspaceId;
     const worktreeId = result.worktreeId ?? run.target?.worktreeId;
-    if (projectId === APP_ADVISOR_PROJECT_ID) {
+    if (projectId !== undefined && isBotProjectId(projectId)) {
       return {
         kind: 'app-advisor-chat',
         chatId: result.chatId,
@@ -507,7 +508,7 @@ export async function openChatTurnDestination(link: {
   chatId: string;
   userMessageId: string;
 }): Promise<OpenAutomationRunDestinationResult> {
-  if (link.projectId === APP_ADVISOR_PROJECT_ID) {
+  if (isBotProjectId(link.projectId)) {
     return await openAppAdvisorChat({
       kind: 'app-advisor-chat',
       chatId: link.chatId,

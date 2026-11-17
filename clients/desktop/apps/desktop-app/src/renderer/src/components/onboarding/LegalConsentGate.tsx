@@ -4,7 +4,7 @@ import { localPlatform } from '@/lib/local-platform';
 import { CONSENT_TOS_VERSION } from '@canopy/desktop-shared/constants/consent';
 import { Button } from '@canopy/ui-shared';
 import { BrandLogo } from '@/components/BrandLogo';
-import { brandText } from '@/lib/brand';
+import { brand, brandText } from '@/lib/brand';
 import { useCanopyLegalUrls } from '@/hooks/useCanopyLegalUrls';
 import {
   ChoiceField,
@@ -12,6 +12,7 @@ import {
   Heading,
   Surface,
 } from '@canopy/ui-shared/components';
+import { GitHubIcon, ShieldIcon } from '@canopy/ui-shared/icons/AppIcons';
 
 export interface LegalConsentGateProps {
   /**
@@ -32,9 +33,9 @@ interface LegalDocumentLinkProps {
 }
 
 /**
- * A legal document name in the consent sentence. It sits outside the
- * checkbox's label (`ChoiceField`), so clicking it never toggles acceptance
- * (CAN-2621).
+ * An inline link on the gate: a legal document name in the consent sentence,
+ * or the source repository. Document names sit outside the checkbox's label
+ * (`ChoiceField`), so clicking one never toggles acceptance (CAN-2621).
  * It opens the Cloud-hosted page once the base URL resolves; until then, or
  * in a local build with no base URL configured, it is inert text.
  */
@@ -57,6 +58,27 @@ function LegalDocumentLink({
   );
 }
 
+/** A short line led by its glyph. */
+function ConsentFact({
+  icon,
+  testId,
+  children,
+}: {
+  icon: ReactNode;
+  testId: string;
+  children: ReactNode;
+}): JSX.Element {
+  return (
+    <p
+      className="flex items-center gap-3 text-s fg-secondary"
+      data-testid={testId}
+    >
+      <span className="flex w-4 shrink-0 justify-center">{icon}</span>
+      <span>{children}</span>
+    </p>
+  );
+}
+
 /**
  * Blocking first-run legal gate (CAN-934). Presented before the app shell on
  * every first run, independent of the guest-mode / cloud-sign-in feature flags,
@@ -72,6 +94,8 @@ export function LegalConsentGate({
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const { termsUrl, privacyUrl } = useCanopyLegalUrls();
+  // Brands without a public client repository make no open-source claim.
+  const sourceUrl = brand.web.marketing?.sourceRepository?.url ?? null;
 
   const handleContinue = async (): Promise<void> => {
     if (!agreed || submitting) {
@@ -103,18 +127,40 @@ export function LegalConsentGate({
       {!usesNativeWindowFrame(localPlatform()) && (
         <div className="electron-drag h-10 shrink-0 w-full" />
       )}
-      <div className="flex flex-1 w-full items-center justify-center overflow-y-auto px-6 pb-10">
-        <div className="w-full max-w-md flex flex-col items-center gap-8">
+      {/* `my-auto`, not `items-center`: auto margins collapse when the window
+          is shorter than the content, so the top stays scrollable. */}
+      <div className="flex flex-1 w-full justify-center overflow-y-auto px-6 pb-10">
+        <div className="my-auto w-full max-w-md flex flex-col items-center gap-8">
           <div className="flex flex-col items-center gap-4 text-center">
             <BrandLogo size={72} className="select-none fg-accent" />
-            <div className="flex flex-col items-center gap-2">
-              <Heading level={1} variant="page">
-                Welcome to {brandText.appName}
-              </Heading>
-              <p className="text-s fg-secondary">
-                Before you get started, please review and accept our terms.
-              </p>
-            </div>
+            <Heading level={1} variant="page">
+              Welcome to {brandText.appName}
+            </Heading>
+          </div>
+
+          {/* Shrink-wrapped so the rows share one icon column while the
+              block itself centers under the heading. */}
+          <div className="flex w-fit flex-col gap-3">
+            {sourceUrl && (
+              <ConsentFact
+                icon={<GitHubIcon size={16} aria-hidden />}
+                testId="legal-consent-open-source"
+              >
+                Open source.{' '}
+                <LegalDocumentLink
+                  url={sourceUrl}
+                  testId="legal-consent-source-link"
+                >
+                  View source
+                </LegalDocumentLink>
+              </ConsentFact>
+            )}
+            <ConsentFact
+              icon={<ShieldIcon size={16} aria-hidden />}
+              testId="legal-consent-data-promise"
+            >
+              Your data is yours. We don’t sell it or train AI on it.
+            </ConsentFact>
           </div>
 
           <ErrorBanner

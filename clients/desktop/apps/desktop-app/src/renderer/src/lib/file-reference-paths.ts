@@ -1,10 +1,10 @@
 import {
-  APP_ADVISOR_PROJECT_ID,
   COWORK_WORKSPACE_FILE_ROOT_ID,
   WORKSPACE_ROOT_REPO_ID,
   type FileReference,
   type RepoFileIndex,
 } from '@canopy/desktop-shared/types';
+import { isBotProjectId } from '@canopy/protocol/chat-targets';
 import { isPluginMentionReference } from '@canopy/desktop-shared/lib/plugin-mention';
 
 type AbsolutePathStyle = 'posix' | 'win32';
@@ -175,14 +175,14 @@ export function getCwdFromFileIndex(
   if (workspaceRoot) return workspaceRoot.absolutePath;
   const gitRepo = repos.find((repo) => repo.rootKind === 'git-repo');
   if (gitRepo) return gitRepo.absolutePath;
-  // Cowork and App Advisor file indexes list the agent cwd itself as a
+  // Cowork and Bot file indexes list the agent cwd itself as a
   // standalone root with a recognized id. Other standalone roots represent
   // subdirectories whose parent is the meaningful working directory.
   const managedWorkspaceRoot = repos.find(
     (repo) =>
       repo.rootKind === 'standalone' &&
       (repo.repoId === COWORK_WORKSPACE_FILE_ROOT_ID ||
-        repo.repoId === APP_ADVISOR_PROJECT_ID),
+        isBotProjectId(repo.repoId)),
   );
   if (managedWorkspaceRoot) return managedWorkspaceRoot.absolutePath;
   const standaloneRoot = repos.find(

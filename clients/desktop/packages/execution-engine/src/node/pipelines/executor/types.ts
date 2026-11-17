@@ -4,6 +4,10 @@ import type { ResourceContextInput } from '@canopy/execution-engine/lib/resource
 import type { PipelineResourceParent } from './child-pipeline-resolver';
 import type { ChildPipelineAuthorization } from './child-pipeline-resolver';
 import type {
+  PipelineIsolatedJobPort,
+  PipelineIsolatedJobVariantSource,
+} from './isolated-jobs';
+import type {
   CanopyEventInput,
   ExecutionEvent,
   ExecutionState,
@@ -354,6 +358,11 @@ export interface ExecutionRuntime {
   resolvePipelinePluginCollections?: (
     collections: readonly PipelinePluginCollection[] | undefined,
     preferences: Record<string, PipelinePluginCollectionPreference>,
+    /**
+     * The execution whose collections these are: a host that resolved a
+     * child's own (CAN-6868) answers that child's, not its run's.
+     */
+    context?: { readonly executionId: string },
   ) => Promise<PipelinePluginCollectionResolution>;
   /** Resolve fresh Claude Mod policy for one agent launch at its effective cwd. */
   resolveClaudeModAdmissionContext?: (request: {
@@ -475,6 +484,102 @@ export interface ExecutionRuntime {
    * tests) targets are not owner-checked.
    */
   pipelineOwnership?: PipelineOwnershipPort;
+  /**
+   * Checks a `run-pipeline` child before it starts or resumes in this
+   * runtime's executor, and throws a non-disclosing Error to refuse it. Only
+   * the pipeline host of a cloud runner supplies it (CAN-6868): its launch
+   * was classified without the child, whose definition the step resolves
+   * only when it runs. It may ask its owner first (a child's own plugin
+   * collections and model aliases), so the step awaits it. Without it every
+   * child runs, as in process.
+   */
+  admitChildPipeline?: (
+    request: ChildPipelineAdmissionRequest,
+  ) => void | Promise<void>;
+  /**
+   * Runs each variant of an `isolation: read_only` job in a sandbox of its
+   * own (CAN-6892). Only the pipeline host of a cloud runner supplies it;
+   * without it such a job runs here like any other.
+   */
+  isolatedJobs?: PipelineIsolatedJobPort;
+  /**
+   * This run is one read-only job variant its owner placed in a sandbox of
+   * its own (CAN-6892 part 2): its job runs the request the owner holds,
+   * and its outcome goes back to the owner for the parent.
+   */
+  isolatedVariant?: PipelineIsolatedJobVariantSource;
+  /**
+   * Runs a `run-pipeline` child on another target as a run of its own, in a
+   * sandbox for that target, and settles with its end (CAN-6868 part 3).
+   * Only the pipeline host of a cloud runner supplies it: its owner checks
+   * the target and runs the child. Without it the child runs in process.
+   */
+  delegateChildPipeline?: (
+    request: DelegatedChildPipelineRequest,
+  ) => Promise<PipelineHostActionResult>;
+}
+
+/** A child workflow on another target, as the executor hands it over. */
+export interface DelegatedChildPipelineRequest {
+  readonly childExecutionId: string;
+  readonly pipelineId: string;
+  /** The child's definition as the step resolved it, as JSON. */
+  readonly document: string;
+  readonly inputs: Readonly<Record<string, string>>;
+  readonly target:
+    | {
+        readonly scope: 'worktree';
+        readonly workspaceId: string;
+        readonly worktreeId: string;
+      }
+    | { readonly scope: 'directory'; readonly path: string }
+    | { readonly scope: 'global' };
+  readonly caller: PipelineHostActionCaller;
+  readonly signal: AbortSignal;
+  /** When the step's deadline withdraws the call. */
+  readonly timeoutMs: number;
+  /** The step's host folder (`hostArtifactsDir`). */
+  readonly artifactsDir: string;
+}
+
+/**
+ * A `run-pipeline` child before it runs (CAN-6868): on a start, the
+ * definition the step resolved and the inputs it passes; on a resume, the
+ * stored execution's snapshot and inputs, which are what run again.
+ */
+export type ChildPipelineAdmissionRequest = ChildPipelineAdmissionStep &
+  (
+    | {
+        readonly kind: 'start';
+        readonly pipelineId: string;
+        readonly pipeline: Pipeline;
+        readonly inputs: Readonly<Record<string, string>>;
+        /** The repository the child's project actions resolve in. */
+        readonly repoPath?: string;
+      }
+    | {
+        readonly kind: 'resume';
+        readonly pipelineId: string;
+        readonly pipeline: Pick<
+          Pipeline,
+          'jobs' | 'defaults' | 'model_aliases' | 'plugin_collections'
+        >;
+        readonly inputs: Readonly<Record<string, unknown>>;
+        readonly repoPath?: string;
+      }
+  );
+
+/** The child a check is for, and the step that starts it. */
+export interface ChildPipelineAdmissionStep {
+  /** The child's execution id, kept across a resume. */
+  readonly childExecutionId: string;
+  /** The step that starts the child, as a host step's caller names it. */
+  readonly step: Pick<
+    PipelineHostActionCaller,
+    'executionId' | 'jobId' | 'stepId' | 'attempt' | 'iteration'
+  >;
+  /** The step's signal: a check that asks its owner stops with it. */
+  readonly signal?: AbortSignal;
 }
 
 /** A requested worktree, checked by id before it is resolved. */

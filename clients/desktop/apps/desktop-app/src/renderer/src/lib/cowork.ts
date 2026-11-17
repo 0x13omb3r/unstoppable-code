@@ -1,8 +1,8 @@
 import {
-  APP_ADVISOR_PROJECT_ID,
   STANDALONE_CHAT_PROJECT_ID,
   type SidebarItem,
 } from '@canopy/desktop-shared/types';
+import { isBotProjectId } from '@canopy/protocol/chat-targets';
 import { isOrgDefaultCoworkWorkspaceId } from '@canopy/protocol/ui-labels';
 import { isWebCoreScope } from './chat-authority';
 import { isRegisteredCoworkWorkspaceId } from './cowork-registry';
@@ -12,12 +12,10 @@ import { isRegisteredCoworkWorkspaceId } from './cowork-registry';
  * surface that is not tied to a project/worktree sidebar item.
  *
  * This covers the standalone-chat sentinel, real cowork workspace ids
- * tracked by the projects store, and the App Advisor workspace: App Advisor
- * chats are entry-keyed `(app-advisor, <workEntryId>)` targets rendered in
- * the popout window with full cowork panel/archive semantics. App Advisor is
- * matched against `APP_ADVISOR_PROJECT_ID` directly (NOT through
- * `cowork-registry`, which is cleared/rebuilt during `projectsStore`
- * synchronization and never contains the App Advisor pseudo-workspace).
+ * tracked by the projects store, and Bot workspaces: Bot chats are entry-keyed
+ * targets rendered with full cowork panel/archive semantics. Bot IDs are
+ * checked directly because `cowork-registry` is cleared/rebuilt during
+ * `projectsStore` synchronization and does not contain Bot workspaces.
  *
  * It reads the module-level registry in `./cowork-registry` rather than
  * `projectsStore` directly — see that module's doc comment for why (avoiding
@@ -31,7 +29,7 @@ import { isRegisteredCoworkWorkspaceId } from './cowork-registry';
 export function isCoworkChatTarget(projectId: string): boolean {
   return (
     projectId === STANDALONE_CHAT_PROJECT_ID ||
-    projectId === APP_ADVISOR_PROJECT_ID ||
+    isBotProjectId(projectId) ||
     isOrgDefaultCoworkWorkspaceId(projectId) ||
     isRegisteredCoworkWorkspaceId(projectId) ||
     isWebCoreScope(projectId)

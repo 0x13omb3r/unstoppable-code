@@ -698,12 +698,12 @@ function CreditsLedgerTable({
   entries: AiCreditsLedgerEntry[];
 }): JSX.Element {
   return (
-    <div className="mt-4" data-testid="billing-ai-credits-ledger">
+    <div className="pt-4" data-testid="billing-ai-credits-ledger">
       <p className="text-s font-medium fg-primary">Activity</p>
       {entries.length === 0 ? (
         <EmptyStateRow title="No activity yet." />
       ) : (
-        <div className="mt-2">
+        <div className="pt-2">
           <SharedCreditLedgerTable entries={entries} formatDate={formatDate} />
         </div>
       )}

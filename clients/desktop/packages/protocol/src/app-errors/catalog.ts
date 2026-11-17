@@ -50,6 +50,44 @@ export const APP_ERROR_CATALOG = {
     },
     summary: 'Activity sync paused',
   },
+  'external.ai_credits_required': {
+    kind: 'external',
+    recovery: 'fix_first',
+    copy: {
+      title: 'Out of AI Credits',
+      description: 'Buy more credits to keep going.',
+    },
+    summary: 'AI Credits billing source unavailable',
+    status: 402,
+  },
+  'external.ai_credits_budget_exhausted': {
+    kind: 'external',
+    recovery: 'fix_first',
+    copy: {
+      title: 'Chat stopped. This session has used its AI Credits budget.',
+    },
+    summary: 'AI Credits session budget exhausted',
+    status: 402,
+  },
+  'external.ai_credits_access_required': {
+    kind: 'external',
+    recovery: 'fix_first',
+    copy: {
+      title: 'Chat stopped. This model is not available for this request.',
+    },
+    summary: 'AI Credits model access required',
+    status: 403,
+  },
+  'external.ai_credits_owner_unavailable': {
+    kind: 'external',
+    recovery: 'fix_first',
+    copy: {
+      title:
+        'Chat stopped. You no longer have access to this organization’s AI Credits.',
+    },
+    summary: 'AI Credits work owner membership required',
+    status: 403,
+  },
   'external.offline': {
     kind: 'external',
     recovery: 'try_again',

@@ -4,6 +4,7 @@ import {
   type CoworkWorkEntryDeleteResponse,
   type CoworkWorkEntryUpdateRequest,
 } from '@canopy/desktop-shared/types';
+import { isBotProjectId } from '@canopy/protocol/chat-targets';
 import { updateWorkEntry } from './cowork-work-entries';
 import { getTelemetrySyncService } from '../services/telemetry-sync-service';
 import { resolveCoworkWorkspaceId } from './cowork-migration-map';
@@ -14,10 +15,9 @@ import { deleteWorkEntry } from './work-entry-delete';
 /** Resolve the workspace accepted by the legacy Work Entry IPC surface. */
 export function assertWorkEntryWorkspace(projectId: string): string {
   validateId(projectId, 'projectId');
-  // App Advisor is an app-managed Work Entry workspace. It deliberately does
-  // not participate in workspaces/index.json, so it must bypass cowork
-  // migration and indexed-workspace membership checks at this IPC boundary.
-  if (projectId === APP_ADVISOR_PROJECT_ID) {
+  // Bots are app-managed Work Entry workspaces outside workspaces/index.json,
+  // so they bypass cowork migration and indexed-workspace membership checks.
+  if (isBotProjectId(projectId)) {
     return projectId;
   }
   const workspaceId = resolveCoworkWorkspaceId(projectId);
@@ -49,9 +49,9 @@ export async function updateWorkEntryMutation(
     ...(request.pinned !== undefined ? { pinned: request.pinned } : {}),
   });
 
-  if (workspaceId !== APP_ADVISOR_PROJECT_ID) {
+  if (!isBotProjectId(workspaceId)) {
     // Keep the large standalone-chat service graph off Electron startup;
-    // work-entry handlers do not need it until cowork projection runs.
+    // work-entry handlers do not need it until Cowork projection runs.
     const { emitStandaloneWorkEntrySummary } =
       await import('../services/standalone-chat-service');
     await emitStandaloneWorkEntrySummary(workspaceId, request.entryId);
@@ -67,6 +67,7 @@ export async function updateWorkEntryMutation(
   void getTelemetrySyncService()
     .refreshWorktreeMetadata(workspaceId, request.entryId)
     .catch(() => undefined);
+  // Default Bot only: its summaries use the singleton App Advisor projector.
   if (workspaceId === APP_ADVISOR_PROJECT_ID) {
     const { projectAppAdvisorChatSummaries } =
       await import('../services/chat-service');

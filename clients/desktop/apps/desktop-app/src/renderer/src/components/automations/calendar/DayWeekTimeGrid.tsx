@@ -1,11 +1,10 @@
+import { ControlButton } from '@canopy/ui-shared/components';
 import { Divider } from '@canopy/ui-shared/components';
 import { useMemo, type JSX } from 'react';
 import { isToday, startOfDay } from './calendarDateUtils';
 import {
   calendarEventChipAttributes,
-  calendarEventInteractionClasses,
-  calendarEventSelectedClasses,
-  calendarEventToneClasses,
+  calendarEventTone,
   formatGroupCount,
   formatGroupTimeRange,
   isCalendarEventClickable,
@@ -50,7 +49,7 @@ function formatHourLabel(hour: number): string {
   return `${display} ${period}`;
 }
 
-function EventChip({
+function TimeGridEvent({
   positioned,
   selectedActivityId,
   onEventClick,
@@ -84,7 +83,7 @@ function EventChip({
         surfaceClassName="w-max max-w-80"
         surfacePadding="compact"
       >
-        <button
+        <ControlButton
           type="button"
           {...calendarEventChipAttributes(event, selected)}
           data-event-count={group.count}
@@ -97,11 +96,13 @@ function EventChip({
               : undefined
           }
           disabled={!clickable}
-          className={`flex h-full w-full gap-1 overflow-hidden rounded border px-1 text-left text-3xs leading-tight transition-colors ${
-            tall ? 'flex-col py-0.5' : 'items-center'
-          } ${calendarEventToneClasses(event)} ${calendarEventSelectedClasses(
+          presentation="calendar-event"
+          appearance={{
+            layout: tall ? 'timeline-tall' : 'timeline',
+            tone: calendarEventTone(event),
             selected,
-          )} ${calendarEventInteractionClasses(event)}`}
+            interactive: clickable,
+          }}
         >
           <span className="flex w-full items-center gap-1">
             <span className="shrink-0 tabular-nums opacity-80">
@@ -115,7 +116,7 @@ function EventChip({
             )}
           </span>
           {tall && <span className="truncate">{event.name}</span>}
-        </button>
+        </ControlButton>
       </RichHoverTooltip>
     </div>
   );
@@ -223,7 +224,7 @@ export function DayWeekTimeGrid({
                   </div>
                 ))}
                 {positioned.map((item) => (
-                  <EventChip
+                  <TimeGridEvent
                     key={item.group.key}
                     positioned={item}
                     selectedActivityId={selectedActivityId}

@@ -5,10 +5,10 @@ import {
   type SteeredInputReceipt,
 } from '@canopy/desktop-shared/lib/chat-send-actions';
 import {
-  APP_ADVISOR_PROJECT_ID,
   type ChatCommandEnvelope,
   type ChatCommandResult,
 } from '@canopy/desktop-shared/types';
+import { isBotProjectId } from '@canopy/protocol/chat-targets';
 import {
   canonicalSource,
   AgentChatSendError,
@@ -102,7 +102,7 @@ async function steer(
       resolveAgentSenderIdentity(source);
     if (
       (trustedCaller.kind === 'app_advisor') !==
-      (source.projectId === APP_ADVISOR_PROJECT_ID)
+      isBotProjectId(source.projectId)
     )
       throw new AgentChatSendError(
         'validation_failed',

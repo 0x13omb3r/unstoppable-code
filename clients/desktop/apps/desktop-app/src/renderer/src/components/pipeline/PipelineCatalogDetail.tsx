@@ -6,6 +6,7 @@ import {
   Divider,
   ExecutionActionButton,
   Heading,
+  PipelineDetailTag,
 } from '@canopy/ui-shared/components';
 import { McpServerLogo } from '../shared/McpServerLogo';
 import { useInstalledMarketplaces } from '@/hooks/useInstalledMarketplaces';
@@ -16,10 +17,7 @@ import {
 } from '@/lib/relatedCapabilities';
 import { PIPELINE_SOURCE_META } from './pipeline-source-meta';
 import { TRIGGER_META } from './pipeline-trigger-meta';
-import {
-  PIPELINE_EXECUTION_SCOPE_BADGE_CLASS,
-  PIPELINE_EXECUTION_SCOPE_META,
-} from './pipeline-execution-scope-meta';
+import { PIPELINE_EXECUTION_SCOPE_META } from './pipeline-execution-scope-meta';
 import {
   getPipelineScopeBadgeLabel,
   getPipelineScopeBadgeTooltipLines,
@@ -152,6 +150,7 @@ export function PipelineCatalogDetail({
         <div className="grid gap-4 pt-4 sm:grid-cols-2">
           <MetadataBadges
             label="Triggers"
+            kind="trigger"
             values={(pipeline.triggerTypes ?? []).map(
               (type) => TRIGGER_META[type].label,
             )}
@@ -159,6 +158,7 @@ export function PipelineCatalogDetail({
           />
           <MetadataBadges
             label="Scopes"
+            kind="scope"
             values={scopes.map(
               (scope) => PIPELINE_EXECUTION_SCOPE_META[scope].label,
             )}
@@ -187,10 +187,12 @@ export function PipelineCatalogDetail({
 
 function MetadataBadges({
   label,
+  kind,
   values,
   empty,
 }: {
   label: string;
+  kind: 'trigger' | 'scope';
   values: string[];
   empty: string;
 }): JSX.Element {
@@ -206,9 +208,9 @@ function MetadataBadges({
       ) : (
         <div className="flex flex-wrap gap-1.5">
           {values.map((value) => (
-            <span key={value} className={PIPELINE_EXECUTION_SCOPE_BADGE_CLASS}>
+            <PipelineDetailTag key={value} kind={kind}>
               {value}
-            </span>
+            </PipelineDetailTag>
           ))}
         </div>
       )}

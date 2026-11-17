@@ -101,6 +101,12 @@ import {
   isHomeCloudTarget,
   type HomeContextRebind,
 } from './homeScope';
+import { HomeRestoreNotices } from './HomeRestoreNotices';
+import {
+  installHomeDraftPersistence,
+  keepHomeDraftApart,
+  outboxCardShowsIn,
+} from './homeDraftPersistence';
 import {
   useNavigationStore,
   type NavigationPage,
@@ -169,13 +175,14 @@ import { HomeBaseBranchPicker } from './HomeBaseBranchPicker';
 import { HomeComposerControls } from './HomeComposerControls';
 import { useUnbillableModelSwitch } from '@/lib/unbillableModel';
 import { HomeComposerContextRow } from './HomeComposerContextRow';
-import { HomeLinkTargetChip } from './HomeLinkTargetChip';
+import { HomeLinkTarget } from './HomeLinkTargetChip';
 import { useHomeLinkTargetSync } from './homeLinkTargetSync';
 import { useHomeLinkProjectPreview } from './homeLinkProjectPreview';
 import { HomeMcpSignInStrip } from './HomeMcpSignInStrip';
 import {
   buildPipelineTaskText,
   dispatchHomeSend,
+  homeDraftIsBeingSent,
   resolveTaskReadyLaunchTarget,
 } from './homeSend';
 import {
@@ -510,7 +517,8 @@ function HomeSurfaceContent({ variant }: HomeSurfaceProps): JSX.Element {
   const previousContextKeyRef = useRef<string | null>(null);
 
   useLayoutEffect(() => {
-    if (previousAccountEpochRef.current !== accountEpoch) {
+    const accountChanged = previousAccountEpochRef.current !== accountEpoch;
+    if (accountChanged) {
       previousAccountEpochRef.current = accountEpoch;
       resetEditor(editor);
       setEditorValue(createEmptyValue());
@@ -570,6 +578,9 @@ function HomeSurfaceContent({ variant }: HomeSurfaceProps): JSX.Element {
       return;
 
     const rebind = resolveHomeContextRebind(homeScope);
+    // A draft another context owns is kept as a card, never thrown away
+    // (CAN-6798). An account change takes its draft with the account.
+    if (!accountChanged && !homeDraftIsBeingSent()) keepHomeDraftApart();
     selectWorkspace(rebind.workspaceId);
     resetEditor(editor);
     setEditorValue(createEmptyValue());
@@ -591,9 +602,15 @@ function HomeSurfaceContent({ variant }: HomeSurfaceProps): JSX.Element {
   const rebindOutOfScopeSelection = useCallback(
     (rebind: HomeContextRebind): void => {
       if (useHomeComposerStore.getState().linkContextSwitchPending) return;
+      // Never carried into another project: kept as a card (CAN-6798).
+      if (!homeDraftIsBeingSent() && keepHomeDraftApart()) {
+        resetEditor(editor);
+        setEditorValue(createEmptyValue());
+        setDraft({ text: '', fileReferences: [] });
+      }
       selectWorkspace(rebind.workspaceId);
     },
-    [selectWorkspace],
+    [editor, selectWorkspace, setDraft],
   );
   useKeepHomeSelectionInScope(
     workspaceId,
@@ -603,6 +620,21 @@ function HomeSurfaceContent({ variant }: HomeSurfaceProps): JSX.Element {
   // A cloud project runs no local workflow: picking one returns Home to a
   // chat, which is all its send can start (CAN-6757).
   const cloudTarget = isHomeCloudTarget(workspaceId);
+  // The frame counts every notice it's given as showing, so the restore
+  // notices are given only while they have something to say.
+  const showsRestoreNotices = useHomeComposerStore(
+    (state) =>
+      state.restoreNotice !== null ||
+      state.keptDrafts.length > 0 ||
+      state.outboxCards.some((card) =>
+        outboxCardShowsIn(card, state.workspaceId),
+      ),
+  );
+  // New task's draft survives a reload or quit (CAN-6798). Installed once per
+  // window, by whichever Home mounts first, and kept for the window's life.
+  useEffect(() => {
+    installHomeDraftPersistence();
+  }, []);
   useEffect(() => {
     if (!cloudTarget) return;
     const store = useHomeComposerStore.getState();
@@ -1253,10 +1285,9 @@ function HomeSurfaceContent({ variant }: HomeSurfaceProps): JSX.Element {
    * workspace would strand the picker empty on the non-navigating
    * scheduled-provision path where this surface stays mounted.
    *
-   * When the store kept a newer workspace, attachments, schedule, or mode but
-   * still held the submitted text/references (CAN-3933), `dispatchHomeSend`
-   * purges only that content via `clearSubmittedDraft()` and leaves
-   * `workspaceId` set. The `draftGeneration` bump it makes re-syncs the
+   * When New task only moved to another workspace, mode, branch or base
+   * during the send (CAN-3933), `dispatchHomeSend` purges what was submitted
+   * via `clearSubmittedDraft()` and leaves `workspaceId` set. The `draftGeneration` bump it makes re-syncs the
    * editor through `useComposerDraftRestoration`, so this only drops the
    * now-empty draft's context owner.
    */
@@ -1443,6 +1474,9 @@ function HomeSurfaceContent({ variant }: HomeSurfaceProps): JSX.Element {
         }
         aboveNotices={[
           // Notice rows stay outside the composer; their frame owns the boundary.
+          showsRestoreNotices ? (
+            <HomeRestoreNotices key="home-restore" />
+          ) : null,
           unbillableModelSwitch ? (
             <ModelUnavailableNotice
               key="model-unavailable"
@@ -1728,7 +1762,7 @@ function HomeSurfaceContent({ variant }: HomeSurfaceProps): JSX.Element {
                 data-testid="home-link-target-slot"
                 className="flex justify-center px-4 pt-4"
               >
-                <HomeLinkTargetChip
+                <HomeLinkTarget
                   onChooseProject={(): void =>
                     setWorkspaceCommandOpenSignal((signal) => signal + 1)
                   }

@@ -348,7 +348,7 @@ function PluginsDiscoverySectionView({
       )}
       <ul
         data-testid={`plugins-section-body-${section.id}`}
-        className={`${nested ? 'mt-1' : 'mt-3'} ${CUSTOMIZE_ROW_GRID_CLASS}`}
+        className={`${nested ? 'pt-1' : 'pt-3'} ${CUSTOMIZE_ROW_GRID_CLASS}`}
       >
         {entries.map((entry) =>
           renderEntry ? (

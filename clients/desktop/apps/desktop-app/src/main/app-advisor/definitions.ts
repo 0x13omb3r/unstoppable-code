@@ -111,11 +111,11 @@ import {
 import { APP_ADVISOR_ACTION_CATALOG } from '@canopy/desktop-shared/lib/app-advisor-actions';
 import { MAX_ARCHIVE_RETENTION_DAYS } from '@canopy/desktop-shared/lib/archive-retention';
 import {
-  APP_ADVISOR_PROJECT_ID,
   PLUGINS_MANAGEMENT_SECTIONS,
   NAVIGATION_PAGE_MAP,
   WORKFLOW_EDIT_SECTIONS,
 } from '@canopy/desktop-shared/types';
+import { isBotProjectId } from '@canopy/protocol/chat-targets';
 import type {
   AppAdvisorAction,
   AutomationCreateRequest,
@@ -141,6 +141,8 @@ import {
   askUserQuestionSchema,
   getScriptOutputJsonSchema,
   getScriptOutputSchema,
+  setWorkEntryAutoDeleteJsonSchema,
+  setWorkEntryAutoDeleteSchema,
   getFileCommentsJsonSchema,
   getFileCommentsSchema,
   MAX_SCRIPT_WAIT_SECONDS,
@@ -180,6 +182,8 @@ export const GET_PIPELINE_DEBUG_CONTEXT_DESCRIPTION = `Build a redacted debuggin
 
 export const APP_ADVISOR_GET_SCRIPT_OUTPUT_DESCRIPTION = `Read output from a ${appName} worktree script run. Optional projectId and worktreeId override the current ${appName} UI selection; when omitted, the currently selected worktree from the sanitized UI snapshot is used. If no worktree is selected, the tool fails with surface_unavailable.`;
 
+export const APP_ADVISOR_SET_PROJECT_WORK_ENTRY_AUTO_DELETE_DESCRIPTION = `Arm removal of another worktree, Cowork work entry, or Orchestrator work entry in any ${appName} project once it is fully idle: no agents, workflows, or background work are active on it. This is how Orchestrator deletes or archives an item: projectId and worktreeId are required (worktreeId is the work entry id for Cowork and Orchestrator projects), and this chat’s own work entry is refused; use SetWorkEntryAutoDelete for that. The user sees the armed row in the sidebar and can turn it off, which is reported back to this chat, as are failures. Only a root chat can call this tool; delegates cannot. Set enabled to true to arm or replace an existing arm. Set enabled to false with only projectId and worktreeId to turn it off. By default, Delete keeps a restorable archive for the retention window; archive: true keeps an archive until the user deletes it. Worktrees only: teardown defaults to error (a teardown failure stops removal); force removes without teardown if teardown fails. Worktrees only: unmergedLocalBranchDelete defaults to ask; error stops removal for an unmerged local branch, force deletes it. This branch option applies only when the Git setting “Delete fully merged branches on archive” is on. Both worktree-only options are rejected for Cowork and Orchestrator work entries. A recurring scheduled automation targeting the item makes the call fail. The result states the mode and what the item is waiting for.`;
+
 export const APP_ADVISOR_READ_PIPELINE_YAML_DESCRIPTION = `Read the raw YAML definition for a ${appName} pipeline. Optional projectId and worktreeId override the current ${appName} UI selection; when omitted, the currently selected worktree from the sanitized UI snapshot is used. Supports full reads, line number ranges, and grep-like filtering options.`;
 
 export const APP_ADVISOR_SHOW_FILES_DESCRIPTION = `Open one or more files beside the Orchestrator chat or in an explicitly targeted project. Always use this tool when the user asks to see a file or section of a file. Omit workspace to open in Orchestrator's own Work Entry UX; provide workspace.projectId and workspace.worktreeId together to open in that project's main-window panel grid. Present requested deliverables and files the user should review; never automatically present internal workflow state, scheduling JSON, logs, caches, checkpoints, or temporary bookkeeping. Explicit requests to view internal files are supported. Automation-origin requests are deferred without opening panels; other agent requests during a browser handoff open in the background. Report the actual opened, activated, and deferred outcomes. Supports up to 10 files in requested tab order with the first valid file active for foreground requests, optional annotations (whose optional comments start threads), raw-file line scrolling, and rich/raw view selection. HTML pages open rendered in the in-app browser; pass view: "raw", a line, or annotations to show the page source instead.`;
@@ -198,7 +202,7 @@ const safeWorkspaceIdSchema = z
     'Project ids must be lowercase alphanumeric with hyphens',
   );
 const explicitWorkspaceProjectIdSchema = safeWorkspaceIdSchema.refine(
-  (projectId) => projectId !== APP_ADVISOR_PROJECT_ID,
+  (projectId) => !isBotProjectId(projectId),
   'The Orchestrator project id cannot be used as an explicit project target',
 );
 
@@ -1408,13 +1412,6 @@ const nonPanelAppAdvisorActionSchema = z.discriminatedUnion('type', [
     projectId: z.string(),
     worktreeId: z.string(),
   }),
-  z.object({
-    type: z.literal('worktree.archive'),
-    projectId: z.string(),
-    worktreeId: z.string(),
-    deleteBranch: z.boolean(),
-    mode: z.enum(['delete', 'archive']).optional(),
-  }),
   z
     .object({
       type: z.literal('worktree.create'),
@@ -2091,11 +2088,6 @@ const nonPanelAppAdvisorActionSchema = z.discriminatedUnion('type', [
     projectId: z.string(),
     workEntryId: z.string(),
     title: z.string().nullable(),
-  }),
-  z.object({
-    type: z.literal('standalone-chat.delete_work_entry'),
-    projectId: z.string(),
-    workEntryId: z.string(),
   }),
   z.object({
     type: z.literal('standalone-chat.send_message'),
@@ -2896,6 +2888,41 @@ export const appAdvisorGetScriptOutputSchema = getScriptOutputSchema.extend({
   projectId: z.string().optional(),
   worktreeId: z.string().optional(),
 });
+
+const AUTO_DELETE_PROJECT_ID_DESCRIPTION =
+  'Project id of the worktree or work entry to remove.';
+const AUTO_DELETE_WORKTREE_ID_DESCRIPTION =
+  'Worktree id, or the work entry id in a Cowork or Orchestrator project, of the item to remove. Not this chat’s own work entry.';
+
+export const appAdvisorSetProjectWorkEntryAutoDeleteSchema =
+  setWorkEntryAutoDeleteSchema
+    .extend({
+      projectId: z.string().min(1).describe(AUTO_DELETE_PROJECT_ID_DESCRIPTION),
+      worktreeId: z
+        .string()
+        .min(1)
+        .describe(AUTO_DELETE_WORKTREE_ID_DESCRIPTION),
+    })
+    .strict();
+
+export const appAdvisorSetProjectWorkEntryAutoDeleteJsonSchema: JsonValue = {
+  type: 'object',
+  properties: {
+    ...jsonObjectProperties(setWorkEntryAutoDeleteJsonSchema),
+    projectId: {
+      type: 'string',
+      minLength: 1,
+      description: AUTO_DELETE_PROJECT_ID_DESCRIPTION,
+    },
+    worktreeId: {
+      type: 'string',
+      minLength: 1,
+      description: AUTO_DELETE_WORKTREE_ID_DESCRIPTION,
+    },
+  },
+  required: ['enabled', 'projectId', 'worktreeId'],
+  additionalProperties: false,
+};
 
 export const appAdvisorReadPipelineYamlBaseSchema =
   readPipelineYamlBaseSchema.extend({

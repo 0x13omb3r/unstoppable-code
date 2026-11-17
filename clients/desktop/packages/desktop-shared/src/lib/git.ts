@@ -446,6 +446,31 @@ export async function pushBranch(repoPath: string): Promise<void> {
   await runGit(['push', '-u', 'origin', 'HEAD'], repoPath);
 }
 
+/**
+ * Pushes exactly `headSha` to `branch` on origin, never whatever HEAD is by
+ * then, and tracks it there as `push -u` would. Tracking is best effort once
+ * the push landed.
+ */
+export async function pushCommitToBranch(
+  repoPath: string,
+  branch: string,
+  headSha: string,
+): Promise<void> {
+  if (!/^(?:[0-9a-f]{40}|[0-9a-f]{64})$/.test(headSha))
+    throw new Error('Not a commit to push.');
+  if (branch.startsWith('-') || branch.includes('\0'))
+    throw new Error('Not a branch to push to.');
+  await runGit(['push', 'origin', `${headSha}:refs/heads/${branch}`], repoPath);
+  try {
+    await runGit(
+      ['branch', `--set-upstream-to=refs/remotes/origin/${branch}`, branch],
+      repoPath,
+    );
+  } catch {
+    // Left untracked; the next push sets it again.
+  }
+}
+
 export async function hasUncommittedChanges(
   repoPath: string,
 ): Promise<boolean> {

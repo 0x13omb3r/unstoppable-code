@@ -15,7 +15,7 @@ export function DetailBackButton({
   onNavigateBack,
 }: DetailBackButtonProps): JSX.Element {
   return (
-    <div className="mb-2 shrink-0">
+    <div className="pb-2 shrink-0">
       <Button
         variant="ghost"
         size="compact"

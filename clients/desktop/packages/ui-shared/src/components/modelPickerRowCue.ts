@@ -20,7 +20,7 @@ export const MODEL_PICKER_ROW_CUE_COPY = {
    * the shorter remedy every viewer can take; this hint names both.
    */
   needsBillingSourceHint: (provider: string): string =>
-    `Connect ${provider} or buy AI Credits to use this model.`,
+    `Connect ${provider} or choose another provider to use this model.`,
 } as const;
 
 /** A settled yes or no, or `unknown` while loading, after a failure, or unread. */

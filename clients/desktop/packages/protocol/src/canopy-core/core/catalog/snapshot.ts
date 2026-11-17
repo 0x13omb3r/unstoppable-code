@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { parseHarnessCompatibility } from '../../../plugins/harness-compatibility';
 
 import { MODEL_LIBRARY_ACCESS_VALUES } from '../../../models/model-library-access';
 import { CanopyWorkspaceScopeSchema } from '../../common';
@@ -118,8 +119,8 @@ export const CatalogEntryContentSchema = z.discriminatedUnion('kind', [
     /**
      * A cloud plugin the calling desktop uploaded (CAN-6725): its local
      * name and the local marketplace it came from, as that desktop sent
-     * them. Only at `core.catalog.snapshot.get` revision 4, only to that
-     * desktop's own connection; it never names the desktop.
+     * them. Only at `core.catalog.snapshot.get` revision 4 or later, only
+     * to that desktop's own connection; it never names the desktop.
      */
     uploadedFromThisDesktop: z
       .strictObject({
@@ -190,6 +191,11 @@ export const CatalogEntryContentSchema = z.discriminatedUnion('kind', [
 ]);
 
 export const CatalogEntrySchema = z.strictObject({
+  /** Served only to snapshot callers requesting revision 5 or later. */
+  harnessCompatibility: z
+    .unknown()
+    .transform(parseHarnessCompatibility)
+    .optional(),
   entryId: IdSchema,
   kind: CatalogEntryKindSchema,
   name: z.string().min(1).max(512),
@@ -233,9 +239,16 @@ export const CORE_CATALOG_SNAPSHOT_GET_SERVED_BY_REVISION = 3;
  * Revision 4 (CAN-6725): everything revision 3 carries, and for a desktop's
  * own connection, `uploadedFromThisDesktop` on the plugins it uploaded and
  * `thisDesktopUploads` on the result. Readers before it parse `plugin` and
- * the result strictly, so only a caller that sends revision 4 gets them.
+ * the result strictly, so only a caller that sends revision 4 or later gets them.
  */
 export const CORE_CATALOG_SNAPSHOT_GET_DESKTOP_UPLOADS_REVISION = 4;
+
+/**
+ * Revision 5 (CAN-6807): everything revision 4 carries, and each entry may
+ * carry optional derived `harnessCompatibility` without changing harness
+ * availability. Only a caller that sends revision 5 gets it.
+ */
+export const CORE_CATALOG_SNAPSHOT_GET_COMPATIBILITY_REVISION = 5;
 
 export const CatalogSnapshotGetParamsSchema = z.strictObject({
   scope: CanopyWorkspaceScopeSchema,
@@ -246,6 +259,7 @@ export const CatalogSnapshotGetParamsSchema = z.strictObject({
       z.literal(CORE_CATALOG_SNAPSHOT_GET_SCHEMA_REVISION),
       z.literal(CORE_CATALOG_SNAPSHOT_GET_SERVED_BY_REVISION),
       z.literal(CORE_CATALOG_SNAPSHOT_GET_DESKTOP_UPLOADS_REVISION),
+      z.literal(CORE_CATALOG_SNAPSHOT_GET_COMPATIBILITY_REVISION),
     ])
     .optional(),
 });

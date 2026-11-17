@@ -1,3 +1,4 @@
+import { CompositeListRow } from './ListRow';
 import { useRef, useState, type JSX, type KeyboardEvent } from 'react';
 import type { ModelCatalogProvider } from '@canopy/protocol/models';
 import { ArchiveIcon, MoreHorizontalIcon } from '../icons/AppIcons';
@@ -82,22 +83,8 @@ export function StandaloneChatRow({
   // The shared sidebar row: 32px, the Work Entry row's 6px inset and gap,
   // selection by background alone. A model label adds a second line, so the
   // row grows from the same floor instead of taking its own padding.
-  const heightClass = touchTarget
-    ? 'min-h-11'
-    : modelLabel
-      ? 'min-h-8 py-1'
-      : 'h-8 py-0';
-  const wrapperBaseClass = `group group/sidebar-item flex w-full min-w-0 cursor-pointer items-center ${heightClass} gap-1.5 rounded-row px-1.5 text-left text-s transition-colors`;
-  const stateClass = selected
-    ? 'bg-muted fg-primary'
-    : archived
-      ? 'fg-tertiary hover:bg-subtle'
-      : 'fg-secondary hover:bg-subtle';
-
   return (
-    <div
-      role="button"
-      tabIndex={0}
+    <CompositeListRow
       data-testid={dataTestId}
       data-standalone-chat-id={dataChatId}
       data-archived={archived ? 'true' : 'false'}
@@ -116,7 +103,16 @@ export function StandaloneChatRow({
             }
           : undefined
       }
-      className={`${wrapperBaseClass} ${stateClass} ${archivingInFlight ? 'pointer-events-none opacity-50' : ''}`}
+      presentation="standalone-chat"
+      appearance={{
+        height: touchTarget
+          ? 'touch'
+          : modelLabel
+            ? 'two-lines'
+            : 'single-line',
+        state: selected ? 'selected' : archived ? 'archived' : 'active',
+        archiving: archivingInFlight,
+      }}
     >
       {providerType ? (
         <span className="inline-flex h-5 w-5 shrink-0 items-center justify-center fg-tertiary">
@@ -186,6 +182,6 @@ export function StandaloneChatRow({
           </FloatingMenu>
         </span>
       )}
-    </div>
+    </CompositeListRow>
   );
 }

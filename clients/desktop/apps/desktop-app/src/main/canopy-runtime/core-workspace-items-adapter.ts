@@ -2,10 +2,10 @@ import { AsyncLocalStorage } from 'node:async_hooks';
 import { randomBytes } from 'node:crypto';
 import { join } from 'node:path';
 import {
-  APP_ADVISOR_PROJECT_ID,
   SHARED_CONTAINER_VIEWER_PROJECT_ID,
   type ClipboardAttachmentData,
 } from '@canopy/desktop-shared/types';
+import { isBotProjectId } from '@canopy/protocol/chat-targets';
 import { getCoworkManagedSubdir } from '@canopy/desktop-shared/node/lib/cowork-managed-dir';
 import type { CoreWorkspaceItemScope } from '@canopy/core-runtime/node/workspace/workspace-item-ids';
 import {
@@ -112,9 +112,9 @@ class UnknownAttachmentSourceError extends Error {
   }
 }
 
-/** A Cowork or App Advisor workspace's working folder. */
+/** A Cowork workspace or Bot's working folder. */
 export function workEntryHomeDir(projectId: string): string {
-  if (projectId === APP_ADVISOR_PROJECT_ID) return getAppAdvisorHomeDir();
+  if (isBotProjectId(projectId)) return getAppAdvisorHomeDir();
   return getCoworkWorkspaceRootDir(resolveCoworkWorkspaceId(projectId));
 }
 

@@ -225,7 +225,7 @@ export function BackgroundTaskDetailModal({
           <div className="grid grid-cols-2 gap-x-6 gap-y-2 text-s">
             <div>
               <span className="fg-secondary">Kind</span>
-              <span className="ml-2 text-xs font-medium fg-secondary">
+              <span className="pl-2 text-xs font-medium fg-secondary">
                 {task.kind}
               </span>
             </div>
@@ -252,7 +252,7 @@ export function BackgroundTaskDetailModal({
             </div>
             <div>
               <span className="fg-secondary">Started</span>
-              <span className="ml-2 fg-primary/80">
+              <span className="pl-2 fg-primary/80">
                 {task.startedAt === null
                   ? 'Not started'
                   : formatTimestamp(task.startedAt)}
@@ -260,14 +260,14 @@ export function BackgroundTaskDetailModal({
             </div>
             <div>
               <span className="fg-secondary">Updated</span>
-              <span className="ml-2 fg-primary/80">
+              <span className="pl-2 fg-primary/80">
                 {formatTimestamp(task.updatedAt)}
               </span>
             </div>
             {detail?.providerTaskId && (
               <div className="col-span-2">
                 <span className="fg-secondary">Task ID</span>
-                <span className="ml-2 font-mono text-xs fg-primary/80">
+                <span className="pl-2 font-mono text-xs fg-primary/80">
                   {detail.providerTaskId}
                 </span>
               </div>
@@ -275,13 +275,13 @@ export function BackgroundTaskDetailModal({
             {detail?.toolName && (
               <div className="col-span-2">
                 <span className="fg-secondary">Tool</span>
-                <span className="ml-2 fg-primary/80">{detail.toolName}</span>
+                <span className="pl-2 fg-primary/80">{detail.toolName}</span>
               </div>
             )}
             {!isWorkflow && detail && detail.outputLocationLabel !== null && (
               <div className="col-span-2">
                 <span className="fg-secondary">Output file</span>
-                <span className="ml-2 break-all font-mono text-xs fg-primary/80">
+                <span className="pl-2 break-all font-mono text-xs fg-primary/80">
                   {detail.outputLocationLabel ?? 'not set'}
                 </span>
               </div>
@@ -289,7 +289,7 @@ export function BackgroundTaskDetailModal({
             {isWorkflow && detail?.runId && (
               <div className="col-span-2">
                 <span className="fg-secondary">Run ID</span>
-                <span className="ml-2 break-all font-mono text-xs fg-primary/80">
+                <span className="pl-2 break-all font-mono text-xs fg-primary/80">
                   {detail.runId}
                 </span>
               </div>

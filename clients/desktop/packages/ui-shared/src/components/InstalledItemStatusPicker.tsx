@@ -7,6 +7,7 @@ import type {
   InstalledItemTarget,
 } from '@canopy/protocol/installed-items';
 import { CheckIcon, ChevronDownIcon } from '../icons/AppIcons';
+import { InstalledItemStatusGlyphIcon } from '../icons/InstalledItemStatusGlyphIcon';
 import {
   INSTALLED_ITEM_STATUS_COPY,
   INSTALLED_ITEM_STATUS_ORDER,
@@ -43,37 +44,7 @@ const STATUS_INK: Record<InstalledItemStatusGlyph, string> = {
   unavailable: 'fg-tertiary',
 };
 
-function StatusGlyph({
-  status,
-}: {
-  readonly status: InstalledItemStatusGlyph;
-}): JSX.Element {
-  if (status === 'active' || status === 'available')
-    return <circle cx="4" cy="4" r="4" fill="currentColor" />;
-  return (
-    <>
-      <circle
-        cx="4"
-        cy="4"
-        r="3.25"
-        fill="none"
-        stroke="currentColor"
-        strokeWidth="1.5"
-      />
-      {status === 'unavailable' && (
-        <path
-          data-status-slash
-          d="M1.7 6.3 6.3 1.7"
-          stroke="currentColor"
-          strokeWidth="1.5"
-          strokeLinecap="round"
-        />
-      )}
-    </>
-  );
-}
-
-export function InstalledItemStatusIcon({
+export function InstalledItemStatusIndicator({
   status,
   size = 14,
 }: {
@@ -86,15 +57,10 @@ export function InstalledItemStatusIcon({
       className="inline-flex shrink-0 items-center justify-center"
       style={{ width: size, height: size }}
     >
-      <svg
-        data-status-dot={status}
-        width="8"
-        height="8"
-        viewBox="0 0 8 8"
-        className={`shrink-0 ${STATUS_INK[status]}`}
-      >
-        <StatusGlyph status={status} />
-      </svg>
+      <InstalledItemStatusGlyphIcon
+        status={status}
+        className={STATUS_INK[status]}
+      />
     </span>
   );
 }
@@ -152,7 +118,7 @@ function DisabledStatusTrigger({
         aria-disabled="true"
         aria-describedby={reasonId}
       >
-        <InstalledItemStatusIcon status={icon} />
+        <InstalledItemStatusIndicator status={icon} />
         <span className="fg-secondary">{label}</span>
         {/* Holds the chevron's place, so labels line up with live pickers. */}
         <span className="w-3 shrink-0" aria-hidden />
@@ -227,7 +193,7 @@ export function InstalledItemStatusPicker({
         aria-label={label}
         aria-disabled="true"
       >
-        <InstalledItemStatusIcon status={status} />
+        <InstalledItemStatusIndicator status={status} />
         {copy.label}
       </Button>
     );
@@ -252,7 +218,7 @@ export function InstalledItemStatusPicker({
         {busy ? (
           <LoadingSpinner sizePx={14} decorative />
         ) : (
-          <InstalledItemStatusIcon status={status} />
+          <InstalledItemStatusIndicator status={status} />
         )}
         {copy.label}
         <ChevronDownIcon size="sm" aria-hidden className="fg-tertiary" />
@@ -282,7 +248,7 @@ export function InstalledItemStatusPicker({
               }}
             >
               <DropdownMenuItemIcon>
-                <InstalledItemStatusIcon status={option} />
+                <InstalledItemStatusIndicator status={option} />
               </DropdownMenuItemIcon>
               <span className="min-w-0 flex-1">
                 <span className="block font-medium fg-primary">
@@ -302,3 +268,5 @@ export function InstalledItemStatusPicker({
     </>
   );
 }
+
+export { InstalledItemStatusIndicator as InstalledItemStatusIcon };

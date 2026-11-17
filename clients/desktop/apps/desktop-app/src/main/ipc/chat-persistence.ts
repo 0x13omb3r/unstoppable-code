@@ -211,6 +211,7 @@ function runPortalChatProjection(
       await emitStandaloneWorkEntrySummaryStrict(projectId, worktreeId, data);
       return;
     }
+    // Default Bot only: this Portal writer publishes the app_advisor identity.
     if (projectId === APP_ADVISOR_PROJECT_ID) {
       await projectAppAdvisorChatSummariesStrict(worktreeId);
       return;
@@ -296,7 +297,10 @@ export function projectChatTabsMaterialization(
           logMainProcessError('Portal cowork removal failed', error);
           throw error;
         });
-    } else if (projectId === APP_ADVISOR_PROJECT_ID) {
+    } else if (
+      // Default Bot only: removals use the app_advisor Portal event contract.
+      projectId === APP_ADVISOR_PROJECT_ID
+    ) {
       projectAppAdvisorChatSummaryRemovals({
         removedChatIds: [...removedChatIds],
       });

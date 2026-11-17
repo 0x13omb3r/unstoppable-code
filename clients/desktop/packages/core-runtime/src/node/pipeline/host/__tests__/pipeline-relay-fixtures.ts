@@ -348,6 +348,15 @@ export interface RelayRunner {
   output(executionId: string, text: string): Promise<void>;
   /** A desktop notification a step asked for (CAN-5868). */
   notify(executionId: string, title: string): Promise<void>;
+  /**
+   * A change to a child workflow of the run, at any depth, as a cloud
+   * runner's host reports one (CAN-6868).
+   */
+  child(
+    executionId: string,
+    child: WorkerPipelineExecution,
+    event?: string,
+  ): Promise<void>;
   /** A change to the run that keeps its status, as its host would report it. */
   update(
     executionId: string,
@@ -555,6 +564,14 @@ class FakePipelineHost extends EventEmitter implements PipelineHostProcess {
     });
   }
 
+  child(
+    executionId: string,
+    child: WorkerPipelineExecution,
+    event: string,
+  ): void {
+    this.send({ kind: 'child', executionId, event, execution: child });
+  }
+
   finish(executionId: string, status: WorkerPipelineExecution['status']): void {
     const run = this.runs.get(executionId);
     if (!run) throw new Error(`No run ${executionId}.`);
@@ -654,6 +671,12 @@ export function supervisorRunner(
       const host = hostOf(executionId);
       if (!host) throw new Error(`No run ${executionId}.`);
       host.notify(executionId, title);
+      await settle();
+    },
+    child: async (executionId, child, event = 'execution.updated') => {
+      const host = hostOf(executionId);
+      if (!host) throw new Error(`No run ${executionId}.`);
+      host.child(executionId, child, event);
       await settle();
     },
     update: async (executionId, patch) => {
@@ -809,6 +832,15 @@ export class FakeRunnerWorker implements PipelineExecutionWorker {
       observer.onNotification?.({ stepId: 's', title, body: '' });
   }
 
+  child(
+    executionId: string,
+    child: WorkerPipelineExecution,
+    event: string,
+  ): void {
+    for (const observer of [...(this.observers.get(executionId) ?? [])])
+      observer.onChild?.(event, child);
+  }
+
   update(executionId: string, patch: Partial<WorkerPipelineExecution>): void {
     const run = this.runs.get(executionId);
     if (!run) throw new Error(`No run ${executionId}.`);
@@ -847,6 +879,10 @@ export function fakeRunner(options: RelayRunnerOptions = {}): RelayRunner {
     },
     notify: async (executionId, title) => {
       worker.notify(executionId, title);
+      await settle();
+    },
+    child: async (executionId, child, event = 'execution.updated') => {
+      worker.child(executionId, child, event);
       await settle();
     },
     update: async (executionId, patch) => {

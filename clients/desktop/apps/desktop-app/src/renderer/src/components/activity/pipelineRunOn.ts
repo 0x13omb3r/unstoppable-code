@@ -101,8 +101,9 @@ export function usePipelineCloudRuns(): Pick<
 
 /**
  * Why this workflow can't run in the cloud yet, or undefined. The web core
- * reads shared and curated definitions only (CAN-6169); one that exists only
- * on this computer waits for CP-29.
+ * reads shared and curated definitions (CAN-6169), and a project workflow
+ * from a task's pushed branch (CAN-6869, CAN-6672); one that exists only on
+ * this computer can't run there.
  */
 export function cloudRunSourceUnavailable(
   pipeline: PipelineData,
@@ -114,11 +115,15 @@ export function cloudRunSourceUnavailable(
 
 /**
  * The `pipelineId` a cloud start sends, from which main names the web
- * core's definition: a curated workflow's `curated:<key>`, or the shared
- * workflow's id beside its `sharedPipeline`. Null for any other source.
+ * core's definition: a curated workflow's `curated:<key>`, the shared
+ * workflow's id beside its `sharedPipeline`, or a project workflow's
+ * `project--<path>`, which a task's run reads from its pushed branch. Null
+ * for any other source.
  */
 export function cloudRunPipelineId(pipeline: PipelineData): string | null {
   const { info } = pipeline;
+  if (info.source === 'project')
+    return info.id.startsWith('project--') ? info.id : null;
   if (info.source === 'shared')
     return info.serverId === CANOPY_CLOUD_SERVER_ID &&
       info.remoteId !== undefined

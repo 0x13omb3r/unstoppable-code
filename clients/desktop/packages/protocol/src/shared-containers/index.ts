@@ -546,8 +546,13 @@ export type SharedContainerForkErrorCode =
   | 'organization-already-bound'
   /** The organization's project for the repository can't be used. */
   | 'organization-repository-inaccessible'
-  /** A new organization copy isn't supported for this share's shape. */
+  /**
+   * A new organization copy isn't supported for this share's shape. Kept so
+   * older remote peers can still decode it; main no longer emits it.
+   */
   | 'organization-shape-unsupported'
+  /** A repository in the share has no project in the owning organization. */
+  | 'organization-repositories-missing'
   /** Creating or setting up the organization copy failed. */
   | 'organization-creation-failed';
 

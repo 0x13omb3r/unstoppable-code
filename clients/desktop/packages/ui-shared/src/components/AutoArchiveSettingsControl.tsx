@@ -44,7 +44,7 @@ export function AutoArchiveSettingsControl({
   const switchId = useId();
   const daysId = useId();
   return (
-    <div className="mt-4">
+    <div className="pt-4">
       <SettingsRowsRow
         label="Auto delete"
         htmlFor={switchId}

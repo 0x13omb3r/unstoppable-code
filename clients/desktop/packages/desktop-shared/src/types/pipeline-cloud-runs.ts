@@ -30,6 +30,45 @@ export interface PipelineRunLocationRequest {
    * second run. Main makes one when it is absent.
    */
   cloudIdempotencyKey?: string;
+  /**
+   * A local worktree's run in the cloud (CAN-6869): the repository, branch
+   * and head the person saw the Run dialog's warning for, about its unpushed
+   * commits or uncommitted changes, and confirmed. Main pushes only with it,
+   * and only while the worktree still has all three.
+   */
+  cloudCheckoutConfirmed?: CloudPipelineRunCheckoutConfirmation;
+  /**
+   * A multi-repository task's repository its cloud run goes with (CAN-6869),
+   * as the Run dialog's repository choice names it.
+   */
+  cloudRepoId?: string;
+}
+
+/**
+ * What a local worktree's cloud run warns about first (CAN-6869): the cloud
+ * runs only what the branch has on GitHub.
+ */
+export interface CloudPipelineRunCheckoutState {
+  /** The GitHub repository a push goes to, `owner/name`. */
+  repository: string;
+  branch: string;
+  /** The head the warning is for; a confirmation names it back. */
+  headSha: string;
+  /** False while the branch has never been pushed. */
+  published: boolean;
+  /** Commits GitHub doesn't have yet, as this computer last fetched it. */
+  unpushedCommits: number;
+  uncommittedChanges: boolean;
+}
+
+/**
+ * What the person confirmed a local worktree's push for (CAN-6869): the
+ * warning's repository, branch and head, sent back as they were shown.
+ */
+export interface CloudPipelineRunCheckoutConfirmation {
+  repository: string;
+  branch: string;
+  headSha: string;
 }
 
 /** Why main didn't start a cloud run, besides unconfirmed models. */
@@ -38,8 +77,13 @@ export type CloudPipelineRunRefusalCode =
   | 'cloud_unavailable'
   /** A `targetId` this computer can't place runs on. */
   | 'cloud_target_unavailable'
-  /** Cloud runs start with no project only, for now. */
+  /** A destination a cloud run can't use: a task that isn't a Git worktree on GitHub, say. */
   | 'cloud_destination_unavailable'
+  /**
+   * The task's cloud worktree is still being set up (CAN-6869): nothing was
+   * recorded; the same start goes on once it is ready.
+   */
+  | 'cloud_worktree_preparing'
   /** Only shared and curated workflows run in the cloud, for now. */
   | 'cloud_source_unavailable'
   /** The run needs an owner: Personal or an organization. */
@@ -71,6 +115,16 @@ export type CloudPipelineRunStartResult =
       /** Model steps need a cloud model the user confirms first. */
       errorCode: 'cloud_models_unconfirmed';
       cloudModels: CloudModelPreflightResult;
+    }
+  | {
+      success: false;
+      error: string;
+      /**
+       * The task has unpushed commits or uncommitted changes (CAN-6869): the
+       * Run dialog warns, and a confirmed start pushes, then runs.
+       */
+      errorCode: 'cloud_checkout_unconfirmed';
+      checkout: CloudPipelineRunCheckoutState;
     }
   | { success: false; error: string; errorCode: CloudPipelineRunRefusalCode };
 

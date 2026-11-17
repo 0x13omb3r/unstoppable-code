@@ -4,12 +4,14 @@ import {
 } from './watch-delegates-tombstone';
 import type { DelegationModelDiscovery } from '@canopy/protocol/delegation/discovery';
 import { createHash, type UUID } from 'node:crypto';
-import type {
-  AgentDelegationResult,
-  AgentDelegationSnapshot,
-  AgentDelegationSpawnRequest,
-  DelegationNestingState,
-  RequestSteeringRequest,
+import {
+  getManagedDelegationSurfacePolicy,
+  type AgentDelegationResult,
+  type AgentDelegationSnapshot,
+  type AgentDelegationSpawnRequest,
+  type DelegationNestingState,
+  type ManagedDelegationSurface,
+  type RequestSteeringRequest,
 } from '@canopy/protocol/delegation';
 import {
   parseClaudeDelegationSpawn,
@@ -51,6 +53,13 @@ function unavailable(): AgentDelegationResult<never> {
       message: 'The owning parent turn is unavailable.',
       retryable: false,
     },
+  };
+}
+
+function capabilityUnavailable(message: string): AgentDelegationResult<never> {
+  return {
+    ok: false,
+    error: { code: 'capability_unavailable', message, retryable: false },
   };
 }
 
@@ -168,6 +177,8 @@ export class DelegationParent {
       ) => Promise<AgentDelegationResult<unknown>>;
       /** Shared by a root chat's tool generations; private when omitted. */
       hostMessages?: DelegationHostMessages;
+      /** Trusted host-owned surface profile; omitted generic callers use Code. */
+      surface?: ManagedDelegationSurface;
     },
   ) {
     this.hostMessages = options.hostMessages ?? new DelegationHostMessages();
@@ -240,8 +251,10 @@ export class DelegationParent {
     agentId?: string,
   ): AgentDelegationResult<Record<string, unknown>> {
     const context = this.context(undefined, callId);
+    if (!context) return unavailable();
+    const surfaceDenied = this.surfaceToolDenial(name);
+    if (surfaceDenied) return surfaceDenied;
     if (
-      !context ||
       agentId ||
       (!isWatchDelegatesCompatibilityName(name, this.options.harness) &&
         !this.ownsTool(name)) ||
@@ -269,6 +282,8 @@ export class DelegationParent {
     input: unknown,
   ): Promise<AgentDelegationResult<unknown>> {
     const owner = this.context();
+    const surfaceDenied = owner ? this.surfaceToolDenial(name) : undefined;
+    if (surfaceDenied) return surfaceDenied;
     if (
       !owner ||
       !this.binding ||
@@ -463,6 +478,7 @@ export class DelegationParent {
         discoverCapabilities: this.options.discoverCapabilities,
         enableDelegationTools: this.options.enableDelegationTools,
         requestSteering: this.options.requestSteering,
+        surface: this.options.surface,
         ...(hooks
           ? {
               includeFeed: true,
@@ -515,6 +531,8 @@ export class DelegationParent {
       return unavailable();
     if (isWatchDelegatesCompatibilityName(name, this.options.harness))
       return watchDelegatesCompatibilityResult(input);
+    const surfaceDenied = this.surfaceToolDenial(name);
+    if (surfaceDenied) return surfaceDenied;
     if (!this.ownsTool(name)) return unavailable();
     if (
       (name === this.options.names.manageWorktree ||
@@ -533,9 +551,11 @@ export class DelegationParent {
       this.options.harness !== 'codex'
         ? parseClaudeDelegationSpawn(input, {
             includeFeed: this.feedHooks !== undefined,
+            surface: this.surface,
           })
         : parseCodexDelegationSpawn(input, {
             includeFeed: this.feedHooks !== undefined,
+            surface: this.surface,
           });
     if (!parsed.ok) return parsed;
     if (this.options.authorizeSpawn?.() === false) {
@@ -572,9 +592,11 @@ export class DelegationParent {
       return this.options.harness !== 'codex'
         ? parseClaudeDelegationSpawn(input, {
             includeFeed: this.feedHooks !== undefined,
+            surface: this.surface,
           })
         : parseCodexDelegationSpawn(input, {
             includeFeed: this.feedHooks !== undefined,
+            surface: this.surface,
           });
     if (
       !isWatchDelegatesCompatibilityName(name, this.options.harness) &&
@@ -594,5 +616,22 @@ export class DelegationParent {
         isolation: 'shared_worktree',
       },
     };
+  }
+
+  private get surface(): ManagedDelegationSurface {
+    return this.options.surface ?? 'worktree-chat';
+  }
+
+  private surfaceToolDenial(
+    name: string,
+  ): AgentDelegationResult<never> | undefined {
+    if (
+      !getManagedDelegationSurfacePolicy(this.surface).allowWorktree &&
+      name === this.options.names.manageWorktree
+    )
+      return capabilityUnavailable(
+        'Manage Delegate Worktree is unavailable on this delegation surface.',
+      );
+    return undefined;
   }
 }

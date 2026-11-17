@@ -1,3 +1,4 @@
+import { ControlButton } from '@canopy/ui-shared/components';
 import { Surface } from '@canopy/ui-shared/components';
 import { hasOnlyLocalPipelineTriggers } from '@canopy/protocol/pipelines';
 import {
@@ -146,7 +147,7 @@ function PipelineNameEditor({
     );
   }
   return (
-    <button
+    <ControlButton
       type="button"
       onClick={(): void => {
         nameBeforeEdit.current = name;
@@ -156,10 +157,10 @@ function PipelineNameEditor({
       aria-label={`Rename ${label}`}
       // Capped at the heading's width, so a long name ends in an ellipsis
       // instead of running under the save state and the actions.
-      className={`focus-ring min-w-0 max-w-full truncate rounded-sm align-top text-left transition-colors hover:fg-accent ${REPLAY_MASK_CLASS}`}
+      presentation="workflow-rename"
     >
       {label}
-    </button>
+    </ControlButton>
   );
 }
 

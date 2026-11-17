@@ -22,6 +22,7 @@ export function subscribePortalCanonicalTurnTimers(
     try {
       const { projectId, worktreeId, chatId } = commit.scope;
       const scope =
+        // Default Bot only: the Portal event contract has an app_advisor scope.
         projectId === APP_ADVISOR_PROJECT_ID
           ? 'app_advisor'
           : isCoworkWorkspace(projectId)

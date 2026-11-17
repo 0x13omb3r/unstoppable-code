@@ -1,5 +1,6 @@
 'use client';
 
+import { ControlButton } from '@canopy/ui-shared/components';
 import { useRef, type ChangeEvent, type JSX } from 'react';
 import {
   Button,
@@ -62,14 +63,13 @@ export function OrganizationLogoEditor({
   return (
     <div className="flex flex-col items-center gap-1">
       {logoUrl ? (
-        <button
-          type="button"
+        <ControlButton
           data-settings-control="media"
           data-testid="org-logo-edit"
           onClick={() => inputRef.current?.click()}
           disabled={busy}
           aria-label="Change organization logo"
-          className="group relative rounded-md disabled:cursor-not-allowed"
+          presentation="organization-logo-replace"
           style={{ width: px, height: px }}
         >
           <OrganizationLogo name={name} logoUrl={logoUrl} size={size} />
@@ -80,24 +80,23 @@ export function OrganizationLogoEditor({
               <Camera size={Math.max(16, Math.round(px / 4))} />
             )}
           </MediaEditOverlay>
-        </button>
+        </ControlButton>
       ) : (
-        <button
-          type="button"
+        <ControlButton
           data-settings-control="media"
           data-testid="org-logo-edit"
           onClick={() => inputRef.current?.click()}
           disabled={busy}
           aria-label="Add organization logo"
           style={{ width: px, height: px }}
-          className="flex items-center justify-center rounded-md border-2 border-dashed fg-secondary transition-colors hover:border-line-accent hover:fg-primary disabled:cursor-not-allowed disabled:opacity-50"
+          presentation="organization-logo-add"
         >
           {busy ? (
             <span className="text-xs font-medium">…</span>
           ) : (
             <ImagePlus size={Math.max(16, Math.round(px / 3))} />
           )}
-        </button>
+        </ControlButton>
       )}
       <input
         ref={inputRef}

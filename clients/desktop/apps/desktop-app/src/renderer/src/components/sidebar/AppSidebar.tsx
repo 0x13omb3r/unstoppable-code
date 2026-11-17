@@ -1,3 +1,4 @@
+import { SidebarProjectsReturn } from '@canopy/ui-shared/components';
 import { SidebarWorkspaceHoverPanel } from '@canopy/ui-shared/components';
 import { ORCHESTRATOR_LABEL } from '@canopy/protocol';
 import {
@@ -16,7 +17,6 @@ import { deriveSidebarNavRegions } from '@canopy/desktop-shared/lib/sidebar-nav-
 import { WORKSPACE_LABEL_PLURAL } from '@canopy/protocol/ui-labels';
 import {
   ChevronDownIcon,
-  ChevronDownMediumIcon,
   EditBigIcon,
   ExperimentIcon,
   PlusMediumIcon,
@@ -48,8 +48,7 @@ import {
 } from './sidebar-navigation-visibility';
 import { hasClaudeWorkerTerminalMode } from './workers-visibility';
 import { WakeLockIndicator } from './WakeLockIndicator';
-import { ResourceDiagnosticsPill } from '../resource-diagnostics/ResourceDiagnosticsPill';
-import { DevBannerIcon } from './BannerGlyphs';
+import { ResourceDiagnosticsControl } from '../resource-diagnostics/ResourceDiagnosticsPill';
 import { SidebarResizeHandle } from './SidebarResizeHandle';
 import { SidebarAccountMenu } from './SidebarAccountMenu';
 import { useDesktopWorkspaceContextAvailability } from '@/hooks/useDesktopWorkspaceContextSwitcher';
@@ -140,7 +139,6 @@ import {
   CHATS_HEADER_STUCK_ATTR,
   isChatsContentOccluded,
 } from '@canopy/ui-app/sidebar';
-import { prefersReducedMotion } from '@canopy/ui-shared/lib';
 import { formatShortcut as formatShortcutHint } from '@canopy/ui-shared/lib/shortcuts';
 import { shouldShowProjectsPin } from '@canopy/ui-app/sidebar';
 import {
@@ -914,11 +912,16 @@ function measureStickySelectedPin(
         : getLayoutOffsetTop(workspaceRoot) - viewportFlowTop,
       headerHeight: header?.offsetHeight ?? 0,
       groupHeaderHeight,
-      // The header is sticky and reports its stuck offset; it is always the
-      // first in-flow child of its group, so the group's top is its flow top.
+      // Sticky positioning shifts the header's own offset. Its flow
+      // position starts after the group root's padding.
       groupHeaderFlowTop:
         flowGroupHeader && groupRoot
-          ? getLayoutOffsetTop(groupRoot) - viewportFlowTop
+          ? getLayoutOffsetTop(groupRoot) -
+            viewportFlowTop +
+            (Number.parseFloat(
+              groupRoot.ownerDocument.defaultView?.getComputedStyle(groupRoot)
+                .paddingTop ?? '',
+            ) || 0)
           : 0,
     },
     topGroup,
@@ -3285,7 +3288,7 @@ export function AppSidebar({
                       }
                       data-testid="sidebar-titlebar-resource-monitor"
                     >
-                      <ResourceDiagnosticsPill
+                      <ResourceDiagnosticsControl
                         collapsed={false}
                         ready={resourceMonitorReady}
                         statusBar
@@ -3669,82 +3672,36 @@ export function AppSidebar({
               made fast scrolling stutter and shear. Out here nothing renders
               behind it, so there is no mask, no clip, and no per-frame work.
               Hidden until the sync says the real band has left the viewport. */}
-                <button
-                  type="button"
-                  hidden
-                  data-sidebar-projects-pin-bottom=""
-                  data-testid="sidebar-projects-pin-bottom"
-                  // The visible word is the section's name, which alone reads as
-                  // a destination. This is the same "way back" the stuck Chats
-                  // header offers in the other direction, so it says so — and
-                  // keeps the visible label inside the accessible name.
-                  aria-label={`Back to ${WORKSPACE_LABEL_PLURAL}`}
-                  className="electron-no-drag flex shrink-0 items-center gap-1 px-4 py-1.5 text-left text-s font-normal fg-quaternary transition-colors hover:fg-secondary"
-                  onClick={(event): void => {
-                    // Scoped to this sidebar rather than the document: every
-                    // other lookup in this file resolves through the rail's own
-                    // root, and a document-wide query would address the wrong
-                    // instance the moment a second sidebar tree exists.
-                    const root = event.currentTarget.closest<HTMLElement>(
+                <SidebarProjectsReturn
+                  label={WORKSPACE_LABEL_PLURAL}
+                  testId="sidebar-projects-pin-bottom"
+                  resolveTarget={(trigger) => {
+                    const root = trigger.closest<HTMLElement>(
                       SIDEBAR_ROOT_SELECTOR,
                     );
-                    const scroller = root?.querySelector<HTMLElement>(
+                    const viewport = root?.querySelector<HTMLElement>(
                       SIDEBAR_VIEWPORT_SELECTOR,
                     );
-                    // The same band the stand-in's VISIBILITY is measured
-                    // against (`resolveProjectsPinAnchor`). They must agree: if
-                    // this scrolled to the sticky controls while visibility
-                    // tracked the shared Projects header, the button would jump
-                    // the rail a couple of hundred pixels, leave the chat list
-                    // on screen, and then stay visible because the header it is
-                    // judged by had not moved.
-                    const band =
-                      root?.querySelector<HTMLElement>(
-                        PROJECTS_HEADER_SELECTOR,
-                      ) ??
-                      root?.querySelector<HTMLElement>(
+                    if (!viewport) return null;
+                    // Use the same band that controls the stand-in's visibility.
+                    const header = resolveProjectsPinAnchor(
+                      viewport,
+                      viewport.querySelector<HTMLElement>(
                         STICKY_CONTROLS_SELECTOR,
-                      );
-                    if (!scroller || !band) return;
-                    // This button hides itself the moment the band is back in
-                    // view, so a keyboard user who activated it would be left
-                    // with focus on a hidden element — which the browser drops to
-                    // `body`, losing their place in the rail entirely. Hand focus
-                    // to the real band first; it is the thing they asked for.
-                    // The Projects header explicitly, not just the band's first
-                    // focusable: `StickyWorkspaceControls` renders its `lead` —
-                    // the More button — ahead of the header, so a generic query
-                    // lands focus on More while the label promised Projects.
-                    // The fallback still matters on the shared-sidebar path,
-                    // which passes `workspaceHeader={null}`.
-                    const bandFocusTarget =
-                      band.querySelector<HTMLElement>(
-                        '[data-testid="sidebar-section-code-toggle"]',
-                      ) ??
-                      band.querySelector<HTMLElement>(
-                        'button, [href], [tabindex]:not([tabindex="-1"])',
-                      ) ??
-                      band;
-                    bandFocusTarget.focus({ preventScroll: true });
-                    // Bring the real band to the top of the rail; from there its
-                    // own top stickiness takes over and every project control is
-                    // the real one.
-                    scroller.scrollTo({
-                      top:
-                        scroller.scrollTop +
-                        band.getBoundingClientRect().top -
-                        scroller.getBoundingClientRect().top,
-                      behavior: prefersReducedMotion() ? 'auto' : 'smooth',
-                    });
+                      ),
+                    );
+                    return header
+                      ? {
+                          viewport,
+                          header,
+                          // More can precede the header in the desktop band.
+                          focusTarget: header.querySelector<HTMLElement>(
+                            '[data-testid="sidebar-section-code-toggle"]',
+                          ),
+                        }
+                      : null;
                   }}
-                >
-                  <span className="truncate">{WORKSPACE_LABEL_PLURAL}</span>
-                  <ChevronDownMediumIcon
-                    size="sm"
-                    className="shrink-0"
-                    aria-hidden="true"
-                  />
-                </button>
+                />
 
                 {/* The shared surface portals its footer callout (the bulk
               removal notice) here, so it stays on screen while the rows
@@ -3777,8 +3734,8 @@ export function AppSidebar({
                               testId="sidebar-dev-item"
                             >
                               <span className="ml-0.5 inline-flex h-5 w-5 shrink-0 items-center justify-center fg-warning">
-                                <DevBannerIcon
-                                  size={16}
+                                <ExperimentIcon
+                                  size="md"
                                   aria-hidden="true"
                                   data-testid="sidebar-dev-icon"
                                 />

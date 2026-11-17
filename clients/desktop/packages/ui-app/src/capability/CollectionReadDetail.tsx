@@ -1,6 +1,9 @@
 'use client';
 
-import { UnresolvedCollectionMember } from '@canopy/ui-shared/components';
+import {
+  ListRow,
+  UnresolvedCollectionMember,
+} from '@canopy/ui-shared/components';
 import { type JSX, type ReactNode } from 'react';
 import type {
   CollectionMcpRef,
@@ -199,32 +202,26 @@ export function CollectionReadDetail({
                       </UnresolvedCollectionMember>
                     );
                   }
-                  const content = (
-                    <>
-                      <span className="min-w-0 flex-1">
-                        <span className="block truncate text-s font-medium fg-primary">
-                          {member.name}
-                        </span>
-                        <span className="block truncate text-xs fg-secondary">
-                          {member.description || member.source}
-                        </span>
-                      </span>
-                      <span className="shrink-0 text-xs fg-secondary">
-                        {member.source}
-                      </span>
-                    </>
+                  const name = (
+                    <span className="font-medium fg-primary">
+                      {member.name}
+                    </span>
                   );
+                  const description = member.description || member.source;
                   return onOpenEntry ? (
-                    <button
+                    <ListRow
                       key={refKey}
-                      type="button"
+                      size="lg"
+                      description={description}
+                      trailing={
+                        <span className="fg-secondary">{member.source}</span>
+                      }
                       data-testid="collection-read-member"
                       data-entry-key={member.entryKey}
                       onClick={() => onOpenEntry(member)}
-                      className="focus-ring flex w-full items-center gap-3 bg-base px-3 py-2 text-left hover:bg-accent-subtle"
                     >
-                      {content}
-                    </button>
+                      {name}
+                    </ListRow>
                   ) : (
                     <Surface
                       key={refKey}
@@ -236,7 +233,15 @@ export function CollectionReadDetail({
                       padding="section-compact"
                       className="items-center"
                     >
-                      {content}
+                      <span className="min-w-0 flex-1">
+                        <span className="block truncate text-s">{name}</span>
+                        <span className="block truncate text-xs fg-secondary">
+                          {description}
+                        </span>
+                      </span>
+                      <span className="shrink-0 text-xs fg-secondary">
+                        {member.source}
+                      </span>
                     </Surface>
                   );
                 })}

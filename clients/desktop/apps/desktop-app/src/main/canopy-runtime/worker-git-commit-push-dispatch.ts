@@ -64,6 +64,44 @@ export async function commitWorktreeRepository(
   }
 }
 
+/**
+ * Pushes exactly the commit a person confirmed for a task's cloud run
+ * (CAN-6869) over `worker.git.push`: the worker refuses unless the local
+ * branch is still at it. A scope the worker can't name is refused, never
+ * pushed some other way.
+ */
+export async function pushConfirmedWorktreeHead(
+  dispatcher: WorkerGitCommitPushDispatcher,
+  caller: CanopyCallerDescriptor,
+  request: Request,
+  entry: GitSyncRepository,
+  confirmed: { readonly branch: string; readonly headSha: string },
+): Promise<void> {
+  const scope = syncScope(request, entry);
+  if (scope === null)
+    throw new Error("This task's worktree can't be pushed from here.");
+  const expectedRemoteHeadSha = await desktopTrackingHead(
+    entry.repoPath,
+    confirmed.branch,
+  );
+  try {
+    await dispatcher.instruction(
+      'worker.git.push',
+      {
+        scope,
+        remote: 'origin',
+        branch: confirmed.branch,
+        expectedLocalHeadSha: confirmed.headSha,
+        expectedRemoteHeadSha,
+        setUpstream: true,
+      },
+      options(caller),
+    );
+  } catch (error) {
+    throw hostError(error);
+  }
+}
+
 export async function pushWorktreeRepository(
   dispatcher: WorkerGitCommitPushDispatcher,
   caller: CanopyCallerDescriptor,

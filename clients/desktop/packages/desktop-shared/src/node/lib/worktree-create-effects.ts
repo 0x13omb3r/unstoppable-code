@@ -444,6 +444,7 @@ export async function seedCreatedWorktreePanelLayoutMode(
 ): Promise<void> {
   if (
     options.seedPanelLayoutMode === false ||
+    // Default Bot only: the legacy global slot has no panel layout file.
     (options.workspaceId === APP_ADVISOR_PROJECT_ID &&
       worktreeId === APP_ADVISOR_WORKTREE_ID)
   ) {

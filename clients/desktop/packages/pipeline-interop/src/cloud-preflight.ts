@@ -120,7 +120,8 @@ export const CLOUD_RUN_BUNDLED_ACTIONS: Readonly<
   'requirements-from-task': 'portable',
   'requirements-interactive': 'portable',
   router: 'portable',
-  'run-pipeline': 'child_pipeline',
+  // On the run's own target only (CAN-6868); another target is `child_pipeline`.
+  'run-pipeline': 'portable',
   'send-agent-message': 'portable',
   'spec-critic': 'portable',
   'spec-gatherer': 'portable',
@@ -297,7 +298,7 @@ const WINDOWS_SHELLS: ReadonlySet<ShellType> = new Set([
  */
 const MESSAGES: Readonly<Record<CloudRunRefusalReason, string>> = {
   child_pipeline:
-    "Cloud runs can't start another workflow yet. Copy its jobs into this workflow, or run the workflow on This computer.",
+    "Cloud runs start another workflow in a folder of the run only where the run itself runs. Remove the step's target, or target a worktree, or run the workflow on This computer.",
   model_action:
     'Cloud runs start agents only through the bundled agent actions. Use agent-prompt for this step, or run the workflow on This computer.',
   dynamic_action:
@@ -308,8 +309,9 @@ const MESSAGES: Readonly<Record<CloudRunRefusalReason, string>> = {
     "Cloud runs can't use a model alias that names an Agent or has no default model. Name the model in this step, or run the workflow on This computer.",
   plugin_collections:
     "Cloud runs can't load this plugin collection. Remove it, or run the workflow on This computer.",
+  // R11: files from a desktop task's attachments folder, which never leave it.
   host_paths:
-    "Cloud runs can't attach files to a message yet. Put the text in text or text_file, or run the workflow on This computer.",
+    'This message attaches files from your computer. Put the text in text or text_file, attach files from the run folder with attachments, or run the workflow on This computer.',
   host_inputs:
     "Cloud runs can't send a message with its own model or plugin collection yet. Remove its model and plugin collection, or run the workflow on This computer.",
   unresolved_action: "Cloud runs can't find this action.",
@@ -338,10 +340,6 @@ const RUN_SCOPE_MESSAGES: Readonly<Record<PipelineExecutionScope, string>> = {
 /** An action that runs only in a worktree, in a folder run (CAN-6739). */
 const WORKTREE_ACTION_MESSAGE =
   'This action runs only in a worktree. Run the workflow in a worktree.';
-
-/** R11: files from a desktop task's attachments folder, which never leave it. */
-const DESKTOP_FILES_MESSAGE =
-  'This message attaches files from your computer. Put the text in text or text_file, or run the workflow on This computer.';
 
 const BUILTIN_PREFIX = 'builtin/';
 
@@ -409,9 +407,10 @@ function checkHostAction(name: string, at: StepAt, refuse: Refuse): void {
   if (BOT_TARGET_ACTIONS.has(name) && input.bot_id !== undefined)
     refuse('orchestrator', 'R4', at);
   if (name !== 'send-agent-message') return;
+  // The step's own `attachments` cross to the cloud as copies (CAN-6857,
+  // G6 lifted); a desktop task's files never leave it.
   if (SEND_DESKTOP_FILE_INPUTS.some((key) => input[key] !== undefined))
-    refuse('host_paths', 'R11', at, DESKTOP_FILES_MESSAGE);
-  else if (input.attachments !== undefined) refuse('host_paths', 'G6', at);
+    refuse('host_paths', 'R11', at);
   if (SEND_APP_RESOLVED_INPUTS.some((key) => input[key] !== undefined))
     refuse('host_inputs', 'CP-32', at);
 }
@@ -575,6 +574,13 @@ function checkStep(
   }
   if (verdict !== 'portable') {
     refuse(verdict, parityIdOf(verdict), at);
+    return;
+  }
+  // A child workflow runs in its run's host on the run's own target, or as
+  // a run of its own on another worktree or the global scope (CAN-6868); a
+  // folder of the run isn't served yet.
+  if (name === 'run-pipeline' && step.target?.scope === 'directory') {
+    refuse('child_pipeline', 'G2', at);
     return;
   }
   // A folder or worktree run has the checkout these actions work in (CP-29).

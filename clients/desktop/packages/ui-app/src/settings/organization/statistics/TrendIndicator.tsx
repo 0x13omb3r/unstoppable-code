@@ -71,7 +71,7 @@ export function TrendIndicator({
 
   return (
     <p
-      className={`mt-1 inline-flex items-center gap-1 text-xs font-medium ${trendColor(
+      className={`pt-1 inline-flex items-center gap-1 text-xs font-medium ${trendColor(
         trend.direction,
         scheme,
       )}`}

@@ -16,7 +16,6 @@ import {
   type WorkerGitBranchListResult,
 } from '@canopy/protocol/canopy-core';
 import {
-  APP_ADVISOR_PROJECT_ID,
   CODE_REVIEW_CHAT_PROJECT_ID,
   PLAN_EXPLORE_CHAT_PROJECT_ID,
   SHARED_CONTAINER_VIEWER_PROJECT_ID,
@@ -85,7 +84,6 @@ export interface DaemonGitRoute {
 }
 
 const EXCLUDED_WORKSPACES = new Set([
-  APP_ADVISOR_PROJECT_ID,
   CODE_REVIEW_CHAT_PROJECT_ID,
   PLAN_EXPLORE_CHAT_PROJECT_ID,
   SHARED_CONTAINER_VIEWER_PROJECT_ID,

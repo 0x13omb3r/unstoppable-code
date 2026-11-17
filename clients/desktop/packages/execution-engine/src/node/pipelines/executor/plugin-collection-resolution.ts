@@ -18,6 +18,8 @@ import type { ExecutionOptions, NormalizedPipeline } from './types';
 export async function resolveExecutionPluginCollections(
   normalizedPipeline: Pick<NormalizedPipeline, 'plugin_collections'>,
   options: ExecutionOptions,
+  /** The execution starting; a host resolves a child's own for it (CAN-6868). */
+  executionId?: string,
 ): Promise<
   | {
       preferences: Record<string, PipelinePluginCollectionPreference>;
@@ -42,13 +44,20 @@ export async function resolveExecutionPluginCollections(
     ...storedPreferences,
     ...draftPreferences,
   };
-  const resolveCollections =
-    options.runtime.resolvePipelinePluginCollections ??
-    resolvePipelinePluginCollections;
-  const resolution = await resolveCollections(
-    normalizedPipeline.plugin_collections,
-    preferences,
-  );
+  // The host's resolver learns the execution; the default resolver's third
+  // parameter is its catalog, so it is never handed one.
+  const hostResolver = options.runtime.resolvePipelinePluginCollections;
+  const resolution =
+    hostResolver === undefined
+      ? await resolvePipelinePluginCollections(
+          normalizedPipeline.plugin_collections,
+          preferences,
+        )
+      : await hostResolver(
+          normalizedPipeline.plugin_collections,
+          preferences,
+          executionId === undefined ? undefined : { executionId },
+        );
   const blockingErrors = Object.values(resolution.snapshots).flatMap(
     (snapshot) => snapshot.unresolvedRequiredDefaults,
   );

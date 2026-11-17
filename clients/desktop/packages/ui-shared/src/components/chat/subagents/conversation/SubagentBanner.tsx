@@ -1,3 +1,4 @@
+import { ControlButton } from '../../../Button';
 import {
   REPLAY_BLOCK_CLASS,
   REPLAY_MASK_CLASS,
@@ -61,9 +62,9 @@ function LineageBreadcrumb({
       className="flex min-w-0 items-center gap-1 text-xs fg-tertiary"
     >
       <ChatIcon size={12} aria-hidden className="shrink-0" />
-      <button
+      <ControlButton
         type="button"
-        className="min-w-0 truncate hover:fg-primary hover:underline"
+        presentation="subagent-lineage"
         onClick={(): void =>
           onOpenLineage({
             kind: 'root',
@@ -76,7 +77,7 @@ function LineageBreadcrumb({
         <span className={REPLAY_MASK_CLASS} title={tree.root.title}>
           {tree.root.title}
         </span>
-      </button>
+      </ControlButton>
       {ancestors.map((ancestor) => (
         <span
           key={ancestor.id}
@@ -90,13 +91,10 @@ function LineageBreadcrumb({
           {ancestor.kind === 'workflow-run' ? (
             <SubagentWorkflowMark size={12} />
           ) : null}
-          <button
+          <ControlButton
             type="button"
-            className={
-              ancestor.kind === 'workflow-phase'
-                ? 'shrink-0 hover:fg-primary hover:underline'
-                : 'min-w-0 truncate hover:fg-primary hover:underline'
-            }
+            presentation="subagent-ancestor"
+            appearance={{ workflowPhase: ancestor.kind === 'workflow-phase' }}
             onClick={(): void =>
               onOpenLineage({
                 kind: ancestor.kind,
@@ -109,7 +107,7 @@ function LineageBreadcrumb({
             <span className={REPLAY_MASK_CLASS} title={ancestor.title}>
               {ancestor.title}
             </span>
-          </button>
+          </ControlButton>
         </span>
       ))}
       <ChevronRightIcon size="sm" aria-hidden className="shrink-0" />

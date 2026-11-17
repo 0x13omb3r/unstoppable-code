@@ -20,12 +20,19 @@ import type {
 } from '@canopy/execution-engine/types/pipeline';
 import { getTriggerInputDefs } from '@canopy/execution-engine/types/pipeline';
 import { reportClientAppError } from '@canopy/desktop-instrumentation/client';
-import type { ScheduledActivity } from '@canopy/desktop-shared/types';
-import type { PipelineWorkflowPageInfo } from '@canopy/protocol/pipelines';
 import type {
-  PipelineTriggerScheduleRow,
-  PipelineTriggerSchedules,
-  UnsavedChangesSaveResult,
+  AutomationCloudDestinationCandidate,
+  AutomationScheduleMoveRequest,
+  ScheduledActivity,
+} from '@canopy/desktop-shared/types';
+import type { CloudModelPreflightResult } from '@canopy/protocol/canopy-core';
+import { CloudModelReplacementDialog } from '@canopy/ui-app';
+import type { PipelineWorkflowPageInfo } from '@canopy/protocol/pipelines';
+import {
+  ScheduleRunOnField,
+  type PipelineTriggerScheduleRow,
+  type PipelineTriggerSchedules,
+  type UnsavedChangesSaveResult,
 } from '@canopy/ui-app/workflows';
 import {
   Button,
@@ -39,6 +46,7 @@ import { storedAutomationActivity } from '@/lib/workflows/stored-automation-acti
 import { useAutomationsStore } from '@/stores/automationsStore';
 import { useProjectsStore } from '@/stores/projectsStore';
 import { ActivityFormBody } from '../../automations/form/ActivityFormBody';
+import { usePipelineCloudRuns } from '../../activity/pipelineRunOn';
 import {
   activityToFormState,
   type FormState,
@@ -57,6 +65,41 @@ const AGENT_ORIGIN_DUPLICATE = 'Duplicate the workflow to run it as yours.';
 const AGENT_ORIGIN_SAVE_FIRST =
   'Save your changes, then duplicate the workflow to run it as yours.';
 const NEW_SCHEDULE = 'New schedule';
+// The Run on field (CAN-6917). Copy beside the strings: these are this
+// surface's reasons, not a UX writing rule.
+const RUN_ON_SAVE_FIRST = 'Save this schedule before choosing where it runs.';
+const RUN_ON_ORCHESTRATOR = 'Orchestrator workflows stay on this computer.';
+/** Shown in a cloud schedule's row, beside when it runs. */
+const RUNS_IN_CLOUD = 'Cloud';
+
+/** A move of one schedule, as the Run on field shows it. */
+interface ScheduleMove {
+  readonly busy: boolean;
+  readonly error: string | null;
+  /** The move asked where in the cloud it runs. */
+  readonly place?: {
+    readonly message: string;
+    readonly candidates: readonly AutomationCloudDestinationCandidate[];
+    readonly value: string | null;
+  };
+  /** The move asked for cloud models for steps the cloud can't run. */
+  readonly models?: CloudModelPreflightResult;
+}
+
+/**
+ * A converted Orchestrator workflow stays on this computer (CAN-6917), as
+ * main's ownsOrchestratorPromptPipeline decides; main refuses it either way.
+ */
+function isOrchestratorSchedule(activity: ScheduledActivity): boolean {
+  // The stored action: a chat-editable owner shows its chat action instead.
+  const { action } = storedAutomationActivity(activity);
+  return (
+    action.type === 'worktree_pipeline' &&
+    action.inputs?.bot_id !== undefined &&
+    action.inputs.chat_id === undefined &&
+    activity.ownedPipeline !== undefined
+  );
+}
 const SAVING_SCHEDULE = 'Saving this schedule…';
 /** Weekdays at 9:00 AM, the schedule a new one starts with. */
 const NEW_SCHEDULE_CRON = '0 9 * * 1-5';
@@ -475,16 +518,180 @@ export function useWorkflowSchedules({
     [drafts, pipelines],
   );
 
+  // Where each schedule runs (CAN-6917): this computer or the cloud.
+  const cloudRuns = usePipelineCloudRuns();
+  const moveSchedule = useAutomationsStore((s) => s.moveSchedule);
+  const [moves, setMoves] = useState<ReadonlyMap<string, ScheduleMove>>(
+    () => new Map(),
+  );
+  const setMove = useCallback(
+    (id: string, next: ScheduleMove | null): void =>
+      setMoves((current) => {
+        const updated = new Map(current);
+        if (next === null) updated.delete(id);
+        else updated.set(id, next);
+        return updated;
+      }),
+    [],
+  );
+  /** Changes a move, keeping the place or models it asked about. */
+  const updateMove = useCallback(
+    (id: string, change: Pick<ScheduleMove, 'busy' | 'error'>): void =>
+      setMoves((current) => {
+        const updated = new Map(current);
+        updated.set(id, { ...current.get(id), ...change });
+        return updated;
+      }),
+    [],
+  );
+  const move = useCallback(
+    async (
+      id: string,
+      request: Omit<AutomationScheduleMoveRequest, 'id'>,
+    ): Promise<void> => {
+      // The dialog or picker that asked stays open while it is answered.
+      updateMove(id, { busy: true, error: null });
+      const response = await moveSchedule({ id, ...request });
+      if (response.ok) {
+        setMove(id, null);
+        return;
+      }
+      if ('needs' in response) {
+        setMove(
+          id,
+          response.needs === 'destination'
+            ? {
+                busy: false,
+                error: null,
+                place: {
+                  message: response.error,
+                  candidates: response.candidates,
+                  value: null,
+                },
+              }
+            : {
+                busy: false,
+                // Asked again after choosing: main says why (the workflow
+                // or its model rules changed).
+                error: request.models === undefined ? null : response.error,
+                models: response.preflight,
+              },
+        );
+        return;
+      }
+      // Refused: the dialog or picker that asked shows why, choices kept.
+      updateMove(id, { busy: false, error: response.error });
+    },
+    [moveSchedule, setMove, updateMove],
+  );
+
   const renderBody = useCallback(
     (row: PipelineTriggerScheduleRow): ReactNode => {
       const draft = drafts.drafts.find((entry) => entry.key === row.key);
       if (!draft) return null;
+      const { activity } = draft;
+      const moving = activity === null ? undefined : moves.get(activity.id);
+      const runOnValue =
+        activity?.executionLocation === 'cloud' ? 'cloud' : 'local';
+      const place = moving?.place;
+      const models = moving?.models;
+      const runOn = (
+        <>
+          <ScheduleRunOnField
+            capabilities={cloudRuns}
+            value={runOnValue}
+            busy={moving?.busy === true}
+            error={moving?.error ?? null}
+            {...(activity !== null && isOrchestratorSchedule(activity)
+              ? { cloudUnavailableReason: RUN_ON_ORCHESTRATOR }
+              : {})}
+            {...(activity === null || draft.dirty
+              ? { blockedReason: RUN_ON_SAVE_FIRST }
+              : {})}
+            onChange={(next): void => {
+              // A move would leave unsaved edits behind.
+              if (activity !== null && !draft.dirty)
+                void move(activity.id, { to: next });
+            }}
+            {...(activity !== null &&
+            activity.executionLocation === 'cloud' &&
+            // Held off for models, or never heard back about: moving again
+            // finishes it.
+            (activity.cloudSchedule?.enabling === true ||
+              activity.cloudSchedule?.scheduleId === undefined) &&
+            moving?.models === undefined
+              ? {
+                  onFinish: (): void => {
+                    if (!draft.dirty) void move(activity.id, { to: 'cloud' });
+                  },
+                }
+              : {})}
+            {...(activity !== null && place !== undefined
+              ? {
+                  placePick: {
+                    message: place.message,
+                    options: place.candidates.map((candidate, index) => ({
+                      value: String(index),
+                      label: candidate.label,
+                      // Cloud project and task names are user-authored.
+                      maskInReplay: true,
+                    })),
+                    value: place.value,
+                    onChange: (value: string): void =>
+                      setMove(activity.id, {
+                        ...moving,
+                        busy: false,
+                        error: null,
+                        place: { ...place, value },
+                      }),
+                    onConfirm: (): void => {
+                      const picked =
+                        place.value === null
+                          ? undefined
+                          : place.candidates[Number(place.value)];
+                      if (picked !== undefined && !draft.dirty)
+                        void move(activity.id, {
+                          to: 'cloud',
+                          destination: picked.destination,
+                        });
+                    },
+                    onCancel: (): void => setMove(activity.id, null),
+                  },
+                }
+              : {})}
+          />
+          {activity !== null && models !== undefined ? (
+            <CloudModelReplacementDialog
+              key={models.definitionHash + models.policyFingerprint}
+              preflight={models}
+              busy={moving?.busy === true}
+              error={moving?.error ?? null}
+              onCancel={(): void => setMove(activity.id, null)}
+              onConfirm={(choices): void => {
+                // Bound to the preflight the person chose for: main asks
+                // again if the workflow or model rules changed since.
+                void move(activity.id, {
+                  to: 'cloud',
+                  models: {
+                    definitionHash: models.definitionHash,
+                    policyFingerprint: models.policyFingerprint,
+                    choices,
+                  },
+                });
+              }}
+            />
+          ) : null}
+        </>
+      );
       // Saved, and its record not listed yet: nothing to edit here.
       if (awaitingKeys.has(draft.key))
         return <p className="text-xs fg-tertiary">{SAVING_SCHEDULE}</p>;
       return (
         <ScheduleBody
           draft={draft}
+          runOn={runOn}
+          inCloud={runOnValue === 'cloud'}
+          moving={moving?.busy === true}
           projects={projects}
           scope={automations.scope}
           declaredInputs={declared}
@@ -534,15 +741,19 @@ export function useWorkflowSchedules({
     [
       automations,
       awaitingKeys,
+      cloudRuns,
       declared,
       drafts,
       duplicateSchedule,
+      move,
+      moves,
       onDeleteWorkflow,
       projects,
       records.length,
       removeSchedule,
       required,
       rowError,
+      setMove,
     ],
   );
 
@@ -562,7 +773,14 @@ export function useWorkflowSchedules({
               ? NEW_SCHEDULE
               : automationTrigger(activity, undefined).text,
           enabled: draft.state.enabled,
-          busy: draft.saving || draft.deleting || awaitingKeys.has(draft.key),
+          ...(activity?.executionLocation === 'cloud'
+            ? { location: RUNS_IN_CLOUD }
+            : {}),
+          busy:
+            draft.saving ||
+            draft.deleting ||
+            awaitingKeys.has(draft.key) ||
+            (activity !== null && moves.get(activity.id)?.busy === true),
           dirty: draft.dirty || activity === null,
           ...(rowError?.key === draft.key
             ? { error: rowError.message }
@@ -596,7 +814,14 @@ export function useWorkflowSchedules({
             : {}),
         };
       }),
-    [awaitingKeys, drafts.drafts, onDuplicateWorkflow, rowError, unsaved],
+    [
+      awaitingKeys,
+      drafts.drafts,
+      moves,
+      onDuplicateWorkflow,
+      rowError,
+      unsaved,
+    ],
   );
 
   const { toggle } = drafts;
@@ -633,6 +858,15 @@ export function useWorkflowSchedules({
 
 interface ScheduleBodyProps {
   readonly draft: ScheduleDraft;
+  /** Where it runs: the Run on field (CAN-6917). */
+  readonly runOn: ReactNode;
+  /**
+   * A move is in flight: the record shows off until it answers, so its
+   * fields are held rather than edited from that passing state.
+   */
+  readonly moving: boolean;
+  /** It runs in the cloud: Run now starts it here, so it isn't offered. */
+  readonly inCloud: boolean;
   readonly projects: ReturnType<typeof useProjectsStore.getState>['projects'];
   readonly scope: AutomationsPageBodyApi['scope'];
   readonly declaredInputs: readonly string[];
@@ -650,6 +884,9 @@ interface ScheduleBodyProps {
 /** One schedule's editor: when it runs, then what it runs with. */
 function ScheduleBody({
   draft,
+  runOn,
+  inCloud,
+  moving,
   projects,
   scope,
   declaredInputs,
@@ -685,7 +922,7 @@ function ScheduleBody({
     <div className="flex flex-col gap-4" data-testid="workflow-schedule-body">
       <ActivityFormBody
         state={state}
-        saving={draft.saving}
+        saving={draft.saving || moving}
         projects={projects}
         scope={scope}
         error={error}
@@ -695,6 +932,7 @@ function ScheduleBody({
           meta.origin === 'mount' ? onMount(next) : onChange(next)
         }
       />
+      {runOn}
       {keys.length > 0 ? (
         <div
           className="flex flex-col gap-3"
@@ -710,6 +948,7 @@ function ScheduleBody({
                 <TextInput
                   {...control}
                   value={values.get(key) ?? ''}
+                  disabled={moving}
                   onChange={(event): void => setInput(key, event.target.value)}
                   data-testid={`workflow-schedule-input-${key}`}
                 />
@@ -732,15 +971,17 @@ function ScheduleBody({
       <div className="flex flex-wrap items-center gap-2">
         {activity !== null ? (
           <>
-            <Button
-              variant="secondary"
-              size="compact"
-              disabled={running}
-              onClick={onRunNow}
-              data-testid="workflow-schedule-run-now"
-            >
-              Run now
-            </Button>
+            {inCloud ? null : (
+              <Button
+                variant="secondary"
+                size="compact"
+                disabled={running}
+                onClick={onRunNow}
+                data-testid="workflow-schedule-run-now"
+              >
+                Run now
+              </Button>
+            )}
             <Button
               variant="secondary"
               size="compact"

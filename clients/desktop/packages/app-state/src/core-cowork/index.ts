@@ -38,6 +38,7 @@ export {
   type CloudChatQueue,
   type CloudChatCompactionRead,
   type CloudChatMeter,
+  type CloudChatConversation,
   type CloudChatSession,
   type CloudChatSettledTurn,
   type CloudChatThread,

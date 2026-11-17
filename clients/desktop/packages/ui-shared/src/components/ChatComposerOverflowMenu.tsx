@@ -1,3 +1,4 @@
+import { ControlButton } from './Button';
 import {
   useCallback,
   useEffect,
@@ -11,7 +12,7 @@ import {
 } from 'react';
 import { CheckIcon, MoreHorizontalIcon } from '../icons/AppIcons';
 import { focusMenuRow } from '../lib/input-modality';
-import { DropdownMenuSurface } from './DropdownMenu';
+import { DropdownMenuItem, DropdownMenuSurface } from './DropdownMenu';
 import { Tooltip } from './Tooltip';
 import { useOverlayEscape } from './useOverlayEscape';
 
@@ -68,12 +69,6 @@ export interface ChatComposerOverflowMenuProps {
   triggerDataTestId?: string;
   menuDataTestId?: string;
   /**
-   * Overrides the trigger button classes. The default is a ≥44px touch target
-   * that shrinks to the compact `28px` chip size at `lg` — matching the portal
-   * composer's other right-rail controls.
-   */
-  triggerClassName?: string;
-  /**
    * Non-interactive row rendered BELOW the items, inside the same surface.
    *
    * The phone composer folds its context-usage readout in here (it used to
@@ -97,9 +92,6 @@ export interface ChatComposerOverflowMenuProps {
    */
   triggerRef?: RefObject<HTMLButtonElement | null>;
 }
-
-const DEFAULT_TRIGGER_CLASS =
-  'focus-ring flex h-11 w-11 shrink-0 items-center justify-center rounded-lg fg-secondary transition-colors hover:bg-fg-primary/[0.08] hover:fg-primary lg:h-7 lg:w-7';
 
 /** Index of the next enabled item at/after `from`, wrapping; -1 if none. */
 function nextEnabledIndex(
@@ -143,7 +135,6 @@ export function ChatComposerOverflowMenu({
   triggerTitle,
   triggerDataTestId,
   menuDataTestId,
-  triggerClassName = DEFAULT_TRIGGER_CLASS,
   footerSlot,
   triggerRef: hostTriggerRef,
 }: ChatComposerOverflowMenuProps): JSX.Element {
@@ -328,7 +319,7 @@ export function ChatComposerOverflowMenu({
       {/* Suppressed while open so the tooltip never sits over the menu the
           trigger just revealed. */}
       <Tooltip label={triggerTitle ?? triggerAriaLabel} suppressed={open}>
-        <button
+        <ControlButton
           ref={assignTrigger}
           type="button"
           onClick={() => {
@@ -349,10 +340,10 @@ export function ChatComposerOverflowMenu({
           aria-controls={open ? menuId : undefined}
           aria-label={triggerAriaLabel}
           data-testid={triggerDataTestId}
-          className={triggerClassName}
+          presentation="composer-overflow-trigger"
         >
           <MoreHorizontalIcon />
-        </button>
+        </ControlButton>
       </Tooltip>
       {open && (
         <DropdownMenuSurface
@@ -362,15 +353,16 @@ export function ChatComposerOverflowMenu({
           aria-label={triggerAriaLabel}
           aria-orientation="vertical"
           onKeyDown={onMenuKeyDown}
-          className="absolute bottom-full right-0 z-30 mb-2 min-w-48"
+          className="absolute bottom-[calc(100%+0.5rem)] right-0 z-30 min-w-48"
         >
           {items.map((item, index) => (
-            <button
+            <DropdownMenuItem
               key={item.key}
               ref={(node) => {
                 itemRefs.current[index] = node;
               }}
-              type="button"
+              presentation="composer-overflow"
+              selected={item.active}
               role={item.role ?? 'menuitemcheckbox'}
               aria-checked={
                 (item.role ?? 'menuitemcheckbox') === 'menuitemcheckbox'
@@ -382,9 +374,6 @@ export function ChatComposerOverflowMenu({
               tabIndex={index === activeIndex ? 0 : -1}
               data-testid={item.dataTestId}
               onClick={() => selectItem(item)}
-              className={`flex min-h-11 w-full items-center gap-2.5 px-3 text-left text-s transition-colors hover:bg-muted/60 focus-visible:bg-muted/60 focus:outline-none disabled:cursor-not-allowed disabled:opacity-40 ${
-                item.active ? 'fg-primary' : 'fg-secondary'
-              }`}
             >
               <span className="flex h-4 w-4 shrink-0 items-center justify-center">
                 {item.icon}
@@ -396,7 +385,7 @@ export function ChatComposerOverflowMenu({
               <span className="flex h-4 w-4 shrink-0 items-center justify-center fg-accent">
                 {item.active ? <CheckIcon size="sm" /> : null}
               </span>
-            </button>
+            </DropdownMenuItem>
           ))}
           {footerSlot ? (
             <div

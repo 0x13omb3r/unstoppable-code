@@ -548,7 +548,7 @@ export function SkillReadDetail({
     topRow = (
       <>
         {leadingContent}
-        <div className="mb-6">
+        <div className="pb-6">
           <DetailHeader
             dataTestId="skill-read-detail-header"
             title={header.title}
@@ -626,7 +626,7 @@ export function SkillReadDetail({
       />
     );
     const updateNotice = updateAction ? (
-      <div className="mb-4 empty:hidden">
+      <div className="pb-4 empty:hidden">
         <SkillUpdateNotice action={updateAction} onRemove={onRemove} />
       </div>
     ) : null;
@@ -634,7 +634,7 @@ export function SkillReadDetail({
     topRow = (
       <>
         {leadingContent || actions ? (
-          <div className="mb-2 flex shrink-0 flex-wrap items-start justify-between gap-2 empty:hidden">
+          <div className="pb-2 flex shrink-0 flex-wrap items-start justify-between gap-2 empty:hidden">
             {leadingContent}
             {actions}
           </div>
@@ -665,15 +665,17 @@ export function SkillReadDetail({
 
   const truncationNotice =
     contentTruncatedNotice !== undefined && contentTruncatedNotice !== '' ? (
-      <Surface variant="group" className="mb-4">
-        <p
-          className="px-4 py-3 text-s fg-secondary"
-          role="note"
-          data-testid="skill-read-detail-truncated"
-        >
-          {contentTruncatedNotice}
-        </p>
-      </Surface>
+      <div className="pb-4 empty:hidden">
+        <Surface variant="group">
+          <p
+            className="px-4 py-3 text-s fg-secondary"
+            role="note"
+            data-testid="skill-read-detail-truncated"
+          >
+            {contentTruncatedNotice}
+          </p>
+        </Surface>
+      </div>
     ) : null;
 
   const rootClass =
@@ -754,8 +756,7 @@ export function SkillReadDetail({
         treeToggle={{
           open: showTree,
           onToggle: () => setShowTree((open) => !open),
-          className:
-            'focus-ring mr-1 shrink-0 rounded-md border p-1.5 fg-secondary',
+          presentation: 'detail',
         }}
       />
       <div className="flex min-h-0 flex-1 gap-3 overflow-hidden">

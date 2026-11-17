@@ -92,6 +92,11 @@ export interface PipelineRunDetailProps {
   readonly mutationPending?: boolean;
   readonly errorMessage?: string;
   /**
+   * Opens a step's child run in a full view of its own (CAN-6868). A step's
+   * child shows under it either way.
+   */
+  readonly onOpenChild?: (executionId: string) => void;
+  /**
    * Host facts drawn between the controls and the steps, such as who started
    * the run, where it ran, why it paused and what it saved.
    */
@@ -129,6 +134,7 @@ export function PipelineRunDetail({
   resuming = false,
   mutationPending = false,
   errorMessage,
+  onOpenChild,
   children,
 }: PipelineRunDetailProps): JSX.Element {
   const groups = useMemo(
@@ -258,6 +264,7 @@ export function PipelineRunDetail({
                 groups={groups}
                 selected={selectedStep}
                 onSelect={onSelectStep}
+                {...(onOpenChild !== undefined && { onOpenChild })}
               />
             </div>
           </Surface>

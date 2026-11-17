@@ -686,7 +686,7 @@ async function resolveNewChatModel(
     try {
       model = await pinInheritingAgentToDestination(
         known,
-        target.kind === 'bot' ? APP_ADVISOR_PROJECT_ID : target.id,
+        target.kind === 'bot' ? target.tabsProjectId : target.id,
       );
     } catch (error) {
       throw validation(messageOf(error));

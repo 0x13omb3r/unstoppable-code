@@ -262,7 +262,8 @@ export async function listPortalWatchersForSnapshot(
     const destination = subscription.destination;
     const replaced =
       request.scope === 'app_advisor'
-        ? destination.projectId === APP_ADVISOR_PROJECT_ID &&
+        ? // Default Bot only: Portal subscriptions expose the Orchestrator scope.
+          destination.projectId === APP_ADVISOR_PROJECT_ID &&
           (!request.target?.chatLocalId ||
             destination.chatId === request.target.chatLocalId)
         : destination.projectId === request.target?.workspaceLocalId &&
@@ -304,10 +305,12 @@ export function emitPortalWatcherProjection(
     enqueuePortalEvent(
       createPortalEvent('portal.state.delta', {
         scope:
+          // Default Bot only: the Portal event contract has app_advisor scope.
           destination.projectId === APP_ADVISOR_PROJECT_ID
             ? 'app_advisor'
             : 'chat',
         target:
+          // Default Bot only: its Portal target omits workspace identifiers.
           destination.projectId === APP_ADVISOR_PROJECT_ID
             ? { chatLocalId: destination.chatId }
             : {

@@ -137,6 +137,7 @@ export function PipelinePluginCollectionEditor({
         onView={handleView}
         showCollectionKind={true}
         loading={loading}
+        autoFocusSearch
         defaultSelectedFilter="all"
         hideSelectionSummary
       />

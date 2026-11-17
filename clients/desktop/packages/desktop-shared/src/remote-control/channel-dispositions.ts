@@ -1241,6 +1241,9 @@ export const IPC_REMOTE_DISPOSITIONS: RemoteDispositions<typeof IPC_CHANNELS> =
     automationsUpdate: 'tunnel',
     automationsDelete: 'tunnel',
     automationsRunNow: 'tunnel',
+    // A schedule moves to the cloud from this computer's own Trigger tab,
+    // which reads its projects and signed-in account (CAN-6917).
+    automationsMoveSchedule: 'blocked',
     automationsCancelRun: 'tunnel',
     automationsGenerateCron: 'tunnel',
     automationsGenerateIfCommand: 'tunnel',
@@ -1345,6 +1348,7 @@ export const IPC_REMOTE_DISPOSITIONS: RemoteDispositions<typeof IPC_CHANNELS> =
     remoteControlRespondToPairing: 'local',
     remoteControlForgetDevice: 'local',
     remoteControlDisconnectController: 'local',
+    remoteControlUpdateHost: 'local',
     remoteControlInvoke: 'local',
     remoteControlSend: 'local',
     remoteControlPush: 'local',
@@ -1463,6 +1467,9 @@ export const MCP_SERVER_REMOTE_DISPOSITIONS: RemoteDispositions<
   RESOLVE_REMOTE_IMAGE: 'tunnel',
   LIST_STATUS: 'tunnel',
   GET_TOOLS: 'tunnel',
+  // One Add for every harness (CAN-6815); older hosts refuse them.
+  INSTALL_FOR_HARNESSES: 'tunnel',
+  RETRY_HARNESS_INSTALL: 'tunnel',
 };
 
 export const SKILLS_REMOTE_DISPOSITIONS: RemoteDispositions<
@@ -1515,6 +1522,9 @@ export const PLUGINS_REMOTE_DISPOSITIONS: RemoteDispositions<
   INSTALL_BUILT_IN_PLUGIN: 'tunnel',
   PREPARE_CODEX_COMPATIBILITY: 'tunnel',
   SET_CODEX_COMPAT_DISABLED: 'tunnel',
+  // One Add for every harness (CAN-6816); older hosts refuse them.
+  INSTALL_FOR_HARNESSES: 'tunnel',
+  RETRY_HARNESS_INSTALL: 'tunnel',
   SHARED_LIST: 'tunnel',
   SHARED_GET: 'tunnel',
   SHARED_CREATE: 'tunnel',

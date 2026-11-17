@@ -61,8 +61,19 @@ export type GitRepositoryWrite =
   | { readonly kind: 'tracking-head-sha'; readonly branch: string }
   | { readonly kind: 'stage-all' }
   | { readonly kind: 'commit-message'; readonly message: string }
-  /** The key binds the daemon's recipient lease to this dispatch. */
-  | { readonly kind: 'push-head'; readonly key: string }
+  /**
+   * Pushes exactly `headSha` to `branch` on origin, never whatever HEAD is
+   * by then (CAN-6869). The key binds the daemon's recipient lease to this
+   * dispatch.
+   */
+  | {
+      readonly kind: 'push-head';
+      readonly key: string;
+      readonly branch: string;
+      readonly headSha: string;
+    }
+  /** Tracks `origin/<branch>` from the local branch after its push. */
+  | { readonly kind: 'set-upstream'; readonly branch: string }
   | GitRepositoryMergeWrite
   | {
       readonly kind: 'worktree-add';

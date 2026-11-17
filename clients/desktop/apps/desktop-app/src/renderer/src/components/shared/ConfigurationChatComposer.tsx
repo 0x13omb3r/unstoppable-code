@@ -202,6 +202,7 @@ function ComposerInstance({
   const [voicePending, setVoicePending] = useState(false);
   const [modelPickerSignal, setModelPickerSignal] = useState(0);
   const [pluginsOpen, setPluginsOpen] = useState(false);
+  const plusTriggerRef = useRef<HTMLButtonElement>(null);
   const [sourceProjection, setSourceProjection] = useState<{
     key: string;
     selections: ChatTabPluginSelections;
@@ -782,17 +783,16 @@ function ComposerInstance({
         readOnly={readOnly || disabled}
       />
       {statusMessage && (
-        <Notice
-          errorSource="composer-instance-status"
-          intent="destructive"
-          className="mx-3"
-        >
-          {statusMessage}
-        </Notice>
+        <div className="px-3">
+          <Notice errorSource="composer-instance-status" intent="destructive">
+            {statusMessage}
+          </Notice>
+        </div>
       )}
       <div className="flex min-h-12 flex-wrap items-center gap-2 px-3 pb-3 pt-2">
         <ComposerPlusMenu
           controller={menu}
+          triggerRef={plusTriggerRef}
           dataTestIdPrefix={dataTestId}
           commands={commands}
           searchFiles={searchFiles}
@@ -1067,6 +1067,7 @@ function ComposerInstance({
       {pluginsOpen &&
         (selectionMode === 'local' ? (
           <ChatPluginsModal
+            restoreFocusRef={plusTriggerRef}
             initial={value.pluginSelections ?? createEmptySelections()}
             onSave={(pluginSelections) => {
               updateValue({ pluginSelections });
@@ -1078,6 +1079,7 @@ function ComposerInstance({
           <DialogModal
             inset="flush"
             title="Plugins and skills"
+            restoreFocusRef={plusTriggerRef}
             onClose={() => setPluginsOpen(false)}
             dataTestId={`${dataTestId}-plugins-modal`}
           >

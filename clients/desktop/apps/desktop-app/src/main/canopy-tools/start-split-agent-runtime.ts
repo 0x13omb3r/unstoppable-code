@@ -5,6 +5,7 @@ import {
   type ClaudeForkToolResult,
   type PersistedChatMessage,
 } from '@canopy/desktop-shared/types';
+import { isBotProjectId } from '@canopy/protocol/chat-targets';
 import { drainCurrentSessionEvents } from '../agents/session-event-router';
 import {
   resolvePersistedChatExecutionHarness,
@@ -155,10 +156,11 @@ export async function startSplitAgent(
   ) {
     throw new Error('Starting a branched agent requires a worktree chat.');
   }
-  if (kind === 'start_branched_agent' && projectId === APP_ADVISOR_PROJECT_ID) {
+  if (kind === 'start_branched_agent' && isBotProjectId(projectId)) {
     throw new Error('Starting a branched agent requires a Code worktree chat.');
   }
   if (
+    // Default Bot only: this compatibility restriction is for the legacy global slot.
     projectId === APP_ADVISOR_PROJECT_ID &&
     sourceWorktreeId === APP_ADVISOR_WORKTREE_ID
   ) {
@@ -166,7 +168,7 @@ export async function startSplitAgent(
       'The legacy Orchestrator global slot cannot start a forked agent; select a Work Entry chat.',
     );
   }
-  if (projectId === APP_ADVISOR_PROJECT_ID && !runtime.appAdvisorSurfaces) {
+  if (isBotProjectId(projectId) && !runtime.appAdvisorSurfaces) {
     throw new Error(
       'Starting an Orchestrator fork requires Orchestrator surfaces.',
     );

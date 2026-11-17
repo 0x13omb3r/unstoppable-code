@@ -23,7 +23,7 @@ export const CHAT_QUEUE_LAB_ENTRIES: readonly ComponentsLabEntry[] = [
     id: 'chat-unsaved-message-edits',
     name: 'UnsavedMessageEdits',
     group: 'Unified',
-    note: "A queued message's edit that wasn't saved, kept read-only with Copy and Dismiss until dismissed (CAN-6799). Desktop also offers Restore into the chat's composer.",
+    note: "A queued message's edit that wasn't saved, kept read-only with Copy, Restore into the chat's composer and Dismiss until dismissed or restored (CAN-6799, CAN-6801), on desktop and the web.",
     source: `${CHAT}/MessageEditEntry.tsx`,
     prs: [],
     View: UnsavedMessageEditsSpecimen,

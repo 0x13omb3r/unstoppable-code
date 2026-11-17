@@ -71,6 +71,33 @@ export const CloudPipelineRunPlanSchema = z.union([
 ]);
 export type CloudPipelineRunPlan = z.output<typeof CloudPipelineRunPlanSchema>;
 
+/** A full commit id, as GitHub names one. */
+const COMMIT_SHA = /^[0-9a-f]{40}$/;
+
+/**
+ * A pushed branch a run executes at (CAN-6869, plan CP-36): a local
+ * worktree's run in the cloud. The serving core runs it in the run owner's
+ * cloud worktree on that branch, reused when one exists and created when
+ * none does, at exactly `headSha`, which must be the branch's head on
+ * GitHub when the run starts. Its commits go back on the branch.
+ */
+export const CloudPipelineRunCheckoutSchema = z.strictObject({
+  /** `owner/name` on GitHub. */
+  repository: z
+    .string()
+    .max(201)
+    .regex(/^[A-Za-z0-9-]{1,100}\/[A-Za-z0-9._-]{1,100}$/),
+  branch: z
+    .string()
+    .min(1)
+    .max(255)
+    .regex(/^[^\s~^:?*[\\]+$/),
+  headSha: z.string().regex(COMMIT_SHA),
+});
+export type CloudPipelineRunCheckout = z.output<
+  typeof CloudPipelineRunCheckoutSchema
+>;
+
 export const CloudPipelineRunStartParamsSchema = z.strictObject({
   /**
    * `targetId` names the execution target; `workspaceId` and `worktreeId`
@@ -78,6 +105,11 @@ export const CloudPipelineRunStartParamsSchema = z.strictObject({
    * served.
    */
   scope: CanopyWorkspaceScopeSchema,
+  /**
+   * A pushed branch to run at, in place of a cloud project and worktree in
+   * the scope (CAN-6869). A scope naming either beside it is refused.
+   */
+  checkout: CloudPipelineRunCheckoutSchema.optional(),
   /** `shared:canopy-cloud:<id>` or `curated:<key>`. */
   definitionId: id,
   /** `personal` or `org:<uuid>`: who the run belongs to. */
@@ -142,6 +174,13 @@ export type CloudPipelineRunStartResult = z.output<
  */
 export const CLOUD_RUNS_STOPPED_CODE = 'core.pipeline.cloudRunsStopped';
 
+/**
+ * A checkout start's cloud worktree is still being set up (CAN-6869):
+ * nothing was recorded; the same request starts the run once it is ready.
+ */
+export const CLOUD_RUN_WORKTREE_PREPARING_CODE =
+  'core.pipeline.worktreePreparing';
+
 /** Codes a cloud run start may fail with. */
 export const CLOUD_PIPELINE_RUN_START_ERROR_CODES = [
   'core.pipeline.targetUnavailable',
@@ -154,6 +193,7 @@ export const CLOUD_PIPELINE_RUN_START_ERROR_CODES = [
   'core.pipeline.planNotFound',
   CLOUD_MODEL_UNCONFIRMED_CODE,
   CLOUD_RUNS_STOPPED_CODE,
+  CLOUD_RUN_WORKTREE_PREPARING_CODE,
 ] as const;
 
 export const CloudPipelineRunStartErrorSchema = CanopyErrorPayloadSchema.extend(

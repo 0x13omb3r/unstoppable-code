@@ -10,7 +10,6 @@ import {
 } from 'electron';
 import {
   IPC_CHANNELS,
-  APP_ADVISOR_PROJECT_ID,
   WORKSPACE_ROOT_REPO_ID,
   hasAnySelections,
   type AgentProviderType,
@@ -21,6 +20,7 @@ import {
   type WorktreeDiscoveryEvent,
   type WorktreeDiscoveryRequest,
 } from '@canopy/desktop-shared/types';
+import { isBotProjectId } from '@canopy/protocol/chat-targets';
 import { discoverCodexWorktreeEnvironment } from '../agents/codex-discovery';
 import { discoverWorktreeEnvironment } from '../agents/sdk-discovery';
 import type { ClaudeModLaunchPluginRequest } from '../agents/claude-mod-admission-launch';
@@ -89,7 +89,7 @@ async function resolveDiscoveryCwd(
   worktreeId: string,
   selectedRepoId?: string,
 ): Promise<string> {
-  if (projectId === APP_ADVISOR_PROJECT_ID) {
+  if (isBotProjectId(projectId)) {
     await ensureAppAdvisorHomeScaffold();
     return resolveWorktreeCwd(projectId, worktreeId, selectedRepoId);
   }

@@ -1,3 +1,4 @@
+import { ControlButton } from '@canopy/ui-shared/components';
 // Anchored, searchable single-select used by the Automations form surfaces.
 // Extracted from `pages/AutomationsPage.tsx` so
 // `components/automations/AutomationChatTargetPicker.tsx` can reuse the exact
@@ -92,7 +93,7 @@ export function SearchableSelect({
   return (
     <>
       <Tooltip label={disabledHint} suppressed={!disabled} className="w-full">
-        <button
+        <ControlButton
           ref={anchorRef}
           id={id}
           type="button"
@@ -104,7 +105,7 @@ export function SearchableSelect({
           aria-haspopup="listbox"
           aria-expanded={open}
           data-testid={testId}
-          className="focus-ring flex w-full items-center justify-between gap-2 rounded-md border bg-base px-2.5 py-1.5 text-left text-s fg-primary transition-colors hover:bg-fg-primary/[0.04] disabled:cursor-not-allowed disabled:opacity-50"
+          presentation="searchable-select-trigger"
         >
           <span className="flex min-w-0 flex-1 items-center gap-2">
             {selected?.badge}
@@ -122,7 +123,7 @@ export function SearchableSelect({
             </span>
           </span>
           <ChevronDownIcon size="sm" className="shrink-0 fg-secondary" />
-        </button>
+        </ControlButton>
       </Tooltip>
       <FloatingPickerMenu
         ref={setSurface}

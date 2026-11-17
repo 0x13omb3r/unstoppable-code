@@ -2,7 +2,6 @@ import { isSelectableAgentOverrideModel } from '@canopy/execution-engine/model-c
 import { AgentModelSelectionError } from '@canopy/execution-engine/lib/agent-model-selection';
 import {
   AGENT_MODELS,
-  APP_ADVISOR_PROJECT_ID,
   PIPELINE_EDITOR_PROJECT_ID,
   isAgentModel,
   isInheritingAgentModel,
@@ -11,6 +10,7 @@ import {
   type ModelHarness,
   type PreferencesData,
 } from '@canopy/desktop-shared/types';
+import { isBotProjectId } from '@canopy/protocol/chat-targets';
 import {
   formatAgentRouteModelId,
   parseAgentRouteModelId,
@@ -34,7 +34,7 @@ export async function resolveAgentDestinationDefaultModel(
   projectId: string | undefined,
 ): Promise<ChatModel> {
   const preferences = await readPreferencesFile();
-  if (projectId === APP_ADVISOR_PROJECT_ID) {
+  if (projectId !== undefined && isBotProjectId(projectId)) {
     return resolveAppAdvisorDefaultModel(preferences);
   }
   const selection = await requireLaneAwareDefaultSelection(

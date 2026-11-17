@@ -281,15 +281,15 @@ export function UsageRowList({
 
 /**
  * The `·` between a provider and its plan in a group heading, with about two spaces of air
- * on each side: one real space plus a margin, never doubled space characters.
+ * on each side: one real space plus inset, never doubled space characters.
  */
 function UsageSeparator(): JSX.Element {
-  // The real spaces keep copied text and textContent `A · B`; the margin
+  // The real spaces keep copied text and textContent `A · B`; the inset
   // doubles the gap each side.
   return (
     <>
       {' '}
-      <span aria-hidden="true" className="mx-1">
+      <span aria-hidden="true" className="px-1">
         ·
       </span>{' '}
     </>
@@ -334,7 +334,7 @@ function UsageRowContent({
       {trailing && trailingKind === 'action' ? (
         // 12px under the quiet line, and 4px more under it so the button sits
         // 16px from the card's bottom edge, the same as its left inset.
-        <span className="col-start-1 row-start-3 mt-3 mb-1 flex justify-self-start @md/usage-group:col-start-2 @md/usage-group:row-span-2 @md/usage-group:row-start-1 @md/usage-group:my-0">
+        <span className="col-start-1 row-start-3 flex justify-self-start pb-1 pt-3 @md/usage-group:col-start-2 @md/usage-group:row-span-2 @md/usage-group:row-start-1 @md/usage-group:py-0">
           {trailing}
         </span>
       ) : trailing ? (

@@ -1,3 +1,4 @@
+import { ControlButton } from '@canopy/ui-shared/components';
 /**
  * "Shared with you" sidebar section (CAN-2550).
  *
@@ -19,7 +20,6 @@ import {
   ListRow,
   RailIconButton,
   SIDEBAR_ROW_TRAILING_CELL_CLASSNAME,
-  SIDEBAR_ROW_GRID_CLASSNAME,
   SIDEBAR_ROW_LEADING_SLOT_CLASSNAME,
   SIDEBAR_ROW_TEXT_INSET_CLASSNAME,
   SharedContainerInvitationDialog,
@@ -234,189 +234,191 @@ export function SharedContainerSidebarSection({
   }
 
   return (
-    <SidebarSection
-      as="div"
-      className="group/section mt-3 flex flex-col"
-      data-testid="sidebar-section-shared-with-me"
-      collapsed={!expanded}
-      onCollapsedChange={(nextCollapsed): void =>
-        onExpandedChange(!nextCollapsed)
-      }
-      headerButtonProps={{
-        'data-testid': SECTION_TOGGLE_TEST_ID,
-      }}
-      headerVariant="shared-containers"
-      spacing="inset"
-      header={
-        // Label, chevron, count: the Projects header's order, with the count
-        // in the sidebar's one counter cell at the header's right edge.
-        <div className="flex h-8 min-w-0 flex-1 items-center gap-1 px-1 text-s font-normal">
-          <span className="min-w-0 truncate fg-quaternary transition-colors group-hover/shared-containers:fg-secondary group-focus-within/shared-containers:fg-secondary">
-            {SHARED_WITH_YOU_SECTION_LABEL}
-          </span>
-          <ChevronDownMediumIcon
-            size="sm"
-            data-testid="sidebar-shared-with-me-chevron"
-            className={`shrink-0 fg-quaternary transition-[color,opacity] group-hover/shared-containers:fg-secondary group-hover/shared-containers:opacity-100 group-focus-within/shared-containers:fg-secondary group-focus-within/shared-containers:opacity-100 ${
-              expanded ? 'opacity-0' : '-rotate-90 opacity-100'
-            }`}
-          />
-          {!noticesOnly && invitations.length > 0 ? (
-            // The header is the only place a newly arrived invitation can
-            // announce itself. `sharedWithMeExpanded` is session-local state,
-            // so a recipient who collapsed this section would otherwise see
-            // nothing change when a share lands. The count is on the header
-            // rather than the list for exactly that reason.
-            <span
-              data-testid="sidebar-shared-with-me-pending-count"
-              // `status` so the count is announced when a share lands rather
-              // than only on the next time the header is reached, which is the
-              // same reason the count is here at all.
-              role="status"
-              aria-label={`${invitations.length} pending ${
-                invitations.length === 1 ? 'invitation' : 'invitations'
-              }`}
-              className={SIDEBAR_ROW_TRAILING_CELL_CLASSNAME}
-            >
-              {invitations.length}
+    <div className="pt-3 empty:hidden">
+      <SidebarSection
+        as="div"
+        className="group/section flex flex-col"
+        data-testid="sidebar-section-shared-with-me"
+        collapsed={!expanded}
+        onCollapsedChange={(nextCollapsed): void =>
+          onExpandedChange(!nextCollapsed)
+        }
+        headerButtonProps={{
+          'data-testid': SECTION_TOGGLE_TEST_ID,
+        }}
+        headerVariant="shared-containers"
+        spacing="inset"
+        header={
+          // Label, chevron, count: the Projects header's order, with the count
+          // in the sidebar's one counter cell at the header's right edge.
+          <div className="flex h-8 min-w-0 flex-1 items-center gap-1 px-1 text-s font-normal">
+            <span className="min-w-0 truncate fg-quaternary transition-colors group-hover/shared-containers:fg-secondary group-focus-within/shared-containers:fg-secondary">
+              {SHARED_WITH_YOU_SECTION_LABEL}
             </span>
-          ) : null}
-        </div>
-      }
-    >
-      {/* Listed in every context: a recipient may no longer belong to the
+            <ChevronDownMediumIcon
+              size="sm"
+              data-testid="sidebar-shared-with-me-chevron"
+              className={`shrink-0 fg-quaternary transition-[color,opacity] group-hover/shared-containers:fg-secondary group-hover/shared-containers:opacity-100 group-focus-within/shared-containers:fg-secondary group-focus-within/shared-containers:opacity-100 ${
+                expanded ? 'opacity-0' : '-rotate-90 opacity-100'
+              }`}
+            />
+            {!noticesOnly && invitations.length > 0 ? (
+              // The header is the only place a newly arrived invitation can
+              // announce itself. `sharedWithMeExpanded` is session-local state,
+              // so a recipient who collapsed this section would otherwise see
+              // nothing change when a share lands. The count is on the header
+              // rather than the list for exactly that reason.
+              <span
+                data-testid="sidebar-shared-with-me-pending-count"
+                // `status` so the count is announced when a share lands rather
+                // than only on the next time the header is reached, which is the
+                // same reason the count is here at all.
+                role="status"
+                aria-label={`${invitations.length} pending ${
+                  invitations.length === 1 ? 'invitation' : 'invitations'
+                }`}
+                className={SIDEBAR_ROW_TRAILING_CELL_CLASSNAME}
+              >
+                {invitations.length}
+              </span>
+            ) : null}
+          </div>
+        }
+      >
+        {/* Listed in every context: a recipient may no longer belong to the
           organization a notice came from, so no context would ever show it. */}
-      {ownerDepartureNotices.length > 0 && (
-        <SharedContainerOwnerDepartureNotices
-          presentation="row"
-          notices={ownerDepartureNotices}
-          onDismiss={(noticeId): void => {
-            void dismissOwnerDeparture(noticeId);
-          }}
-        />
-      )}
-      {failedDismissalId !== null && (
-        <SharedContainerOwnerDepartureFeedback
-          kind="dismiss"
-          retrying={false}
-          onRetry={(): void => {
-            void dismissOwnerDeparture(failedDismissalId);
-          }}
-        />
-      )}
-      {!noticesOnly && (
-        <SidebarList rowGap="hairline">
-          {/* `listFailed || retrying`: the section can now be mounted with no
+        {ownerDepartureNotices.length > 0 && (
+          <SharedContainerOwnerDepartureNotices
+            presentation="row"
+            notices={ownerDepartureNotices}
+            onDismiss={(noticeId): void => {
+              void dismissOwnerDeparture(noticeId);
+            }}
+          />
+        )}
+        {failedDismissalId !== null && (
+          <SharedContainerOwnerDepartureFeedback
+            kind="dismiss"
+            retrying={false}
+            onRetry={(): void => {
+              void dismissOwnerDeparture(failedDismissalId);
+            }}
+          />
+        )}
+        {!noticesOnly && (
+          <SidebarList rowGap="hairline">
+            {/* `listFailed || retrying`: the section can now be mounted with no
             listed share (it holds only the Past shares row), where a merely
             loading listing is not a failure to report. */}
-          {listStatus !== 'success' &&
-          (listFailed || retrying) &&
-          (viewableEntries.length === 0 || unavailable) ? (
-            <li
-              data-testid={
-                unavailable
-                  ? 'shared-container-list-unavailable'
-                  : 'shared-container-list-error'
-              }
-              className={`grid h-8 grid-cols-[minmax(0,1fr)_1.5rem] items-center gap-1.5 py-0 ${SIDEBAR_ROW_TEXT_INSET_CLASSNAME} pr-1 text-s fg-quaternary`}
-            >
-              <span
-                data-testid="shared-container-list-message"
-                className="min-w-0 truncate"
+            {listStatus !== 'success' &&
+            (listFailed || retrying) &&
+            (viewableEntries.length === 0 || unavailable) ? (
+              <li
+                data-testid={
+                  unavailable
+                    ? 'shared-container-list-unavailable'
+                    : 'shared-container-list-error'
+                }
+                className={`grid h-8 grid-cols-[minmax(0,1fr)_1.5rem] items-center gap-1.5 py-0 ${SIDEBAR_ROW_TEXT_INSET_CLASSNAME} pr-1 text-s fg-quaternary`}
               >
-                {retrying
-                  ? 'Loading shared containers\u2026'
-                  : unavailable
-                    ? 'Reconnecting to shared containers\u2026'
-                    : 'Could not load shared containers.'}
-              </span>
-              {unavailable ? (
-                // No Retry button: the store is already retrying on a backoff
-                // ladder, and a button next to copy that says it is reconnecting
-                // reads as the reconnect not working.
                 <span
-                  data-testid="shared-container-list-trailing"
-                  className="inline-flex h-6 w-6 shrink-0 items-center justify-center"
+                  data-testid="shared-container-list-message"
+                  className="min-w-0 truncate"
                 >
-                  <LoadingSpinner sizePx={12} />
+                  {retrying
+                    ? 'Loading shared containers\u2026'
+                    : unavailable
+                      ? 'Reconnecting to shared containers\u2026'
+                      : 'Could not load shared containers.'}
                 </span>
-              ) : (
-                <RailIconButton
-                  icon={RetryIcon}
-                  data-testid="shared-container-list-retry"
-                  aria-label="Try again"
-                  tooltipLabel="Try again"
-                  tone="secondary"
-                  hoverSurface
-                  disabled={retrying}
-                  onClick={(): void => {
-                    setRetrying(true);
-                    // `.catch` BEFORE `.finally`: `.finally` re-throws, so a bare
-                    // `void load().finally(...)` turns any rejection into an
-                    // unhandled renderer rejection AND leaves `retrying` latched
-                    // true, permanently disabling this button. `loadSharedWithMe`
-                    // handles its own per-org failures, so a rejection here means
-                    // something structural (a missing bridge method) — the section
-                    // still shows its error row, which stays retryable.
-                    void loadSharedWithMe()
-                      .catch(() => undefined)
-                      .finally(() => setRetrying(false));
+                {unavailable ? (
+                  // No Retry button: the store is already retrying on a backoff
+                  // ladder, and a button next to copy that says it is reconnecting
+                  // reads as the reconnect not working.
+                  <span
+                    data-testid="shared-container-list-trailing"
+                    className="inline-flex h-6 w-6 shrink-0 items-center justify-center"
+                  >
+                    <LoadingSpinner sizePx={12} />
+                  </span>
+                ) : (
+                  <RailIconButton
+                    icon={RetryIcon}
+                    data-testid="shared-container-list-retry"
+                    aria-label="Try again"
+                    tooltipLabel="Try again"
+                    tone="secondary"
+                    hoverSurface
+                    disabled={retrying}
+                    onClick={(): void => {
+                      setRetrying(true);
+                      // `.catch` BEFORE `.finally`: `.finally` re-throws, so a bare
+                      // `void load().finally(...)` turns any rejection into an
+                      // unhandled renderer rejection AND leaves `retrying` latched
+                      // true, permanently disabling this button. `loadSharedWithMe`
+                      // handles its own per-org failures, so a rejection here means
+                      // something structural (a missing bridge method) — the section
+                      // still shows its error row, which stays retryable.
+                      void loadSharedWithMe()
+                        .catch(() => undefined)
+                        .finally(() => setRetrying(false));
+                    }}
+                  />
+                )}
+              </li>
+            ) : null}
+            {invitations.map((entry) => (
+              <li key={entry.container.id}>
+                <SharedContainerInvitationRow
+                  entry={entry}
+                  onOpen={(): void => {
+                    sectionToggleRef.current =
+                      document.querySelector<HTMLElement>(
+                        `[data-testid="${SECTION_TOGGLE_TEST_ID}"]`,
+                      );
+                    setDialogEntry(entry);
                   }}
                 />
-              )}
-            </li>
-          ) : null}
-          {invitations.map((entry) => (
-            <li key={entry.container.id}>
-              <SharedContainerInvitationRow
-                entry={entry}
-                onOpen={(): void => {
-                  sectionToggleRef.current =
-                    document.querySelector<HTMLElement>(
-                      `[data-testid="${SECTION_TOGGLE_TEST_ID}"]`,
-                    );
-                  setDialogEntry(entry);
-                }}
-              />
-            </li>
-          ))}
-          {acceptedEntries.map((entry) => (
-            <li key={entry.container.id}>
-              <SharedContainerAcceptedRow
-                entry={entry}
-                home={homeOf(entry)}
-                active={activeContainerId === entry.container.id}
-                onOpen={(): void => openAcceptedSharedContainer(entry)}
-              />
-            </li>
-          ))}
-          {pastSharesCount > 0 ? (
-            <li>
-              <SidebarOverviewNavLink
-                label="Past shares"
-                count={pastSharesCount}
-                selected={pastSharesOpen}
-                onOpen={openPastSharesSurface}
-                testId="sidebar-shared-with-me-past-shares"
-                size="row"
-              />
-            </li>
-          ) : null}
-        </SidebarList>
-      )}
-      {!noticesOnly && dialogEntry !== null && (
-        <SharedContainerInvitationDialogHost
-          entry={dialogEntry}
-          // Still a pending invitation: not accepted, not removed, and not
-          // revoked by its owner while the dialog was open.
-          pending={invitations.some(
-            (entry) => entry.container.id === dialogEntry.container.id,
-          )}
-          restoreFocusRef={sectionToggleRef}
-          onClose={(): void => setDialogEntry(null)}
-        />
-      )}
-    </SidebarSection>
+              </li>
+            ))}
+            {acceptedEntries.map((entry) => (
+              <li key={entry.container.id}>
+                <SharedContainerAcceptedRow
+                  entry={entry}
+                  home={homeOf(entry)}
+                  active={activeContainerId === entry.container.id}
+                  onOpen={(): void => openAcceptedSharedContainer(entry)}
+                />
+              </li>
+            ))}
+            {pastSharesCount > 0 ? (
+              <li>
+                <SidebarOverviewNavLink
+                  label="Past shares"
+                  count={pastSharesCount}
+                  selected={pastSharesOpen}
+                  onOpen={openPastSharesSurface}
+                  testId="sidebar-shared-with-me-past-shares"
+                  size="row"
+                />
+              </li>
+            ) : null}
+          </SidebarList>
+        )}
+        {!noticesOnly && dialogEntry !== null && (
+          <SharedContainerInvitationDialogHost
+            entry={dialogEntry}
+            // Still a pending invitation: not accepted, not removed, and not
+            // revoked by its owner while the dialog was open.
+            pending={invitations.some(
+              (entry) => entry.container.id === dialogEntry.container.id,
+            )}
+            restoreFocusRef={sectionToggleRef}
+            onClose={(): void => setDialogEntry(null)}
+          />
+        )}
+      </SidebarSection>
+    </div>
   );
 }
 
@@ -562,7 +564,7 @@ function SharedContainerInvitationRow({
   const ownerLabel = sharedByLabel(entry);
 
   return (
-    <button
+    <ControlButton
       type="button"
       aria-haspopup="dialog"
       data-testid={`shared-container-invitation-${entry.container.id}`}
@@ -570,7 +572,7 @@ function SharedContainerInvitationRow({
       // The standard row grid and the hover treatment the accepted row uses.
       // The leading slot carries the pending dot, so the title starts where a
       // worktree title does.
-      className={`focus-ring flex w-full min-w-0 items-center ${SIDEBAR_ROW_GRID_CLASSNAME} rounded-row py-1 pr-1 text-left text-s fg-secondary hover:bg-subtle`}
+      presentation="sidebar-invitation"
     >
       <span
         aria-hidden="true"
@@ -601,7 +603,7 @@ function SharedContainerInvitationRow({
         )}
       </span>
       <span className="sr-only">Pending invitation</span>
-    </button>
+    </ControlButton>
   );
 }
 

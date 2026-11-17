@@ -54,7 +54,10 @@ import {
   type TurnTerminalStatus,
   TRANSCRIPT_PROSE_CLASS,
 } from '@canopy/ui-shared/components';
-import { parseCanopyProxyError } from '@canopy/protocol';
+import {
+  parseCanopyProxyError,
+  isCanopyProxyErrorBody,
+} from '@canopy/protocol';
 import { isAccountProxySettingsFailure } from '@canopy/protocol/auth-recovery';
 import { AccountProxyFailureNotice } from '@canopy/ui-shared/components';
 import { FailedIcon } from '@canopy/ui-shared/icons';
@@ -709,7 +712,7 @@ function ChatMessageViewImpl({
             // Codex AI Credits turns land, so it needs the same guard the
             // shared-run renderer has.
             //
-            // Narrowed to system/failed messages, matching the desktop's
+            // Include standalone assistant wire bodies, matching the desktop's
             // `isSystemMessage` gate: an assistant answer that merely QUOTES the
             // marker (entirely plausible when the agent is explaining this
             // subsystem) must not have its whole response replaced by an error
@@ -726,7 +729,10 @@ function ChatMessageViewImpl({
                 );
               }
               const proxyError =
-                message.role === 'system' || message.status === 'failed'
+                message.role === 'system' ||
+                message.status === 'failed' ||
+                (message.role === 'assistant' &&
+                  isCanopyProxyErrorBody(message.text))
                   ? parseCanopyProxyError(message.text)
                   : null;
               if (proxyError) {
@@ -737,6 +743,7 @@ function ChatMessageViewImpl({
                   // collision the moment desktop renders this neutral transcript.
                   <CanopyProxyErrorSummary
                     error={proxyError}
+                    messageId={message.messageId}
                     dataTestId="portal-chat-canopy-proxy-error"
                   />
                 );
@@ -759,12 +766,15 @@ function ChatMessageViewImpl({
                 </div>
               );
             })()}
-          {message.status === 'failed' && !hasOnlyCompletedTimers && (
-            <div className="flex items-center gap-1.5 py-1 text-xs fg-destructive">
-              <FailedIcon />
-              <span>Failed</span>
-            </div>
-          )}
+          {message.status === 'failed' &&
+            !hasOnlyCompletedTimers &&
+            parseCanopyProxyError(message.text ?? '')?.code !==
+              'no_billing_source' && (
+              <div className="flex items-center gap-1.5 py-1 text-xs fg-destructive">
+                <FailedIcon />
+                <span>Failed</span>
+              </div>
+            )}
           {message.status === 'cancelled' && !hasOnlyCompletedTimers && (
             <div className="flex items-center gap-1.5 py-1 text-xs fg-secondary">
               <span>Cancelled</span>

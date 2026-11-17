@@ -636,9 +636,9 @@ function steps(
       };
     }
     case 'app_advisor_prompt': {
-      // The Orchestrator emits no reply events, so its run ends at the send.
       const bot = { bot_id: input('bot_id') };
-      if (action.workEntryId !== undefined)
+      if (action.workEntryId !== undefined) {
+        const taskId = input('task_id');
         return {
           inputs: { bot_id: APP_ADVISOR_BOT_ID, task_id: action.workEntryId },
           steps: [
@@ -647,8 +647,11 @@ function steps(
               { ...bot, task_id: input('task_id') },
               { newChat: true },
             ),
+            replyStep(bot, taskId, output(STEP.send, 'chat_id')),
           ],
         };
+      }
+      const taskId = output(STEP.entry, 'task_id');
       return {
         inputs: { bot_id: APP_ADVISOR_BOT_ID },
         steps: [
@@ -663,13 +666,15 @@ function steps(
           },
           sendStep(
             action,
-            { ...bot, task_id: output(STEP.entry, 'task_id') },
+            { ...bot, task_id: taskId },
             { replaceEmptyChat: true },
           ),
+          replyStep(bot, taskId, output(STEP.send, 'chat_id')),
         ],
       };
     }
     case 'worktree_session_prompt': {
+      // Default Bot only: workflow prompts route through the app_advisor bot_id input.
       const advisor = action.workspaceId === APP_ADVISOR_PROJECT_ID;
       const owner: Record<string, string> = advisor
         ? { bot_id: input('bot_id') }
@@ -692,12 +697,10 @@ function steps(
             ? { [SCHEDULED_SEND_INPUT]: action.purpose }
             : {}),
         },
-        steps: advisor
-          ? [sendStep(action, target)]
-          : [
-              sendStep(action, target),
-              replyStep(owner, input('task_id'), input('chat_id')),
-            ],
+        steps: [
+          sendStep(action, target),
+          replyStep(owner, input('task_id'), input('chat_id')),
+        ],
       };
     }
   }
@@ -1187,6 +1190,39 @@ function sameJson(left: unknown, right: unknown): boolean {
 }
 
 /**
+ * CAN-5479's next save upgrades an Orchestrator workflow that was generated
+ * before its reply step existed. Only the old generated shape matches.
+ */
+function matchesPreReplyOrchestratorPipeline(
+  generated: Pipeline,
+  existing: Pipeline,
+  action: AutomationAction,
+): boolean {
+  if (
+    action.type !== 'app_advisor_prompt' &&
+    !(
+      action.type === 'worktree_session_prompt' &&
+      // Default Bot only: this upgrades legacy Orchestrator workflows.
+      action.workspaceId === APP_ADVISOR_PROJECT_ID
+    )
+  )
+    return false;
+  const job = generated.jobs[CHAT_AUTOMATION_JOB];
+  if (!job || !job.steps.some((step) => step.id === STEP.reply)) return false;
+  const legacy: Pipeline = {
+    ...generated,
+    jobs: {
+      ...generated.jobs,
+      [CHAT_AUTOMATION_JOB]: {
+        ...job,
+        steps: job.steps.filter((step) => step.id !== STEP.reply),
+      },
+    },
+  };
+  return sameJson(legacy, existing);
+}
+
+/**
  * The preferences without a `chat_plugins` entry that changes nothing, which
  * the Run dialog can save; the converter writes none.
  */
@@ -1312,12 +1348,18 @@ export function ownedPipelineToChatAction(
   // so any hand edit (a step, env, defaults, a model or plugin collection
   // preference) keeps the pipeline as it is. A collection the editor emptied
   // is the chat's choice of no plugins, which regenerates without it.
-  return sameJson(regenerated.pipeline, {
+  const comparedPipeline: Pipeline = {
     ...(found.action.pluginSelections === undefined
       ? withoutEmptyChatCollection(pipeline)
       : pipeline),
     name: regenerated.pipeline.name,
-  }) &&
+  };
+  return (sameJson(regenerated.pipeline, comparedPipeline) ||
+    matchesPreReplyOrchestratorPipeline(
+      regenerated.pipeline,
+      comparedPipeline,
+      found.action,
+    )) &&
     sameJson(regenerated.inputs, inputs) &&
     sameJson(
       canonicalChatModelPreferences(

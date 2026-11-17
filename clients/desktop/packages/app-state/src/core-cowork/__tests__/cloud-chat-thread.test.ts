@@ -135,6 +135,7 @@ function harness(
   options: {
     readonly liveRefused?: boolean;
     readonly hostOwnsRuntime?: boolean;
+    readonly readConversation?: () => boolean;
   } = {},
 ): Harness {
   const stream = controlledStream();
@@ -204,6 +205,9 @@ function harness(
     liveReopenDelayMs: 5,
     liveHoldMs: 40,
     ...(options.hostOwnsRuntime === true ? { hostOwnsRuntime: true } : {}),
+    ...(options.readConversation === undefined
+      ? {}
+      : { readConversation: options.readConversation }),
   });
   return { thread, calls, state, stream, lives, deferLive, project };
 }
@@ -344,6 +348,160 @@ function hostOwnedOnStore(
     }),
   };
 }
+
+describe("a cloud chat thread's conversation read (CAN-6863)", () => {
+  const withConversation = (version: string): Record<string, unknown> => ({
+    ...snapshot('idle'),
+    sessionId: 'session-1',
+    conversation: { sessionId: 'session-1', stateVersion: version },
+  });
+  const snapshotCalls = (calls: Harness['calls']): Harness['calls'] =>
+    calls.filter((call) => call.method === 'core.chat.snapshot.get');
+
+  it('asks its snapshot reads for the conversation while the host reads it there, and keeps it', async () => {
+    const { thread, calls } = harness(
+      {
+        'core.chat.snapshot.get': () => ok(withConversation('5')),
+        'core.chat.transcript.page': () => ok(transcript()),
+      },
+      { readConversation: () => true },
+    );
+    await flush();
+    expect(snapshotCalls(calls)[0]?.params).toMatchObject({
+      conversation: true,
+    });
+    expect(thread.getConversation()).toEqual({
+      sessionId: 'session-1',
+      value: { sessionId: 'session-1', stateVersion: '5' },
+      revision: 4,
+    });
+    thread.close();
+  });
+
+  // A real first page: many messages of real size, well past 32 KB.
+  const largeConversation = {
+    sessionId: 'session-1',
+    stateVersion: '5',
+    messages: Array.from({ length: 100 }, (_, index) => ({
+      id: `message-${index}`,
+      role: index % 2 === 0 ? 'USER' : 'ASSISTANT',
+      content: [{ type: 'text', text: 'x'.repeat(2_000) }],
+    })),
+  };
+
+  it('keeps a real-sized conversation and binds as usual', async () => {
+    const { thread, state } = harness(
+      {
+        'core.chat.snapshot.get': () =>
+          ok({
+            ...snapshot('idle'),
+            sessionId: 'session-1',
+            conversation: largeConversation,
+          }),
+        'core.chat.transcript.page': () => ok(transcript(message('m1', 'Hi'))),
+      },
+      { readConversation: () => true },
+    );
+    await flush();
+    expect(JSON.stringify(largeConversation).length).toBeGreaterThan(32_768);
+    expect(thread.getConversation()?.value).toEqual(largeConversation);
+    expect(thread.getSession()).toMatchObject({ sessionId: 'session-1' });
+    expect(state.hydrate).toHaveBeenCalled();
+    thread.close();
+  });
+
+  it('still binds when the conversation is unreadable, and gives none', async () => {
+    let nested: unknown = 'leaf';
+    for (let depth = 0; depth < 100; depth += 1) nested = { nested };
+    const { thread, state } = harness(
+      {
+        'core.chat.snapshot.get': () =>
+          ok({
+            ...snapshot('idle'),
+            sessionId: 'session-1',
+            conversation: nested,
+          }),
+        'core.chat.transcript.page': () => ok(transcript(message('m1', 'Hi'))),
+      },
+      { readConversation: () => true },
+    );
+    await flush();
+    expect(thread.getConversation()).toBeNull();
+    expect(thread.getSession()).toMatchObject({ sessionId: 'session-1' });
+    expect(state.hydrate).toHaveBeenCalled();
+    thread.close();
+  });
+
+  it('asks for none when the host reads it its own way', async () => {
+    const { thread, calls } = harness({
+      'core.chat.snapshot.get': () => ok(snapshot('idle')),
+      'core.chat.transcript.page': () => ok(transcript()),
+    });
+    await flush();
+    expect(snapshotCalls(calls)[0]?.params).not.toHaveProperty('conversation');
+    expect(thread.getConversation()).toBeNull();
+    thread.close();
+  });
+
+  it('reads again for the host, and gives none when that read fails', async () => {
+    let version = '5';
+    let fail = false;
+    const { thread } = harness(
+      {
+        'core.chat.snapshot.get': () => {
+          if (fail) throw new Error('the read failed');
+          return ok(withConversation(version));
+        },
+        'core.chat.transcript.page': () => ok(transcript()),
+      },
+      { readConversation: () => true },
+    );
+    await flush();
+    version = '6';
+    expect((await thread.readConversation())?.value).toEqual({
+      sessionId: 'session-1',
+      stateVersion: '6',
+    });
+    fail = true;
+    expect(await thread.readConversation()).toBeNull();
+    thread.close();
+  });
+
+  it('gives no conversation once a later runtime change arrives', async () => {
+    const { thread, stream } = harness(
+      {
+        'core.chat.snapshot.get': () => ok(withConversation('5')),
+        'core.chat.transcript.page': () => ok(transcript()),
+      },
+      { readConversation: () => true },
+    );
+    await flush();
+    expect(thread.getConversation()).not.toBeNull();
+    stream.push({
+      kind: 'item',
+      cursor: { daemonEpoch: 'e1', sequence: 5 },
+      item: {
+        schemaVersion: 1,
+        eventId: 'ev-5',
+        occurredAt: '2026-11-14T19:00:00.000Z',
+        projectId: 'ws-1',
+        worktreeId: 'chat-1',
+        baseRevision: 4,
+        revision: 5,
+        changes: [
+          {
+            type: 'runtime.patched',
+            chatId: 'chat-1',
+            runtime: { status: 'streaming', queuedMessageIds: [] },
+          },
+        ],
+      },
+    });
+    await flush();
+    expect(thread.getConversation()).toBeNull();
+    thread.close();
+  });
+});
 
 describe('cloud chat thread binding (CAN-4185)', () => {
   it('a core.chat.events batch from another client updates the open transcript live', async () => {

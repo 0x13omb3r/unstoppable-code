@@ -642,7 +642,7 @@ function MarkdownMermaidComponent({
       {...props}
       ref={container}
       data-testid="markdown-mermaid"
-      className="not-prose my-3 min-w-0 text-s fg-primary"
+      className="not-prose min-w-0 py-3 text-s fg-primary"
     >
       <div
         className="flex select-none flex-wrap items-center justify-end gap-1"
@@ -763,7 +763,7 @@ function MarkdownMermaidComponent({
       </div>
       {status && (
         <p
-          className="my-2 text-s fg-secondary"
+          className="py-2 text-s fg-secondary"
           role="status"
           data-markdown-generated
         >
@@ -818,13 +818,14 @@ function MarkdownMermaidComponent({
           )}
         </div>
       ) : (
-        <pre
-          id={codeId}
-          hidden={Boolean(error) && !codeOpen}
-          className="my-2 max-h-128 overflow-auto rounded-md bg-secondary p-3 font-mono text-s"
-        >
-          <code>{source}</code>
-        </pre>
+        <div className="py-2" hidden={Boolean(error) && !codeOpen}>
+          <pre
+            id={codeId}
+            className="max-h-128 overflow-auto rounded-md bg-secondary p-3 font-mono text-s"
+          >
+            <code>{source}</code>
+          </pre>
+        </div>
       )}
       {contextMenu && svg && (
         <TabContextMenu

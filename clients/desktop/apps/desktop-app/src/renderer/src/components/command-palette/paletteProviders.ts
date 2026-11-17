@@ -14,6 +14,7 @@ import {
   type WorktreeData,
   type WorktreeSummaryData,
 } from '@canopy/desktop-shared/types';
+import { isBotProjectId } from '@canopy/protocol/chat-targets';
 import type { PipelineInfo } from '@canopy/execution-engine/types/pipeline';
 import type { AgentModelDefinition } from '@canopy/execution-engine/types/agent-models';
 import type { PluginInfo } from '@canopy/execution-engine/types/plugins';
@@ -365,7 +366,7 @@ export async function navigateToChatCatalogEntry(
     });
     return;
   }
-  if (entry.projectId === APP_ADVISOR_PROJECT_ID) {
+  if (isBotProjectId(entry.projectId)) {
     // App Advisor chats are live tabs in its own BrowserWindow; opening the
     // window with the target `chatId` selects that exact chat's tab (the
     // App-Advisor analog of the worktree `switchTab`).
@@ -466,6 +467,7 @@ export function buildChatItems(
     if (
       isCoworkChatTarget(projectId) ||
       isModalOnlyChatProject(projectId) ||
+      // Default Bot only: `global` is the Orchestrator's legacy chat slot.
       (projectId === APP_ADVISOR_PROJECT_ID &&
         worktreeId === APP_ADVISOR_WORKTREE_ID)
     ) {

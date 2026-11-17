@@ -77,7 +77,7 @@ export interface WorktreeDirectAction {
   readonly onSelect: () => void;
   readonly tone?: 'neutral' | 'warning' | 'destructive';
   readonly testId?: string;
-  readonly className?: string;
+  readonly visibility?: 'fine-pointer' | 'coarse-pointer';
   /** Shown but unavailable; `tooltip` says why. */
   readonly disabled?: boolean;
   /** The hover tooltip; defaults to `label`. */
@@ -277,7 +277,7 @@ export const WorktreeActionsMenu = forwardRef<
           tooltipLabel={action.tooltip}
           disabled={action.disabled}
           data-testid={action.testId}
-          className={action.className}
+          visibility={action.visibility}
           onClick={(event) => {
             event.stopPropagation();
             if (action.disabled === true) return;
@@ -298,9 +298,7 @@ export const WorktreeActionsMenu = forwardRef<
           hoverSurface
           revealOnItemHover={!open && !alwaysVisible}
           coarsePointerTarget
-          className={
-            hideTriggerForFinePointer ? 'pointer-fine:hidden' : undefined
-          }
+          visibility={hideTriggerForFinePointer ? 'coarse-pointer' : 'all'}
           aria-label="More actions"
           aria-haspopup="menu"
           aria-expanded={open}

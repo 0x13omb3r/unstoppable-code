@@ -555,11 +555,13 @@ export function SubagentComposer({
               }
             />
           </ChatComposerShell>
-          <ErrorBanner
-            errorSource="subagent-composer-draft"
-            className="mt-2"
-            error={draft.error}
-          />
+          <div className="pt-2 empty:hidden">
+            <ErrorBanner
+              errorSource="subagent-composer-draft"
+              className=""
+              error={draft.error}
+            />
+          </div>
           <SubagentRecipientMenu
             open={menuOpen}
             onOpenChange={setMenuOpen}

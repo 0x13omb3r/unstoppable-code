@@ -7,6 +7,10 @@ import {
   type AgentDelegationResult,
   type AgentDelegationSpawnRequest,
 } from './index';
+import {
+  validateManagedDelegationSurfaceIsolation,
+  type ManagedDelegationSurface,
+} from './surface-profiles';
 
 const grantProperties = {
   allow_nested_delegation: {
@@ -167,9 +171,59 @@ export const CODEX_DELEGATION_SPAWN_FEED_SCHEMA = {
   },
 } as const;
 
+type WithoutIsolation<
+  TSchema extends { readonly properties: { readonly isolation: unknown } },
+> = Omit<TSchema, 'properties'> & {
+  readonly properties: Omit<TSchema['properties'], 'isolation'>;
+};
+
+export type ClaudeDelegationSpawnSchema =
+  | typeof CLAUDE_DELEGATION_SPAWN_SCHEMA
+  | typeof CLAUDE_DELEGATION_SPAWN_FEED_SCHEMA
+  | WithoutIsolation<typeof CLAUDE_DELEGATION_SPAWN_SCHEMA>
+  | WithoutIsolation<typeof CLAUDE_DELEGATION_SPAWN_FEED_SCHEMA>;
+
+export type CodexDelegationSpawnSchema =
+  | typeof CODEX_DELEGATION_SPAWN_SCHEMA
+  | typeof CODEX_DELEGATION_SPAWN_FEED_SCHEMA
+  | WithoutIsolation<typeof CODEX_DELEGATION_SPAWN_SCHEMA>
+  | WithoutIsolation<typeof CODEX_DELEGATION_SPAWN_FEED_SCHEMA>;
+
+function withoutIsolation<TProperties extends { readonly isolation: unknown }>(
+  properties: TProperties,
+): Omit<TProperties, 'isolation'> {
+  const { isolation: _isolation, ...remainingProperties } = properties;
+  void _isolation;
+  return remainingProperties;
+}
+
 export interface DelegationSpawnProjectionOptions {
   /** Whether this parent has the Feed tools and may hand off Feed task IDs. */
   readonly includeFeed?: boolean;
+  /** Trusted host surface. Omitted means the Code (worktree chat) surface. */
+  readonly surface?: ManagedDelegationSurface;
+}
+
+/** Feed adds task IDs; Cowork and Advisor parents never see `isolation`. */
+export function getClaudeDelegationSpawnSchema(
+  options: DelegationSpawnProjectionOptions = {},
+): ClaudeDelegationSpawnSchema {
+  const schema = options.includeFeed
+    ? CLAUDE_DELEGATION_SPAWN_FEED_SCHEMA
+    : CLAUDE_DELEGATION_SPAWN_SCHEMA;
+  if ((options.surface ?? 'worktree-chat') === 'worktree-chat') return schema;
+  return { ...schema, properties: withoutIsolation(schema.properties) };
+}
+
+/** Feed adds task IDs; Cowork and Advisor parents never see `isolation`. */
+export function getCodexDelegationSpawnSchema(
+  options: DelegationSpawnProjectionOptions = {},
+): CodexDelegationSpawnSchema {
+  const schema = options.includeFeed
+    ? CODEX_DELEGATION_SPAWN_FEED_SCHEMA
+    : CODEX_DELEGATION_SPAWN_SCHEMA;
+  if ((options.surface ?? 'worktree-chat') === 'worktree-chat') return schema;
+  return { ...schema, properties: withoutIsolation(schema.properties) };
 }
 
 function hasOnlyFields(
@@ -199,6 +253,7 @@ export function parseClaudeDelegationSpawn(
   input: unknown,
   options: DelegationSpawnProjectionOptions = {},
 ): AgentDelegationResult<AgentDelegationSpawnRequest> {
+  const surface = options.surface ?? 'worktree-chat';
   if (
     !hasOnlyFields(input, [
       'model',
@@ -219,6 +274,11 @@ export function parseClaudeDelegationSpawn(
     ])
   )
     return invalidProjection();
+  const isolationValidation = validateManagedDelegationSurfaceIsolation(
+    surface,
+    input,
+  );
+  if (!isolationValidation.ok) return isolationValidation;
   if (
     input.run_in_background !== undefined &&
     typeof input.run_in_background !== 'boolean'
@@ -260,6 +320,7 @@ export function parseCodexDelegationSpawn(
   input: unknown,
   options: DelegationSpawnProjectionOptions = {},
 ): AgentDelegationResult<AgentDelegationSpawnRequest> {
+  const surface = options.surface ?? 'worktree-chat';
   if (
     !hasOnlyFields(input, [
       'model',
@@ -280,13 +341,20 @@ export function parseCodexDelegationSpawn(
     ])
   )
     return invalidProjection();
+  const isolationValidation = validateManagedDelegationSurfaceIsolation(
+    surface,
+    input,
+  );
+  if (!isolationValidation.ok) return isolationValidation;
   if (input.context !== undefined && input.context !== 'task_only')
     return {
       ok: false,
       error: {
         code: 'capability_unavailable',
         message:
-          'This delegation surface supports only fresh task context in the shared worktree.',
+          surface === 'worktree-chat'
+            ? 'This delegation surface supports only fresh task context in the shared worktree.'
+            : 'This delegation surface supports only fresh task context in the shared working folder.',
         retryable: false,
       },
     };

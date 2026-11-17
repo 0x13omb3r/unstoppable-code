@@ -96,7 +96,7 @@ export function HomeBelowComposerGallery(): JSX.Element {
           <li data-testid="home-resume-details">
             <SuggestionRow icon={<HistoryIcon size={16} aria-hidden="true" />}>
               feature/home-section-spacing
-              <span className="ml-2 fg-quaternary">Demo Workspace</span>
+              <span className="pl-2 fg-quaternary">Demo Workspace</span>
             </SuggestionRow>
           </li>
         </ul>

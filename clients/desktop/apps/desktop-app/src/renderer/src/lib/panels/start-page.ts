@@ -1,7 +1,5 @@
-import {
-  APP_ADVISOR_PROJECT_ID,
-  SHARED_CONTAINER_VIEWER_PROJECT_ID,
-} from '@canopy/desktop-shared/types';
+import { SHARED_CONTAINER_VIEWER_PROJECT_ID } from '@canopy/desktop-shared/types';
+import { isBotProjectId } from '@canopy/protocol/chat-targets';
 import {
   findPanelByInstanceKey,
   usePanelLayoutStore,
@@ -192,7 +190,7 @@ export async function maybeOpenStartPage(
   if (
     !createdLayout ||
     !isCanopyDesktopStartPageEnabled() ||
-    projectId === APP_ADVISOR_PROJECT_ID ||
+    isBotProjectId(projectId) ||
     projectId === SHARED_CONTAINER_VIEWER_PROJECT_ID ||
     isWebCoreScope(projectId) ||
     consumeStartPageSuppressed(worktreeKey)

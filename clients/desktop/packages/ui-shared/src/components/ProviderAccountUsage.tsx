@@ -232,16 +232,18 @@ export function ProviderAccountUsageDetails({
     </>
   );
   return (
-    <Stack gap="tight" className="mt-2">
-      {collapsible ? (
-        <Disclosure label="Usage" dataTestId="provider-account-usage">
-          <div>{usage}</div>
-        </Disclosure>
-      ) : (
-        usage
-      )}
-      <AccountUsageError account={account} nowMs={nowMs} />
-    </Stack>
+    <div className="pt-2 empty:hidden">
+      <Stack gap="tight">
+        {collapsible ? (
+          <Disclosure label="Usage" dataTestId="provider-account-usage">
+            <div>{usage}</div>
+          </Disclosure>
+        ) : (
+          usage
+        )}
+        <AccountUsageError account={account} nowMs={nowMs} />
+      </Stack>
+    </div>
   );
 }
 

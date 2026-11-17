@@ -1,3 +1,6 @@
+import { STEP_ROW_TEXT_CLASS } from '../control-button-shared';
+export { STEP_ROW_TEXT_CLASS } from '../control-button-shared';
+import { ControlButton } from '../Button';
 import { useContinuousMotion } from '../../lib/continuous-motion';
 import {
   Children,
@@ -57,7 +60,7 @@ export interface StepRowProps {
   ariaLabel?: string;
   dataTestId?: string;
   /** Extra classes for the row (host padding, alignment). */
-  className?: string;
+  extent?: 'content' | 'fill' | 'remaining';
   /** Content after the words, such as change counts. */
   trailing?: ReactNode;
   /** Keep the chevron visible at rest instead of only on hover. */
@@ -77,13 +80,8 @@ export interface StepRowProps {
   step?: boolean;
 }
 
-export const STEP_ROW_TEXT_CLASS = 'text-s fg-secondary';
-
 /** The lighter ink of a row's detail, for words that sit beside the row. */
 export const STEP_ROW_DETAIL_INK_CLASS = 'fg-tertiary';
-
-const STRETCHED_TOGGLE_CLASS =
-  "focus-ring-stretched focus-ring-inset before:absolute before:inset-0 before:rounded-sm before:content-['']";
 
 /** One shimmer sweep, matching `canopy-text-shimmer-strong` in the tokens CSS. */
 const SHIMMER_CYCLE_MS = 2400;
@@ -179,7 +177,7 @@ export const StepRow = forwardRef<HTMLButtonElement, StepRowProps>(
       revealScope = 'local',
       ariaLabel,
       dataTestId,
-      className = '',
+      extent = 'content',
       trailing,
       chevronAtRest = false,
       stretched = false,
@@ -212,7 +210,7 @@ export const StepRow = forwardRef<HTMLButtonElement, StepRowProps>(
             className={
               badges
                 ? `min-w-0 truncate ${STEP_ROW_DETAIL_INK_CLASS}`
-                : `ml-1.5 ${STEP_ROW_DETAIL_INK_CLASS}`
+                : `pl-1.5 ${STEP_ROW_DETAIL_INK_CLASS}`
             }
           >
             {detail}
@@ -279,7 +277,10 @@ export const StepRow = forwardRef<HTMLButtonElement, StepRowProps>(
     );
     // A row with a glyph is 32px tall: the steps' rhythm, with no gap
     // between rows. A header without one keeps its own height.
-    const rowClass = `group ${STEP_ROW_TEXT_CLASS} flex min-w-0 max-w-full items-center gap-2 py-1${icon != null ? ' min-h-8' : ''} text-left${className === '' ? '' : ` ${className}`}`;
+    const extentClass = { content: '', fill: 'w-full', remaining: 'flex-1' }[
+      extent
+    ];
+    const rowClass = `group ${STEP_ROW_TEXT_CLASS} flex min-w-0 max-w-full items-center gap-2 py-1${icon != null ? ' min-h-8' : ''} text-left${extentClass === '' ? '' : ` ${extentClass}`}`;
     if (!expandable) {
       return (
         <div className={rowClass} data-testid={dataTestId} data-step-row="">
@@ -288,7 +289,7 @@ export const StepRow = forwardRef<HTMLButtonElement, StepRowProps>(
       );
     }
     return (
-      <button
+      <ControlButton
         ref={ref}
         type="button"
         onClick={(event) => {
@@ -300,10 +301,11 @@ export const StepRow = forwardRef<HTMLButtonElement, StepRowProps>(
         aria-label={ariaLabel}
         data-testid={dataTestId}
         data-step-row=""
-        className={`focus-ring rounded-sm transition-colors hover:fg-primary ${rowClass}${stretched ? ` ${STRETCHED_TOGGLE_CLASS}` : ''}`}
+        presentation="step-row-toggle"
+        appearance={{ hasIcon: icon != null, stretched: !!stretched, extent }}
       >
         {content}
-      </button>
+      </ControlButton>
     );
   },
 );
@@ -312,7 +314,7 @@ export const StepRow = forwardRef<HTMLButtonElement, StepRowProps>(
  * Opened step content: starts on the row's words (the 16px icon plus the
  * row's 8px gap), no box around prose.
  */
-export const STEP_ROW_BODY_CLASS = 'mb-1 ml-6 text-s';
+export const STEP_ROW_BODY_CLASS = 'pb-1 pl-6 text-s';
 
 /**
  * A run of steps: rows with no gap between them (the 32px row is the

@@ -82,17 +82,6 @@ const ROW_HEIGHT_CLASS: Record<FactListRowHeight, string> = {
 };
 
 /**
- * Placement only: margins around the list. Legacy: prefer the parent's gap
- * (Stack); only the values existing callers still pass remain.
- */
-export type FactListPlacement = 'mt-3' | 'mt-4';
-
-const PLACEMENT_CLASS: Record<FactListPlacement, string> = {
-  'mt-3': ' mt-3',
-  'mt-4': ' mt-4',
-};
-
-/**
  * `columns`: a label column beside a value column. `stacked`: each label above
  * its value, the facts laid out in `columns` columns. `spread`: one row per
  * fact, the value on the trailing edge. `inline`: the facts on one wrapping
@@ -157,7 +146,6 @@ export interface FactListProps {
   readonly valueTone?: FactValueTone;
   /** A rule above the list, for a list that follows other content in a card. */
   readonly divided?: boolean;
-  readonly placement?: FactListPlacement;
   readonly dataTestId?: string;
   readonly children?: ReactNode;
 }
@@ -175,7 +163,6 @@ export function FactList({
   labelMono = false,
   valueTone = 'primary',
   divided = false,
-  placement,
   dataTestId,
   children,
 }: FactListProps): JSX.Element {
@@ -185,7 +172,7 @@ export function FactList({
     spread: 'flex flex-col',
     inline: 'flex flex-wrap',
   };
-  const className = `${layoutClass[layout]}${COLUMN_GAP_CLASS[columnGap]}${ROW_GAP_CLASS[rowGap]}${ROW_HEIGHT_CLASS[rowHeight]}${SIZE_CLASS[size]}${divided ? ' border-t pt-1.5' : ''}${placement ? PLACEMENT_CLASS[placement] : ''}`;
+  const className = `${layoutClass[layout]}${COLUMN_GAP_CLASS[columnGap]}${ROW_GAP_CLASS[rowGap]}${ROW_HEIGHT_CLASS[rowHeight]}${SIZE_CLASS[size]}${divided ? ' border-t pt-1.5' : ''}`;
   return (
     <dl className={className} data-testid={dataTestId}>
       <FactListContext.Provider

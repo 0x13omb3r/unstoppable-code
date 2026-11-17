@@ -202,13 +202,15 @@ function ReferenceLabel({
       )}
       {pending?.kind === 'pending' && (
         // 36ch: most titles outrun the 40ch clip, which then ends on a word
-        // boundary near 36ch. The margin stands in for the `: ` separator. A
+        // boundary near 36ch. The inset stands in for the `: ` separator. A
         // fixed width sizes the chip; `max-w-full` keeps it in the column.
-        <InlineTextSkeleton
-          active={pending.reading}
-          data-testid="linear-reference-title-placeholder"
-          className="ml-2 w-[36ch] max-w-full"
-        />
+        <span className="inline-block w-[calc(36ch+0.5rem)] max-w-full pl-2 empty:hidden">
+          <InlineTextSkeleton
+            active={pending.reading}
+            data-testid="linear-reference-title-placeholder"
+            className="w-full"
+          />
+        </span>
       )}
     </>
   );

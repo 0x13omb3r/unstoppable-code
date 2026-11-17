@@ -1,5 +1,6 @@
 'use client';
 
+import { ControlButton } from '@canopy/ui-shared/components';
 import { Badge, type BadgeTone } from '@canopy/ui-shared/components/Badge';
 import {
   SPACE_ROLE_GAP_CLASS,
@@ -8,14 +9,11 @@ import {
 import { useMemo, useState, type JSX, type ReactNode } from 'react';
 import {
   Stack,
-  CheckStatusBadge,
-  LoadingSpinner,
   Notice,
   PrLabelBadge,
   ProgressChecklist,
   PullRequestStateBadge,
   ReviewStatusBadge,
-  type CheckStatusBadgeStatus,
   type ProgressChecklistStep,
   type ReviewStatusBadgeStatus,
   StatusLabel,
@@ -26,6 +24,10 @@ import {
   derivePhaseStatus,
   type PullRequestCreationPhase,
 } from '@canopy/ui-shared/lib';
+import {
+  PullRequestCheckStatusMarker,
+  type PullRequestSectionCheckStatus,
+} from '../pull-requests/PullRequestCheckStatusMarker';
 import { ChevronRightMediumIcon as AppCatalogChevronRightMediumIcon } from '@canopy/ui-shared/icons/AppIcons';
 
 // ---------------------------------------------------------------------------
@@ -45,12 +47,7 @@ import { ChevronRightMediumIcon as AppCatalogChevronRightMediumIcon } from '@can
 
 export type PullRequestSectionPrState = 'open' | 'merged' | 'closed' | 'draft';
 
-export type PullRequestSectionCheckStatus =
-  | 'passing'
-  | 'failing'
-  | 'pending'
-  | 'neutral'
-  | 'none';
+export type { PullRequestSectionCheckStatus } from '../pull-requests/PullRequestCheckStatusMarker';
 
 export type PullRequestSectionReviewStatus =
   | 'approved'
@@ -103,40 +100,6 @@ export interface PullRequestSectionCreationStep {
 export interface PullRequestSectionCreationProgress {
   readonly steps: readonly PullRequestSectionCreationStep[];
   readonly currentPhase: PullRequestCreationPhase;
-}
-
-function toCheckStatusBadgeStatus(
-  status: PullRequestSectionCheckStatus,
-): CheckStatusBadgeStatus | null {
-  switch (status) {
-    case 'passing':
-      return 'success';
-    case 'failing':
-      return 'failure';
-    case 'neutral':
-      return 'neutral';
-    case 'pending':
-      return 'pending';
-    default:
-      return null;
-  }
-}
-
-function CheckIcon({
-  status,
-}: {
-  status: PullRequestSectionCheckStatus;
-}): JSX.Element {
-  const mapped = toCheckStatusBadgeStatus(status);
-  if (mapped === null) {
-    return <LoadingSpinner tone="warning" />;
-  }
-  if (mapped === 'pending') {
-    return (
-      <CheckStatusBadge status="pending" pendingIcon={<LoadingSpinner />} />
-    );
-  }
-  return <CheckStatusBadge status={mapped} />;
 }
 
 function toReviewBadgeStatus(
@@ -426,7 +389,7 @@ export function PullRequestRepoDetail({
                 className="flex items-center justify-between gap-2 text-xs"
               >
                 <span className="flex min-w-0 items-center gap-1.5">
-                  <CheckIcon status={check.status} />
+                  <PullRequestCheckStatusMarker status={check.status} />
                   <span className="truncate fg-primary/80">{check.name}</span>
                 </span>
                 {check.detailsUrl && (
@@ -615,10 +578,9 @@ export function PullRequestSectionBody({
             return (
               <Stack gap="inline" key={repo.repoId}>
                 <div className="flex items-center gap-1">
-                  <button
-                    type="button"
+                  <ControlButton
                     onClick={() => toggleRepo(repo.repoId)}
-                    className="flex min-w-0 flex-1 items-center gap-1 text-xs font-medium fg-primary/80 transition-colors hover:fg-primary"
+                    presentation="repository-disclosure"
                   >
                     <AppCatalogChevronRightMediumIcon
                       size="sm"
@@ -631,7 +593,7 @@ export function PullRequestSectionBody({
                         dataTestId="pr-status-badge"
                       />
                     )}
-                  </button>
+                  </ControlButton>
                   {repo.status && repo.status.prUrl !== '' && (
                     <a
                       href={repo.status.prUrl}
@@ -668,7 +630,7 @@ export function PullRequestSectionBody({
               s.phase === 'error' && s.error && !s.repoName ? [s.error] : [],
             )
             .map((error, i) => (
-              <div key={`error-${i}`} className="mt-1 max-h-32 overflow-auto">
+              <div key={`error-${i}`} className="pt-1 max-h-32 overflow-auto">
                 <p className="whitespace-pre-wrap break-words">
                   <StatusLabel size="2xs">{error}</StatusLabel>
                 </p>
@@ -680,10 +642,9 @@ export function PullRequestSectionBody({
           {repos.map((repo) => (
             <Stack gap="inline" key={repo.repoId}>
               <div className="flex items-center gap-1">
-                <button
-                  type="button"
+                <ControlButton
                   onClick={() => toggleRepo(repo.repoId)}
-                  className="flex min-w-0 flex-1 items-center gap-1 text-xs font-medium fg-primary/80 transition-colors hover:fg-primary"
+                  presentation="repository-disclosure"
                 >
                   <AppCatalogChevronRightMediumIcon
                     size="sm"
@@ -696,7 +657,7 @@ export function PullRequestSectionBody({
                       dataTestId="pr-status-badge"
                     />
                   )}
-                </button>
+                </ControlButton>
                 {repo.status && repo.status.prUrl !== '' && (
                   <a
                     href={repo.status.prUrl}

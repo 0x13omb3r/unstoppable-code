@@ -396,7 +396,11 @@ function useDefaultWorktreeModel(): ChatModel | undefined {
 // Icon (leading) components
 // ---------------------------------------------------------------------------
 
-function ChatPanelTabIcon({ chatTabId }: { chatTabId: string }): JSX.Element {
+function ChatPanelTabLeadingContent({
+  chatTabId,
+}: {
+  chatTabId: string;
+}): JSX.Element {
   const tab = useBoundChatTab(chatTabId);
   const background = useBoundChatBackgroundWork(chatTabId);
   const awaitingApproval = useAwaitingApproval(tab);
@@ -543,7 +547,7 @@ function ChatPanelTabIcon({ chatTabId }: { chatTabId: string }): JSX.Element {
   );
 }
 
-function FilePanelTabIcon({
+function FilePanelTabFileType({
   fileTabId,
   fallbackTitle,
 }: {
@@ -596,7 +600,7 @@ function BrowserPanelTabLabel({
  * never renders a broken image, and the local error latch resets whenever
  * `faviconUrl` changes so a later good favicon shows again.
  */
-export function BrowserPanelTabIcon({
+export function BrowserPanelTabFavicon({
   browserId,
 }: {
   browserId: string;
@@ -682,14 +686,14 @@ function BrowserPanelTabTooltip({
 export function renderPanelTabIcon(tab: PanelTabModel): ReactNode {
   const bound = boundChatTabId(tab);
   if (bound !== null && tab.kind === 'chat') {
-    return <ChatPanelTabIcon chatTabId={bound} />;
+    return <ChatPanelTabLeadingContent chatTabId={bound} />;
   }
   if (bound !== null && tab.kind === 'file-diff') {
-    return <FilePanelTabIcon fileTabId={bound} fallbackTitle={tab.title} />;
+    return <FilePanelTabFileType fileTabId={bound} fallbackTitle={tab.title} />;
   }
   const browserId = boundBrowserId(tab);
   if (browserId !== null) {
-    return <BrowserPanelTabIcon browserId={browserId} />;
+    return <BrowserPanelTabFavicon browserId={browserId} />;
   }
   if (tab.kind === 'activity-card') {
     const sectionId = tab.instance?.sectionId;
@@ -1122,7 +1126,7 @@ export function renderPanelTabTrailing(tab: PanelTabModel): ReactNode {
  * expanded tab's trailing activity dot (a collapsed group shows no tab strip,
  * so the dot has nowhere to live). Inactive, it renders the plain icon.
  */
-function CollapsedActivityIcon({
+function CollapsedActivityIndicator({
   icon,
   active,
   label,
@@ -1149,7 +1153,7 @@ function CollapsedActivityIcon({
   );
 }
 
-function TerminalCollapsedTabIcon({
+function TerminalCollapsedTabActivity({
   terminalId,
 }: {
   terminalId?: string;
@@ -1157,7 +1161,7 @@ function TerminalCollapsedTabIcon({
   const selection = usePanelActivityWorktreeSelection();
   const running = useTerminalActivityRunning(selection, terminalId);
   return (
-    <CollapsedActivityIcon
+    <CollapsedActivityIndicator
       icon={getPanelDefinition('terminal').icon}
       active={running}
       label="Running"
@@ -1170,7 +1174,7 @@ function TerminalCollapsedTabIcon({
   );
 }
 
-function BrowserCollapsedTabIcon({
+function BrowserCollapsedTabActivity({
   browserId,
 }: {
   browserId: string;
@@ -1180,8 +1184,8 @@ function BrowserCollapsedTabIcon({
   // make this collapsed icon pulse.
   const loading = useBrowserLoading(browserId);
   return (
-    <CollapsedActivityIcon
-      icon={<BrowserPanelTabIcon browserId={browserId} />}
+    <CollapsedActivityIndicator
+      icon={<BrowserPanelTabFavicon browserId={browserId} />}
       active={loading}
       label="Loading"
       testId={`panel-collapsed-browser-active-${browserId}`}
@@ -1198,11 +1202,13 @@ function BrowserCollapsedTabIcon({
  */
 export function renderPanelCollapsedTabIcon(tab: PanelTabModel): ReactNode {
   if (tab.kind === 'terminal') {
-    return <TerminalCollapsedTabIcon terminalId={tab.instance?.terminalId} />;
+    return (
+      <TerminalCollapsedTabActivity terminalId={tab.instance?.terminalId} />
+    );
   }
   const browserId = boundBrowserId(tab);
   if (browserId !== null) {
-    return <BrowserCollapsedTabIcon browserId={browserId} />;
+    return <BrowserCollapsedTabActivity browserId={browserId} />;
   }
   return renderPanelTabIcon(tab);
 }
@@ -1236,3 +1242,5 @@ function ChatPanelTabAttention({
     <PanelChatTabQuestionMarker chatId={chatTabId} />
   ) : null;
 }
+
+export { BrowserPanelTabFavicon as BrowserPanelTabIcon };

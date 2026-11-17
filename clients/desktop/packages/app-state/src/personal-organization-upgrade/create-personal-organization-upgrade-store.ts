@@ -55,6 +55,7 @@ export interface PersonalOrganizationUpgradePort {
   ) => Promise<PersonalProjectOperation>;
   readonly status: (
     operationId: string,
+    acknowledgeTerminal?: true,
   ) => Promise<PersonalProjectOperation | null>;
 }
 
@@ -76,8 +77,11 @@ export function personalOrganizationUpgradePortFromClient(
       (await client.query('personalOrganization.projects', {})).projects,
     convert: (request) =>
       client.command('personalOrganization.convertProjects', request),
-    status: (operationId) =>
-      client.query('personalOrganization.operationStatus', { operationId }),
+    status: (operationId, acknowledgeTerminal) =>
+      client.query('personalOrganization.operationStatus', {
+        operationId,
+        acknowledgeTerminal,
+      }),
   };
 }
 
@@ -242,7 +246,9 @@ export interface PersonalOrganizationUpgradeState {
   readonly submit: (options?: {
     readonly inviteRequired?: boolean;
   }) => Promise<void>;
-  /** Retry chosen projects through the same durable operation. */
+  /** Clear a terminal journal entry after the checklist has shown it. */
+  readonly acknowledgeProjectFailure: () => Promise<void>;
+  /** Retry chosen projects, starting fresh after a terminal failure. */
   readonly retryProjects: (workspaceIds: readonly string[]) => Promise<void>;
   /** Re-read the durable operation, e.g. after reopening. */
   readonly refreshOperation: () => Promise<void>;
@@ -366,6 +372,7 @@ export function createPersonalOrganizationUpgradeStore({
   let polls = 0;
   let promotionOperationId = createId();
   let conversionOperationId = createId();
+  const acknowledgments = new Set<string>();
   let originalPersonalOrganizationId = personalOrganizationId;
   let submittedName: string | undefined;
   let originalDesktopSessionId = port.desktopSessionId;
@@ -438,6 +445,33 @@ export function createPersonalOrganizationUpgradeStore({
       cancelPoll = null;
     };
 
+    const applyOperation = (operation: PersonalProjectOperation): void => {
+      if (operation.terminalReason !== 'invalid-canopy-json') {
+        set({ operation, conversionFailure: null });
+        return;
+      }
+      const bound = new Set(
+        operation.projects
+          .filter(
+            ({ stage }) =>
+              stage === 'converted' ||
+              stage === 'shared' ||
+              stage === 'complete',
+          )
+          .map(({ workspaceId }) => workspaceId),
+      );
+      stopPolling();
+      set({
+        operation: null,
+        selection: get().selection.filter((id) => !bound.has(id)),
+        conversionFailure: {
+          code: operation.terminalReason,
+          message: operation.terminalReason,
+        },
+      });
+      persist();
+    };
+
     const pollWhilePending = (): void => {
       stopPolling();
       if (
@@ -487,7 +521,7 @@ export function createPersonalOrganizationUpgradeStore({
           ...(retry ? { retryWorkspaceIds: [...workspaceIds] } : {}),
         });
         reply.apply(() => {
-          set({ operation });
+          applyOperation(operation);
           polls = 0;
           pollWhilePending();
         });
@@ -751,12 +785,47 @@ export function createPersonalOrganizationUpgradeStore({
         }
       },
 
+      acknowledgeProjectFailure: async (): Promise<void> => {
+        const id = conversionOperationId;
+        if (
+          !projectsCurrent() ||
+          get().conversionFailure?.code !== 'invalid-canopy-json' ||
+          acknowledgments.has(id)
+        )
+          return;
+        // If browser persistence failed, startup still needs the journal.
+        const record = recovery?.read();
+        if (
+          recovery &&
+          (record?.conversionOperationId !== id ||
+            record.conversionFailure?.code !== 'invalid-canopy-json')
+        )
+          return;
+        acknowledgments.add(id);
+        try {
+          await port.status(id, true);
+        } catch {
+          // The journal remains readable and can be acknowledged on reopen.
+        } finally {
+          acknowledgments.delete(id);
+        }
+      },
+
       retryProjects: async (workspaceIds): Promise<void> => {
         if (!active() || busy || workspaceIds.length === 0) return;
         const reply = captureChecklistReply();
         busy = true;
         try {
-          await convert(workspaceIds, true);
+          const startFresh =
+            get().conversionFailure?.code === 'invalid-canopy-json';
+          if (startFresh) {
+            if (!projectsCurrent()) return;
+            void get().acknowledgeProjectFailure();
+            conversionOperationId = createId();
+            set({ conversionFailure: null });
+            persist();
+          }
+          await convert(workspaceIds, !startFresh);
           reply.apply(() => {
             set({ phase: settledPhase() });
             persist();
@@ -770,22 +839,26 @@ export function createPersonalOrganizationUpgradeStore({
         if (
           !projectsCurrent() ||
           !port.canBringProjects ||
+          get().conversionFailure?.code === 'invalid-canopy-json' ||
           get().selection.length === 0
         )
           return;
         const reply = captureChecklistReply();
+        const operationId = conversionOperationId;
         try {
-          const operation = await port.status(conversionOperationId);
-          if (!projectsCurrent()) return;
+          const operation = await port.status(operationId);
+          if (
+            !projectsCurrent() ||
+            operationId !== conversionOperationId ||
+            get().conversionFailure?.code === 'invalid-canopy-json'
+          )
+            return;
           reply.apply(() => {
             // A failed request plus a confirmed absent journal can be retried.
             // Legacy records and unknown status remain pending.
             if (operation === null && get().conversionFailure === null) return;
-            set(
-              operation === null
-                ? { operation }
-                : { operation, conversionFailure: null },
-            );
+            if (operation === null) set({ operation });
+            else applyOperation(operation);
             if (!busy) set({ phase: settledPhase() });
             persist();
           });
@@ -985,7 +1058,8 @@ export function createPersonalOrganizationUpgradeStore({
           promotion: record.promotion,
           conversionFailure: record.conversionFailure ?? null,
           projects: { status: 'idle', items: record.projects ?? [] },
-          ...(record.selection.length > 0 &&
+          ...(record.conversionFailure?.code !== 'invalid-canopy-json' &&
+          record.selection.length > 0 &&
           (record.promotion !== null || existingOrganizationId !== null)
             ? {
                 operation: {
@@ -1034,7 +1108,11 @@ export function createPersonalOrganizationUpgradeStore({
           phase: record.promotion === null ? 'editing' : 'pending',
         });
         if (record.promotion !== null || existingOrganizationId !== null) {
-          if (!projectsCurrent() && record.selection.length > 0)
+          if (
+            !projectsCurrent() &&
+            record.selection.length > 0 &&
+            record.conversionFailure?.code !== 'invalid-canopy-json'
+          )
             set({
               conversionFailure: {
                 code: 'offline',

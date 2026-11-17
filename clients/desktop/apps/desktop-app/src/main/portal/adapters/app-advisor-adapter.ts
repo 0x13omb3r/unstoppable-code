@@ -829,6 +829,9 @@ export async function handlePortalAppAdvisorSetModel(
   }
 }
 
+// Default Bot only: portal.app_advisor.cancel stops Orchestrator sessions, and
+// the command carries no botId until the Portal slice. (Kept outside the
+// handler body so its census span stays unchanged.)
 export async function handlePortalAppAdvisorCancel(
   command: PortalCommandEnvelope<
     PortalCommandPayloadMap['portal.app_advisor.cancel']

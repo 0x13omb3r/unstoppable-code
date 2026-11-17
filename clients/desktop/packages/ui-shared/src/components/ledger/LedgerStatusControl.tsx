@@ -1,5 +1,6 @@
 'use client';
 
+import { ControlButton } from '../Button';
 import { useId, useRef, useState, type JSX, type MouseEvent } from 'react';
 import type { LedgerStatus } from '@canopy/protocol/canopy-core';
 import {
@@ -21,10 +22,7 @@ import {
 } from '../PickerMenu';
 import { ChevronDownIcon } from '../../icons/AppIcons';
 import { LedgerStatusLabel } from './LedgerStatusLabel';
-import {
-  LedgerStatusGlyph,
-  ledgerStatusPillClassName,
-} from './LedgerStatusPill';
+import { LedgerStatusGlyph } from './LedgerStatusPill';
 
 export interface LedgerStatusControlProps {
   status: LedgerStatus;
@@ -105,7 +103,7 @@ export function LedgerStatusControl({
     >
       {variant === 'inline' ? (
         // The row's status pill, as the control that changes it.
-        <button
+        <ControlButton
           ref={triggerRef}
           type="button"
           id={id}
@@ -116,12 +114,13 @@ export function LedgerStatusControl({
           data-testid={testId}
           data-status={status}
           onClick={onTriggerClick}
-          className={`focus-ring ${ledgerStatusPillClassName(status)} disabled:cursor-not-allowed disabled:opacity-40`}
+          presentation="ledger-status-trigger"
+          appearance={{ status }}
         >
           <LedgerStatusGlyph status={status} />
           {LEDGER_STATUS_LABELS[status]}
           <ChevronDownIcon size="sm" aria-hidden="true" className="shrink-0" />
-        </button>
+        </ControlButton>
       ) : (
         <PickerTrigger
           ref={triggerRef}

@@ -53,7 +53,7 @@ export function CreditsNoticesSpecimen(): JSX.Element {
         <SpecimenCell label="Contact-admin line only" wide>
           <div className="w-full">
             <CreditsRecoveryNotice intent="attention" role="none" contactAdmin>
-              You can't buy AI Credits yourself.
+              You can't buy credits yourself.
             </CreditsRecoveryNotice>
           </div>
         </SpecimenCell>

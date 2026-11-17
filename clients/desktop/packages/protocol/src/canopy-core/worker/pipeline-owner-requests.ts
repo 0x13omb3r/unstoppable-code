@@ -2,6 +2,10 @@ import { z } from 'zod';
 
 import { canopyJsonValueSchemaWithin } from '../errors';
 import { LedgerErrorDetailsSchema } from '../core/ledger/schemas';
+import {
+  WorkerPipelineModelAliasResolutionsSchema,
+  WorkerPipelinePluginCollectionSnapshotsSchema,
+} from '../host-execution';
 
 /*
  * Pipeline owner requests (CAN-5095): what a model step asks the core that
@@ -41,6 +45,24 @@ import { LedgerErrorDetailsSchema } from '../core/ledger/schemas';
  * fire its `worktree:precommit:failure` hooks. The step's identity is the
  * request's own; the report carries each failed repository's bounded,
  * redacted hook output, never a path outside the checkout.
+ *
+ * `owner.pipeline.childCapabilities` (CAN-6868 follow-up 3) asks a remote
+ * owner to resolve the plugin collections and model aliases a same-target
+ * child workflow declares, as it resolved its run's at launch, before the
+ * child starts or resumes in its parent's host. The owner checks the
+ * definition as the run's person under the run's owner, installs what the
+ * collections need on the worker, and answers in the launch's shapes; the
+ * host scopes them to that child. The child's first answer is the one every
+ * later request for it gets, so a resume on another worker runs what the
+ * child started with.
+ *
+ * `owner.isolatedJob.*` (CAN-6892) run one variant of a read-only job as a
+ * child run in a sandbox of its own (`isolatedJobs` on the launch). The
+ * variant's request and its outcome are JSON documents that cross in
+ * chunks (`write`, `read`) into the owner's run storage; `run` names the
+ * request's digest, and settles once the child ended. The parent names the
+ * variant by the child's execution id; the variant's own host names none,
+ * since the owner knows which variant it is.
  */
 
 const id = z.string().min(1).max(512);
@@ -77,6 +99,10 @@ export const WORKER_PIPELINE_OWNER_ACTIONS = [
   'owner.mcp.rejected',
   'owner.codex.pluginRefs',
   'owner.precommit.failure',
+  'owner.pipeline.childCapabilities',
+  'owner.isolatedJob.write',
+  'owner.isolatedJob.read',
+  'owner.isolatedJob.run',
 ] as const;
 export type WorkerPipelineOwnerAction =
   (typeof WORKER_PIPELINE_OWNER_ACTIONS)[number];
@@ -216,6 +242,9 @@ const routingContext = {
   requiredAccountProxyConnectionId: id.optional(),
 };
 
+/** The largest child definition `owner.pipeline.childCapabilities` carries, as JSON. */
+export const WORKER_PIPELINE_OWNER_CHILD_DOCUMENT_MAX = 1_048_576;
+
 /** The most repositories one `owner.precommit.failure` reports. */
 export const WORKER_PIPELINE_OWNER_PRECOMMIT_REPOS_MAX = 64;
 /** The longest pre-commit hook output one repository reports, in characters. */
@@ -233,6 +262,49 @@ const precommitRepository = z.strictObject({
   /** The hook's own output, redacted, its lines kept. */
   precommitFailureError: text(WORKER_PIPELINE_OWNER_PRECOMMIT_ERROR_MAX),
 });
+
+/**
+ * The most one `owner.isolatedJob.write` carries, or one `read` answers
+ * (CAN-6892): its base64 stays well under the relay's message limit.
+ */
+export const WORKER_PIPELINE_ISOLATED_JOB_CHUNK_MAX_BYTES = 2 * 1024 * 1024;
+/**
+ * The largest variant request or outcome, as UTF-8 JSON: 64 MiB of files as
+ * base64, and the values beside them.
+ */
+export const WORKER_PIPELINE_ISOLATED_JOB_PAYLOAD_MAX_BYTES = 96 * 1024 * 1024;
+/** A variant's child run id: a lowercase UUID. */
+export const WORKER_PIPELINE_ISOLATED_JOB_VARIANT_ID_PATTERN =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+
+const variantId = z
+  .string()
+  .regex(WORKER_PIPELINE_ISOLATED_JOB_VARIANT_ID_PATTERN);
+/** Which document a chunk belongs to: the parent's request, or the variant's outcome. */
+const isolatedJobSide = z.enum(['request', 'outcome']);
+/** A whole request or outcome, by its digest. */
+const isolatedJobPayload = z.strictObject({
+  sha256: z.string().regex(/^[0-9a-f]{64}$/),
+  byteSize: z
+    .number()
+    .int()
+    .min(1)
+    .max(WORKER_PIPELINE_ISOLATED_JOB_PAYLOAD_MAX_BYTES),
+});
+const isolatedJobOffset = z
+  .number()
+  .int()
+  .min(0)
+  .max(WORKER_PIPELINE_ISOLATED_JOB_PAYLOAD_MAX_BYTES);
+const isolatedJobChunk = z
+  .string()
+  .max(Math.ceil(WORKER_PIPELINE_ISOLATED_JOB_CHUNK_MAX_BYTES / 3) * 4)
+  .regex(/^[A-Za-z0-9+/]*={0,2}$/);
+/** The parent names its variant's request; the variant names nothing. */
+const sideNamesVariant = (value: {
+  side: 'request' | 'outcome';
+  variantId?: string;
+}): boolean => (value.side === 'request') === (value.variantId !== undefined);
 
 /** Members added to WorkerPipelineHostActionRequestSchema's union. */
 export const WORKER_PIPELINE_OWNER_REQUEST_MEMBERS = [
@@ -408,6 +480,55 @@ export const WORKER_PIPELINE_OWNER_REQUEST_MEMBERS = [
       .min(1)
       .max(WORKER_PIPELINE_OWNER_PRECOMMIT_REPOS_MAX),
   }),
+  /**
+   * A same-target child's own collections and aliases (CAN-6868): its id and
+   * its definition as JSON, as the step resolved it.
+   */
+  z.strictObject({
+    action: z.literal('owner.pipeline.childCapabilities'),
+    childExecutionId: id,
+    document: z.string().min(1).max(WORKER_PIPELINE_OWNER_CHILD_DOCUMENT_MAX),
+  }),
+  /**
+   * One chunk of a variant's request (the parent, naming the variant) or of
+   * its outcome (the variant's own host), at `offset`, in order (CAN-6892).
+   */
+  z
+    .strictObject({
+      action: z.literal('owner.isolatedJob.write'),
+      side: isolatedJobSide,
+      variantId: variantId.optional(),
+      payload: isolatedJobPayload,
+      offset: isolatedJobOffset,
+      chunk: isolatedJobChunk,
+    })
+    .refine(sideNamesVariant, 'Only the request side names its variant.'),
+  /** One chunk of a variant's request (the variant) or outcome (the parent). */
+  z
+    .strictObject({
+      action: z.literal('owner.isolatedJob.read'),
+      side: isolatedJobSide,
+      variantId: variantId.optional(),
+      offset: isolatedJobOffset,
+    })
+    .refine(
+      (value) => (value.side === 'outcome') === (value.variantId !== undefined),
+      'Only the outcome side names its variant.',
+    ),
+  /**
+   * Runs the variant whose request was written as a child run in a sandbox
+   * of its own, cut from `commit`, and settles once it ended (CAN-6892).
+   * The child starts as the run started, from the run's own recorded
+   * workflow, inputs and event; it runs only `logicalJobId`, from the
+   * request.
+   */
+  z.strictObject({
+    action: z.literal('owner.isolatedJob.run'),
+    variantId,
+    commit: z.string().regex(/^(?:[0-9a-f]{40}|[0-9a-f]{64})$/),
+    request: isolatedJobPayload,
+    logicalJobId: id,
+  }),
 ] as const;
 
 /** What core answers an owner request with, apart from host-local values. */
@@ -546,6 +667,45 @@ export const WorkerPipelineOwnerResultSchema = z.discriminatedUnion('kind', [
     kind: z.literal('precommit.failure'),
     recorded: z.boolean(),
   }),
+  /**
+   * The child's collections and aliases in the launch's shapes, installed
+   * on the worker; absent when it declares none of that kind.
+   */
+  z.strictObject({
+    kind: z.literal('pipeline.childCapabilities'),
+    pluginCollectionSnapshots:
+      WorkerPipelinePluginCollectionSnapshotsSchema.optional(),
+    modelAliasResolutions: WorkerPipelineModelAliasResolutionsSchema.optional(),
+  }),
+  z.strictObject({
+    kind: z.literal('isolatedJob.write'),
+    /** How much of the document the owner holds. */
+    received: isolatedJobOffset,
+    complete: z.boolean(),
+  }),
+  z.strictObject({
+    kind: z.literal('isolatedJob.read'),
+    payload: isolatedJobPayload,
+    offset: isolatedJobOffset,
+    chunk: isolatedJobChunk,
+    complete: z.boolean(),
+  }),
+  z.strictObject({
+    kind: z.literal('isolatedJob.run'),
+    /**
+     * `completed`: the variant wrote its outcome, which the parent reads
+     * back. `unavailable`: the owner can't place it (a commit it can't check
+     * out, a run with no checkout), so the parent runs it in its own
+     * sandbox. A child that ended without an outcome settles as a failure.
+     */
+    outcome: z.discriminatedUnion('kind', [
+      z.strictObject({
+        kind: z.literal('completed'),
+        payload: isolatedJobPayload,
+      }),
+      z.strictObject({ kind: z.literal('unavailable'), reason: text(1024) }),
+    ]),
+  }),
   z.strictObject({
     kind: z.literal('codex.pluginRefs'),
     /**
@@ -593,6 +753,10 @@ export const WORKER_PIPELINE_OWNER_RESULT_KIND: Readonly<
   'owner.mcp.rejected': 'mcp.rejected',
   'owner.codex.pluginRefs': 'codex.pluginRefs',
   'owner.precommit.failure': 'precommit.failure',
+  'owner.pipeline.childCapabilities': 'pipeline.childCapabilities',
+  'owner.isolatedJob.write': 'isolatedJob.write',
+  'owner.isolatedJob.read': 'isolatedJob.read',
+  'owner.isolatedJob.run': 'isolatedJob.run',
 });
 
 const OWNER_ACTIONS: ReadonlySet<string> = new Set(

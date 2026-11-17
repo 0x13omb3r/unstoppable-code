@@ -7,6 +7,7 @@ import type { ActiveInstalledItemCounts } from '../lib/installed-item-status';
 import { Button } from './Button';
 import { SettingsRowsRow } from './settings/SettingsRows';
 import { Skeleton } from './Skeleton';
+import { EmptyStateText } from './StatusBlocks';
 import { StatusLabel } from './StatusLabel';
 
 /**
@@ -78,12 +79,12 @@ function ActiveItemsLine({
   const text = activeItemsSummaryText(counts);
   const { plugins, skills, mcpServers, collections } = counts;
   const total = plugins + skills + mcpServers + collections;
-  return (
-    <span className={text ? 'fg-primary' : 'fg-tertiary'}>
-      {text
-        ? `${text} ${total === 1 ? 'is' : 'are'} active.`
-        : 'Nothing is active yet.'}
+  return text ? (
+    <span className="fg-primary">
+      {`${text} ${total === 1 ? 'is' : 'are'} active.`}
     </span>
+  ) : (
+    <EmptyStateText title="Nothing is active yet." />
   );
 }
 

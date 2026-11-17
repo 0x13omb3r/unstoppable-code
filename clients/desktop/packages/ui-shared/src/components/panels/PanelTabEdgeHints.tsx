@@ -1,5 +1,6 @@
 'use client';
 
+import { ControlButton } from '../Button';
 import {
   useCallback,
   useEffect,
@@ -273,10 +274,10 @@ function EdgeHint({
   return (
     <span className="canopy-panel-tab-edge-anchor" data-side={side}>
       <Tooltip label={label}>
-        <button
+        <ControlButton
           ref={ref}
           type="button"
-          className="canopy-panel-tab-edge-count"
+          presentation="panel-tab-edge-count"
           data-side={side}
           data-size={size}
           aria-label={label}
@@ -292,7 +293,7 @@ function EdgeHint({
             <ThinkingSpinner sizePx={10} tone="accent" />
           </span>
           <span>{size === 'full' ? `${count} running` : count}</span>
-        </button>
+        </ControlButton>
       </Tooltip>
     </span>
   );

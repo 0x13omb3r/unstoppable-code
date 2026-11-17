@@ -1,3 +1,4 @@
+import { ControlButton } from '@canopy/ui-shared/components';
 import { useLayoutEffect, useRef, useState, type JSX } from 'react';
 import { Popover, Tooltip } from '@canopy/ui-shared';
 import {
@@ -14,11 +15,8 @@ import {
 import { formatCpuPercent } from './format';
 import {
   APP_STATUS_ICON_CLASSNAME,
-  APP_STATUS_ITEM_CLASSNAME,
   APP_STATUS_LABEL_CLASSNAME,
   SIDEBAR_FOOTER_ICON_CLASSNAME,
-  SIDEBAR_FOOTER_ITEM_CLASSNAME,
-  TITLEBAR_BUTTON_CLASSNAME,
 } from '../sidebar/sidebar-styles';
 import { TITLEBAR_CORNER_TRAILING_PX } from '../sidebar-layout';
 
@@ -46,23 +44,7 @@ function formatMemoryGigabytes(bytes: number): string {
   return `${(bytes / (1024 * 1024 * 1024)).toFixed(1)} GB`;
 }
 
-function toneClasses(tone: Tone): string {
-  switch (tone) {
-    case 'critical':
-      return `${OPERATIONAL_STATUS_COLORS.failed.foreground} hover:bg-subtle`;
-    case 'warning':
-      return 'fg-warning hover:bg-subtle';
-    case 'error':
-      return `${OPERATIONAL_STATUS_COLORS.failed.foreground} hover:bg-subtle`;
-    case 'loading':
-      return 'fg-quaternary hover:bg-subtle';
-    case 'ok':
-    default:
-      return `${OPERATIONAL_STATUS_COLORS.success.foreground} hover:bg-subtle`;
-  }
-}
-
-export function ResourceDiagnosticsPill({
+export function ResourceDiagnosticsControl({
   collapsed,
   ready,
   statusBar = false,
@@ -217,7 +199,7 @@ export function ResourceDiagnosticsPill({
         disabled={!collapsed && !compactLabel}
         suppressed={open}
       >
-        <button
+        <ControlButton
           ref={buttonRef}
           type="button"
           onClick={() => setOpen((prev) => !prev)}
@@ -229,13 +211,15 @@ export function ResourceDiagnosticsPill({
           data-compact-layout={
             statusBar && compactLabel ? compactLayout : undefined
           }
-          className={`${
-            statusBar
+          presentation="resource-diagnostics-trigger"
+          appearance={{
+            placement: statusBar
               ? compactLabel
-                ? `${TITLEBAR_BUTTON_CLASSNAME} relative gap-1.5 whitespace-nowrap text-2xs font-normal`
-                : `${APP_STATUS_ITEM_CLASSNAME} max-w-full`
-              : SIDEBAR_FOOTER_ITEM_CLASSNAME
-          } group ${statusBar ? '' : toneClasses(tone)}`}
+                ? 'titlebar-compact'
+                : 'titlebar'
+              : 'sidebar',
+            tone,
+          }}
         >
           <span
             ref={statusBar && compactLabel ? compactIconRef : undefined}
@@ -320,7 +304,7 @@ export function ResourceDiagnosticsPill({
               primaryText
             )}
           </span>
-        </button>
+        </ControlButton>
       </Tooltip>
       <Popover
         open={open}

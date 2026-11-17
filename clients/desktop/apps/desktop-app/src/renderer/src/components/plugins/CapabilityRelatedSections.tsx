@@ -161,7 +161,7 @@ export function CapabilityRelatedSections({
       className={
         flush
           ? 'flex flex-col gap-6 empty:hidden'
-          : 'mt-8 flex flex-col gap-8 empty:hidden'
+          : 'pt-8 flex flex-col gap-8 empty:hidden'
       }
       data-testid="capability-related-sections"
     >

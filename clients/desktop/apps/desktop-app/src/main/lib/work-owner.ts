@@ -1,8 +1,8 @@
 import {
-  APP_ADVISOR_PROJECT_ID,
   CODE_REVIEW_CHAT_PROJECT_ID,
   PLAN_EXPLORE_CHAT_PROJECT_ID,
 } from '@canopy/desktop-shared/types';
+import { isBotProjectId } from '@canopy/protocol/chat-targets';
 import type { WorkspaceContext } from '@canopy/protocol/workspace-context';
 import {
   resolveBackgroundTargetContext,
@@ -64,17 +64,17 @@ export const ambientWorkOwnerContext = workOwnerContextForSelection(null);
  * A Cowork workspace (including the legacy standalone sentinel) follows its
  * saved owner only: an org-owned one, such as an org's default Chats
  * workspace, is governed by that org, and a Personal one is ungoverned. The
- * selected context is never consulted for Cowork. App Advisor has no owner.
+ * selected context is never consulted for Cowork. Bots have no workspace owner.
  */
 export async function resolveWorkOwnerOrganization(
   target: WorkOwnerTarget,
   getContext: () => Promise<WorkspaceContext | null>,
 ): Promise<WorkOwnerOrganization> {
   try {
-    if (target.projectId === APP_ADVISOR_PROJECT_ID) return { kind: 'none' };
+    if (isBotProjectId(target.projectId)) return { kind: 'none' };
     const resolvedTarget = await resolveRealTarget(target);
     if (!resolvedTarget) return { kind: 'unknown' };
-    if (resolvedTarget.projectId === APP_ADVISOR_PROJECT_ID) {
+    if (isBotProjectId(resolvedTarget.projectId)) {
       return { kind: 'none' };
     }
 

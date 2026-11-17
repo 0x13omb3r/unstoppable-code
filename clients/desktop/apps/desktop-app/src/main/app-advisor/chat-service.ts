@@ -86,7 +86,7 @@ import { createAppAdvisorToolRuntime } from './runtime';
 import type { AppAdvisorToolRuntimeSurfaces } from './runtime';
 import { APP_ADVISOR_SYSTEM_PROMPT } from './system-prompt';
 import { chatAddressPrompt } from '@canopy/desktop-shared/lib/chat-address-prompt';
-import { APP_ADVISOR_BOT_ID } from '@canopy/desktop-shared/lib/bot-discovery';
+import { APP_ADVISOR_BOT_ID } from '@canopy/protocol/chat-targets';
 import { APP_ADVISOR_TOOL_REGISTRY } from '@canopy/desktop-shared/lib/app-advisor-tools';
 import { stableHash } from '@canopy/desktop-shared/lib/stable-hash';
 import { resolveAgentModelRuntime } from '../agents/agent-model-runtime';
@@ -204,6 +204,7 @@ function clearPortalFrameForReloadOutcome(
   event: DeferredToolsReloadEvent,
 ): void {
   if (
+    // Default Bot only: this reload coordinator owns the Orchestrator chat surface.
     event.scope.projectId !== APP_ADVISOR_PROJECT_ID ||
     event.lifecycle.kind !== 'outcome'
   ) {
@@ -407,6 +408,7 @@ export async function dispatchAppAdvisorChatMessage(
     admissionSignal?: AbortSignal;
   },
 ): Promise<ChatSendMessageDisposition> {
+  // Default Bot only: dispatch through the Orchestrator's singleton chat runtime.
   if (request.projectId !== APP_ADVISOR_PROJECT_ID) {
     throw new Error('App Advisor chat must use the App Advisor project id.');
   }

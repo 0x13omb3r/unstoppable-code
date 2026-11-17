@@ -1,9 +1,9 @@
 import { existsSync } from 'node:fs';
 import {
-  APP_ADVISOR_PROJECT_ID,
   PIPELINE_EDITOR_PROJECT_ID,
   PIPELINE_EDITOR_WORKTREE_ID,
 } from '@canopy/desktop-shared/types';
+import { isBotProjectId } from '@canopy/protocol/chat-targets';
 import {
   cancelBuild,
   isCodeGraphBuildPending,
@@ -128,7 +128,7 @@ function isSchedulableWorktree(projectId: string, worktreeId: string): boolean {
     return false;
   }
   return !(
-    projectId === APP_ADVISOR_PROJECT_ID ||
+    isBotProjectId(projectId) ||
     (projectId === PIPELINE_EDITOR_PROJECT_ID &&
       worktreeId === PIPELINE_EDITOR_WORKTREE_ID)
   );

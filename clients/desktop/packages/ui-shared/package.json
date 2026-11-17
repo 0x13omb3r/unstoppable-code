@@ -15,6 +15,7 @@
     "./components/cost": "./src/components/cost/index.ts",
     "./assets/store-badges": "./src/assets/store-badges.ts",
     "./components": "./src/components/index.ts",
+    "./headless": "./src/headless.ts",
     "./components/Surface": "./src/components/Surface.tsx",
     "./components/ActivityHeatmapCell": "./src/components/ActivityHeatmapCell.tsx",
     "./components/ButtonLink": "./src/components/ButtonLink.tsx",
@@ -62,6 +63,7 @@
     "./icons/AppIcons": "./src/icons/AppIcons.tsx",
     "./lib/plugin-install-status": "./src/lib/plugin-install-status.ts",
     "./lib/customize-discovery": "./src/lib/customize-discovery.ts",
+    "./lib/harness-catch-up": "./src/lib/harness-catch-up.ts",
     "./sharing": "./src/sharing/index.ts",
     "./lib": "./src/lib/index.ts",
     "./lib/group-runs": "./src/lib/group-runs.ts",
@@ -130,7 +132,10 @@
     "./components/chat/useQuestionPrompt": "./src/components/chat/useQuestionPrompt.ts",
     "./components/chat/question-prompt-progress": "./src/components/chat/question-prompt-progress.ts",
     "./lib/github-workflow-display": "./src/lib/github-workflow-display.ts",
-    "./components/Stack": "./src/components/Stack.tsx"
+    "./components/Stack": "./src/components/Stack.tsx",
+    "./components/bots": "./src/components/bots/index.ts",
+    "./components/BotGlyph": "./src/components/bots/BotGlyph.tsx",
+    "./lib/bot-colors": "./src/lib/bot-colors.ts"
   },
   "peerDependencies": {
     "react": ">=18",

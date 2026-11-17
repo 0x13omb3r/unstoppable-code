@@ -72,6 +72,8 @@ export function createRemoteControlApi(
       ipc.invoke(IPC_CHANNELS.remoteControlForgetDevice, request),
     disconnectController: (deviceId) =>
       ipc.invoke(IPC_CHANNELS.remoteControlDisconnectController, deviceId),
+    updateHost: (request) =>
+      ipc.invoke(IPC_CHANNELS.remoteControlUpdateHost, request),
     onPathPickerRequest: (listener) => {
       const handler = (
         _event: IpcRendererEvent,

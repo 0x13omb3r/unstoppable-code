@@ -203,7 +203,7 @@ export function OtherAccountSnapshots({
   }
 
   return (
-    <div className="mt-1.5 flex flex-col items-start gap-1.5">
+    <div className="pt-1.5 flex flex-col items-start gap-1.5">
       <Button
         variant="ghost"
         size="compact"

@@ -87,7 +87,7 @@ export function CostViewFrame<Value>({
   return (
     <div data-testid={`${testId}-loading`}>
       <DelayedLoadingPlaceholder slowNote="Still loading cost…">
-        <CenteredLoadingSpinner className="my-12" />
+        <CenteredLoadingSpinner spacing="section" />
       </DelayedLoadingPlaceholder>
     </div>
   );

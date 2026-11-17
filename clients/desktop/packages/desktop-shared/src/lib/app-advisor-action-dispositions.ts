@@ -1813,11 +1813,6 @@ export const APP_ADVISOR_ACTION_DISPOSITIONS: Readonly<
     revision: 'none',
     composite: true,
   }),
-  'standalone-chat.delete_work_entry': Object.freeze({
-    kind: 'legacy',
-    access: 'write',
-    grants: Object.freeze(['core.chat.write'] as const),
-  }),
   'standalone-chat.get_attachment': Object.freeze({
     kind: 'core',
     access: 'read',
@@ -2214,7 +2209,6 @@ export const APP_ADVISOR_ACTION_DISPOSITIONS: Readonly<
     access: 'write',
     grants: Object.freeze(['core.worktree.write'] as const),
   }),
-  'worktree.archive': Object.freeze({ kind: 'presentation' }),
   'worktree.cancel_git_action': Object.freeze({
     kind: 'legacy',
     access: 'write',

@@ -123,7 +123,6 @@ const EXISTING_LIST = {
   requireExistingList: true,
 };
 // A failed composition removal stays retryable with its row still visible.
-const EXISTING_LIST_REMOVAL = { ...EXISTING_LIST, markRemovedAfterWrite: true };
 
 export interface JoinedWorktreeRecord extends CompositionRequest {
   worktreeId: string;
@@ -230,7 +229,7 @@ export async function removeCompositionWorktree(
         kind: 'composition.row.remove',
         worktree: incarnation(request.worktree),
       },
-      EXISTING_LIST_REMOVAL,
+      EXISTING_LIST,
     ),
   );
 }

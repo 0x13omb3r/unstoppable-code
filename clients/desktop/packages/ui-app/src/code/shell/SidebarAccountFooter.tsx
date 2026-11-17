@@ -1,5 +1,6 @@
 'use client';
 
+import { ControlButton } from '@canopy/ui-shared/components';
 import { SidebarAccountRowSurface } from '@canopy/ui-shared/components';
 import { Dot, type DotTone } from '@canopy/ui-shared/components/Badge';
 import { useId, useRef, useState, type JSX, type ReactNode } from 'react';
@@ -202,9 +203,8 @@ export function SidebarAccountRow({
           data-testid={testIds?.listItem ?? 'sidebar-account-list-item'}
           tall={Boolean(subtitle)}
         >
-          <button
+          <ControlButton
             ref={triggerRef}
-            type="button"
             onClick={() => setOpen((value) => !value)}
             data-testid={testIds?.row ?? 'sidebar-account-row'}
             {...rowAttributes}
@@ -213,7 +213,7 @@ export function SidebarAccountRow({
             aria-controls={open ? menuId : undefined}
             aria-labelledby={accessibleLabel === null ? undefined : labelId}
             aria-label={accessibleLabel === null ? signedOutLabel : undefined}
-            className="focus-ring flex h-full min-w-0 flex-1 items-center gap-2 rounded-row text-left"
+            presentation="sidebar-account-picker"
           >
             <span className="relative inline-flex h-4 w-4 shrink-0 items-center justify-center fg-secondary">
               {identity.signedIn ? (
@@ -259,7 +259,7 @@ export function SidebarAccountRow({
               </span>
               {subtitle}
             </span>
-          </button>
+          </ControlButton>
           {accessibleLabel === null ? null : (
             <span id={labelId} hidden className={REPLAY_BLOCK_CLASS}>
               {accessibleLabel}

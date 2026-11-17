@@ -1,3 +1,4 @@
+import { ControlButton } from './Button';
 import type { JSX } from 'react';
 
 export interface SidebarMoreRowProps {
@@ -26,11 +27,10 @@ export function SidebarMoreRow({
   touchTarget = false,
 }: SidebarMoreRowProps): JSX.Element {
   return (
-    <button
+    <ControlButton
       type="button"
-      className={`focus-ring group/sidebar-item relative flex ${
-        touchTarget ? 'min-h-11' : 'h-8'
-      } w-full items-center gap-1.5 rounded-row px-1.5 py-0 text-left text-s font-normal fg-secondary hover:bg-subtle`}
+      presentation="sidebar-more-row"
+      appearance={{ touchTarget: !!touchTarget }}
       aria-expanded={expanded}
       aria-label={ariaLabel}
       data-testid={testId}
@@ -41,6 +41,6 @@ export function SidebarMoreRow({
       <span className="min-w-0 flex-1 truncate leading-snug">
         {expanded ? 'Less' : 'More'}
       </span>
-    </button>
+    </ControlButton>
   );
 }

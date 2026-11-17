@@ -1,11 +1,11 @@
 import {
-  APP_ADVISOR_PROJECT_ID,
   CODE_REVIEW_CHAT_PROJECT_ID,
   PIPELINE_EDITOR_PROJECT_ID,
   PLAN_EXPLORE_CHAT_PROJECT_ID,
   SHARED_CONTAINER_VIEWER_PROJECT_ID,
   STANDALONE_CHAT_PROJECT_ID,
 } from '@canopy/desktop-shared/types';
+import { isBotProjectId } from '@canopy/protocol/chat-targets';
 import { isCoworkWorkspace } from './workspace-registry';
 
 /**
@@ -15,7 +15,6 @@ import { isCoworkWorkspace } from './workspace-registry';
  * chats still reach that scope's plans.
  */
 const PROJECT_IDS_WITHOUT_TRACKED_PLANS: ReadonlySet<string> = new Set([
-  APP_ADVISOR_PROJECT_ID,
   PIPELINE_EDITOR_PROJECT_ID,
   PLAN_EXPLORE_CHAT_PROJECT_ID,
   CODE_REVIEW_CHAT_PROJECT_ID,
@@ -30,6 +29,7 @@ const PROJECT_IDS_WITHOUT_TRACKED_PLANS: ReadonlySet<string> = new Set([
  */
 export function hasTrackedPlanStorage(projectId: string): boolean {
   return (
+    !isBotProjectId(projectId) &&
     !PROJECT_IDS_WITHOUT_TRACKED_PLANS.has(projectId) &&
     !isCoworkWorkspace(projectId)
   );

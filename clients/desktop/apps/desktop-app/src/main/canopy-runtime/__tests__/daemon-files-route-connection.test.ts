@@ -64,8 +64,8 @@ it('commit and push never contact the daemon even when the Files route is ready'
       calls.push('commit');
       return Promise.resolve('b'.repeat(40));
     },
-    push: () => {
-      calls.push('push');
+    push: (target) => {
+      calls.push(`push ${target.headSha}:${target.branch}`);
       return Promise.resolve();
     },
   };
@@ -103,7 +103,8 @@ it('commit and push never contact the daemon even when the Files route is ready'
       { caller, metadata: { idempotencyKey: 'push' } },
     ),
   ).resolves.toMatchObject({ status: 'completed' });
-  expect(calls).toEqual(['add', 'commit', 'push']);
+  // The checked commit, not HEAD as it stands at push time (CAN-6869).
+  expect(calls).toEqual(['add', 'commit', `push ${'a'.repeat(40)}:topic`]);
   expect(harness.connectionsFactory).not.toHaveBeenCalled();
   expect(harness.daemon.queries).toEqual([]);
 });

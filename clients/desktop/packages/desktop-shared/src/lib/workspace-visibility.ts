@@ -22,9 +22,21 @@ export function hasVisibleWorkspaceContent(workspace: SidebarItem): boolean {
 export function isRetiredTemporaryWorkspace(workspace: SidebarItem): boolean {
   return (
     workspace.type === 'multi-repo' &&
-    workspace.temporary === true &&
-    workspace.alwaysShow !== true &&
+    canRetireTemporaryWorkspace(workspace) &&
     workspace.worktrees.length === 0 &&
     (workspace.archivedContainerCount ?? 0) === 0
+  );
+}
+
+/** Worktree and archive state only matter for these temporary projects. */
+export function canRetireTemporaryWorkspace(workspace: {
+  type: SidebarItem['type'];
+  temporary?: boolean;
+  alwaysShow?: boolean;
+}): boolean {
+  return (
+    workspace.type === 'multi-repo' &&
+    workspace.temporary === true &&
+    workspace.alwaysShow !== true
   );
 }

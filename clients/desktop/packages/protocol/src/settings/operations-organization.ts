@@ -92,12 +92,14 @@ import {
   organizationConfigDetailSchema,
   organizationCreatedInviteShape,
   organizationDetailSchema,
+  organizationExternalShareListShape,
   organizationInviteListShape,
   organizationRoleSchema,
   organizationSummaryShape,
   orgModelCatalogEntryShape,
   type IncomingTeamInvitation,
   type OrganizationCreatedInvite,
+  type OrganizationExternalShareListResponse,
   type OrganizationInviteListResponse,
   type OrganizationSummary,
   type OrgModelCatalogEntry,
@@ -860,6 +862,40 @@ export const ORGANIZATION_SETTINGS_OPERATIONS = {
     request: (input) => ({
       method: 'DELETE',
       path: `${organizationPath(input.organizationId)}/invites/${settingsPathSegment(input.inviteId)}`,
+    }),
+  }),
+  /**
+   * Owners and Admins: every external share of the organization's worktrees
+   * and Work Entries (CAN-3420). The server refuses Members.
+   */
+  'organization.externalShares.list': defineSettingsRead({
+    transport: 'backend',
+    input: z.strictObject({
+      ...organizationIdField,
+      cursor: cursorSchema.optional(),
+    }),
+    result: settingsDtoSchema<OrganizationExternalShareListResponse>(
+      organizationExternalShareListShape,
+    ),
+    request: (input) =>
+      get(
+        settingsPathWithQuery(
+          `${organizationPath(input.organizationId)}/external-shares`,
+          { cursor: input.cursor },
+        ),
+      ),
+  }),
+  /** Owners and Admins: remove one external share right away (CAN-3420). */
+  'organization.externalShares.remove': defineSettingsWrite({
+    transport: 'backend',
+    input: z.strictObject({
+      ...organizationIdField,
+      shareId: settingsRouteIdSchema,
+    }),
+    result: settingsAcknowledgementSchema,
+    request: (input) => ({
+      method: 'DELETE',
+      path: `${organizationPath(input.organizationId)}/external-shares/${settingsPathSegment(input.shareId)}`,
     }),
   }),
   /** Invitations addressed to the viewer (Organizations list). */

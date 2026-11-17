@@ -114,17 +114,19 @@ export function DigestList({
             </div>
             <p
               className={joinClassNames(
-                'mt-1 text-s font-medium fg-primary',
+                'pt-1 text-s font-medium fg-primary',
                 blockClassName,
               )}
             >
               {digest.headline ?? 'Work digest'}
             </p>
             {digest.variant === 'NUDGE' && (
-              <Badge className="mt-2">Quiet period</Badge>
+              <div className="pt-2">
+                <Badge>Quiet period</Badge>
+              </div>
             )}
             {!isReadable(digest.status) && (
-              <p className="mt-2 text-xs fg-secondary">
+              <p className="pt-2 text-xs fg-secondary">
                 {statusCopy(digest.status, digest.createdAt)}
               </p>
             )}

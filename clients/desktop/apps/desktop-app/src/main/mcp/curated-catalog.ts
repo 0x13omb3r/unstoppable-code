@@ -1,6 +1,7 @@
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { dirname } from 'node:path';
 import { BRAND } from '@canopy/brand/current';
+import { parseHarnessCompatibility } from '@canopy/protocol/plugins';
 import {
   MCP_CATALOG_API_VERSION,
   curatedMcpDesktopOnly,
@@ -91,6 +92,9 @@ function normalizeServer(server: CuratedMcpServerEntry): CuratedMcpServerEntry {
     server.providerConnector,
   );
   return {
+    harnessCompatibility: parseHarnessCompatibility(
+      server.harnessCompatibility,
+    ),
     key: server.key.trim(),
     name: server.name.trim(),
     shortDescription: server.shortDescription.trim(),

@@ -1,3 +1,4 @@
+import { ControlButton } from '@canopy/ui-shared/components';
 import { PickerTrigger, Stack } from '@canopy/ui-shared/components';
 import { useCallback, useId, useRef, useState, type JSX } from 'react';
 import {
@@ -99,10 +100,6 @@ export function DirectoryPicker({
     </Stack>
   );
 
-  const legacyTriggerClass = disabled
-    ? 'flex items-center gap-1 rounded-md px-1.5 py-0.5 text-2xs fg-secondary/70 cursor-not-allowed'
-    : 'flex items-center gap-1 rounded-md px-1.5 py-0.5 text-2xs fg-secondary transition-colors hover:bg-subtle hover:fg-primary';
-
   const triggerContents = (
     <>
       <FolderIcon size="sm" />
@@ -154,20 +151,21 @@ export function DirectoryPicker({
             capsule
             wide={hideLabel}
             autoWidth={!hideLabel}
-            className={hideLabel ? undefined : 'max-w-48'}
+            constrainLabel={!hideLabel}
             {...triggerProps}
           >
             {triggerContents}
           </ComposerIconButton>
         ) : (
-          <button
+          <ControlButton
             ref={triggerRef}
             type="button"
-            className={legacyTriggerClass}
+            presentation="directory-compact-picker"
+            appearance={disabled}
             {...triggerProps}
           >
             {triggerContents}
-          </button>
+          </ControlButton>
         )}
       </RichHoverTooltip>
 

@@ -10,8 +10,11 @@ import {
 } from 'react';
 import { computeUsageLimitResumePrompt } from '@canopy/execution-engine/lib/usage-limit-resume-prompt';
 import {
+  AI_CREDITS_STOP_COPY,
   MODEL_LIBRARY_UNLOCK_COPY,
   CanopyProxyErrorPresentation,
+  CanopyProxyErrorSummary,
+  CanopyProxySettingsAction,
   NoticeButton,
 } from '@canopy/ui-shared/components';
 import { brandText } from '@/lib/brand';
@@ -43,6 +46,11 @@ import {
   type ChatMessage,
 } from '@/stores/chatStore';
 import { resolveChat } from './resolve-chat-target';
+import { chatBannerKey } from '@/stores/aiCreditsBannerStore';
+import {
+  useTransientRetryBannerStore,
+  useTransientRetryState,
+} from '@/stores/transientRetryBannerStore';
 import type {
   CanopyProxyError,
   CanopyProxyErrorCode,
@@ -113,8 +121,8 @@ function noticeCopy(code: CanopyProxyErrorCode): NoticeCopy {
       // composer's No billing source banner owns the payment choice
       // (CAN-5160). Kept for exhaustiveness, with the same words.
       return {
-        title: 'Chat stopped',
-        body: 'Choose how to pay for this message to keep going.',
+        title: AI_CREDITS_STOP_COPY,
+        body: '',
         action: 'copy-id',
       };
     case 'session_budget_exhausted':
@@ -301,7 +309,7 @@ export const CanopyProxyErrorNotice = memo(function CanopyProxyErrorNotice({
   error,
   originChatTabId,
   sourceText,
-}: CanopyProxyErrorNoticeProps): JSX.Element {
+}: CanopyProxyErrorNoticeProps): JSX.Element | null {
   const [copied, setCopied] = useState(false);
   const [retrying, setRetrying] = useState(false);
   const copy = noticeCopy(error.code);
@@ -320,6 +328,7 @@ export const CanopyProxyErrorNotice = memo(function CanopyProxyErrorNotice({
     [originChatTabId],
   );
   const canRetry = retryTarget !== null;
+  const automaticRetry = useTransientRetryState(retryTarget);
 
   // Retry dispatches a BILLED, non-idempotent turn, so it must also be gated on
   // the chat actually being idle. `sendMessage` has no streaming guard of its
@@ -610,7 +619,14 @@ export const CanopyProxyErrorNotice = memo(function CanopyProxyErrorNotice({
       .worktreeChats[
         `${resolved.target.projectId}/${resolved.target.worktreeId}`
       ]?.tabs.find((tab) => tab.id === resolved.target.chatId);
-    if (liveTab?.status === 'streaming') {
+    const liveRetry =
+      useTransientRetryBannerStore.getState().stateByChat[
+        chatBannerKey(resolved.target)
+      ];
+    if (
+      liveTab?.status === 'streaming' ||
+      (liveRetry && !liveRetry.exhausted)
+    ) {
       return;
     }
     if (
@@ -705,13 +721,7 @@ export const CanopyProxyErrorNotice = memo(function CanopyProxyErrorNotice({
         </NoticeButton>
       ) : null}
       {copy.action === 'settings' ? (
-        <NoticeButton
-          variant="primary"
-          data-testid="chat-canopy-proxy-error-open-settings"
-          onClick={handleOpenSettings}
-        >
-          Open settings
-        </NoticeButton>
+        <CanopyProxySettingsAction onClick={handleOpenSettings} />
       ) : null}
       {copy.action === 'organizations' ? (
         <NoticeButton
@@ -762,6 +772,17 @@ export const CanopyProxyErrorNotice = memo(function CanopyProxyErrorNotice({
     </>
   ) : undefined;
 
+  // A failed attempt may still be inside a live automatic retry cycle. Its
+  // countdown/cancel banner owns recovery until main ends that cycle.
+  if (
+    error.code === 'upstream_unavailable' &&
+    isLatestFailure &&
+    automaticRetry &&
+    !automaticRetry.exhausted
+  ) {
+    return null;
+  }
+
   return (
     <CanopyProxyErrorPresentation
       state={unlocked ? 'resolved' : 'unresolved'}
@@ -769,15 +790,13 @@ export const CanopyProxyErrorNotice = memo(function CanopyProxyErrorNotice({
       announcement="live"
       correlationId={correlationId}
       dataTestId="chat-canopy-proxy-error"
-      title={
-        <span data-testid="chat-canopy-proxy-error-title">{copy.title}</span>
-      }
       {...(detail !== undefined ? { detail } : {})}
       {...(actions !== undefined ? { actions } : {})}
     >
-      <span data-testid="chat-canopy-proxy-error-body" className="break-words">
-        {copy.body}
-      </span>
+      <CanopyProxyErrorSummary
+        error={error}
+        dataTestId="chat-canopy-proxy-error-body"
+      />
     </CanopyProxyErrorPresentation>
   );
 });

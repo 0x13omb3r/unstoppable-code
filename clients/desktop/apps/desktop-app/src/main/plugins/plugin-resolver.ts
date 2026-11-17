@@ -105,6 +105,12 @@ import {
   type PluginCommandSource,
 } from './plugin-members';
 import { parseFrontmatter, parseFrontmatterAndBody } from '../lib/frontmatter';
+import { harnessInstallItemKey } from '@canopy/protocol/plugins';
+import { isCustomizeDiscoveryEnabledInMain } from '../lib/customize-discovery-enabled';
+import {
+  createItemHarnessInstallStore,
+  itemInstalledFor,
+} from './harness-installs';
 import {
   getBundledSkillDir,
   getBundledSkillsDir,
@@ -1334,6 +1340,12 @@ export async function resolvePlugins(
       registeredLookupDir,
     );
   };
+  // Codex facets a non-Codex session resolved, by the name the selection
+  // used (the record's key), for the CAN-6816 conversion below.
+  const codexPluginSelections: {
+    plugin: PluginResolvedPath;
+    pluginName: string;
+  }[] = [];
   if (effectiveRefs.pluginRefs.length > 0) {
     const cacheResult = await loadMarketplaces();
     marketplaces =
@@ -1361,6 +1373,11 @@ export async function resolvePlugins(
         resolvedPlugin.provider === 'claude'
       ) {
         sdkPlugins.push({ type: 'local', path: resolvedPlugin.pluginPath });
+      } else if (!isCodexPluginResolutionPurpose(purpose)) {
+        codexPluginSelections.push({
+          plugin: resolvedPlugin,
+          pluginName: ref.pluginName,
+        });
       }
     }
   }
@@ -1467,6 +1484,20 @@ export async function resolvePlugins(
       sourceDir: sourceSkillDir,
       skillMdPath,
     });
+  }
+
+  // One Add for every harness (CAN-6816): a Claude session converts a
+  // Codex-only plugin's skills once one Add installed it for Claude Code.
+  // Without that record (the experiment off, or an older install) the
+  // session keeps loading only the plugin's MCP servers, as before.
+  if (purpose === 'claude-session' || purpose === 'discovery') {
+    explicitSkills.push(
+      ...(await convertedCodexPluginSkillsForClaude(
+        codexPluginSelections,
+        usedSkillNames,
+        warnings,
+      )),
+    );
   }
 
   if (
@@ -1868,6 +1899,48 @@ export async function resolvePlugins(
       totalMs: Date.now() - resolutionStartedAt,
     },
   };
+}
+
+/** Read-only here; the IPC handlers own writes (CAN-6816). */
+const itemHarnessInstallRecords = createItemHarnessInstallStore();
+
+async function convertedCodexPluginSkillsForClaude(
+  codexPlugins: readonly {
+    plugin: PluginResolvedPath;
+    pluginName: string;
+  }[],
+  usedSkillNames: Map<string, number>,
+  warnings: string[],
+): Promise<PluginResolvedSkill[]> {
+  if (codexPlugins.length === 0) return [];
+  // New Customize only (CAN-6817): with it off, Claude Code loads what it
+  // did before one Add for every harness, whatever a record says, so a
+  // record left behind by an earlier install has no effect.
+  if (!(await isCustomizeDiscoveryEnabledInMain())) return [];
+  const records = await itemHarnessInstallRecords
+    .read()
+    .catch((): Record<string, never> => ({}));
+  return codexPlugins.flatMap(({ plugin, pluginName }) => {
+    const record =
+      records[
+        harnessInstallItemKey({
+          kind: 'plugin',
+          marketplaceId: plugin.marketplaceId,
+          pluginName,
+        })
+      ];
+    if (!itemInstalledFor(record, 'claude')) return [];
+    return discoverPluginSkills(
+      plugin.pluginPath,
+      loadPluginManifest(plugin.pluginPath, 'codex'),
+      warnings,
+    ).map((skill) => ({
+      name: deduplicateName(skill.name, usedSkillNames),
+      description: skill.description,
+      sourceDir: skill.sourceDir,
+      skillMdPath: skill.skillMdPath,
+    }));
+  });
 }
 
 function buildClaudeSkillPluginDir(

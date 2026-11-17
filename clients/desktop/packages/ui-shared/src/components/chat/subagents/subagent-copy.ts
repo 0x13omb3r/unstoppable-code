@@ -7,6 +7,7 @@ import type {
 } from '@canopy/agent-transcript';
 import {
   DELEGATED_AGENT_CANCELLED_LABEL,
+  DELEGATED_AGENT_DONE_LABEL,
   DELEGATED_AGENT_QUEUED_LABEL,
   DELEGATED_AGENT_STOPPED_BY_PARENT_LABEL,
 } from '../delegated-agent-copy';
@@ -37,7 +38,7 @@ const statusLabels: Readonly<Record<SubagentStatus, string>> = {
   running: 'Running',
   approval: 'Awaiting approval',
   idle: 'Idle',
-  completed: 'Done',
+  completed: DELEGATED_AGENT_DONE_LABEL,
   interrupted: 'Interrupted',
   failed: 'Failed',
   cancelled: DELEGATED_AGENT_CANCELLED_LABEL,

@@ -1,4 +1,4 @@
-import { Surface } from '@canopy/ui-shared/components';
+import { OrchestratorOverlay } from '@canopy/ui-app/orchestrator/OrchestratorOverlay';
 import { ORCHESTRATOR_LABEL } from '@canopy/protocol';
 import { draftHasContent } from '@/lib/chat-draft-content';
 import {
@@ -131,17 +131,21 @@ export function AppAdvisorWorkspaceSurface({
   // parity — the viewer covers WorktreeTopBar there). The viewer overlay
   // itself renders its own titlebar drag spacer in the top bar's place.
   const containerViewerOpen = useArchivedContainersStore(
+    // Default Bot only: this surface displays the Orchestrator's archive viewer.
     (s) => s.viewer !== null && s.viewer.workspaceId === APP_ADVISOR_PROJECT_ID,
   );
   const archivedOverviewWorkspaceId = useArchivedContainersStore((s) =>
+    // Default Bot only: this surface displays the Orchestrator's archive overview.
     s.overview?.workspaceId === APP_ADVISOR_PROJECT_ID
       ? s.overview.workspaceId
       : null,
   );
   const emptyTrashConfirmationOpen = useArchivedContainersStore(
+    // Default Bot only: this surface manages the Orchestrator's archive.
     (s) => s.emptyTrashConfirmationWorkspaceId === APP_ADVISOR_PROJECT_ID,
   );
   const emptyTrashRunning = useArchivedContainersStore(
+    // Default Bot only: this surface manages the Orchestrator's archive.
     (s) => s.emptyTrashRun?.workspaceId === APP_ADVISOR_PROJECT_ID,
   );
   const lastArchivedOverviewRequest = useArchivedContainersStore(
@@ -252,6 +256,7 @@ export function AppAdvisorWorkspaceSurface({
   const lastEventRefreshAtRef = useRef(0);
   useEffect(() => {
     const unsubscribe = subscribeToChatEvents((event) => {
+      // Default Bot only: this surface refreshes its own entry list.
       if (event.projectId !== APP_ADVISOR_PROJECT_ID) {
         return;
       }
@@ -295,6 +300,7 @@ export function AppAdvisorWorkspaceSurface({
   // ---------------------------------------------------------------------------
   const ready =
     initialized &&
+    // Default Bot only: this page is mounted for the Orchestrator workspace.
     scopedWorkspaceId === APP_ADVISOR_PROJECT_ID &&
     activeWorkEntryId !== null;
 
@@ -417,6 +423,7 @@ export function AppAdvisorWorkspaceSurface({
       // panel shows: an agent's background open (focus: false) or one made
       // while App Advisor is closed queues for the next time the full
       // layout opens, without popping it up or taking focus (CAN-1993).
+      // Default Bot only: this docked surface opens its browser in the singleton window.
       if (target.projectId !== APP_ADVISOR_PROJECT_ID) return;
       if (target.focus !== false && useAppAdvisorStore.getState().open) {
         // Browser panels show in the separate window, which hosts their
@@ -577,12 +584,7 @@ export function AppAdvisorWorkspaceSurface({
             />
           </>
         )}
-        <Surface
-          as="section"
-          variant="workspace-panel"
-          className="relative flex min-w-0 flex-1 flex-col overflow-hidden"
-          data-testid="app-advisor-content"
-        >
+        <OrchestratorOverlay extent="workspace" testId="app-advisor-content">
           {ready ? (
             <>
               <PanelGridSurface
@@ -606,7 +608,7 @@ export function AppAdvisorWorkspaceSurface({
               </div>
             </div>
           )}
-        </Surface>
+        </OrchestratorOverlay>
       </main>
       {/* Rendered LAST so its drag region and buttons paint above the nav
           and top bar (later drag rects beat earlier ones in Electron). */}

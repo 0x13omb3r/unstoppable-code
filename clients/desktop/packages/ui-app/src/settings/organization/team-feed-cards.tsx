@@ -303,7 +303,7 @@ function FeedCardShell({
             {icon}
           </OrganizationFeedActivityMark>
         </span>
-        <div className="min-w-0 flex-1">
+        <div className="flex min-w-0 flex-1 flex-col gap-2">
           <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-s">
             {actorLinked ? (
               <SettingsLink
@@ -351,10 +351,7 @@ function FeedCardShell({
           </div>
           {children && (
             <div
-              className={joinClassNames(
-                'mt-2 text-s fg-secondary',
-                blockClassName,
-              )}
+              className={joinClassNames('text-s fg-secondary', blockClassName)}
             >
               {children}
             </div>
@@ -427,7 +424,7 @@ function CopyPermalinkButton({
 
 function MetaRow({ children }: { children: ReactNode }): JSX.Element {
   return (
-    <div className="mt-2 flex flex-wrap items-center gap-1.5 text-xs fg-secondary">
+    <div className="flex flex-wrap items-center gap-1.5 text-xs fg-secondary">
       {children}
     </div>
   );
@@ -478,21 +475,25 @@ function PrOpenedCard({
       }
       externalLink={{ href: item.prUrl, label: `#${item.prNumber}` }}
     >
-      <p className="font-medium fg-primary">{item.title}</p>
-      {item.branchName && (
-        <p className="mt-0.5 truncate font-mono text-xs">{item.branchName}</p>
-      )}
-      <MetaRow>
-        <Badge>checks: {item.checkStatus}</Badge>
-        <Badge>review: {item.reviewStatus}</Badge>
-        {item.hasConflicts && <Badge>conflicts</Badge>}
-        {item.commentCount > 0 && (
-          <span>
-            {item.commentCount} comment{item.commentCount === 1 ? '' : 's'}
-          </span>
-        )}
-      </MetaRow>
-      {item.summary && <p className="mt-2">{item.summary}</p>}
+      <div className="flex flex-col gap-2">
+        <div className="flex flex-col gap-0.5">
+          <p className="font-medium fg-primary">{item.title}</p>
+          {item.branchName && (
+            <p className="truncate font-mono text-xs">{item.branchName}</p>
+          )}
+        </div>
+        <MetaRow>
+          <Badge>checks: {item.checkStatus}</Badge>
+          <Badge>review: {item.reviewStatus}</Badge>
+          {item.hasConflicts && <Badge>conflicts</Badge>}
+          {item.commentCount > 0 && (
+            <span>
+              {item.commentCount} comment{item.commentCount === 1 ? '' : 's'}
+            </span>
+          )}
+        </MetaRow>
+        {item.summary && <p>{item.summary}</p>}
+      </div>
     </FeedCardShell>
   );
 }
@@ -521,54 +522,60 @@ function PrMergedCard({
       }
       externalLink={{ href: item.prUrl, label: `#${item.prNumber}` }}
     >
-      <p className="font-medium fg-primary">{item.title}</p>
-      {item.branchName && (
-        <p className="mt-0.5 truncate font-mono text-xs">{item.branchName}</p>
-      )}
-      <MetaRow>
-        {(item.additions !== null || item.deletions !== null) && (
-          <span className="inline-flex gap-1">
-            <span className="fg-success">+{item.additions ?? 0}</span>
-            <span className="fg-destructive">−{item.deletions ?? 0}</span>
-          </span>
-        )}
-        {item.changedFiles !== null && (
-          <span>
-            {item.changedFiles} file{item.changedFiles === 1 ? '' : 's'}
-          </span>
-        )}
-        {cost && <span>{cost}</span>}
-        {tokens && <span>{tokens} tokens</span>}
-        {item.models.map((m) => (
-          <span key={m}>{m}</span>
-        ))}
-        {item.planTitle &&
-          (planHref ? (
-            <SettingsLink href={planHref} className="hover:underline">
+      <div className="flex flex-col gap-2">
+        <div className="flex flex-col gap-0.5">
+          <p className="font-medium fg-primary">{item.title}</p>
+          {item.branchName && (
+            <p className="truncate font-mono text-xs">{item.branchName}</p>
+          )}
+        </div>
+        <MetaRow>
+          {(item.additions !== null || item.deletions !== null) && (
+            <span className="inline-flex gap-1">
+              <span className="fg-success">+{item.additions ?? 0}</span>
+              <span className="fg-destructive">−{item.deletions ?? 0}</span>
+            </span>
+          )}
+          {item.changedFiles !== null && (
+            <span>
+              {item.changedFiles} file{item.changedFiles === 1 ? '' : 's'}
+            </span>
+          )}
+          {cost && <span>{cost}</span>}
+          {tokens && <span>{tokens} tokens</span>}
+          {item.models.map((m) => (
+            <span key={m}>{m}</span>
+          ))}
+          {item.planTitle &&
+            (planHref ? (
+              <SettingsLink href={planHref} className="hover:underline">
+                <span className="inline-flex min-w-0">
+                  <span className="max-w-64 truncate">
+                    plan: {item.planTitle}
+                  </span>
+                </span>
+              </SettingsLink>
+            ) : (
               <span className="inline-flex min-w-0">
                 <span className="max-w-64 truncate">
                   plan: {item.planTitle}
                 </span>
               </span>
-            </SettingsLink>
-          ) : (
-            <span className="inline-flex min-w-0">
-              <span className="max-w-64 truncate">plan: {item.planTitle}</span>
-            </span>
-          ))}
-      </MetaRow>
-      {item.runUrl && (
-        <a
-          href={item.runUrl}
-          target="_blank"
-          rel="noreferrer"
-          className="mt-2 inline-flex items-center gap-1 text-xs fg-accent hover:underline"
-        >
-          View run
-          <ExternalLink size={11} />
-        </a>
-      )}
-      {item.summary && <p className="mt-2">{item.summary}</p>}
+            ))}
+        </MetaRow>
+        {item.runUrl && (
+          <a
+            href={item.runUrl}
+            target="_blank"
+            rel="noreferrer"
+            className="inline-flex self-start items-center gap-1 text-xs fg-accent hover:underline"
+          >
+            View run
+            <ExternalLink size={11} />
+          </a>
+        )}
+        {item.summary && <p>{item.summary}</p>}
+      </div>
     </FeedCardShell>
   );
 }
@@ -592,13 +599,15 @@ function PlanApprovedCard({
         label: 'View plan',
       }}
     >
-      <p className="font-medium fg-primary">{item.title}</p>
-      {(item.reviewStatus || item.planVersion !== null) && (
-        <MetaRow>
-          {item.reviewStatus && <Badge>{item.reviewStatus}</Badge>}
-          {item.planVersion !== null && <span>v{item.planVersion}</span>}
-        </MetaRow>
-      )}
+      <div className="flex flex-col gap-2">
+        <p className="font-medium fg-primary">{item.title}</p>
+        {(item.reviewStatus || item.planVersion !== null) && (
+          <MetaRow>
+            {item.reviewStatus && <Badge>{item.reviewStatus}</Badge>}
+            {item.planVersion !== null && <span>v{item.planVersion}</span>}
+          </MetaRow>
+        )}
+      </div>
     </FeedCardShell>
   );
 }
@@ -646,12 +655,14 @@ function PlanUpdatedCard({
         label: 'View plan',
       }}
     >
-      <p className="font-medium fg-primary">{item.title}</p>
-      {item.remoteRevisionNumber !== null && (
-        <MetaRow>
-          <span>revision {item.remoteRevisionNumber}</span>
-        </MetaRow>
-      )}
+      <Stack gap="inline">
+        <p className="font-medium fg-primary">{item.title}</p>
+        {item.remoteRevisionNumber !== null && (
+          <MetaRow>
+            <span>revision {item.remoteRevisionNumber}</span>
+          </MetaRow>
+        )}
+      </Stack>
     </FeedCardShell>
   );
 }
@@ -676,20 +687,22 @@ function RunSharedCard({
         label: 'View session',
       }}
     >
-      <p className="font-medium fg-primary">{item.title}</p>
-      <MetaRow>
-        <span>
-          {item.turnCount} turn{item.turnCount === 1 ? '' : 's'}
-        </span>
-        <Badge>{item.status}</Badge>
-        {item.toolUseCount > 0 && (
+      <Stack gap="inline">
+        <p className="font-medium fg-primary">{item.title}</p>
+        <MetaRow>
           <span>
-            {item.toolUseCount} tool call{item.toolUseCount === 1 ? '' : 's'}
+            {item.turnCount} turn{item.turnCount === 1 ? '' : 's'}
           </span>
-        )}
-        {item.model && <span>{item.model}</span>}
-        {cost && <span>{cost}</span>}
-      </MetaRow>
+          <Badge>{item.status}</Badge>
+          {item.toolUseCount > 0 && (
+            <span>
+              {item.toolUseCount} tool call{item.toolUseCount === 1 ? '' : 's'}
+            </span>
+          )}
+          {item.model && <span>{item.model}</span>}
+          {cost && <span>{cost}</span>}
+        </MetaRow>
+      </Stack>
     </FeedCardShell>
   );
 }
@@ -782,25 +795,35 @@ function WorktreeUpdatedCard({
       icon={<Bot size={16} />}
       title="updated a worktree"
     >
-      <p className="truncate font-mono text-xs">{item.branchName}</p>
-      {title && <p className="mt-1.5 font-semibold fg-primary">{title}</p>}
-      {body && (
-        <>
-          <DocumentProse variant="summary" ref={bodyRef} collapsed={!expanded}>
-            {renderedBody}
-          </DocumentProse>
-          {(overflows || expanded) && (
-            <div className="mt-1 text-xs">
-              <TextLinkButton onClick={() => setExpanded((prev) => !prev)}>
-                {expanded ? 'Show less' : 'Show more'}
-              </TextLinkButton>
+      <div className="flex flex-col gap-2">
+        <div className="flex flex-col gap-1.5">
+          <div className="flex flex-col gap-1.5">
+            <p className="truncate font-mono text-xs">{item.branchName}</p>
+            {title && <p className="font-semibold fg-primary">{title}</p>}
+          </div>
+          {body && (
+            <div className="flex flex-col gap-1">
+              <DocumentProse
+                variant="summary"
+                ref={bodyRef}
+                collapsed={!expanded}
+              >
+                {renderedBody}
+              </DocumentProse>
+              {(overflows || expanded) && (
+                <div className="text-xs">
+                  <TextLinkButton onClick={() => setExpanded((prev) => !prev)}>
+                    {expanded ? 'Show less' : 'Show more'}
+                  </TextLinkButton>
+                </div>
+              )}
             </div>
           )}
-        </>
-      )}
-      {item.summary && (
-        <WorktreeSummaryHistory orgId={orgId} itemId={item.id} />
-      )}
+        </div>
+        {item.summary && (
+          <WorktreeSummaryHistory orgId={orgId} itemId={item.id} />
+        )}
+      </div>
     </FeedCardShell>
   );
 }
@@ -941,7 +964,7 @@ function WorktreeSummaryHistory({
   }, [client, status, nextCursor, orgId, itemId]);
 
   return (
-    <Stack gap="inline" className="mt-2">
+    <Stack gap="inline">
       <Button
         className="self-start"
         type="button"
@@ -961,6 +984,7 @@ function WorktreeSummaryHistory({
           variant="section"
           boundary="left"
           padding="nested-compact"
+          gap="item"
         >
           {status === 'loading' && (
             <DelayedLoadingPlaceholder>
@@ -995,17 +1019,19 @@ function WorktreeSummaryHistory({
               disabled={loadingMore}
               aria-busy={loadingMore}
               aria-label="Load more history"
-              className="mt-3"
+              className="self-start"
             >
               <BusyLabel busy={loadingMore}>Load more</BusyLabel>
             </Button>
           )}
           {status === 'loaded' && loadMoreFailed && (
-            <ErrorBanner
-              errorSource="worktree-summary-history-load-more"
-              className="mt-2"
-              error="Couldn't load more. Try again."
-            />
+            <div className="pt-2 empty:hidden">
+              <ErrorBanner
+                errorSource="worktree-summary-history-load-more"
+                className=""
+                error="Couldn't load more. Try again."
+              />
+            </div>
           )}
         </Surface>
       )}

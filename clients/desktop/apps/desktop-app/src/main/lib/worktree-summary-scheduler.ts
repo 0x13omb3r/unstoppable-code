@@ -283,6 +283,7 @@ export async function generateDesktopWorktreeSummary(
       chatTabs.tabs.find((tab) => tab.kind !== 'file')?.id ??
       chatTabs.activeTabId;
     const linkTarget =
+      // Default Bot only: the summary destination is its singleton Orchestrator page.
       projectId === APP_ADVISOR_PROJECT_ID
         ? {
             page: 'main' as const,

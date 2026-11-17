@@ -12,9 +12,12 @@ export {
 } from './cloud-runs-store';
 export {
   CLOUD_RUN_ARTIFACT_BYTES_MAX,
+  CLOUD_RUN_CHILD_REREAD_MS,
+  CLOUD_RUN_COST_REREAD_MS,
   CLOUD_RUN_LOG_LINES_MAX,
   createCloudPipelineRunSession,
   type CloudPipelineRunArtifactContent,
+  type CloudPipelineRunCost,
   type CloudRunControlKeys,
   type UnsettledIds,
   type CloudPipelineRunControl,

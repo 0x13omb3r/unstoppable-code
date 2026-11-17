@@ -111,21 +111,23 @@ function PlanCard({
       className="group/plan relative w-full"
       data-testid={`activity-plan-row-${plan.localId ?? plan.title}`}
     >
-      <div className="text-left">
-        <div className="truncate text-s font-semibold fg-primary">
-          <Markdown options={INLINE_PLAN_MARKDOWN_OPTIONS}>
-            {plan.title}
-          </Markdown>
-        </div>
-        {body && (
-          <div
-            className="prose prose-sm mt-1 line-clamp-3 max-w-none text-xs leading-5 fg-secondary"
-            data-testid={`activity-plan-body-${plan.localId ?? plan.title}`}
-          >
-            <Markdown options={PLAN_MARKDOWN_OPTIONS}>{body}</Markdown>
+      <div className="flex flex-col gap-2 text-left">
+        <div className="flex flex-col gap-1">
+          <div className="truncate text-s font-semibold fg-primary">
+            <Markdown options={INLINE_PLAN_MARKDOWN_OPTIONS}>
+              {plan.title}
+            </Markdown>
           </div>
-        )}
-        <div className="mt-2 flex items-center gap-3 text-2xs fg-secondary">
+          {body && (
+            <div
+              className="prose prose-sm line-clamp-3 max-w-none text-xs leading-5 fg-secondary"
+              data-testid={`activity-plan-body-${plan.localId ?? plan.title}`}
+            >
+              <Markdown options={PLAN_MARKDOWN_OPTIONS}>{body}</Markdown>
+            </div>
+          )}
+        </div>
+        <div className="flex items-center gap-3 text-2xs fg-secondary">
           {typeof revision === 'number' && (
             <Badge
               data-testid={`activity-plan-revision-${plan.localId ?? plan.title}`}

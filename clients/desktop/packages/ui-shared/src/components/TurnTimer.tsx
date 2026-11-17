@@ -263,7 +263,7 @@ export function TurnFooterRow({
   const className =
     variant === 'actions'
       ? `group/footer flex justify-end gap-0.5 pointer-coarse:gap-4 ${CLEAN_TURN_FOOTER_CONTROLS_CLASSNAME}`
-      : `group/footer flex min-h-7 items-center gap-1.5 pointer-coarse:gap-4 text-s fg-secondary ${inset ? 'px-3' : ''} ${hostTurnGap ? 'mb-3' : 'mb-5'} ${CLEAN_TURN_FOOTER_CONTROLS_CLASSNAME}`;
+      : `group/footer flex min-h-7 box-content items-center gap-1.5 pointer-coarse:gap-4 text-s fg-secondary ${inset ? 'px-3' : ''} ${hostTurnGap ? 'pb-3' : 'pb-5'} ${CLEAN_TURN_FOOTER_CONTROLS_CLASSNAME}`;
   return (
     <div
       {...props}
@@ -753,7 +753,7 @@ export function TurnTimer({
             <span
               data-testid="turn-timer-relative"
               // Timestamps keep their quiet ink while the turn is hovered or focused.
-              className={`ml-1 shrink-0 whitespace-nowrap text-xs proportional-nums fg-tertiary ${reveal}`}
+              className={`pl-1 shrink-0 whitespace-nowrap text-xs proportional-nums fg-tertiary ${reveal}`}
             >
               {relativeLabel}
             </span>

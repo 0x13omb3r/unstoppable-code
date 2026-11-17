@@ -22,7 +22,7 @@ import type {
   StandaloneReadPromptResponse,
 } from '@canopy/desktop-shared/types';
 import { normalizeCloudAttachmentFilenameStem } from '@canopy/protocol/cloud-attachments';
-import { APP_ADVISOR_PROJECT_ID } from '@canopy/desktop-shared/types';
+import { isBotProjectId } from '@canopy/protocol/chat-targets';
 import { getAppAdvisorHomeDir, getCoworkWorkspaceRootDir } from './paths';
 import { getCoworkManagedSubdir } from '@canopy/desktop-shared/node/lib/cowork-managed-dir';
 import { resolveCoworkWorkspaceId } from './cowork-migration-map';
@@ -37,7 +37,7 @@ import { replaceSharedContainerScopeItemId } from '../shared-containers/file-sco
  * Notes/prompts/attachments live under the brand-managed subdir.
  */
 function getProjectHomeDir(projectId: string): string {
-  if (projectId === APP_ADVISOR_PROJECT_ID) {
+  if (isBotProjectId(projectId)) {
     return getAppAdvisorHomeDir();
   }
   return getCoworkWorkspaceRootDir(resolveCoworkWorkspaceId(projectId));
@@ -560,7 +560,7 @@ export async function deleteAttachment(
 export async function saveNote(
   ...args: Parameters<typeof saveNoteUnchecked>
 ): ReturnType<typeof saveNoteUnchecked> {
-  return args[0] === APP_ADVISOR_PROJECT_ID
+  return isBotProjectId(args[0])
     ? saveNoteUnchecked(...args)
     : withCoworkWrite(args[0], () => saveNoteUnchecked(...args));
 }
@@ -568,7 +568,7 @@ export async function saveNote(
 export async function savePrompt(
   ...args: Parameters<typeof savePromptUnchecked>
 ): ReturnType<typeof savePromptUnchecked> {
-  return args[0] === APP_ADVISOR_PROJECT_ID
+  return isBotProjectId(args[0])
     ? savePromptUnchecked(...args)
     : withCoworkWrite(args[0], () => savePromptUnchecked(...args));
 }
@@ -576,7 +576,7 @@ export async function savePrompt(
 export async function importAttachment(
   ...args: Parameters<typeof importAttachmentUnchecked>
 ): ReturnType<typeof importAttachmentUnchecked> {
-  return args[0] === APP_ADVISOR_PROJECT_ID
+  return isBotProjectId(args[0])
     ? importAttachmentUnchecked(...args)
     : withCoworkWrite(args[0], () => importAttachmentUnchecked(...args));
 }
@@ -584,7 +584,7 @@ export async function importAttachment(
 export async function importClipboardAttachment(
   ...args: Parameters<typeof importClipboardAttachmentUnchecked>
 ): ReturnType<typeof importClipboardAttachmentUnchecked> {
-  return args[0] === APP_ADVISOR_PROJECT_ID
+  return isBotProjectId(args[0])
     ? importClipboardAttachmentUnchecked(...args)
     : withCoworkWrite(args[0], () =>
         importClipboardAttachmentUnchecked(...args),

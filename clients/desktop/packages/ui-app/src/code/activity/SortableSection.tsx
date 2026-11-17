@@ -1,5 +1,6 @@
 'use client';
 
+import { ControlButton } from '@canopy/ui-shared/components';
 import type {
   ButtonHTMLAttributes,
   CSSProperties,
@@ -131,10 +132,9 @@ export function SortableSection({
     >
       {actionCard ? (
         <>
-          <button
+          <ControlButton
             ref={setActivatorNodeRef}
-            type="button"
-            className="sr-only focus:not-sr-only focus:absolute focus:left-2 focus:top-2 focus:z-20 focus:rounded-sm focus:bg-quaternary focus:px-2 focus:py-1 focus:text-2xs focus:font-normal focus:fg-primary focus:shadow-sm"
+            presentation="section-keyboard-reorder"
             {...keyboardDragHandleProps}
           />
           {children}

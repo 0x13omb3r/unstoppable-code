@@ -122,7 +122,7 @@ export function ChatStateRecoveryBanner({
           intent="attention"
           // A rejected or failed change is interrupted news, so it is announced
           // assertively even though it uses the attention look.
-          role="alert"
+          announcement="assertive"
           data-testid={
             notice.kind === 'conflict'
               ? 'chat-state-conflict-notice'

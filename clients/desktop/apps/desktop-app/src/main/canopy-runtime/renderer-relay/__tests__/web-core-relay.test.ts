@@ -693,6 +693,8 @@ describe('web core authority on the canopy-core:relay channel (CAN-4185 PR-C)', 
       { kind: 'request', method: 'worker.pipeline.matrixVariant.cancel' },
       { kind: 'request', method: 'core.pipeline.execution.stepLog.read' },
       { kind: 'request', method: 'core.pipeline.execution.artifact.read' },
+      // A cloud run's cost (CAN-6881).
+      { kind: 'request', method: 'core.cost.cloudRun.get' },
     ];
     for (const { kind, method } of requests) {
       expect(WEB_CORE_PIPELINE_RUN_RELAY_OPERATIONS.has(method)).toBe(true);

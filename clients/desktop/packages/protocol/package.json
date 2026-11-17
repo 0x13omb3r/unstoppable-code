@@ -199,7 +199,8 @@
     "./value-redaction": "./src/value-redaction.ts",
     "./copilot-recipient": "./src/copilot-recipient.ts",
     "./remote-control": "./src/remote-control/index.ts",
-    "./remote-control/channels": "./src/remote-control/channels.ts"
+    "./remote-control/channels": "./src/remote-control/channels.ts",
+    "./bot-glyph": "./src/bot-glyph.ts"
   },
   "dependencies": {
     "zod": "4.3.6"

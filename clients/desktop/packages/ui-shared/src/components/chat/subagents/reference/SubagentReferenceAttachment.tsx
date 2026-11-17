@@ -10,7 +10,7 @@ export function SubagentReferenceAttachment({
   title,
 }: SubagentReferenceAttachmentProps): JSX.Element {
   return (
-    <div className="mb-1 flex justify-end">
+    <div className="pb-1 flex justify-end">
       <SubagentReferenceChip title={title} />
     </div>
   );

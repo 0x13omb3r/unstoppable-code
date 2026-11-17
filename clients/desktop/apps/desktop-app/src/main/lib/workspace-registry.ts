@@ -1,8 +1,6 @@
-import {
-  APP_ADVISOR_PROJECT_ID,
-  STANDALONE_CHAT_PROJECT_ID,
-} from '@canopy/desktop-shared/types';
+import { STANDALONE_CHAT_PROJECT_ID } from '@canopy/desktop-shared/types';
 import type { WorkspaceType } from '@canopy/desktop-shared/types';
+import { isBotProjectId } from '@canopy/protocol/chat-targets';
 
 const workspaceTypes = new Map<string, WorkspaceType>();
 const workspaceExternalPaths = new Map<string, string>();
@@ -32,12 +30,11 @@ export function isCoworkWorkspace(id: string): boolean {
 
 /**
  * Whether an id addresses a workspace whose chats are grouped into Work
- * Entries. App Advisor is intentionally not treated as cowork: it shares the
- * entry registry model but has different cwd, prompt, and workspace-item
- * routing rules.
+ * Entries. Bots are intentionally not treated as cowork: they share the entry
+ * registry model but have different cwd, prompt, and workspace-item routing.
  */
 export function isWorkEntryWorkspace(id: string): boolean {
-  return id === APP_ADVISOR_PROJECT_ID || isCoworkWorkspace(id);
+  return isBotProjectId(id) || isCoworkWorkspace(id);
 }
 
 export function registerWorkspaceTypes(

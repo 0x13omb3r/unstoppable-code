@@ -1,88 +1,196 @@
-import type { JSX } from 'react';
+import {
+  createContext,
+  useContext,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type JSX,
+  type ReactNode,
+} from 'react';
 import type { CanopyProxyError } from '@canopy/protocol';
-import { AiCreditsStopLine } from './AiCreditsStopLine';
-import { MODEL_LIBRARY_UNLOCK_COPY } from './creditsPromptCopy';
+import { createCanopyProxyAppError } from '@canopy/protocol/app-errors';
 import { CanopyProxyErrorPresentation } from './CanopyProxyErrorPresentation';
+import { AiCreditsStopLine } from './AiCreditsStopLine';
+import { NoticeButton } from './Notice';
+import { recordSurfacedError } from '../lib/surfaced-error-port';
 
-/**
- * Read-only rendering of a structured AI Credits proxy failure, shared by every
- * browser surface that replays a desktop transcript.
- *
- * Why this is shared rather than per-renderer: the desktop replaces the raw
- * body with `CanopyProxyErrorNotice`, but the same transcript is replayed by
- * the web Portal through two different renderers (the shared-run/cowork
- * `ChatMessageRenderer` and the live worktree chat's `ChatMessageView`). The
- * marker's own contract says it "must never appear in rendered text", so every
- * one of those surfaces needs the guard — and a forked copy per renderer is how
- * one of them silently ends up printing `{"error":{"canopy_proxy":...}}`.
- *
- * These surfaces are replays with no chat session behind them, so this shows
- * the explanation and the error id but none of the desktop notice's actions
- * (Retry / Open Settings), which would have nothing to act on.
- *
- * Copy rules match the desktop notice exactly: the whole path is named "the AI
- * provider". None of "gateway", "proxy", "upstream", "AI Credits", or the
- * marker is user-visible, and no HTTP status, attempt count, or elapsed time is
- * shown. The error id is the only diagnostic detail that reaches the user.
- */
+const AccountRecoveryContext = createContext<(() => void) | null>(null);
+
+export interface CanopyProxyRetryRecovery {
+  checkAvailability: (messageId: string) => Promise<boolean>;
+  retry: (messageId: string) => Promise<void>;
+}
+const RetryRecoveryContext = createContext<CanopyProxyRetryRecovery | null>(
+  null,
+);
+
+/** A host supplies authoritative availability and a guarded recovery port. */
+export function CanopyProxyRetryRecoveryProvider({
+  value,
+  children,
+}: {
+  value: CanopyProxyRetryRecovery;
+  children: ReactNode;
+}): JSX.Element {
+  return (
+    <RetryRecoveryContext.Provider value={value}>
+      {children}
+    </RetryRecoveryContext.Provider>
+  );
+}
+
+/** Hosts supply their existing account destination; read-only views omit it. */
+export function CanopyProxyAccountRecoveryProvider({
+  onOpenSettings,
+  children,
+}: {
+  onOpenSettings: () => void;
+  children: ReactNode;
+}): JSX.Element {
+  return (
+    <AccountRecoveryContext.Provider value={onOpenSettings}>
+      {children}
+    </AccountRecoveryContext.Provider>
+  );
+}
+
+/** Same settings action for the desktop notice and Portal recovery. */
+export function CanopyProxySettingsAction({
+  onClick,
+  dataTestId = 'chat-canopy-proxy-error-open-settings',
+}: {
+  onClick: () => void;
+  dataTestId?: string;
+}): JSX.Element {
+  return (
+    <NoticeButton variant="primary" data-testid={dataTestId} onClick={onClick}>
+      Open settings
+    </NoticeButton>
+  );
+}
+
 export interface CanopyProxyErrorSummaryProps {
   error: CanopyProxyError;
-  /** Overrides the test id so each surface can assert its own hook. */
   dataTestId?: string;
+  messageId?: string;
 }
 
-function summaryTitle(code: CanopyProxyError['code']): string {
-  switch (code) {
-    case 'credentials_unavailable':
-      return "Couldn't connect to the AI provider";
-    case 'upstream_unavailable':
-      return "The AI provider didn't respond";
-    case 'invalid_request':
-      return "The AI provider couldn't accept this message";
-    // The documented exception to "AI Credits stays out of the failure copy":
-    // for every other code the balance is beside the point, but here the empty
-    // balance IS the failure, so naming anything else would misdescribe it.
-    case 'no_billing_source':
-      return 'This message needed AI Credits';
-    case 'session_budget_exhausted':
-      return 'This session used its AI Credits budget';
-    // The second such exception, for the same reason: what failed is precisely
-    // who was paying. These surfaces are replays with no session to act on, so
-    // the title has to carry the whole explanation on its own — no sign-in
-    // action is offered here, unlike the desktop notice.
-    case 'guest_model_not_allowed':
-      return 'This message needed an account';
-    // A signed-in account that has not purchased AI Credits yet. Like the
-    // guest case above, the purchase is the whole explanation.
-    case 'model_locked':
-      return MODEL_LIBRARY_UNLOCK_COPY.proxyRefusalTitle;
-    case 'proxy_internal_error':
-      return 'Something went wrong reaching the AI provider';
-    // The owner this work claimed is an organization the user has left
-    // (CAN-3462). The title alone explains it; there is nothing to retry.
-    case 'work_owner_not_member':
-      return "You're no longer in this organization";
-  }
-}
-
+/** One plain, catalog-owned refusal on desktop and every Portal transcript. */
 export function CanopyProxyErrorSummary({
   error,
   dataTestId = 'canopy-proxy-error-summary',
+  messageId,
 }: CanopyProxyErrorSummaryProps): JSX.Element {
-  // The same plain line as the desktop transcript (CAN-5160): the payment
-  // choice belongs to the composer's banner, never to a transcript panel.
-  if (error.code === 'no_billing_source') {
+  const openSettings = useContext(AccountRecoveryContext);
+  const recovery = useContext(RetryRecoveryContext);
+  const [availability, setAvailability] = useState<{
+    recovery: CanopyProxyRetryRecovery;
+    messageId: string;
+    allowed: boolean;
+  } | null>(null);
+  const available =
+    availability?.recovery === recovery &&
+    availability?.messageId === messageId &&
+    availability?.allowed === true;
+  const [retrying, setRetrying] = useState(false);
+  const sending = useRef(false);
+  const { code, correlationId } = error;
+  useEffect(() => {
+    let current = true;
+    if (code === 'upstream_unavailable' && recovery && messageId) {
+      void recovery.checkAvailability(messageId).then(
+        (allowed) => {
+          if (current) setAvailability({ recovery, messageId, allowed });
+        },
+        () => {
+          if (current) setAvailability(null);
+        },
+      );
+    }
+    return (): void => {
+      current = false;
+    };
+  }, [code, recovery, messageId]);
+  const appError = useMemo(
+    () => createCanopyProxyAppError({ code, correlationId, message: null }),
+    [code, correlationId],
+  );
+  const recorded = useRef<string | null>(null);
+  useEffect(() => {
+    if (recorded.current === appError.referenceId) return;
+    recorded.current = appError.referenceId;
+    recordSurfacedError({
+      chokePoint: 'notice',
+      identifier: 'chat-ai-credits-refusal',
+      surface: 'inline',
+      error: appError,
+    });
+  }, [appError]);
+  if (code === 'no_billing_source')
     return <AiCreditsStopLine dataTestId={dataTestId} />;
+  const summary = (
+    <span data-testid={dataTestId} className="text-xs fg-tertiary text-pretty">
+      {appError.copy.title}
+      {appError.copy.description ? ` ${appError.copy.description}` : ''}
+    </span>
+  );
+  if (code === 'upstream_unavailable' && recovery) {
+    return (
+      <CanopyProxyErrorPresentation
+        state="unresolved"
+        diagnostics="inline"
+        announcement="live"
+        correlationId={correlationId}
+        dataTestId={`${dataTestId}-notice`}
+        actions={
+          available && messageId ? (
+            <NoticeButton
+              variant="primary"
+              data-testid={`${dataTestId}-retry`}
+              disabled={retrying}
+              onClick={() => {
+                if (sending.current) return;
+                sending.current = true;
+                setRetrying(true);
+                void recovery
+                  .retry(messageId)
+                  .then(
+                    () => setAvailability(null),
+                    () => setAvailability(null),
+                  )
+                  .finally(() => {
+                    sending.current = false;
+                    setRetrying(false);
+                  });
+              }}
+            >
+              Try again
+            </NoticeButton>
+          ) : undefined
+        }
+      >
+        {summary}
+      </CanopyProxyErrorPresentation>
+    );
   }
-  return (
+  return code === 'credentials_unavailable' && openSettings ? (
     <CanopyProxyErrorPresentation
       state="unresolved"
-      dataTestId={dataTestId}
-      diagnostics="supporting"
-      announcement="replay"
-      correlationId={error.correlationId}
+      diagnostics="inline"
+      announcement="live"
+      correlationId={correlationId}
+      dataTestId={`${dataTestId}-notice`}
+      actions={
+        <CanopyProxySettingsAction
+          onClick={openSettings}
+          dataTestId={`${dataTestId}-open-settings`}
+        />
+      }
     >
-      {summaryTitle(error.code)}
+      {summary}
     </CanopyProxyErrorPresentation>
+  ) : (
+    summary
   );
 }

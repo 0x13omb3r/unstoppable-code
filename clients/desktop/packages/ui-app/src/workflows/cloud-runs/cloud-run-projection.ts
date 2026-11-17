@@ -1,5 +1,6 @@
 import type {
   WorkerPipelineArtifact,
+  WorkerPipelineExecution,
   WorkerPipelineExecutionDetail,
   WorkerPipelineExecutionView,
   WorkerPipelineJobDetail,
@@ -181,8 +182,25 @@ export function cloudRunExecutionState(
   };
 }
 
-function detailStep(step: WorkerPipelineStepDetail): PipelineRunDetailStep {
-  return { step_id: step.stepId, name: step.name, status: step.status };
+function detailStepOf(
+  step: WorkerPipelineStepDetail,
+  children: Readonly<Record<string, WorkerPipelineExecution>>,
+): PipelineRunDetailStep {
+  const childId = step.childExecutionId;
+  const child = childId === null ? undefined : children[childId];
+  return {
+    step_id: step.stepId,
+    name: step.name,
+    status: step.status,
+    // A child run this step started (CAN-6868), named once it was read.
+    ...(childId !== null && {
+      child: {
+        execution_id: childId,
+        name: child?.name ?? 'Child workflow',
+        status: child?.status ?? null,
+      },
+    }),
+  };
 }
 
 /** The checkpoints a resume may answer, in the shared pause form's shape. */
@@ -217,7 +235,11 @@ export function cloudRunPendingPauses(
 /** The job tree the shared detail draws: a matrix job lists its variants. */
 export function cloudRunDetailView(
   view: WorkerPipelineExecutionView,
+  /** The child runs its steps started, as the session last read them. */
+  children: Readonly<Record<string, WorkerPipelineExecution>> = {},
 ): PipelineRunDetailView {
+  const detailStep = (step: WorkerPipelineStepDetail): PipelineRunDetailStep =>
+    detailStepOf(step, children);
   const jobs: PipelineRunDetailJob[] = (view.detail?.jobs ?? []).map((job) =>
     job.kind === 'matrix'
       ? {

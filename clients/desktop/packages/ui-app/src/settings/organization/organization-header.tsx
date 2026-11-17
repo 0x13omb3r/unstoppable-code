@@ -157,10 +157,10 @@ export function PersonalOverviewHeader({
       <Heading level={1} variant="page" truncate>
         Personal
       </Heading>
-      <p className="mt-1.5 text-s fg-secondary">
+      <p className="pt-1.5 text-s fg-secondary">
         Your activity and usage across your personal work.
       </p>
-      <div className="mt-3">
+      <div className="pt-3">
         <OrganizationInviteButton
           testId="team-personal-invite"
           onClick={onInvite}

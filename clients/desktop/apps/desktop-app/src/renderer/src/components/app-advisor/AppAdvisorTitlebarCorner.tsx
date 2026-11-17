@@ -18,15 +18,10 @@
  * `@canopy/desktop-shared/lib/titlebar-geometry`), so a change to the row's
  * height must update `APP_ADVISOR_TITLEBAR_ROW_HEIGHT_PX` too.
  */
-import { ORCHESTRATOR_LABEL } from '@canopy/protocol';
+import { OrchestratorNavControls } from '@canopy/ui-app/orchestrator/OrchestratorNavControls';
 import { memo, useCallback, type JSX } from 'react';
 import { useStandaloneChatStore } from '@/stores/standaloneChatStore';
 import { dismissPageLikeViewers } from '@/lib/dismissPageLikeViewers';
-import {
-  PlusMediumIcon,
-  SettingsIcon,
-  SidebarHiddenLeftWideIcon,
-} from '@canopy/ui-shared/icons/AppIcons';
 import {
   shouldReserveSidebarTrafficLightRegion,
   titlebarToggleLeadingCss,
@@ -34,7 +29,6 @@ import {
   TITLEBAR_TOGGLE_GAP_PX,
   withTrafficLightReserveCss,
 } from '../sidebar-layout';
-import { TitlebarIconButton } from '@canopy/ui-shared';
 import { localPlatform } from '@/lib/local-platform';
 
 /** Controls hosted in the corner: toggle, settings, new entry. */
@@ -100,29 +94,12 @@ export const AppAdvisorTitlebarCorner = memo(function AppAdvisorTitlebarCorner({
         className="electron-drag h-full shrink-0"
         style={{ width: leadingCss }}
       />
-      <TitlebarIconButton
-        onClick={onToggleCollapsed}
-        icon={SidebarHiddenLeftWideIcon}
-        aria-label={collapsed ? 'Expand navigation' : 'Collapse navigation'}
-        aria-expanded={!collapsed}
-        data-testid="app-advisor-nav-collapse"
-        // The control had no visible tooltip before; keep it that way.
-        tooltipLabel=""
-      />
-      <TitlebarIconButton
-        onClick={onOpenSettings}
-        icon={SettingsIcon}
-        iconSize={14}
-        aria-label={`${ORCHESTRATOR_LABEL} settings`}
-        tooltipLabel="Settings"
-        data-testid="app-advisor-nav-settings"
-      />
-      <TitlebarIconButton
-        onClick={handleNewEntry}
-        icon={PlusMediumIcon}
-        iconSize={14}
-        aria-label="New work entry"
-        data-testid="app-advisor-nav-new-entry"
+      <OrchestratorNavControls
+        presentation="titlebar"
+        collapsed={collapsed}
+        onToggleCollapsed={onToggleCollapsed}
+        onOpenSettings={onOpenSettings}
+        onCreateWorkEntry={handleNewEntry}
       />
     </div>
   );

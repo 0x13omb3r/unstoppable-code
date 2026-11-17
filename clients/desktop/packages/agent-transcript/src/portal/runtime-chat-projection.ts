@@ -19,7 +19,10 @@ import {
   readPortalToolOccurrence,
   readPortalToolOutputLocator,
 } from '@canopy/protocol/portal';
-import { isClaudeAiCreditsFallbackErrorCode } from '@canopy/protocol/llm-gateway';
+import {
+  isClaudeAiCreditsFallbackErrorCode,
+  parseCanopyProxyError,
+} from '@canopy/protocol/llm-gateway';
 import {
   CANOPY_MODEL_ACCESS_FAILURE_FIELD,
   readCodexAccountModelAccessFailure,
@@ -374,11 +377,39 @@ function runtimeCodexMessage(input: {
   chatId: string;
   data: Record<string, unknown>;
   toolFamilyFor: ToolFamilyResolver | undefined;
+  fallbackMessageId?: string;
 }): PortalChatMessage | null {
   const event = isRecord(input.data.event) ? input.data.event : null;
   if (!event) return null;
 
   const eventType = readString(event, 'type');
+  if (eventType === 'error' || eventType === 'turn.failed') {
+    const text =
+      readString(event, 'message') ?? readString(event.error, 'message') ?? '';
+    // Main restores the trusted broker body after Codex strips it. Native
+    // provider failures retain their existing path; never publish raw URLs.
+    const refusal = parseCanopyProxyError(text);
+    if (!refusal) return null;
+    const executionId =
+      readString(input.data, 'canopy_execution_turn_id') ??
+      readString(event, 'turn_id') ??
+      readString(input.data, 'canopy_turn_user_message_id');
+    const messageId = executionId
+      ? `${input.chatId}:${executionId}:proxy-refusal`
+      : input.fallbackMessageId;
+    if (!messageId) return null;
+    const now = Date.now();
+    return {
+      messageId,
+      chatId: input.chatId,
+      role: 'assistant',
+      status: 'failed',
+      text: truncateText(text, PORTAL_CHAT_TEXT_MAX_CHARS),
+      errorCode: refusal.code,
+      createdAtMs: now,
+      updatedAtMs: now,
+    };
+  }
   const item = isRecord(event.item) ? event.item : null;
   if (
     !item ||
@@ -622,6 +653,7 @@ export function runtimeChatEventToPortalMessage(
       chatId: input.chatId,
       data: input.data,
       toolFamilyFor: input.toolFamilyFor,
+      fallbackMessageId: input.fallbackMessageId,
     });
     if (!projected || !admission) return projected;
     const event = isRecord(input.data.event) ? input.data.event : undefined;

@@ -54,6 +54,7 @@ export type AppAdvisorToolKey =
   | 'schedule_wakeup'
   | 'set_auto_archive'
   | 'set_work_entry_auto_delete'
+  | 'set_project_work_entry_auto_delete'
   | 'start_forked_agent'
   | 'search_deferred_tools'
   | 'load_deferred_tools'
@@ -224,6 +225,12 @@ export const APP_ADVISOR_TOOL_REGISTRY: Record<
     claudeToolName: claudeAppAdvisorTool('SetWorkEntryAutoDelete'),
     codexToolName: codexAppAdvisorTool('set_work_entry_auto_delete'),
   },
+  set_project_work_entry_auto_delete: {
+    canonicalKey: 'set_project_work_entry_auto_delete',
+    displayName: 'SetProjectWorkEntryAutoDelete',
+    claudeToolName: claudeAppAdvisorTool('SetProjectWorkEntryAutoDelete'),
+    codexToolName: codexAppAdvisorTool('set_project_work_entry_auto_delete'),
+  },
   start_forked_agent: {
     canonicalKey: 'start_forked_agent',
     displayName: 'StartForkedAgent',
@@ -283,6 +290,7 @@ export const APP_ADVISOR_TOOL_ENTRIES: readonly AppAdvisorToolExposure[] = [
   APP_ADVISOR_TOOL_REGISTRY.schedule_wakeup,
   APP_ADVISOR_TOOL_REGISTRY.set_auto_archive,
   APP_ADVISOR_TOOL_REGISTRY.set_work_entry_auto_delete,
+  APP_ADVISOR_TOOL_REGISTRY.set_project_work_entry_auto_delete,
   APP_ADVISOR_TOOL_REGISTRY.start_forked_agent,
   APP_ADVISOR_TOOL_REGISTRY.search_deferred_tools,
   APP_ADVISOR_TOOL_REGISTRY.load_deferred_tools,
@@ -312,6 +320,7 @@ export const APP_ADVISOR_TOOL_KEYS: readonly AppAdvisorToolKey[] = [
   'schedule_wakeup',
   'set_auto_archive',
   'set_work_entry_auto_delete',
+  'set_project_work_entry_auto_delete',
   'start_forked_agent',
   'search_deferred_tools',
   'load_deferred_tools',
@@ -351,6 +360,7 @@ const LEGACY_APP_ADVISOR_CODEX_TOOL_NAMES: Readonly<
     codexAppAdvisorTool('set_auto_archive'),
   ],
   set_work_entry_auto_delete: [],
+  set_project_work_entry_auto_delete: [],
   start_forked_agent: [],
   search_deferred_tools: ['app_advisor_search_deferred_tools'],
   load_deferred_tools: ['app_advisor_load_deferred_tools'],
@@ -397,6 +407,10 @@ const APP_ADVISOR_CODEX_SUFFIX_TO_KEY: ReadonlyMap<string, AppAdvisorToolKey> =
     ['set_chat_auto_archive', 'set_auto_archive'],
     ['archive_chat', 'set_auto_archive'],
     ['set_work_entry_auto_delete', 'set_work_entry_auto_delete'],
+    [
+      'set_project_work_entry_auto_delete',
+      'set_project_work_entry_auto_delete',
+    ],
     ['start_forked_agent', 'start_forked_agent'],
     ['search_deferred_tools', 'search_deferred_tools'],
     ['load_deferred_tools', 'load_deferred_tools'],
@@ -418,7 +432,7 @@ function getBrandedAppAdvisorToolKey(
   }
 
   const codexMatch = toolName.match(
-    /^(.+)_app_advisor_(ask_user_question|get_script_output|read_pipeline_yaml|show_files|show_capabilities|get_file_comments|respond_to_file_comment|search_actions|get_current_ui_state|dispatch_action|get_pipeline_debug_context|search_watchers|setup_watchers|watch_github_items|get_github_pull_request_status|watch_command|schedule_wakeup|set_auto_archive|set_chat_auto_archive|archive_chat|set_work_entry_auto_delete|start_forked_agent|search_deferred_tools|load_deferred_tools|add_feed_entry|search_feed_entries|update_feed_entry|add_ledger_entry|search_ledger_entries|update_ledger_entry)$/,
+    /^(.+)_app_advisor_(ask_user_question|get_script_output|read_pipeline_yaml|show_files|show_capabilities|get_file_comments|respond_to_file_comment|search_actions|get_current_ui_state|dispatch_action|get_pipeline_debug_context|search_watchers|setup_watchers|watch_github_items|get_github_pull_request_status|watch_command|schedule_wakeup|set_auto_archive|set_chat_auto_archive|archive_chat|set_work_entry_auto_delete|set_project_work_entry_auto_delete|start_forked_agent|search_deferred_tools|load_deferred_tools|add_feed_entry|search_feed_entries|update_feed_entry|add_ledger_entry|search_ledger_entries|update_ledger_entry)$/,
   );
   if (codexMatch) {
     return APP_ADVISOR_CODEX_SUFFIX_TO_KEY.get(codexMatch[2]) ?? null;

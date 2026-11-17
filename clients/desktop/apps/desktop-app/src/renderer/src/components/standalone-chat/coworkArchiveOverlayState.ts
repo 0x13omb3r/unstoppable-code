@@ -6,6 +6,7 @@
  * archive view is up.
  */
 import { APP_ADVISOR_PROJECT_ID } from '@canopy/desktop-shared/types';
+import { isBotProjectId } from '@canopy/protocol/chat-targets';
 import { isCoworkChatTarget } from '@/lib/cowork';
 import { useArchivedContainersStore } from '@/stores/archivedContainersStore';
 import { useStandaloneChatStore } from '@/stores/standaloneChatStore';
@@ -17,9 +18,11 @@ function belongsToSurface(
   workspaceId: string,
   surface: CoworkArchiveOverlaySurface,
 ): boolean {
-  const isAdvisor = workspaceId === APP_ADVISOR_PROJECT_ID;
-  if (surface === 'app-advisor') return isAdvisor;
-  return !isAdvisor && isCoworkChatTarget(workspaceId);
+  if (surface === 'app-advisor') {
+    // Default Bot only: this overlay belongs to the Orchestrator mount.
+    return workspaceId === APP_ADVISOR_PROJECT_ID;
+  }
+  return !isBotProjectId(workspaceId) && isCoworkChatTarget(workspaceId);
 }
 
 /**

@@ -43,6 +43,7 @@ import {
   logMainProcessWarn,
 } from '../lib/main-process-logging';
 import { isModelBlockedByStoredPolicy } from '../lib/model-policy-state';
+import { isBotProjectId } from '@canopy/protocol/chat-targets';
 import type { BrowserWindow, IpcMainInvokeEvent } from 'electron';
 import { BRAND } from '@canopy/brand/current';
 import { registerIpcHandler } from './register';
@@ -505,6 +506,7 @@ function handoffSummaryAuditLabel(
 function buildHandoffSummaryLinkTarget(
   req: GenerateHandoffSummaryRequest,
 ): AgentAuditLinkTarget {
+  // Default Bot only: the audit link contract names the Orchestrator page.
   if (req.projectId === APP_ADVISOR_PROJECT_ID) {
     return {
       page: 'main',
@@ -1573,7 +1575,7 @@ async function normalizeCanonicalModelSelection(
     providerType;
   const preferences = await readPreferencesFile().catch(() => null);
   const providerDefaults =
-    req.projectId === APP_ADVISOR_PROJECT_ID || isCoworkWorkspace(req.projectId)
+    isBotProjectId(req.projectId) || isCoworkWorkspace(req.projectId)
       ? preferences?.defaultChatModelByProvider[providerType]
       : preferences?.defaultWorktreeModelByProvider[providerType];
   const thinkingLevel = normalizeThinkingForProvider(
@@ -1620,12 +1622,11 @@ async function normalizeCanonicalModelSelection(
     ) {
       const effectivePreferences =
         getEffectiveClaudeChatModePreferences(preferences);
-      const defaultInterfaceMode =
-        req.projectId === APP_ADVISOR_PROJECT_ID
-          ? effectivePreferences.defaultAppAdvisorInterfaceMode
-          : isCoworkWorkspace(req.projectId)
-            ? effectivePreferences.defaultStandaloneChatInterfaceMode
-            : effectivePreferences.defaultChatInterfaceMode;
+      const defaultInterfaceMode = isBotProjectId(req.projectId)
+        ? effectivePreferences.defaultAppAdvisorInterfaceMode
+        : isCoworkWorkspace(req.projectId)
+          ? effectivePreferences.defaultStandaloneChatInterfaceMode
+          : effectivePreferences.defaultChatInterfaceMode;
       interfaceMode =
         getPersistedClaudeChatInterfaceMode(defaultInterfaceMode) ?? null;
     }
@@ -2235,7 +2236,7 @@ export async function stopChatForUser(
     Boolean(tabBeforeCancel?.sdkSessionId) &&
     !isCoworkWorkspace(req.projectId) &&
     !isTerminalBackedInterfaceMode(tabBeforeCancel?.interfaceMode) &&
-    req.projectId !== APP_ADVISOR_PROJECT_ID &&
+    !isBotProjectId(req.projectId) &&
     req.projectId !== PIPELINE_EDITOR_PROJECT_ID
       ? runtimeBeforeCancel.activeTurn.userMessageId
       : undefined;
@@ -2331,8 +2332,7 @@ export function registerChatHandlers(
   setWorktreeChatWindowAccessor(getWindow);
   deferredToolsReloadCoordinator.subscribe((event) => {
     holdDispatchForDeferredReload(getChatQueueService(), event);
-    const isAppAdvisorTarget = event.scope.projectId === APP_ADVISOR_PROJECT_ID;
-    if (isAppAdvisorTarget) {
+    if (isBotProjectId(event.scope.projectId)) {
       sendToWindow(
         accessors.getAppAdvisorWindow(),
         IPC_CHANNELS.chatDeferredToolsReloadEvent,
@@ -2350,7 +2350,7 @@ export function registerChatHandlers(
         req.modelSelectionMode === 'auto' &&
         req.asyncQuestionId === undefined &&
         req.assistantMode !== 'app-advisor' &&
-        req.projectId !== APP_ADVISOR_PROJECT_ID &&
+        !isBotProjectId(req.projectId) &&
         req.projectId !== PIPELINE_EDITOR_PROJECT_ID &&
         req.projectId !== PLAN_EXPLORE_CHAT_PROJECT_ID &&
         req.projectId !== CODE_REVIEW_CHAT_PROJECT_ID
@@ -2531,7 +2531,6 @@ export function registerChatHandlers(
     const admittedApproval = allowMainOwnedAgentInput
       ? req.admittedApproval
       : undefined;
-    const isAppAdvisorTarget = projectId === APP_ADVISOR_PROJECT_ID;
     const isPipelineEditorTarget =
       projectId === PIPELINE_EDITOR_PROJECT_ID &&
       worktreeId === PIPELINE_EDITOR_WORKTREE_ID;
@@ -2541,7 +2540,7 @@ export function registerChatHandlers(
     // latching on it would permanently suppress the campaign whose whole
     // premise is that the user has not begun. Latching is idempotent and
     // never rejects, so it cannot affect the send path.
-    if (!isAppAdvisorTarget && !isPipelineEditorTarget) {
+    if (!isBotProjectId(projectId) && !isPipelineEditorTarget) {
       void latchFirstTaskSubmitted(new Date().toISOString());
       // Onboarding checklist "Start a chat" (CAN-2663) shares this signal
       // and its exclusions for the same reason: an App Advisor or Pipeline
@@ -2556,7 +2555,7 @@ export function registerChatHandlers(
       // without moving both, since this one's placement is shared with the
       // CAN-2438 activation signal.
     }
-    if (isAppAdvisorTarget) {
+    if (isBotProjectId(projectId)) {
       const approvalMode = clampToLiveApprovalMode(
         projectId,
         worktreeId,
@@ -2621,8 +2620,7 @@ export function registerChatHandlers(
       );
       return {};
     }
-    const hasPartialAppAdvisorTarget = projectId === APP_ADVISOR_PROJECT_ID;
-    if (assistantMode === 'app-advisor' || hasPartialAppAdvisorTarget) {
+    if (assistantMode === 'app-advisor' || isBotProjectId(projectId)) {
       throw new Error('Invalid App Advisor chat target.');
     }
     validateId(projectId, 'projectId');
@@ -4052,7 +4050,7 @@ export function registerChatHandlers(
         );
         if (
           isCoworkWorkspace(req.projectId) ||
-          req.projectId === APP_ADVISOR_PROJECT_ID ||
+          isBotProjectId(req.projectId) ||
           req.projectId === PIPELINE_EDITOR_PROJECT_ID
         ) {
           validateId(req.projectId, 'projectId');
@@ -4494,13 +4492,12 @@ export function registerChatHandlers(
       if (!req.sourceThreadId || typeof req.sourceThreadId !== 'string') {
         throw new Error('sourceThreadId is required');
       }
-      const isAppAdvisor = req.projectId === APP_ADVISOR_PROJECT_ID;
-      const cwd = isAppAdvisor
+      const cwd = isBotProjectId(req.projectId)
         ? resolveWorktreeCwd(req.projectId, req.worktreeId)
         : resolveWorktreeCwd(req.projectId, req.worktreeId, req.selectedRepoId);
       const preferences = await readPreferencesFile().catch(() => null);
       const isStandalone = isCoworkWorkspace(req.projectId);
-      const codexMultiAgentEnabled = isAppAdvisor
+      const codexMultiAgentEnabled = isBotProjectId(req.projectId)
         ? preferences?.codexMultiAgentAppAdvisorEnabled
         : preferences?.[
             isStandalone

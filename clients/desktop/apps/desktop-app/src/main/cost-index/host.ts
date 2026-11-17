@@ -11,6 +11,7 @@ import type {
   CostScopeRef,
   CostPipelineRunStatus,
 } from '@canopy/protocol/cost-view';
+import { isBotProjectId } from '@canopy/protocol/chat-targets';
 import {
   getAgentObservabilityAuditDir,
   getArchivedContainerCostDir,
@@ -58,18 +59,17 @@ async function resolveScope(
     await import('../lib/workspace-persistence');
   const { readWorkEntriesFile } =
     await import('../lib/cowork-work-entries-file');
-  const createdAt =
-    scope.projectId === APP_ADVISOR_PROJECT_ID
-      ? (await readWorkEntriesFile(scope.projectId)).entries.find(
-          (entry) => entry.id === scope.worktreeId,
-        )?.createdAt
-      : ((await getWorkspaceWorktreeCreatedAt(
-          scope.projectId,
-          scope.worktreeId,
-        )) ??
-        (await readWorkEntriesFile(scope.projectId)).entries.find(
-          (entry) => entry.id === scope.worktreeId,
-        )?.createdAt);
+  const createdAt = isBotProjectId(scope.projectId)
+    ? (await readWorkEntriesFile(scope.projectId)).entries.find(
+        (entry) => entry.id === scope.worktreeId,
+      )?.createdAt
+    : ((await getWorkspaceWorktreeCreatedAt(
+        scope.projectId,
+        scope.worktreeId,
+      )) ??
+      (await readWorkEntriesFile(scope.projectId)).entries.find(
+        (entry) => entry.id === scope.worktreeId,
+      )?.createdAt);
   if (createdAt === undefined || createdAt === null) return null;
   return {
     scope,
@@ -80,6 +80,7 @@ async function resolveScope(
 }
 
 async function listRetainedScopes(): Promise<readonly CostScopeLocation[]> {
+  // Default Bot only: the only Bot until the Bot registry lists the rest.
   const projectIds = [APP_ADVISOR_PROJECT_ID];
   try {
     const entries = await readdir(getWorkspacesRootDir(), {

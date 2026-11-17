@@ -1,4 +1,7 @@
 import type { DeviceKind, DevicePlatform } from '@canopy/protocol/device-relay';
+import type { RemoteHostUpdateStatus } from '@canopy/protocol/remote-control';
+
+export type { RemoteHostUpdateStatus } from '@canopy/protocol/remote-control';
 
 /**
  * Renderer-facing contract for device-to-device remote control.
@@ -46,6 +49,12 @@ export interface RemoteControlHost extends RemoteControlDevice {
    * retrying on its own.
    */
   ended: boolean;
+  /**
+   * The two computers run different remote-control protocols and one of
+   * them needs an update; null otherwise. While it is set, the window can't
+   * show the other computer and offers the update instead (CAN-5899).
+   */
+  update: RemoteHostUpdateStatus | null;
 }
 
 /**
@@ -179,6 +188,18 @@ export interface RemoteControlRespondToPairingRequest {
   approve: boolean;
 }
 
+/**
+ * An update step for the paired computer a window shows, while the two run
+ * different protocols: start the update, restart it now instead of waiting
+ * for its running chats, or withdraw the restart this computer asked for.
+ */
+export type RemoteControlHostUpdateAction = 'update' | 'restart-now' | 'cancel';
+
+export interface RemoteControlUpdateHostRequest {
+  deviceId: string;
+  action: RemoteControlHostUpdateAction;
+}
+
 export interface RemoteControlForgetDeviceRequest {
   deviceId: string;
   role: 'host' | 'controller';
@@ -253,6 +274,11 @@ export interface RemoteControlApi {
     request: RemoteControlForgetDeviceRequest,
   ): Promise<RemoteControlState>;
   disconnectController(deviceId: string): Promise<RemoteControlState>;
+  /**
+   * Updates a paired computer that runs an older protocol (CAN-5899).
+   * Resolves once the step is accepted; progress arrives with the state.
+   */
+  updateHost(request: RemoteControlUpdateHostRequest): Promise<void>;
   onPathPickerRequest(
     listener: (request: RemotePathPickerRequest) => void,
   ): () => void;

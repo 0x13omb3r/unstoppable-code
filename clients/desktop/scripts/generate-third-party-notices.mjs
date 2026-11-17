@@ -82,6 +82,13 @@ const BUNDLED_TOOLS = [
 
 const BUNDLED_ASSETS = [
   {
+    label: 'Unicode Emoji 16.0 data (emoji-test.txt, CLDR short names)',
+    version: '16.0',
+    source: 'https://unicode.org/Public/emoji/16.0/emoji-test.txt',
+    license: 'Unicode-3.0',
+    licensePath: 'packages/ui-shared/src/components/bots/UNICODE-LICENSE.txt',
+  },
+  {
     label: 'Material Symbols (Rounded, weight 300)',
     version:
       'google/material-design-icons@49d4db35df873165d6bd6ba09b063c7dafbac2f4',

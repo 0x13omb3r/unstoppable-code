@@ -32,6 +32,7 @@ import {
 } from './composer-density';
 import {
   appendFileReference,
+  appendTextAtEnd,
   buildEditorValueFromMessage,
   createChatEditor,
   insertTextAtCursor,
@@ -53,6 +54,11 @@ export interface ComposerEditorHandle {
    * next slice moves desktop's voice dictation and history recall onto.
    */
   insertText: (text: string) => void;
+  /**
+   * Append plain text at the end of the draft, after a blank line when it has
+   * content, whatever is selected: the insert-text request (CAN-6801).
+   */
+  appendText: (text: string) => void;
   insertFileReference: (ref: SerializedFileReference) => void;
   reset: () => void;
   replaceDraft: (
@@ -316,6 +322,12 @@ function ComposerEditorInner(
       insertText: (text: string): void => {
         editorRef.current?.focus();
         insertTextAtCursor(editor, text);
+        commit([...editor.children]);
+        publishSerialized();
+      },
+      appendText: (text: string): void => {
+        editorRef.current?.focus();
+        appendTextAtEnd(editor, text);
         commit([...editor.children]);
         publishSerialized();
       },

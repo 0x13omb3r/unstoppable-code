@@ -1,6 +1,12 @@
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const localJest = require('./scripts/lib/local-jest-workers.mjs');
+const maxWorkers = localJest.getLocalJestMaxWorkers();
+
 /** @type {import('jest').Config} */
 const config = {
   testEnvironment: 'node',
+  // Local direct runs share the same cap as the checks scripts; CI keeps its default.
+  ...(maxWorkers === undefined ? {} : { maxWorkers }),
   // A worker keeps the heap of every suite it ran. CI runs each shard as a
   // targeted run, without the shard loop's per-file recycling, so a worker
   // that grows past this between suites is replaced instead of running out

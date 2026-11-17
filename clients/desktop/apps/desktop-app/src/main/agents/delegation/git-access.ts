@@ -153,7 +153,7 @@ export async function delegationGitMetadata(
     return { metadataRoots: [], privateMetadataRoots: [] };
   }
 }
-const NO_GIT_ACCESS: DelegationGitAccess = {
+export const NO_GIT_ACCESS: DelegationGitAccess = {
   metadataRoots: [],
   privateMetadataRoots: [],
   runtimeRoots: [],

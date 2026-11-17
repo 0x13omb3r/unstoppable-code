@@ -379,7 +379,7 @@ function ModelPolicyCard({ detail }: TeamModelPolicySectionProps): JSX.Element {
           {showList ? (
             <>
               {pendingReviewIds.length > 0 ? (
-                <div className="mt-4 flex flex-wrap items-center justify-between gap-2">
+                <div className="pt-4 flex flex-wrap items-center justify-between gap-2">
                   <p
                     className="text-xs fg-warning"
                     data-testid="model-policy-pending-review-note"
@@ -428,7 +428,7 @@ function ModelPolicyCard({ detail }: TeamModelPolicySectionProps): JSX.Element {
 
               {pageCount > 1 ? (
                 <div
-                  className="mt-3 flex items-center justify-between gap-3"
+                  className="pt-3 flex items-center justify-between gap-3"
                   data-testid="model-policy-pager"
                 >
                   <Button

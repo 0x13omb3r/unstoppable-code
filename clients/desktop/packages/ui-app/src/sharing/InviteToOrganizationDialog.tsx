@@ -157,6 +157,7 @@ type ProjectOutcomeEntry = PersonalProjectOperation['projects'][number];
 function needsProjectRow(project: ProjectOutcomeEntry): boolean {
   return (
     (project.outcome !== 'moved' && project.outcome !== 'pending') ||
+    (project.outcome === 'pending' && project.reasonCode !== undefined) ||
     project.refreshWarning === true
   );
 }
@@ -189,7 +190,7 @@ function ProjectProblemRow({
       {': '}
       {project.refreshWarning && project.outcome === 'moved'
         ? 'Moved, but the team’s project list could not refresh'
-        : projectOutcomeLabel(project.outcome, team)}
+        : projectOutcomeLabel(project.outcome, team, project.reasonCode)}
       {missingRepositories !== null && (
         <span className="block">
           Repositories to add: {missingRepositories}
@@ -255,18 +256,33 @@ function projectsStartStep(
     label: projectsStepLabel(count, team, 'attention'),
     status: 'error',
     detail: (
-      <Stack gap="inline" data-testid={`${P}-projects-failed`}>
-        <p className="text-xs fg-secondary">{conversionFailureMessage()}</p>
-        <NoticeButton
-          className="self-start"
-          data-testid={`${P}-retry-projects`}
-          onClick={() => void state.retryProjects(state.selection)}
-        >
-          {COPY.retryProjects}
-        </NoticeButton>
-      </Stack>
+      <ProjectFailureDetail state={state} code={state.conversionFailure.code} />
     ),
   };
+}
+
+function ProjectFailureDetail({
+  state: { acknowledgeProjectFailure, retryProjects, selection },
+  code,
+}: {
+  readonly state: PersonalOrganizationUpgradeState;
+  readonly code: string | null;
+}): JSX.Element {
+  useEffect(() => {
+    if (code === 'invalid-canopy-json') void acknowledgeProjectFailure();
+  }, [code, acknowledgeProjectFailure]);
+  return (
+    <Stack gap="inline" data-testid={`${P}-projects-failed`}>
+      <p className="text-xs fg-secondary">{conversionFailureMessage(code)}</p>
+      <NoticeButton
+        className="self-start"
+        data-testid={`${P}-retry-projects`}
+        onClick={() => void retryProjects(selection)}
+      >
+        {COPY.retryProjects}
+      </NoticeButton>
+    </Stack>
+  );
 }
 
 /** The projects row: one line for all of them, with detail only on trouble. */

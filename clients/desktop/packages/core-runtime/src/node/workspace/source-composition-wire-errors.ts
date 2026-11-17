@@ -93,6 +93,7 @@ const REFUSALS = {
   'organization-already-bound': STATE,
   'organization-repository-inaccessible': STATE,
   'organization-shape-unsupported': STATE,
+  'organization-repositories-missing': STATE,
   'organization-creation-failed': STATE,
   // The organization repository sync (#17's multi-repo additions): only a
   // repository the organization does not hold never succeeds as sent.

@@ -18,10 +18,8 @@ import {
 } from '@canopy/desktop-shared/node/background-execution-context';
 import { resolveCoworkWorkspaceId } from '../lib/cowork-migration-map';
 import type { ChildPipelineAuthorization } from '@canopy/execution-engine/node/pipelines/executor/child-pipeline-resolver';
-import {
-  APP_ADVISOR_PROJECT_ID,
-  STANDALONE_CHAT_PROJECT_ID,
-} from '@canopy/desktop-shared/types';
+import { STANDALONE_CHAT_PROJECT_ID } from '@canopy/desktop-shared/types';
+import { isBotProjectId } from '@canopy/protocol/chat-targets';
 import { backgroundExecutionDeniedMessage } from '@canopy/desktop-shared/node/background-execution-context';
 import {
   parseWorkspaceContext,
@@ -85,7 +83,7 @@ export async function resolveBackgroundWorkspaceTarget(
   projectId: string,
   worktreeId?: string,
 ): Promise<BackgroundWorkspaceTarget> {
-  if (projectId === APP_ADVISOR_PROJECT_ID)
+  if (isBotProjectId(projectId))
     return {
       workspaceOwner: { kind: 'personal' },
       linkedPersonalCandidate: false,
@@ -236,7 +234,7 @@ export async function resolveBackgroundTargetContext(
     'workspaceOwner' | 'linkedPersonalCandidate' | 'ownershipTransferred'
   >,
 ): Promise<BackgroundTargetContext> {
-  if (destination.projectId === APP_ADVISOR_PROJECT_ID)
+  if (isBotProjectId(destination.projectId))
     return {
       matches: true,
       target: { workspaceOwner: context, linkedOrganizationIds: [] },
@@ -455,7 +453,7 @@ export function backgroundDestinationWorkspaceId(destination: {
   projectId: string;
   worktreeId?: string;
 }): string | null {
-  if (destination.projectId === APP_ADVISOR_PROJECT_ID) return null;
+  if (isBotProjectId(destination.projectId)) return null;
   if (destination.projectId === STANDALONE_CHAT_PROJECT_ID)
     return destination.worktreeId
       ? resolveCoworkWorkspaceId(destination.worktreeId)

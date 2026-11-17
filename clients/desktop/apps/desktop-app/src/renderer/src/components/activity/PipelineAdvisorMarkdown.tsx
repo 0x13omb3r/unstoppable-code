@@ -39,10 +39,10 @@ const ADVISOR_MARKDOWN_COMPONENTS: MarkdownOverrides = {
     return <AdvisorCodeExcerpt>{children}</AdvisorCodeExcerpt>;
   },
   ul({ children }): JSX.Element {
-    return <span className="mt-1 flex flex-col gap-0.5">{children}</span>;
+    return <span className="pt-1 flex flex-col gap-0.5">{children}</span>;
   },
   ol({ children }): JSX.Element {
-    return <span className="mt-1 flex flex-col gap-0.5">{children}</span>;
+    return <span className="pt-1 flex flex-col gap-0.5">{children}</span>;
   },
   li({ children }): JSX.Element {
     return <span className="block">{children}</span>;

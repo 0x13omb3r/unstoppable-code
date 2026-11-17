@@ -7,6 +7,7 @@ import {
   ConfirmDialog,
   Notice,
   NoticeButton,
+  REMOTE_UPDATES_SWITCH_LABEL,
   ToggleSwitch,
 } from '@canopy/ui-shared/components';
 import {
@@ -223,7 +224,7 @@ export function RemoteAccessTab(): JSX.Element {
             }
           />
           <SettingsRow
-            label="Let computers that control this one update it"
+            label={REMOTE_UPDATES_SWITCH_LABEL}
             description="A paired computer can install this computer's updates. It restarts once nothing is running, and you can cancel from the update prompt here."
             htmlFor="settings-remote-access-allow-updates"
             dataTestId="settings-remote-access-allow-updates-row"
@@ -231,7 +232,7 @@ export function RemoteAccessTab(): JSX.Element {
               <ToggleSwitch
                 id="settings-remote-access-allow-updates"
                 checked={state.allowIncoming && state.allowRemoteUpdates}
-                label="Let computers that control this one update it"
+                label={REMOTE_UPDATES_SWITCH_LABEL}
                 dataTestId="settings-remote-access-allow-updates"
                 disabled={savingUpdates || !state.allowIncoming}
                 onChange={toggleRemoteUpdates}

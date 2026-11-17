@@ -1,5 +1,6 @@
 'use client';
 
+import { ControlButton } from './Button';
 import {
   useEffect,
   useRef,
@@ -211,7 +212,7 @@ export function ComposerPlusMenuPresentation({
             // geometry (32px circle, 16px glyph) on a flat subtle fill that
             // steps up to muted on hover, written as one explicit class list
             // so no variant background can override it.
-            <button
+            <ControlButton
               ref={triggerRef}
               type="button"
               onClick={() => setIsOpen(!isOpen)}
@@ -227,13 +228,11 @@ export function ComposerPlusMenuPresentation({
                 }
               }}
               disabled={disabled}
-              className={`focus-ring inline-flex ${tapTarget === 'touch' ? 'h-11 w-11 lg:h-8 lg:w-8' : 'h-8 w-8'} shrink-0 items-center justify-center rounded-full transition-transform enabled:active:scale-97 disabled:cursor-not-allowed disabled:fg-tertiary disabled:opacity-100 ${
-                active
-                  ? 'bg-warning-subtle fg-warning enabled:hover:bg-warning-subtle'
-                  : // A one-device-pixel inset rim in the quiet line role
-                    // keeps the + defined against the composer's surface.
-                    'bg-subtle fg-primary ring-[length:var(--border-hairline)] ring-inset ring-line-tertiary enabled:hover:bg-muted'
-              }`}
+              presentation="composer-plus"
+              appearance={{
+                tapTarget: tapTarget === 'touch' ? 'touch' : 'desktop',
+                active: !!active,
+              }}
               data-testid={`${dataTestIdPrefix}-plus-button`}
               data-active={active ? 'true' : undefined}
               aria-label={triggerAriaLabel}
@@ -244,7 +243,7 @@ export function ComposerPlusMenuPresentation({
               {/* The large plus: its ink matches the send arrow, the microphone
               and stop beside it (the medium plus read a size smaller). */}
               <PlusLargeIcon size={16} />
-            </button>
+            </ControlButton>
           ) : (
             <ComposerIconButton
               ref={triggerRef}

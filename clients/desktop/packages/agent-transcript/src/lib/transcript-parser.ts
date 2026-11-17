@@ -58,6 +58,7 @@ import type {
 import {
   AI_CREDITS_NO_BILLING_SOURCE_EVENT_FLAG,
   parseCanopyProxyError,
+  isCanopyProxyErrorBody,
 } from '@canopy/protocol/llm-gateway';
 import {
   CANOPY_AUTH_FAILURE_EVENT_TYPE,
@@ -2590,9 +2591,9 @@ function claudeChainUuid(data: Record<string, unknown>): string | undefined {
  * Main writes the restored body into the harness's synthetic assistant error
  * frame and the terminal result. Both are failures, not answers: left as
  * assistant prose, the marker JSON would render verbatim, because the desktop
- * notice and the Portal summary only replace system/failed rows. Gated on the
- * trusted stamp and the failure shape, so an answer that quotes the marker
- * keeps its normal rendering.
+ * notice and the Portal summary distinguish failures from ordinary answers.
+ * Accept standalone marked wire bodies as well as trusted stamped failures;
+ * prose quoting a body keeps its normal rendering.
  */
 function readStampedClaudeProxyFailureText(
   state: TranscriptReducerState,
@@ -2604,9 +2605,10 @@ function readStampedClaudeProxyFailureText(
   if (
     state.providerType === 'codex' ||
     data.subtype === 'codex_error' ||
-    !isAiCreditsFailureEventShape(data, 'claude') ||
-    !hasNoBillingSourceStamp(data) ||
-    text === undefined
+    text === undefined ||
+    (!isCanopyProxyErrorBody(text) &&
+      (!isAiCreditsFailureEventShape(data, 'claude') ||
+        !hasNoBillingSourceStamp(data)))
   ) {
     return null;
   }
@@ -2689,8 +2691,24 @@ function upsertClaudeProxyFailureRow(
   for (let index = messages.length - 1; index >= 0; index -= 1) {
     const candidate = messages[index];
     if (candidate?.role === 'user') break;
-    if (isSingleTextMessage(candidate, 'system', text)) return messages;
-    if (isSingleTextMessage(candidate, 'assistant', text)) {
+    if (!candidate) continue;
+    const role = candidate.role;
+    const block =
+      candidate.blocks.length === 1 ? candidate.blocks[0] : undefined;
+    const sameBody =
+      block?.type === 'text' &&
+      isCanopyProxyErrorBody(block.text) &&
+      parseCanopyProxyError(block.text)?.code ===
+        parseCanopyProxyError(text)?.code;
+    if (
+      isSingleTextMessage(candidate, 'system', text) ||
+      (role === 'system' && sameBody)
+    )
+      return messages;
+    if (
+      isSingleTextMessage(candidate, 'assistant', text) ||
+      (role === 'assistant' && sameBody)
+    ) {
       return messages.map((existing, existingIndex) =>
         existingIndex === index ? { ...existing, role: 'system' } : existing,
       );

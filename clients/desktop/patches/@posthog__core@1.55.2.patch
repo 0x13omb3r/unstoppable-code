@@ -1,0 +1,96 @@
+diff --git a/dist/error-tracking/parsers/node.js b/dist/error-tracking/parsers/node.js
+index a21cf9661bc71286a44cd580a5fa9451ddc447ce..5e48bbaf2ce8c582c4db47ddbf24b34877aa3d85 100644
+--- a/dist/error-tracking/parsers/node.js
++++ b/dist/error-tracking/parsers/node.js
+@@ -32,12 +32,17 @@ __webpack_require__.d(__webpack_exports__, {
+ });
+ const external_base_js_namespaceObject = require("./base.js");
+ const FILENAME_MATCH = /^\s*[-]{4,}$/;
++// An anonymous absolute path can contain " ("; do not mistake its directory for a function.
++const ANONYMOUS_PATH = /^\s*at (?:async )?((?:\/|[a-zA-Z]:[\\/]|file:\/\/\/)[^\r\n]+):(\d+):(\d+)\s*$/;
+ const FULL_MATCH = /at (?:async )?(?:(.+?)\s+\()?(?:(.+):(\d+):(\d+)?|([^)]+))\)?/;
+ const PROMISE_COMBINATOR = /^Promise\.(?:all|any)$/;
+ const PROMISE_INDEX = /^index \d+$/;
+ const PROMISE_FRAME_FILENAME = 'node:internal/promise';
+ const nodeStackLineParser = (line, platform)=>{
+-    const lineMatch = line.match(FULL_MATCH);
++    const anonymous = line.match(ANONYMOUS_PATH);
++    const lineMatch = anonymous
++    ? [anonymous[0], undefined, anonymous[1], anonymous[2], anonymous[3], undefined]
++    : line.match(FULL_MATCH);
+     if (lineMatch) {
+         let object;
+         let method;
+@@ -92,7 +97,7 @@ const nodeStackLineParser = (line, platform)=>{
+     };
+ };
+ function filenameIsInApp(filename, isNative = false) {
+-    const isInternal = isNative || filename && !filename.startsWith('/') && !filename.match(/^[A-Z]:/) && !filename.startsWith('.') && !filename.match(/^[a-zA-Z]([a-zA-Z0-9.\-+])*:\/\//);
++    const isInternal = isNative || filename && !filename.startsWith('/') && !filename.match(/^[A-Z]:/i) && !filename.startsWith('.') && !filename.match(/^[a-zA-Z]([a-zA-Z0-9.\-+])*:\/\//);
+     return !isInternal && void 0 !== filename && !filename.includes('node_modules/');
+ }
+ function _parseIntOrUndefined(input) {
+diff --git a/dist/error-tracking/parsers/node.mjs b/dist/error-tracking/parsers/node.mjs
+index 5ccb7beaf91e336fe652f51cfdb96c44ca61ce74..eaa1a85f871f2ae5c97f8e7c1855cb147cbb767d 100644
+--- a/dist/error-tracking/parsers/node.mjs
++++ b/dist/error-tracking/parsers/node.mjs
+@@ -1,11 +1,16 @@
+ import { UNKNOWN_FUNCTION } from "./base.mjs";
+ const FILENAME_MATCH = /^\s*[-]{4,}$/;
++// An anonymous absolute path can contain " ("; do not mistake its directory for a function.
++const ANONYMOUS_PATH = /^\s*at (?:async )?((?:\/|[a-zA-Z]:[\\/]|file:\/\/\/)[^\r\n]+):(\d+):(\d+)\s*$/;
+ const FULL_MATCH = /at (?:async )?(?:(.+?)\s+\()?(?:(.+):(\d+):(\d+)?|([^)]+))\)?/;
+ const PROMISE_COMBINATOR = /^Promise\.(?:all|any)$/;
+ const PROMISE_INDEX = /^index \d+$/;
+ const PROMISE_FRAME_FILENAME = 'node:internal/promise';
+ const nodeStackLineParser = (line, platform)=>{
+-    const lineMatch = line.match(FULL_MATCH);
++    const anonymous = line.match(ANONYMOUS_PATH);
++    const lineMatch = anonymous
++    ? [anonymous[0], undefined, anonymous[1], anonymous[2], anonymous[3], undefined]
++    : line.match(FULL_MATCH);
+     if (lineMatch) {
+         let object;
+         let method;
+@@ -60,7 +65,7 @@ const nodeStackLineParser = (line, platform)=>{
+     };
+ };
+ function filenameIsInApp(filename, isNative = false) {
+-    const isInternal = isNative || filename && !filename.startsWith('/') && !filename.match(/^[A-Z]:/) && !filename.startsWith('.') && !filename.match(/^[a-zA-Z]([a-zA-Z0-9.\-+])*:\/\//);
++    const isInternal = isNative || filename && !filename.startsWith('/') && !filename.match(/^[A-Z]:/i) && !filename.startsWith('.') && !filename.match(/^[a-zA-Z]([a-zA-Z0-9.\-+])*:\/\//);
+     return !isInternal && void 0 !== filename && !filename.includes('node_modules/');
+ }
+ function _parseIntOrUndefined(input) {
+diff --git a/src/error-tracking/parsers/node.ts b/src/error-tracking/parsers/node.ts
+index 8d74efa1cf437028b59216514c78c4259f084b8a..9a17d02ac8e2378a1ac01ba7e4ffef4779492d98 100644
+--- a/src/error-tracking/parsers/node.ts
++++ b/src/error-tracking/parsers/node.ts
+@@ -7,13 +7,18 @@ import { UNKNOWN_FUNCTION } from './base'
+ 
+ /** Node Stack line parser */
+ const FILENAME_MATCH = /^\s*[-]{4,}$/
++// An anonymous absolute path can contain " ("; do not mistake its directory for a function.
++const ANONYMOUS_PATH = /^\s*at (?:async )?((?:\/|[a-zA-Z]:[\\/]|file:\/\/\/)[^\r\n]+):(\d+):(\d+)\s*$/;
+ const FULL_MATCH = /at (?:async )?(?:(.+?)\s+\()?(?:(.+):(\d+):(\d+)?|([^)]+))\)?/
+ const PROMISE_COMBINATOR = /^Promise\.(?:all|any)$/
+ const PROMISE_INDEX = /^index \d+$/
+ const PROMISE_FRAME_FILENAME = 'node:internal/promise'
+ 
+ export const nodeStackLineParser: StackLineParser = (line: string, platform: Platform) => {
+-  const lineMatch = line.match(FULL_MATCH)
++  const anonymous = line.match(ANONYMOUS_PATH);
++  const lineMatch = anonymous
++    ? [anonymous[0], undefined, anonymous[1], anonymous[2], anonymous[3], undefined]
++    : line.match(FULL_MATCH)
+ 
+   if (lineMatch) {
+     let object: string | undefined
+@@ -105,7 +110,7 @@ function filenameIsInApp(filename: string, isNative: boolean = false): boolean {
+       // It's not internal if it's an absolute linux path
+       !filename.startsWith('/') &&
+       // It's not internal if it's an absolute windows path
+-      !filename.match(/^[A-Z]:/) &&
++      !filename.match(/^[A-Z]:/i) &&
+       // It's not internal if the path is starting with a dot
+       !filename.startsWith('.') &&
+       // It's not internal if the frame has a protocol. In node, this is usually the case if the file got pre-processed with a bundler like webpack

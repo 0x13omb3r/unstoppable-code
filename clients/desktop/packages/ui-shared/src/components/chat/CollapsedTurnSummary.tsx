@@ -1,3 +1,4 @@
+import { ControlButton } from '../Button';
 import { ORCHESTRATOR_LABEL } from '@canopy/protocol';
 import {
   forwardRef,
@@ -386,7 +387,6 @@ export function TurnOutcomeControl({
     setDismissed(true);
   };
   const triggerProps = {
-    className: 'focus-ring rounded-sm whitespace-nowrap',
     'data-turn-outcomes': '',
     'data-turn-blocked': outcomes.blocked || undefined,
     'data-turn-failed': outcomes.failed || undefined,
@@ -402,10 +402,10 @@ export function TurnOutcomeControl({
     <TurnOutcomeWords outcomes={outcomes} leadingSeparator={leadingSeparator} />
   );
   const trigger = onJumpToOutcome ? (
-    <button
+    <ControlButton
       type="button"
       {...triggerProps}
-      className={`${triggerProps.className} transition-colors hover:fg-secondary`}
+      presentation="collapsed-turn-outcomes"
       aria-label={`${words}, show steps`}
       onClick={(event): void => {
         event.stopPropagation();
@@ -413,9 +413,13 @@ export function TurnOutcomeControl({
       }}
     >
       {content}
-    </button>
+    </ControlButton>
   ) : (
-    <span tabIndex={0} {...triggerProps}>
+    <span
+      tabIndex={0}
+      className="focus-ring rounded-sm whitespace-nowrap"
+      {...triggerProps}
+    >
       {content}
     </span>
   );
@@ -542,20 +546,20 @@ export const CollapsedTurnSummaryRow = forwardRef<
         className === '' ? '' : ` ${className}`
       }${phoneTouchTarget && isPhone ? ' min-h-11' : ''}`}
     >
-      <button
+      <ControlButton
         ref={toggleRef}
         type="button"
         onClick={onClick}
         aria-expanded={isExpanded}
         aria-label={ariaLabel}
         data-testid={dataTestId}
-        className="focus-ring focus-ring-stretched flex flex-shrink-0 items-center gap-3 text-left before:absolute before:inset-0 before:content-['']"
+        presentation="collapsed-turn-disclosure"
       >
         <span className="flex-shrink-0 fg-secondary" aria-hidden="true">
           {isExpanded ? <ChevronDownIcon /> : <ChevronRightIcon />}
         </span>
         {children}
-      </button>
+      </ControlButton>
       {outcome}
       {trailing != null && (
         // Pointer clicks on the chips toggle the turn; keyboard and screen

@@ -51,8 +51,10 @@ const NO_BILLING_SOURCE_STATUS = 402;
  * status on this path is.
  */
 const BUFFERED_REFUSAL_STATUSES: ReadonlySet<number> = new Set([
+  401,
   NO_BILLING_SOURCE_STATUS,
   403,
+  503,
 ]);
 /**
  * Ceiling on a buffered {@link BUFFERED_REFUSAL_STATUSES} body. The real body

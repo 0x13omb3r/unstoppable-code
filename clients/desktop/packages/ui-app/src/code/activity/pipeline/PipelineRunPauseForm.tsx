@@ -246,11 +246,11 @@ export function PipelineRunPauseForm({
           {pipelinePauseInputHeading(checkpoints.length)}
         </p>
         <div
-          className="min-h-0 overflow-y-auto overscroll-contain pr-1"
+          className="flex min-h-0 flex-col gap-2 overflow-y-auto overscroll-contain pr-1 pt-2"
           data-testid="pipeline-run-pause-fields"
         >
           {checkpoints.map((checkpoint) => (
-            <Stack key={checkpoint.id} gap="inline" className="mt-2">
+            <Stack key={checkpoint.id} gap="inline" className="shrink-0">
               {checkpoint.request?.title && (
                 <p className="text-xs font-medium fg-primary">
                   {checkpoint.request.title}
@@ -295,32 +295,33 @@ export function PipelineRunPauseForm({
             </Stack>
           ))}
         </div>
-        <Button
-          type="button"
-          variant="primary"
-          size="compact"
-          className="mt-3"
-          data-testid="portal-pipeline-pause-submit"
-          disabled={!canSubmit || submitting}
-          onClick={(): void =>
-            onSubmit(
-              checkpoints.map((checkpoint) => ({
-                checkpoint_id: checkpoint.id,
-                job_id: checkpoint.job_id,
-                step_id: checkpoint.step_id,
-                ...(checkpoint.request
-                  ? { answers: effectiveAnswers[checkpoint.id] ?? {} }
-                  : {}),
-              })),
-            )
-          }
-        >
-          {submitting
-            ? 'Resuming…'
-            : checkpoints.some((checkpoint) => checkpoint.request)
-              ? 'Submit responses'
-              : 'Resume'}
-        </Button>
+        <div className="pt-3 empty:hidden">
+          <Button
+            type="button"
+            variant="primary"
+            size="compact"
+            data-testid="portal-pipeline-pause-submit"
+            disabled={!canSubmit || submitting}
+            onClick={(): void =>
+              onSubmit(
+                checkpoints.map((checkpoint) => ({
+                  checkpoint_id: checkpoint.id,
+                  job_id: checkpoint.job_id,
+                  step_id: checkpoint.step_id,
+                  ...(checkpoint.request
+                    ? { answers: effectiveAnswers[checkpoint.id] ?? {} }
+                    : {}),
+                })),
+              )
+            }
+          >
+            {submitting
+              ? 'Resuming…'
+              : checkpoints.some((checkpoint) => checkpoint.request)
+                ? 'Submit responses'
+                : 'Resume'}
+          </Button>
+        </div>
       </Surface>
     </div>
   );

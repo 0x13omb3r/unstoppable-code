@@ -436,6 +436,7 @@ async function seedCreatedWorktreePanelLayoutMode(
 ): Promise<void> {
   if (
     options.seedPanelLayoutMode === false ||
+    // Default Bot only: skip workspace layout state for its legacy global slot.
     (options.workspaceId === APP_ADVISOR_PROJECT_ID &&
       worktreeId === APP_ADVISOR_WORKTREE_ID)
   ) {

@@ -13,7 +13,7 @@ import { Tooltip } from './Tooltip';
  * icon sits inside the row's or card's link, so it takes no focus of its own;
  * its label joins that link's accessible name.
  */
-export function EntrySurfaceIcon({
+export function EntrySurfaceIndicator({
   surface,
   testId,
   label: labelOverride,
@@ -42,3 +42,5 @@ export function EntrySurfaceIcon({
     </Tooltip>
   );
 }
+
+export { EntrySurfaceIndicator as EntrySurfaceIcon };

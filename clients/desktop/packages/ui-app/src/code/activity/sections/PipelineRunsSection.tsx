@@ -150,13 +150,13 @@ function PipelineRunRow({
           />
         </div>
         <div
-          className={`mt-1 truncate text-xs ${active ? 'font-medium fg-primary/80' : 'fg-secondary'}`}
+          className={`pt-1 truncate text-xs ${active ? 'font-medium fg-primary/80' : 'fg-secondary'}`}
         >
           {run.pipelineName ?? run.pipelineLocalId}
         </div>
         {active && progress && progress.totalSteps > 0 && (
           <div
-            className="mt-1 text-2xs fg-secondary"
+            className="pt-1 text-2xs fg-secondary"
             data-testid={`pipeline-run-progress-${run.localId ?? run.pipelineLocalId}`}
           >
             {progress.completedSteps}/{progress.totalSteps} steps complete

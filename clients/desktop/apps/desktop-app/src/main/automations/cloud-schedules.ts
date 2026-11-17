@@ -20,6 +20,8 @@
 import { createHash } from 'node:crypto';
 import type {
   CanopyErrorPayload,
+  CloudModelChoice,
+  CloudModelPreflightResult,
   PipelineSchedule,
   PipelineScheduleCreateParams,
   PipelineScheduleDestination,
@@ -37,7 +39,13 @@ import type {
   AutomationTrigger,
   ScheduledActivity,
 } from '@canopy/desktop-shared/types';
+import type { PipelineShareInstallPin } from '@canopy/protocol/pipelines';
 import { isRecord } from '../lib/type-guards';
+import {
+  withLocalDestination,
+  type CloudSchedulePlace,
+  type LocalSchedulePlace,
+} from './cloud-schedule-destinations';
 
 type PipelineAction = Extract<AutomationAction, { type: 'worktree_pipeline' }>;
 
@@ -96,7 +104,34 @@ export function isPersistedCloudScheduleStub(
     typeof value.movedAt === 'string' &&
     typeof value.localEnabled === 'boolean' &&
     (value.moveBackKey === undefined ||
-      (typeof value.moveBackKey === 'string' && value.moveBackKey.length > 0))
+      (typeof value.moveBackKey === 'string' &&
+        value.moveBackKey.length > 0)) &&
+    (value.localDestination === undefined ||
+      isLocalDestination(value.localDestination)) &&
+    (value.enabling === undefined || value.enabling === true)
+  );
+}
+
+function isOptionalId(value: unknown): boolean {
+  return value === undefined || (typeof value === 'string' && value.length > 0);
+}
+
+/** A stored stub's local destination: the action fields it came from. */
+function isLocalDestination(value: unknown): boolean {
+  if (!isRecord(value)) return false;
+  const { target } = value;
+  return (
+    (target === undefined ||
+      (isRecord(target) &&
+        (target.kind === 'global' ||
+          target.kind === 'project' ||
+          target.kind === 'new_worktree' ||
+          (target.kind === 'task' &&
+            typeof target.taskId === 'string' &&
+            target.taskId.length > 0)))) &&
+    isOptionalId(value.workspaceId) &&
+    isOptionalId(value.baseWorktreeId) &&
+    isOptionalId(value.repoId)
   );
 }
 
@@ -133,6 +168,10 @@ export const CLOUD_SCHEDULE_MESSAGES = {
   orchestrator: 'Orchestrator workflows stay on this computer.',
   installed: 'Installed workflows stay on this computer for now.',
   agent: 'Schedules an agent wrote stay on this computer for now.',
+  destinationChange:
+    'Move this schedule back to this computer to change where it runs.',
+  agentEdit:
+    "An agent can't change a schedule that runs in the cloud yet. Change it on its Workflow page.",
   review: 'Review the shared workflow before moving this schedule.',
   running: 'This schedule is running. Move it after the run finishes.',
   signedOut: 'Sign in to move schedules to the cloud.',
@@ -142,6 +181,23 @@ export const CLOUD_SCHEDULE_MESSAGES = {
   pending:
     "Couldn't confirm the move with the cloud. The schedule is paused here until you move it again.",
   unreachable: "Couldn't reach the cloud. Nothing changed; try again.",
+  // CAN-6917 (the Run in control).
+  guardUnavailable:
+    "The cloud can't take schedules from this computer yet. Keep it on this computer for now.",
+  sharedChanged:
+    'This shared workflow changed since you reviewed it. Run it here once to review the change, then move the schedule.',
+  sharedPackage:
+    "Shared workflows that come with a package can't run on a cloud schedule yet.",
+  models:
+    "Some steps use models the cloud can't run. Choose a cloud model for each, then move the schedule.",
+  modelsChanged:
+    'This workflow or its model rules changed since you chose. Choose the cloud models again.',
+  projectWorkflow:
+    "Project workflows can't run on a cloud schedule yet. Keep this one on this computer.",
+  modelsUnreachable:
+    "Couldn't check this workflow's models with the cloud. The schedule is paused here until you move it again.",
+  enabling:
+    'This schedule is still moving to the cloud. Move it again to finish.',
 } as const;
 
 /** The web core's typed refusal, or null for a transport failure. */
@@ -189,7 +245,49 @@ export interface CloudScheduleRemote {
     scheduleId: string,
     idempotencyKey: string,
   ): Promise<PipelineSchedule | null>;
+  /**
+   * Whether the web core keeps a moved schedule's last fired slot (schema
+   * revision 2 of create and delete, CAN-6917). Without it a move to the
+   * cloud could fire one slot twice, so it is refused.
+   */
+  singleFireGuard(): Promise<boolean>;
+  /** The signed-in person's cloud projects and their ready tasks. */
+  places(): Promise<CloudSchedulePlace[]>;
+  /** `core.pipeline.cloudModels.preflight` for a schedule's runs. */
+  preflight(params: {
+    readonly definitionId: string;
+    readonly owner: string;
+    readonly scheduleId: string;
+  }): Promise<CloudModelPreflightResult>;
+  /** `core.pipeline.cloudModels.save` of confirmed replacements. */
+  saveModels(params: {
+    readonly definitionId: string;
+    readonly owner: string;
+    readonly scheduleId: string;
+    readonly definitionHash: string;
+    readonly policyFingerprint: string;
+    readonly choices: readonly CloudModelChoice[];
+  }): Promise<CloudModelPreflightResult>;
 }
+
+/** What a move reads on this computer (CAN-6917); main wires the real one. */
+export interface CloudScheduleHost {
+  /** The project and task here a schedule's destination names; null when gone. */
+  localPlace(action: PipelineAction): Promise<LocalSchedulePlace | null>;
+  /**
+   * The reviewed version of a shared workflow, read now: rejects with
+   * `SharedPipelinePinMismatchError` when it changed since the review.
+   */
+  pinnedSharedDocument(
+    remoteId: string,
+    pin: PipelineShareInstallPin,
+  ): Promise<string>;
+}
+
+export const UNAVAILABLE_CLOUD_SCHEDULE_HOST: CloudScheduleHost = {
+  localPlace: () => Promise.resolve(null),
+  pinnedSharedDocument: () => Promise.reject(unavailable()),
+};
 
 /** Until main wires the web core, every call is refused as unavailable. */
 export const UNAVAILABLE_CLOUD_SCHEDULE_REMOTE: CloudScheduleRemote = {
@@ -200,6 +298,10 @@ export const UNAVAILABLE_CLOUD_SCHEDULE_REMOTE: CloudScheduleRemote = {
   list: () => Promise.reject(unavailable()),
   update: () => Promise.reject(unavailable()),
   delete: () => Promise.reject(unavailable()),
+  singleFireGuard: () => Promise.resolve(false),
+  places: () => Promise.reject(unavailable()),
+  preflight: () => Promise.reject(unavailable()),
+  saveModels: () => Promise.reject(unavailable()),
 };
 
 function unavailable(): CloudScheduleRemoteError {
@@ -328,11 +430,18 @@ export function localRecordFromCloud(
   stub: ScheduledActivity,
   record: PipelineSchedule | null,
   enabledWithoutRecord: boolean,
+  options: { readonly restoreLocalDestination?: boolean } = {},
 ): ScheduledActivity {
+  const local =
+    options.restoreLocalDestination === true
+      ? stub.cloudSchedule?.localDestination
+      : undefined;
   const rest: ScheduledActivity = { ...stub };
   delete rest.executionLocation;
   delete rest.cloudSchedule;
   delete rest.cloudRecord;
+  if (local !== undefined && rest.action.type === 'worktree_pipeline')
+    rest.action = withLocalDestination(rest.action, local);
   if (record === null) return { ...rest, enabled: enabledWithoutRecord };
   const { action } = rest;
   const next: ScheduledActivity = {
@@ -350,13 +459,17 @@ export function localRecordFromCloud(
         : { kind: 'one_time', runAt: record.trigger.runAt, timezone: 'local' },
     action:
       action.type === 'worktree_pipeline'
-        ? withDestination(
-            withWorkflow(
+        ? ((): PipelineAction => {
+            const withValues = withWorkflow(
               { ...action, inputs: { ...record.inputs } },
               record.workflow,
-            ),
-            record.destination,
-          )
+            );
+            // A re-pointed destination names a cloud place, which this
+            // computer can't run in: the destination it had here comes back.
+            return local === undefined
+              ? withDestination(withValues, record.destination)
+              : withValues;
+          })()
         : action,
   };
   if (record.runCondition === null) delete next.ifCommand;

@@ -159,6 +159,7 @@ function fromContainerColumns(
     case 'cowork_entry':
       return { kind, workspaceId: parentId, entryId: itemId };
     case 'advisor_entry':
+      // Default Bot only: advisor_entry pins its parent ID to this literal.
       if (parentId !== 'app-advisor') throw malformedScope();
       return { kind, appWorkspaceId: parentId, entryId: itemId };
     case 'global':

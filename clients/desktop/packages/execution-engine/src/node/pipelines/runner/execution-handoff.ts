@@ -105,6 +105,14 @@ const HANDOFFS_DIR = 'pipeline-handoffs';
 
 const EXECUTIONS = 'executions';
 const TEMP = 'temp';
+/** Each child execution's own temporary folder, by its id (CAN-6868). */
+const CHILD_TEMP = 'child-temp';
+
+/** The most executions one handoff carries: the run and every child it ran (CAN-6868). */
+const HANDOFF_EXECUTIONS_MAX = 256;
+
+/** An execution id a handoff takes as a path segment: what the executor mints. */
+const EXECUTION_ID = /^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/;
 const CLAUDE_PROJECTS = ['providers', 'claude', 'projects'] as const;
 const CODEX_SESSIONS = ['providers', 'codex', 'sessions'] as const;
 
@@ -167,6 +175,31 @@ export function pipelineRunnerProviderSessions(state: unknown): string[] {
     if (fields === null) return;
     add(record(fields.outputs)?.session_id);
     add(record(fields.agent_recovery)?.session_id);
+    for (const child of Object.values(fields)) visit(child, depth + 1);
+  };
+  visit(state, 0);
+  return [...found];
+}
+
+/**
+ * The child executions a run's state names: each `run-pipeline` step's
+ * `child_execution_id`, at any depth, which a same-target child ran in the
+ * run's own host under (CAN-6868). A resume of the run resumes them from
+ * their own stored state, so they move with it.
+ */
+export function pipelineRunnerChildExecutions(state: unknown): string[] {
+  const found = new Set<string>();
+  const visit = (value: unknown, depth: number): void => {
+    if (depth > 64) return;
+    if (Array.isArray(value)) {
+      for (const item of value) visit(item, depth + 1);
+      return;
+    }
+    const fields = record(value);
+    if (fields === null) return;
+    const childId = fields.child_execution_id;
+    if (typeof childId === 'string' && EXECUTION_ID.test(childId))
+      found.add(childId);
     for (const child of Object.values(fields)) visit(child, depth + 1);
   };
   visit(state, 0);
@@ -299,23 +332,51 @@ async function exportCodexSessions(
   await walk('');
 }
 
-/** The sessions the state among `entries` names, or null when it has none. */
-function sessionsOfState(
+/** What a handoff holds: the run and the children its states name, and their sessions. */
+interface HandoffTree {
+  /** The run first, then each child whose state the archive holds. */
+  readonly executions: readonly string[];
+  readonly sessions: ReadonlySet<string>;
+}
+
+/**
+ * The run among `entries` and the child executions its state names, then
+ * theirs, each only where the archive holds its state; null when it holds
+ * no state of the run, or one that doesn't parse.
+ */
+function handoffTreeOf(
   entries: readonly ArchiveEntry[],
   executionId: string,
-): ReadonlySet<string> | null {
-  const statePath = path.join(EXECUTIONS, `${executionId}.json`);
-  const entry = entries.find(
-    (candidate) => candidate.path === statePath && candidate.type === 'file',
-  );
-  if (!entry?.bytes) return null;
-  let state: unknown;
-  try {
-    state = JSON.parse(entry.bytes.toString('utf8'));
-  } catch {
-    return null;
+): HandoffTree | null {
+  const stateOf = (id: string): unknown => {
+    const statePath = path.join(EXECUTIONS, `${id}.json`);
+    const entry = entries.find(
+      (candidate) => candidate.path === statePath && candidate.type === 'file',
+    );
+    if (!entry?.bytes) return undefined;
+    try {
+      const parsed: unknown = JSON.parse(entry.bytes.toString('utf8'));
+      return parsed;
+    } catch {
+      return undefined;
+    }
+  };
+  const root = stateOf(executionId);
+  if (root === undefined) return null;
+  const executions = [executionId];
+  const sessions = new Set(pipelineRunnerProviderSessions(root));
+  const pending = pipelineRunnerChildExecutions(root);
+  while (pending.length > 0 && executions.length < HANDOFF_EXECUTIONS_MAX) {
+    const childId = pending.shift();
+    if (childId === undefined || executions.includes(childId)) continue;
+    const state = stateOf(childId);
+    if (state === undefined) continue;
+    executions.push(childId);
+    for (const sessionId of pipelineRunnerProviderSessions(state))
+      sessions.add(sessionId);
+    pending.push(...pipelineRunnerChildExecutions(state));
   }
-  return new Set(pipelineRunnerProviderSessions(state));
+  return { executions, sessions };
 }
 
 /**
@@ -330,11 +391,16 @@ function isHandoffOf(
   entries: readonly ArchiveEntry[],
   executionId: string,
 ): boolean {
-  const sessions = sessionsOfState(entries, executionId);
-  if (sessions === null) return false;
-  const own = new Set([`${executionId}.json`, `${executionId}.cancel`]);
+  const tree = handoffTreeOf(entries, executionId);
+  if (tree === null) return false;
+  const { sessions } = tree;
+  const carried = new Set(tree.executions);
+  const own = new Set(
+    tree.executions.flatMap((id) => [`${id}.json`, `${id}.cancel`]),
+  );
   const folders = new Set([
     EXECUTIONS,
+    CHILD_TEMP,
     'providers',
     path.join('providers', 'claude'),
     path.join('providers', 'codex'),
@@ -363,9 +429,17 @@ function isHandoffOf(
         if (entry.type !== 'file') return false;
         continue;
       }
-      if (first === executionId) continue;
+      if (carried.has(first)) continue;
       return false;
     }
+    // A child's temporary folder: whatever its steps left there (CAN-6868).
+    if (
+      top === CHILD_TEMP &&
+      first !== undefined &&
+      first !== executionId &&
+      carried.has(first)
+    )
+      continue;
     const claude = under(CLAUDE_PROJECTS, segments);
     if (claude !== null) {
       const [, member] = claude;
@@ -526,7 +600,11 @@ export class PipelineRunnerHandoffStore implements PipelineRunnerHandoffPort {
       : path.join(this.#runTempRoot, executionId);
   }
 
-  /** The run, its temporary folder and its sessions, laid out in `folder` and packed. */
+  /**
+   * The run, its temporary folder and its sessions, laid out in `folder` and
+   * packed, with every child execution it ran in this host and theirs
+   * (CAN-6868).
+   */
   async #pack(executionId: string, folder: string): Promise<Buffer> {
     const executions = path.join(folder, EXECUTIONS);
     try {
@@ -542,20 +620,45 @@ export class PipelineRunnerHandoffStore implements PipelineRunnerHandoffPort {
     const runTemp = this.#runTempDir(executionId);
     if (runTemp !== null && (await kindOf(runTemp)) === 'dir')
       await copyKeeping(runTemp, path.join(folder, TEMP));
+    const readState = async (id: string): Promise<unknown> =>
+      JSON.parse(await readFile(path.join(executions, `${id}.json`), 'utf8'));
+    const root = await readState(executionId);
+    const sessions = new Set(pipelineRunnerProviderSessions(root));
+    const carried = new Set([executionId]);
+    const pending = pipelineRunnerChildExecutions(root);
+    while (pending.length > 0) {
+      const childId = pending.shift();
+      if (childId === undefined || carried.has(childId)) continue;
+      if (carried.size >= HANDOFF_EXECUTIONS_MAX)
+        throw pipelineHandoffRefusedError(
+          'This workflow run started too many child workflows to hand off.',
+        );
+      try {
+        await exportExecutionHandoff(this.#executionsDir, childId, executions);
+      } catch (error) {
+        // A child the step named before its executor stored it has nothing to move.
+        if (errorCode(error) === 'ENOENT') continue;
+        throw error;
+      }
+      carried.add(childId);
+      const childTemp = this.#runTempDir(childId);
+      if (childTemp !== null && (await kindOf(childTemp)) === 'dir')
+        await copyKeeping(childTemp, path.join(folder, CHILD_TEMP, childId));
+      const state = await readState(childId);
+      for (const sessionId of pipelineRunnerProviderSessions(state))
+        sessions.add(sessionId);
+      pending.push(...pipelineRunnerChildExecutions(state));
+    }
     const providers = this.#providers;
     if (providers) {
-      const state: unknown = JSON.parse(
-        await readFile(path.join(executions, `${executionId}.json`), 'utf8'),
-      );
-      const sessions = pipelineRunnerProviderSessions(state);
       await exportClaudeSessions(
         providers.claude,
-        sessions,
+        [...sessions],
         path.join(folder, ...CLAUDE_PROJECTS),
       );
       await exportCodexSessions(
         providers.codex,
-        sessions,
+        [...sessions],
         path.join(folder, ...CODEX_SESSIONS),
       );
     }
@@ -665,16 +768,31 @@ export class PipelineRunnerHandoffStore implements PipelineRunnerHandoffPort {
         // Files the run's step outputs name, at the paths they name.
         await copyKeeping(temp, runTemp);
       }
+      // The run's children first, so its state is present only once theirs
+      // are: its resume resumes them from their own (CAN-6868).
+      const tree = handoffTreeOf(entries, executionId);
+      const children = tree?.executions.slice(1) ?? [];
+      for (const childId of children) {
+        const childTemp = this.#runTempDir(childId);
+        const carriedTemp = path.join(folder, CHILD_TEMP, childId);
+        if (childTemp !== null && (await kindOf(carriedTemp)) === 'dir') {
+          if (ended()) throw lapsed();
+          if ((await kindOf(childTemp)) === null) made.push(childTemp);
+          await copyKeeping(carriedTemp, childTemp);
+        }
+      }
       // The store keeps a run it already holds, directory and all.
-      const restored = await restoreExecutionHandoff(
-        path.join(folder, EXECUTIONS),
-        this.#executionsDir,
-        executionId,
-        leaseHeld ? { leaseHeld } : {},
-      );
-      if (restored === 'installed') {
-        const store = executionStoreEntries(executionId, this.#executionsDir);
-        made.push(store.state, store.cancellation, store.directory);
+      for (const id of [...children.reverse(), executionId]) {
+        const restored = await restoreExecutionHandoff(
+          path.join(folder, EXECUTIONS),
+          this.#executionsDir,
+          id,
+          leaseHeld ? { leaseHeld } : {},
+        );
+        if (restored === 'installed') {
+          const store = executionStoreEntries(id, this.#executionsDir);
+          made.push(store.state, store.cancellation, store.directory);
+        }
       }
       const providers = this.#providers;
       if (providers) {

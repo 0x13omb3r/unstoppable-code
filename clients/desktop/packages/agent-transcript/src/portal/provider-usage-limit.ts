@@ -21,6 +21,7 @@ import {
   AI_CREDITS_NO_BILLING_SOURCE_EVENT_FLAG,
   AI_CREDITS_NO_BILLING_SOURCE_MESSAGE,
   AI_CREDITS_PROXY_ERROR_MARKER,
+  parseCanopyProxyError,
   type CanopyProxyError,
 } from '@canopy/protocol';
 import { normalizeEpochMs } from '../lib/epoch-ms';
@@ -247,19 +248,39 @@ function claudeHostedErrorMessage(event: UnknownRecord): string | undefined {
 }
 
 /**
- * Narrow, text-derived Claude refusal detection. Main must additionally gate on
- * the route actually used by the failing request; this cannot prove provenance.
+ * Claude refusal detection, including SDK frames whose HTTP body was stripped.
+ * Main must gate on the hosted route actually used; status cannot prove it.
  */
 export function detectClaudeHostedNoBillingSource(
   event: unknown,
 ): CanopyProxyError | null {
-  if (
-    !isRecord(event) ||
-    !isAiCreditsFailureEventShape(event, 'claude') ||
-    hasClaudeProxyFailureEvidence(event)
-  )
+  if (!isRecord(event) || !isAiCreditsFailureEventShape(event, 'claude'))
     return null;
   const message = claudeHostedErrorMessage(event)?.trim();
+  const renderedStatus = /^API Error: (\d{3})\b/.exec(message ?? '');
+  const status =
+    'api_error_status' in event
+      ? readClaudeApiErrorStatus(event)
+      : renderedStatus
+        ? Number(renderedStatus[1])
+        : undefined;
+  const parsed = message ? parseCanopyProxyError(message) : null;
+  // A surviving explicit code wins, including unknown codes' generic fallback.
+  // When only the marker survives, the trusted HTTP status restores recovery.
+  if (
+    parsed &&
+    (parsed.code !== 'proxy_internal_error' || /"code"\s*:/.test(message ?? ''))
+  )
+    return parsed;
+  if (status === 401 || status === 503) {
+    return {
+      code: status === 401 ? 'credentials_unavailable' : 'upstream_unavailable',
+      message: null,
+      correlationId: parsed?.correlationId ?? null,
+    };
+  }
+  if (parsed) return parsed;
+  if (hasClaudeProxyFailureEvidence(event)) return null;
   const prefixedMessage = `API Error: 402 ${AI_CREDITS_NO_BILLING_SOURCE_MESSAGE}`;
   if (
     message !== AI_CREDITS_NO_BILLING_SOURCE_MESSAGE &&
@@ -271,13 +292,13 @@ export function detectClaudeHostedNoBillingSource(
   // too, so it must be normalized with the result; its exact rendered prefix is
   // the same text-derived status fallback `readClaudeApiErrorStatus` applies to
   // `result`, and a present status field still takes precedence.
-  const status =
+  const billingStatus =
     event.type === 'assistant' && !('api_error_status' in event)
       ? message === prefixedMessage
         ? 402
         : undefined
       : readClaudeApiErrorStatus(event);
-  if (status !== 402) return null;
+  if (billingStatus !== 402) return null;
   // A structured status must not override a conflicting rendered status.
   if (typeof event.result === 'string') {
     const renderedStatus = /^API Error: (\d{3})\b/.exec(event.result.trim());

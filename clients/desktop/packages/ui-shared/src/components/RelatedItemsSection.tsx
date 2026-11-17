@@ -1,3 +1,4 @@
+import { ControlButton } from './Button';
 import type { JSX } from 'react';
 import type { UnifiedEntryKind } from '@canopy/protocol/unified-entry';
 import { CUSTOMIZE_ROW_GRID_CLASS } from '../lib/customize-grid';
@@ -56,17 +57,13 @@ export function RelatedItemsSection({
   if (hideWhenEmpty && items.length === 0) return <></>;
   const list = presentation === 'list';
   return (
-    <section data-testid={testId}>
-      <Heading
-        level={3}
-        variant="title"
-        className={description ? 'mb-1' : 'mb-3'}
-      >
-        {title}
-      </Heading>
-      {description && (
-        <p className="text-xs fg-secondary mb-3">{description}</p>
-      )}
+    <section data-testid={testId} className="flex flex-col gap-3">
+      <div className="flex flex-col gap-1">
+        <Heading level={3} variant="title">
+          {title}
+        </Heading>
+        {description && <p className="text-xs fg-secondary">{description}</p>}
+      </div>
       {loading ? null : items.length === 0 ? (
         <p className="text-xs fg-secondary" data-testid={`${testId}-empty`}>
           {emptyLabel}
@@ -80,7 +77,7 @@ export function RelatedItemsSection({
           className={list ? CUSTOMIZE_ROW_GRID_CLASS : 'flex flex-col gap-2'}
         >
           {items.map((item) => (
-            <button
+            <ControlButton
               key={item.key}
               type="button"
               onClick={item.onOpen}
@@ -89,11 +86,8 @@ export function RelatedItemsSection({
               // the sidebar rows, SidebarPageNav), and it lives here rather
               // than at a call site: hosts render this primitive as-is, and a
               // restyling class on a shared component is a design-lint error.
-              className={
-                list
-                  ? 'focus-ring -ml-4 flex w-full min-w-0 cursor-pointer items-center gap-3 rounded-xl px-4 py-2.5 text-left transition-colors hover:bg-subtle pointer-coarse:min-h-11'
-                  : 'w-full flex items-start gap-3 p-3 rounded-lg border cursor-pointer hover:bg-subtle text-left'
-              }
+              presentation="customize-related-item"
+              appearance={{ list }}
             >
               {list && item.icon === undefined && (
                 <span
@@ -152,7 +146,7 @@ export function RelatedItemsSection({
                   </p>
                 )}
               </div>
-            </button>
+            </ControlButton>
           ))}
         </div>
       )}

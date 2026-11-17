@@ -7,7 +7,7 @@ import type {
   ShowFilesRendererRequest,
   ShowFilesRendererResult,
 } from '@canopy/desktop-shared/types';
-import { APP_ADVISOR_PROJECT_ID } from '@canopy/desktop-shared/types';
+import { isBotProjectId } from '@canopy/protocol/chat-targets';
 import {
   isRichDocumentRenderKind,
   resolveFileRenderKind,
@@ -280,7 +280,7 @@ export async function showFilesInRenderer(
   const { projectId, worktreeId } = payload.target;
   const target = { projectId, worktreeId };
   if (surface === 'app-advisor') {
-    if (projectId !== APP_ADVISOR_PROJECT_ID) {
+    if (!isBotProjectId(projectId)) {
       return {
         opened: 0,
         failed: payload.files.length,

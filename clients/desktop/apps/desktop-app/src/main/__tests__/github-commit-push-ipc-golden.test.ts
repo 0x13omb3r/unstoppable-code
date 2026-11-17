@@ -346,9 +346,15 @@ async function traceGit<T>(
   }
   return { result, commands };
 }
+/**
+ * The worker pushes exactly the commit it checked, as
+ * `<sha>:refs/heads/<branch>`, never HEAD as it stands by then (CAN-6869),
+ * and sets the upstream afterwards.
+ */
+const PINNED_PUSH = /^[0-9a-f]{40}:refs\/heads\/\S+$/;
 function expectPushWithoutForce(commands: string[][]): void {
   expect(commands.filter((args) => args[0] === 'push')).toEqual([
-    ['push', '-u', 'origin', 'HEAD'],
+    ['push', 'origin', expect.stringMatching(PINNED_PUSH)],
   ]);
   for (const args of commands) {
     expect(
@@ -830,7 +836,9 @@ describe('github:push-only baseline', () => {
     const { result, commands } = await traceGit(() => push('nff'));
     expectPushWithoutForce(commands);
     const error = result.failedRepos[0]?.error;
-    expect(error).toMatch(/^Command failed: \S+ push -u origin HEAD\n/);
+    expect(error).toMatch(
+      /^Command failed: \S+ push origin [0-9a-f]{40}:refs\/heads\/\S+\n/,
+    );
     expect(error).toMatch(/\[rejected\].*(fetch first|non-fast-forward)/);
     exact(result, failedResponse(error, false));
     if (error === undefined)
@@ -927,7 +935,9 @@ it('commit-and-push keeps the local commit after a non-fast-forward rejection', 
   const { result, commands } = await traceGit(() => ship('ship-nff'));
   expectPushWithoutForce(commands);
   const error = result.failedRepos[0]?.error;
-  expect(error).toMatch(/^Command failed: \S+ push -u origin HEAD\n/);
+  expect(error).toMatch(
+    /^Command failed: \S+ push origin [0-9a-f]{40}:refs\/heads\/\S+\n/,
+  );
   expect(error).toMatch(/\[rejected\].*(non-fast-forward|fetch first)/);
   if (error === undefined) throw new Error('Expected the failed push message');
   exact(result, failedResponse(error, true));
@@ -1393,7 +1403,9 @@ for (const shipping of [true, false]) {
     // Fixture commands use `git -C`; only the application's push starts with `push`.
     expectPushWithoutForce(commands);
     const error = result.failedRepos[0]?.error;
-    expect(error).toMatch(/^Command failed: \S+ push -u origin HEAD\n/);
+    expect(error).toMatch(
+      /^Command failed: \S+ push origin [0-9a-f]{40}:refs\/heads\/\S+\n/,
+    );
     expect(error).toMatch(/\[rejected\].*(non-fast-forward|fetch first)/);
     exact(result, failedResponse(error, shipping));
     expect(remote).toMatch(/^[a-f0-9]{40}$/);
@@ -1489,7 +1501,7 @@ for (const shipping of [true, false]) {
       >(() => (shipping ? ship : push)(name));
       const error = result.failedRepos[0]?.error;
       expect(error).toMatch(
-        /^Command failed: \S+ push -u origin HEAD\nfatal: Authentication failed for 'https:\/\/github.com\/golden\/repo.git'\n/,
+        /^Command failed: \S+ push origin [0-9a-f]{40}:refs\/heads\/\S+\nfatal: Authentication failed for 'https:\/\/github.com\/golden\/repo.git'\n/,
       );
       exact(result, {
         repos: [],
@@ -1680,7 +1692,9 @@ for (const shipping of [true, false]) {
       ? await ship(name, request)
       : await push(name, request);
     const error = result.failedRepos[0]?.error;
-    expect(error).toMatch(/^Command failed: \S+ push -u origin HEAD\n/);
+    expect(error).toMatch(
+      /^Command failed: \S+ push origin [0-9a-f]{40}:refs\/heads\/\S+\n/,
+    );
     expect(error).toContain('multi push veto');
     exact(result, {
       repos: [

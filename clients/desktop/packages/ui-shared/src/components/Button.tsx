@@ -1,3 +1,16 @@
+export { DROPDOWN_TRIGGER_INTERACTION_CLASS } from './control-button-shared';
+import {
+  BUTTON_PRESS_CLASS,
+  RAIL_VISIBILITY_CLASSES,
+  RAIL_INSET_CLASSES,
+  nestedIconButtonRadiusClassName,
+} from './control-button-shared';
+export { nestedIconButtonRadiusClassName } from './control-button-shared';
+export { BUTTON_PRESS_CLASS } from './control-button-shared';
+import { APP_CONTROL_RECIPES } from './app-control-recipes';
+import { DESKTOP_CONTROL_RECIPES } from './desktop-control-recipes';
+import { SHARED_CONTROL_RECIPES } from './control-button-shared';
+import { WEB_CONTROL_RECIPES } from './control-button-web';
 import {
   forwardRef,
   type ButtonHTMLAttributes,
@@ -7,7 +20,6 @@ import {
 } from 'react';
 import {
   SECONDARY_SURFACE_CLASS,
-  SECONDARY_SURFACE_HOVER_CLASS,
   SECONDARY_SURFACE_OPEN_CLASS,
 } from '../lib/row-chips';
 import { KbdChip } from './KbdChip';
@@ -98,6 +110,12 @@ interface CapsuleButtonBaseProps
    * (a model row's favorite star), where the grown area would take their taps.
    */
   touchArea?: ButtonTouchArea;
+  /** Placement of an action inside a rail's fixed-size slot. */
+  railPlacement?: {
+    coarsePointerTarget: boolean;
+    visibility: keyof typeof RAIL_VISIBILITY_CLASSES;
+    inset: keyof typeof RAIL_INSET_CLASSES;
+  };
 }
 
 export type ButtonTouchArea = 'expanded' | 'contained';
@@ -155,6 +173,7 @@ interface LinkButtonProps
   quietWhenDisabled?: undefined;
   readOnlyAppearance?: undefined;
   touchArea?: undefined;
+  railPlacement?: undefined;
 }
 
 type CostRowButtonVariant = 'cost-row-stack' | 'cost-row-inline';
@@ -174,7 +193,6 @@ export type ButtonProps =
  * or a property list that names `scale`: Tailwind's `scale-*` sets
  * the CSS `scale` property, which a plain `transform` entry does not ease.
  */
-export const BUTTON_PRESS_CLASS = 'duration-150 active:scale-97';
 
 /**
  * How a dropdown trigger behaves under the pointer: the secondary `Button`'s
@@ -182,7 +200,6 @@ export const BUTTON_PRESS_CLASS = 'duration-150 active:scale-97';
  * `Select`, `SettingsSelect`, and the `PickerTrigger` field variant all use
  * it; each keeps its own field shape and edge.
  */
-export const DROPDOWN_TRIGGER_INTERACTION_CLASS = `${BUTTON_PRESS_CLASS} ${SECONDARY_SURFACE_HOVER_CLASS} ${SECONDARY_SURFACE_OPEN_CLASS}`;
 
 /**
  * An invalid dropdown (`aria-invalid` on its trigger) takes the field
@@ -295,11 +312,6 @@ const SIZE_RADIUS_CLASS_NAMES: Record<ButtonSize, string> = {
  * subtracts 2px from the row radius. A control that fills the row keeps its
  * radius. Shared with the rail's native section/destructive tones.
  */
-export function nestedIconButtonRadiusClassName(size: ButtonSize): string {
-  return size === 'md' || size === 'lg'
-    ? 'rounded-row'
-    : 'rounded-[max(0px,calc(var(--radius-row)-2px))]';
-}
 
 // On a coarse pointer the `before:` hit area grows to 44px: up and down for
 // every button, and sideways too for an icon-only one. `touchArea="contained"`
@@ -527,6 +539,66 @@ export function buttonClassName({
   return `${position}${BASE_CLASS_NAME} ${states} ${VARIANT_CLASS_NAMES[variant]} ${heightClassName} ${radiusClassName} ${contentSizeClassName} ${className}`;
 }
 
+const CONTROL_RECIPES = {
+  ...APP_CONTROL_RECIPES,
+  ...DESKTOP_CONTROL_RECIPES,
+  ...SHARED_CONTROL_RECIPES,
+  ...WEB_CONTROL_RECIPES,
+};
+
+type ControlAppearance = {
+  [Name in keyof typeof CONTROL_RECIPES]: (typeof CONTROL_RECIPES)[Name] extends (
+    appearance: infer State,
+  ) => string
+    ? State
+    : undefined;
+};
+
+const controlRecipes: {
+  [Name in keyof ControlAppearance]:
+    | string
+    | ((appearance: ControlAppearance[Name]) => string);
+} = CONTROL_RECIPES;
+
+export type ControlButtonPresentation = keyof ControlAppearance;
+
+export type ControlButtonProps = ButtonHTMLAttributes<HTMLButtonElement> &
+  {
+    [Name in ControlButtonPresentation]: {
+      readonly presentation: Name;
+    } & (ControlAppearance[Name] extends undefined
+      ? { readonly appearance?: undefined }
+      : { readonly appearance: ControlAppearance[Name] });
+  }[ControlButtonPresentation];
+
+function controlButtonClasses<Name extends ControlButtonPresentation>(
+  presentation: Name,
+  appearance: ControlAppearance[Name] | undefined,
+): string {
+  const recipe = controlRecipes[presentation];
+  if (typeof recipe === 'string') return recipe;
+  return appearance === undefined ? '' : recipe(appearance);
+}
+
+/** A native control whose paint and geometry belong to a named widget. */
+export const ControlButton = forwardRef<HTMLButtonElement, ControlButtonProps>(
+  function ControlButton(
+    { presentation, appearance, className, type = 'button', ...props },
+    ref,
+  ): JSX.Element {
+    const recipe = controlButtonClasses(presentation, appearance);
+    return (
+      <button
+        {...props}
+        ref={ref}
+        type={type}
+        data-control={presentation}
+        className={className ? `${recipe} ${className}` : recipe}
+      />
+    );
+  },
+);
+
 /**
  * Canonical action button shared by desktop and web.
  *
@@ -548,6 +620,7 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(
       readOnlyAppearance = false,
       busyAppearance = 'default',
       touchArea = 'expanded',
+      railPlacement,
       type = 'button',
       className = '',
       style,
@@ -558,9 +631,24 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(
     ref,
   ): JSX.Element {
     const withShortcut = !iconOnly && shortcut !== undefined && shortcut !== '';
-    const placementClassName = withShortcut
-      ? `${SHORTCUT_END_PADDING_CLASS_NAMES[size]} ${className}`
-      : className;
+    const railClasses = railPlacement
+      ? [
+          railPlacement.coarsePointerTarget
+            ? ''
+            : 'pointer-coarse:before:hidden',
+          RAIL_VISIBILITY_CLASSES[railPlacement.visibility],
+          RAIL_INSET_CLASSES[railPlacement.inset],
+        ]
+          .filter(Boolean)
+          .join(' ')
+      : '';
+    const placementClassName = [
+      withShortcut ? SHORTCUT_END_PADDING_CLASS_NAMES[size] : '',
+      className,
+      railClasses,
+    ]
+      .filter(Boolean)
+      .join(' ');
     const preserveBusyAppearance =
       busyAppearance === 'preserved' &&
       (props['aria-busy'] === true || props['aria-busy'] === 'true');

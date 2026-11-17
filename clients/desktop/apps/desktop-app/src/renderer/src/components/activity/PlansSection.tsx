@@ -1,5 +1,13 @@
+import { ControlButton } from '@canopy/ui-shared/components';
 import { ActivityPlanCard } from '@canopy/ui-shared/components';
-import { useCallback, useEffect, useMemo, useState, type JSX } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useId,
+  useMemo,
+  useState,
+  type JSX,
+} from 'react';
 import type {
   DetectedPlanEntry,
   TrackedPlanData,
@@ -130,23 +138,17 @@ function PlanCard({
     }
   };
 
+  const titleId = useId();
+
   return (
     <ActivityPlanCard
       key={plan.id}
-      role="button"
-      tabIndex={0}
       data-testid={`activity-plan-row-${plan.id}`}
       onClick={onOpen}
-      onKeyDown={(e): void => {
-        if (
-          e.target === e.currentTarget &&
-          (e.key === 'Enter' || e.key === ' ')
-        ) {
-          e.preventDefault();
-          onOpen();
-        }
-      }}
     >
+      {/* The native button gives the card a keyboard target. Pointer events
+          reach the card from its content, including the imported path title. */}
+      <ControlButton presentation="plan-card" aria-labelledby={titleId} />
       {!readOnly && (
         <div className="absolute right-2 top-2 opacity-0 transition-opacity focus-within:opacity-100 group-hover/plan:opacity-100">
           <Button
@@ -168,7 +170,10 @@ function PlanCard({
       <div className="flex items-start gap-2 pr-6">
         <PlanSourceMark source={plan.source} className="mt-0.5 shrink-0" />
         <Stack gap="tight" className="min-w-0 flex-1">
-          <div className="truncate text-s font-semibold fg-primary">
+          <div
+            className="truncate text-s font-semibold fg-primary"
+            id={titleId}
+          >
             <Markdown options={INLINE_PLAN_MARKDOWN_OPTIONS}>
               {plan.title}
             </Markdown>

@@ -2,6 +2,7 @@ import {
   APP_ADVISOR_PROJECT_ID,
   APP_ADVISOR_WORKTREE_ID,
 } from '@canopy/desktop-shared/types';
+import { isBotProjectId } from '@canopy/protocol/chat-targets';
 import { assertWorktreeCanBeRemoved } from '../agents/background-work';
 import {
   buildSessionKey,
@@ -88,7 +89,7 @@ async function injectE2eProviderEventDuringWorkEntryTeardown(
 }
 
 /**
- * Tells the Ledger that a Cowork or App Advisor Work Entry was archived with
+ * Tells the Ledger that a Bot or Cowork Work Entry was archived with
  * retention or permanently deleted, so its scope becomes read-only or retires.
  * Call only after the entry row is irreversibly removed. The participant
  * returns at once, so no deletion lock is held while it waits on storage.
@@ -124,6 +125,7 @@ async function archiveWorkEntryWithoutOperationLock({
   validateId(workspaceId, 'workspaceId');
   validateId(entryId, 'entryId');
   if (
+    // Default Bot only: protect its legacy global work-entry slot.
     workspaceId === APP_ADVISOR_PROJECT_ID &&
     entryId === APP_ADVISOR_WORKTREE_ID
   ) {
@@ -197,7 +199,7 @@ async function archiveWorkEntryWithoutOperationLock({
       await destroyWorktreeSessions(workspaceId, entryId);
       sessionsDestroyed = true;
       await chatStateService.runWithScopeDeletion(scope, async () => {
-        if (workspaceId !== APP_ADVISOR_PROJECT_ID) {
+        if (!isBotProjectId(workspaceId)) {
           const summaries = await listWorkEntryChatSummaries(workspaceId);
           removedChatIds =
             summaries
@@ -258,7 +260,7 @@ async function archiveWorkEntryWithoutOperationLock({
       }
     }
   });
-  if (workspaceId !== APP_ADVISOR_PROJECT_ID) {
+  if (!isBotProjectId(workspaceId)) {
     // Keep the large standalone-chat service graph off Electron startup;
     // work-entry archival does not need it until cowork removal runs.
     const { emitStandaloneChatRemovals } =

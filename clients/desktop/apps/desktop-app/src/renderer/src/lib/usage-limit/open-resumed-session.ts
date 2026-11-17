@@ -5,7 +5,6 @@
  * cowork normalization stay in one place. Nothing here changes the queue.
  */
 import {
-  APP_ADVISOR_PROJECT_ID,
   COWORK_HOME_WORKTREE_ID,
   STANDALONE_CHAT_PROJECT_ID,
   type ResumeQueueEntry,
@@ -13,6 +12,7 @@ import {
   type UsageLimitedChatTarget,
   type UsageLimitedSessionTarget,
 } from '@canopy/desktop-shared/types';
+import { isBotProjectId } from '@canopy/protocol/chat-targets';
 import { reportClientAppError } from '@canopy/desktop-instrumentation/client';
 import {
   automationRunDestinationLabel,
@@ -41,7 +41,7 @@ export function usageLimitedChatDestination(
     return { kind: 'none', reason: 'That chat is no longer available.' };
   }
   const turn = userMessageId ? { userMessageId } : {};
-  if (target.projectId === APP_ADVISOR_PROJECT_ID) {
+  if (isBotProjectId(target.projectId)) {
     return { kind: 'app-advisor-chat', chatId: target.chatId, ...turn };
   }
   if (!target.worktreeId.trim()) {

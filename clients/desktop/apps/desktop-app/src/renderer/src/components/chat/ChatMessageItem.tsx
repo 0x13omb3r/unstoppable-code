@@ -251,6 +251,7 @@ export const ChatMessageItem = memo(function ChatMessageItem({
               isCodeReviewChat={isCodeReviewChat}
               stripAgentCitations={message.role === 'assistant'}
               isSystemMessage={message.role === 'system'}
+              isAssistantMessage={message.role === 'assistant'}
               progressiveMarkdown={
                 message.role === 'assistant' &&
                 turnExpanded &&

@@ -1,6 +1,5 @@
 import type { ResolvedPipelinePluginCollectionSnapshot } from '@canopy/execution-engine/types/pipeline';
 import { normalizePluginSelections } from '@canopy/execution-engine/lib/plugin-selections-normalization';
-import type { ExecutionRuntime } from '../executor/types';
 
 /*
  * A daemon run's plugin collections (CAN-5832): its core resolves them at
@@ -98,25 +97,4 @@ export function parseLaunchPluginCollections(
     snapshots[id] = snapshot;
   }
   return snapshots;
-}
-
-/** The executor's collection resolver over a launch's snapshots. */
-export function launchPluginCollectionResolver(
-  snapshots: Readonly<Record<string, ResolvedPipelinePluginCollectionSnapshot>>,
-): NonNullable<ExecutionRuntime['resolvePipelinePluginCollections']> {
-  return (collections) => {
-    const resolved: Record<string, ResolvedPipelinePluginCollectionSnapshot> =
-      {};
-    for (const { id } of collections ?? []) {
-      const snapshot = snapshots[id];
-      if (snapshot === undefined)
-        return Promise.reject(
-          new Error(
-            `Plugin collection "${id}" was not resolved for this execution.`,
-          ),
-        );
-      resolved[id] = snapshot;
-    }
-    return Promise.resolve({ snapshots: resolved });
-  };
 }

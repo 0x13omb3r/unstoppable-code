@@ -6,8 +6,10 @@ import {
   customizeEntryIsCopyOfSharedWithViewer,
   customizeEntrySharedWithViewer,
   customizeSkillMatch,
+  type CustomizeDefaultHarness,
   type CustomizeDiscoveryFilters,
   type CustomizeSkillMatch,
+  DEFAULT_CUSTOMIZE_HARNESS,
   DEFAULT_PIPELINE_FILTERS,
   entryHasInstalledStatus,
   isBundledSkill,
@@ -34,6 +36,7 @@ import {
   pipelineMatchesFilters,
 } from './marketplaceBrowse';
 import { searchUnifiedEntries } from './unifiedPluginEntries';
+import { mergeCustomizeIntegrations } from './customizeIntegrationRows';
 
 export const CUSTOMIZE_INSTALLED_PREVIEW_LIMIT = 8;
 
@@ -119,6 +122,12 @@ export interface CustomizeTabModelInput {
    * shared with the viewer. Read only while `discoveryFilters` is set.
    */
   readonly sharedWithMeOnly?: boolean;
+  /**
+   * New Customize (CAN-6811): the harness whose copy an integration row
+   * shows and installs. Read only while `discoveryFilters` is set; Claude
+   * Code when omitted.
+   */
+  readonly defaultHarness?: CustomizeDefaultHarness;
 }
 
 export interface CustomizeTabModel {
@@ -581,6 +590,24 @@ export function buildCustomizeTabModel(
   // its plugin; every other view keeps listing them as the plugin (CAN-3653).
   const keepPluginProvided = searchActive && input.tab === 'app';
   const candidates = unique(input.entries);
+  // New Customize's filter menu (CAN-6809); every entry passes while it is off.
+  const discoveryFilters = input.discoveryFilters;
+  const discovery = discoveryFilters !== undefined;
+  // New Customize lists each integration once (CAN-6811): the copies that
+  // share an integration key collapse into one row on every tab and in
+  // search. Tabs, filters and search read every copy the row stands for.
+  const integrationRows = discovery
+    ? mergeCustomizeIntegrations(
+        candidates,
+        input.defaultHarness ?? DEFAULT_CUSTOMIZE_HARNESS,
+        input.installedStatusStates,
+      )
+    : undefined;
+  const rowCandidates = integrationRows?.rows ?? candidates;
+  const membersOf = (
+    entry: UnifiedPluginEntry,
+  ): readonly UnifiedPluginEntry[] =>
+    integrationRows?.membersOf.get(entry.id) ?? [entry];
   // A plugin's skills, for the skill tier of New Customize's search order.
   const bundledSkillNames = new Map<string, string[]>();
   for (const entry of candidates) {
@@ -589,29 +616,30 @@ export function buildCustomizeTabModel(
     names.push(entry.name);
     bundledSkillNames.set(entry.bundledBy.entryId, names);
   }
-  const skillNamesOf = (entry: UnifiedPluginEntry): readonly string[] => [
-    ...new Set([
-      ...(bundledSkillNames.get(entry.id) ?? []),
-      ...(entry.bundledSkillNames ?? []),
-      ...(entry.marketplaceListings ?? []).flatMap((listing) =>
-        listing.id === entry.id
-          ? []
-          : [
-              ...(bundledSkillNames.get(listing.id) ?? []),
-              ...(listing.bundledSkillNames ?? []),
-            ],
-      ),
-    ]),
+  const copySkillNames = (entry: UnifiedPluginEntry): readonly string[] => [
+    ...(bundledSkillNames.get(entry.id) ?? []),
+    ...(entry.bundledSkillNames ?? []),
+    ...(entry.marketplaceListings ?? []).flatMap((listing) =>
+      listing.id === entry.id
+        ? []
+        : [
+            ...(bundledSkillNames.get(listing.id) ?? []),
+            ...(listing.bundledSkillNames ?? []),
+          ],
+    ),
   ];
-  // New Customize's filter menu (CAN-6809); every entry passes while it is off.
-  const discoveryFilters = input.discoveryFilters;
-  const discovery = discoveryFilters !== undefined;
+  const skillNamesOf = (entry: UnifiedPluginEntry): readonly string[] => [
+    ...new Set(membersOf(entry).flatMap(copySkillNames)),
+  ];
   // New Customize keeps a plugin's skills inside the plugin (CAN-6812): no
   // bundled skill gets its own row, the plugin row stands for them and a
   // search reaches the plugin through them.
   // A plugin, or the integration card a plugin folded into on desktop.
   const standsForPlugin = (entry: UnifiedPluginEntry): boolean =>
-    entry.kind === 'plugin' || entry.integration?.plugin !== undefined;
+    membersOf(entry).some(
+      (copy) =>
+        copy.kind === 'plugin' || copy.integration?.plugin !== undefined,
+    );
   const skillMatchOf = (
     entry: UnifiedPluginEntry,
   ): CustomizeSkillMatch | undefined =>
@@ -621,12 +649,37 @@ export function buildCustomizeTabModel(
   // On the Skills tab the plugin row replaces its skill rows: an installed
   // plugin whose skills were listed, or any plugin a search reached through
   // a skill.
+  // New Customize files an integration under what it includes (CAN-6811):
+  // its row is on every tab one of its copies is on, and a plugin that
+  // bundles an MCP server puts it on MCP servers too. PostHog's plugin and
+  // MCP server show one row on All, Plugins and MCP servers.
+  const bundledServerNamesOf = (entry: UnifiedPluginEntry): readonly string[] =>
+    membersOf(entry).flatMap((copy) =>
+      copy.kind === 'plugin'
+        ? (copy.bundledServers ?? []).map((server) => server.name)
+        : [],
+    );
+  const includesServer = (entry: UnifiedPluginEntry): boolean =>
+    membersOf(entry).some(
+      (copy) =>
+        copy.kind === 'plugin' &&
+        ((copy.bundledServers?.length ?? 0) > 0 ||
+          copy.components.mcpServers > 0),
+    );
+  // Searching MCP servers reaches a plugin through its bundled servers' names.
+  const serverMatchOf = (entry: UnifiedPluginEntry): boolean =>
+    discovery &&
+    searchActive &&
+    input.tab === 'app' &&
+    customizeSkillMatch(bundledServerNamesOf(entry), query) !== undefined;
   const inTab = (entry: UnifiedPluginEntry): boolean =>
-    marketplaceEntryInTab(entry, input.tab) ||
+    membersOf(entry).some((copy) => marketplaceEntryInTab(copy, input.tab)) ||
+    (discovery && input.tab === 'app' && includesServer(entry)) ||
     (discovery &&
       input.tab === 'skill' &&
       standsForPlugin(entry) &&
-      (bundledSkillNames.has(entry.id) || skillMatchOf(entry) !== undefined));
+      (membersOf(entry).some((copy) => bundledSkillNames.has(copy.id)) ||
+        skillMatchOf(entry) !== undefined));
   const hasUpdate = (entry: UnifiedPluginEntry): boolean =>
     entryHasUpdate(entry, input.supportedUpdateKinds);
   const sharedWithMeOnly = discovery && input.sharedWithMeOnly === true;
@@ -648,25 +701,56 @@ export function buildCustomizeTabModel(
         )
       : [],
   );
+  // An integration row's status is its own; Source and Works with match
+  // when one of its copies does (CAN-6811).
+  const discoveryFilterMatches = (
+    entry: UnifiedPluginEntry,
+    filters: CustomizeDiscoveryFilters,
+  ): boolean => {
+    const installed = marketplaceEntryIsInstalled(
+      entry,
+      isBundledSkill(entry) ? undefined : input.installedStatusStates,
+    );
+    const copies = membersOf(entry);
+    if (copies.length < 2)
+      return customizeDiscoveryEntryMatches(
+        entry,
+        filters,
+        installed,
+        hasUpdate(entry),
+      );
+    return (
+      customizeDiscoveryEntryMatches(
+        entry,
+        { ...filters, source: null, harnesses: [] },
+        installed,
+        hasUpdate(entry),
+      ) &&
+      copies.some((copy) =>
+        customizeDiscoveryEntryMatches(
+          copy,
+          { ...filters, status: 'any' },
+          installed,
+        ),
+      )
+    );
+  };
   const matchesDiscovery = (entry: UnifiedPluginEntry): boolean =>
     appliedDiscoveryFilters === undefined ||
-    (customizeDiscoveryEntryMatches(
-      entry,
-      appliedDiscoveryFilters,
-      marketplaceEntryIsInstalled(
-        entry,
-        isBundledSkill(entry) ? undefined : input.installedStatusStates,
-      ),
-      hasUpdate(entry),
-    ) &&
+    (discoveryFilterMatches(entry, appliedDiscoveryFilters) &&
       (!sharedWithMeOnly ||
         customizeEntrySharedWithViewer(entry) ||
         customizeEntryIsCopyOfSharedWithViewer(entry) ||
         sharedWithMeInstallIds.has(entry.id)));
   const tabEntries = (
     keepPluginProvided
-      ? [...candidates, ...pluginServerResults(candidates)]
-      : candidates
+      ? [
+          ...rowCandidates,
+          // New Customize lists a plugin that bundles a server as its own row
+          // on MCP servers (CAN-6811), so no separate server result.
+          ...(discovery ? [] : pluginServerResults(candidates)),
+        ]
+      : rowCandidates
   ).filter(
     (entry) =>
       (keepPluginProvided || !listedAsItsPlugin(entry)) &&
@@ -678,19 +762,26 @@ export function buildCustomizeTabModel(
       matchesDiscovery(entry),
   );
   // Ranked search determines matching identities; section order remains stable.
-  const matchIds = (rows: UnifiedPluginEntry[]): Set<string> | null =>
-    searchActive
-      ? new Set(
-          marketplaceResultEntries(searchUnifiedEntries(rows, query, null))
-            .map((entry) => entry.id)
-            .concat(input.searchMatchedEntryIds ?? [])
-            .concat(
-              rows.flatMap((entry) =>
-                skillMatchOf(entry) === undefined ? [] : [entry.id],
-              ),
-            ),
-        )
-      : null;
+  // An integration row matches when any copy it stands for does (CAN-6811).
+  const matchIds = (rows: UnifiedPluginEntry[]): Set<string> | null => {
+    if (!searchActive) return null;
+    const copies = rows.flatMap((row) => membersOf(row));
+    const matched = new Set(
+      marketplaceResultEntries(searchUnifiedEntries(copies, query, null))
+        .map((entry) => entry.id)
+        .concat(input.searchMatchedEntryIds ?? []),
+    );
+    return new Set(
+      rows.flatMap((row) =>
+        matched.has(row.id) ||
+        membersOf(row).some((copy) => matched.has(copy.id)) ||
+        skillMatchOf(row) !== undefined ||
+        serverMatchOf(row)
+          ? [row.id]
+          : [],
+      ),
+    );
+  };
   const matches = matchIds(tabEntries);
   const matchedGroups = new Set(
     matches === null
@@ -809,7 +900,10 @@ export function buildCustomizeTabModel(
       installed,
       {
         inventoryState: input.installedInventory,
-        ...(INSTALLED_FOOTNOTES[input.tab]
+        // New Customize lists a plugin's servers as the plugin on MCP
+        // servers itself (CAN-6811), so that tab's footnote no longer applies.
+        ...(INSTALLED_FOOTNOTES[input.tab] &&
+        !(discovery && input.tab === 'app')
           ? { footnote: INSTALLED_FOOTNOTES[input.tab] }
           : {}),
         ...(visibleInstalled.some(isBundledSkill)

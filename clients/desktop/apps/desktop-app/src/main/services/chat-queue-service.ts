@@ -456,7 +456,7 @@ interface ChatQueueEntry {
   heldRetryDelayMs?: number;
   /** A durably restored row waiting for a user or auth retry trigger. */
   externalRetryParked?: true;
-  /** A refused queued turn is retained until explicit funded Retry. */
+  /** A refused queued turn waits until owner-scoped funding is confirmed. */
   creditHold?: { funded: boolean; refresh?: Promise<void> };
   creditRetryCandidate?: HostQueuedMessage;
   /** Ephemeral native-work refusal; never restored from persisted queue state. */
@@ -5655,13 +5655,16 @@ export class ChatQueueService {
     if (this.startupDrainHeld) return;
     if (entry.creditHold) {
       await this.refreshCreditHold(entry);
-      if (
-        entry.creditHold &&
-        !entry.creditHold.funded &&
-        entry.queue.length > 0
-      )
-        this.scheduleDrain(target, entry, 5000);
-      return;
+      if (this.entries.get(chatQueueKey(target)) !== entry) return;
+      if (entry.creditHold?.funded === true) {
+        // Funding was confirmed for this work owner. Release only the credit
+        // hold; all existing serialized dispatch/setup/turn gates still apply.
+        delete entry.creditHold;
+        this.broadcastBestEffort(target, entry, false);
+      } else if (entry.creditHold) {
+        if (entry.queue.length > 0) this.scheduleDrain(target, entry, 5000);
+        return;
+      }
     }
     // Releasing the setup hold schedules the drain again.
     if (entry.worktreeSetupHold !== undefined) return;

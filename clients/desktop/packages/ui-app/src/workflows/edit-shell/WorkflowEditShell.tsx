@@ -564,7 +564,7 @@ export function WorkflowEditShell({
         }
       />
       {notices ? (
-        <div className="mt-4 flex shrink-0 flex-col gap-2">{notices}</div>
+        <div className="pt-4 flex shrink-0 flex-col gap-2">{notices}</div>
       ) : null}
       <div
         role="tabpanel"

@@ -1,3 +1,4 @@
+import type { ProviderSourceId } from '@canopy/app-state/provider-choice';
 import {
   startClientOperation,
   succeedClientOperation,
@@ -34,7 +35,17 @@ export type CreditsRecoveryAction =
   | 'account_sign_in'
   | 'credits_purchase'
   | 'retry'
-  | 'dismiss';
+  | 'dismiss'
+  /** The notice's Switch provider / Choose provider opened the list. */
+  | 'provider_switch_open'
+  /** A provider-choice row (or Continue with X) moved the chat onto a source. */
+  | 'provider_use';
+
+/**
+ * The provider-choice row a click acted on: the shared source id itself, so
+ * the `recovery_provider` values cannot drift from the resolver's rows.
+ */
+export type CreditsRecoveryProvider = ProviderSourceId;
 
 /**
  * A surface that hides and reappears for the same dead end (an auth probe
@@ -87,9 +98,13 @@ export function trackCreditsRecoveryView(options: {
 export function trackCreditsRecoveryClick(options: {
   surface: CreditsRecoverySurface;
   action: CreditsRecoveryAction;
+  provider?: CreditsRecoveryProvider;
 }): void {
   emit(CLICK_OPERATION, {
     recovery_surface: options.surface,
     recovery_action: options.action,
+    ...(options.provider !== undefined
+      ? { recovery_provider: options.provider }
+      : {}),
   });
 }

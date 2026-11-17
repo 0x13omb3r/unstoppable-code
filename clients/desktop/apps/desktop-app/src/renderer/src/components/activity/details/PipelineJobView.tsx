@@ -22,7 +22,6 @@ import {
 } from '@/lib/pipelineAttemptTimeline';
 import { Badge, StatusGlyph } from '@canopy/ui-shared/components';
 import { pipelineStatusBadge, pipelineStatusGlyphState } from '../utils';
-import { PipelineChildExecution } from './PipelineChildExecution';
 import { TimingSummaryGrid } from './PipelineStepDetailParts';
 import { PipelineStepRow } from './PipelineStepRow';
 import { usePipelineRunsStore } from '@/stores/pipelineRunsStore';
@@ -34,6 +33,7 @@ import {
   canRetryMatrixJob,
   canRetryMatrixVariant,
 } from '@/lib/execution-actions';
+import { PipelineRunChildRow } from '@canopy/ui-app';
 import { Button, ListRow } from '@canopy/ui-shared/components';
 
 function isSettledJobStatus(status: string): boolean {
@@ -450,16 +450,20 @@ function PipelineJobViewComponent({
                       }
                     />
                     {child !== undefined && (
-                      <PipelineChildExecution
-                        child={child}
+                      <PipelineRunChildRow
                         stepId={stepDef.id}
+                        label={child.pipeline_name}
                         expanded={expandedChildSteps.has(stepInstanceKey)}
                         onToggle={(): void =>
                           onToggleChildStep(stepInstanceKey)
                         }
-                        renderChildExecution={renderChildExecution}
-                        onDrillIntoChild={onDrillIntoChild}
-                      />
+                        {...(onDrillIntoChild !== undefined && {
+                          onOpen: (): void =>
+                            onDrillIntoChild(child.id, child.pipeline_name),
+                        })}
+                      >
+                        {renderChildExecution(child.id)}
+                      </PipelineRunChildRow>
                     )}
                   </div>
                 );

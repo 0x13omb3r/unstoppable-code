@@ -83,22 +83,24 @@ function FileList({
 }): JSX.Element {
   // The wrapper is stable for 1, 2, 3 and 4+ files, preserving host file state.
   return (
-    <OverlayScrollArea
-      className={inline ? 'static' : 'mx-1'}
-      viewportClassName={inline ? '' : 'max-h-30 overscroll-contain'}
-      contentClassName={inline ? '' : 'flex flex-col py-1'}
-      railClassName={inline ? 'hidden' : '-right-1'}
-      edgeFadeSize={inline ? 0 : 8}
-      viewportRef={viewportRef}
-      viewportProps={{
-        role: inline ? undefined : 'region',
-        'aria-label': inline ? undefined : label,
-        tabIndex: !inline && focusable ? 0 : undefined,
-        'data-testid': 'turn-files-scroll',
-      }}
-    >
-      {children}
-    </OverlayScrollArea>
+    <div className={inline ? 'contents' : 'px-1'}>
+      <OverlayScrollArea
+        className={inline ? 'static' : undefined}
+        viewportClassName={inline ? '' : 'max-h-30 overscroll-contain'}
+        contentClassName={inline ? '' : 'flex flex-col py-1'}
+        railClassName={inline ? 'hidden' : '-right-1'}
+        edgeFadeSize={inline ? 0 : 8}
+        viewportRef={viewportRef}
+        viewportProps={{
+          role: inline ? undefined : 'region',
+          'aria-label': inline ? undefined : label,
+          tabIndex: !inline && focusable ? 0 : undefined,
+          'data-testid': 'turn-files-scroll',
+        }}
+      >
+        {children}
+      </OverlayScrollArea>
+    </div>
   );
 }
 

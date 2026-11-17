@@ -1,4 +1,5 @@
 import { isAgentDelegationTranscript } from '@canopy/protocol/delegation';
+import { isBotProjectId } from '@canopy/protocol/chat-targets';
 import { isPlanProposal } from '@canopy/desktop-shared/plan-review';
 import { useDelegationTranscriptStore } from '../../delegationTranscriptStore';
 import {
@@ -8,7 +9,6 @@ import {
 } from '../optimistic-presentation';
 import {
   canReceiveWorktreeChatActivity,
-  isAppAdvisorChatTarget,
   isAppAdvisorWindowFocused,
   isReadOnlyAppAdvisorMirrorTarget,
   isSyntheticChatTarget,
@@ -1370,27 +1370,23 @@ export const createEventsSlice: StateCreator<
         if (isResult) {
           const eventProviderType = resolveResultNotificationProviderType(tab);
           const visibleKey = getVisibleWorktreeKey(state.selectedWorktree);
-          // App Advisor sentinel target uses BrowserWindow focus as the
-          // unread predicate. A visible-but-blurred App Advisor window still
-          // accrues unread until it comes into focus.
-          const isAppAdvisorTarget = isAppAdvisorChatTarget(
-            event.projectId,
-            event.worktreeId,
-          );
+          // Bot targets use renderer-window focus as the unread predicate. A
+          // visible-but-blurred Bot window still accrues unread until focused.
+          const isBotTarget = isBotProjectId(event.projectId);
           // A collapsed chat panel is not on screen even when it is the
           // worktree's active tab, so it is not exempt from unread.
           const activeChatHidden = state.hiddenChatTabIds.has(chatId);
           const planExploreActiveChatVisible =
-            !isAppAdvisorTarget &&
+            !isBotTarget &&
             isVisiblePlanExploreChat(event.projectId, event.worktreeId) &&
             wc.activeTabId === chatId &&
             !activeChatHidden;
           const codeReviewActiveChatVisible =
-            !isAppAdvisorTarget &&
+            !isBotTarget &&
             isVisibleCodeReviewChat(event.projectId, event.worktreeId) &&
             wc.activeTabId === chatId &&
             !activeChatHidden;
-          const shouldMarkUnread = isAppAdvisorTarget
+          const shouldMarkUnread = isBotTarget
             ? !isAppAdvisorWindowFocused()
             : !planExploreActiveChatVisible &&
               !codeReviewActiveChatVisible &&
@@ -1483,23 +1479,19 @@ export const createEventsSlice: StateCreator<
       }
 
       // Mark as unread if a turn completed while this worktree is not selected.
-      // The App Advisor sentinel target uses BrowserWindow focus instead of
-      // selected-worktree visibility — same predicate the per-tab branch
-      // above uses.
+      // Bot targets use renderer-window focus instead of selected-worktree
+      // visibility — the same predicate the per-tab branch above uses.
       const visibleKey = getVisibleWorktreeKey(state.selectedWorktree);
-      const isAppAdvisorTargetForKey = isAppAdvisorChatTarget(
-        event.projectId,
-        event.worktreeId,
-      );
+      const isBotTargetForKey = isBotProjectId(event.projectId);
       const planExploreActiveChatVisibleForKey =
-        !isAppAdvisorTargetForKey &&
+        !isBotTargetForKey &&
         isVisiblePlanExploreChat(event.projectId, event.worktreeId) &&
         wc.activeTabId === chatId;
       const codeReviewActiveChatVisibleForKey =
-        !isAppAdvisorTargetForKey &&
+        !isBotTargetForKey &&
         isVisibleCodeReviewChat(event.projectId, event.worktreeId) &&
         wc.activeTabId === chatId;
-      const targetNotVisible = isAppAdvisorTargetForKey
+      const targetNotVisible = isBotTargetForKey
         ? !isAppAdvisorWindowFocused()
         : !planExploreActiveChatVisibleForKey &&
           !codeReviewActiveChatVisibleForKey &&

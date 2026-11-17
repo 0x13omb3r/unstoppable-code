@@ -4,6 +4,7 @@ import { REPLAY_BLOCK_CLASS, REPLAY_MASK_CLASS } from '../lib/replay-privacy';
 import { ModelProviderIcon } from '../icons/ModelProviderIcon';
 import { RichHoverCard } from './RichHoverTooltip';
 import { Stack } from './Stack';
+import { EmptyStateText } from './StatusBlocks';
 
 export type ChatPreviewProviderType =
   | 'claude'
@@ -113,7 +114,12 @@ export function ChatPreviewPopover({
                 >
                   {row.markedUnread
                     ? CHAT_PREVIEW_MARKED_UNREAD_COPY
-                    : (row.preview ?? 'No response yet')}
+                    : (row.preview ?? (
+                        <EmptyStateText
+                          title="No response yet"
+                          tone="inherit"
+                        />
+                      ))}
                 </div>
                 {row.scheduleLabel ? (
                   <div className="truncate pl-4.5 text-3xs fg-secondary">

@@ -1,5 +1,5 @@
+import { ControlButton } from '@canopy/ui-shared/components';
 import type { JSX, ReactNode } from 'react';
-import { BUBBLE_BADGE_CHROME } from '@canopy/ui-shared';
 import {
   ComposerAttachmentSurface,
   IMAGE_THUMBNAIL_EDGE_CLASS,
@@ -23,15 +23,15 @@ export function AttachmentTileRemoveButton({
   readonly testId?: string;
 }): JSX.Element {
   return (
-    <button
+    <ControlButton
       type="button"
       onClick={onRemove}
       data-testid={testId}
       aria-label={`Remove ${label}`}
-      className={`${BUBBLE_BADGE_CHROME} absolute -right-1.5 -top-1.5 z-10 h-5 w-5 opacity-0 transition-opacity hover:fg-primary focus-visible:opacity-100 group-focus-within:opacity-100 group-hover:opacity-100 pointer-coarse:opacity-100`}
+      presentation="attachment-remove"
     >
       <CloseIcon size="sm" />
-    </button>
+    </ControlButton>
   );
 }
 

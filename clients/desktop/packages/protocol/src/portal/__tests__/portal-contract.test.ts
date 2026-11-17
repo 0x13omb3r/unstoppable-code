@@ -226,6 +226,25 @@ describe('changed-files paging contract compatibility', () => {
   });
 });
 
+describe('Portal terminal failure recovery contract', () => {
+  it('returns bounded authoritative results through the capability-gated small RPC', () => {
+    const command = 'portal.chat.retry_failure';
+    expect(PORTAL_COMMAND_TYPES).toContain(command);
+    expect(PORTAL_SMALL_RPC_COMMAND_TYPES.has(command)).toBe(true);
+    expect(PORTAL_DESTRUCTIVE_COMMAND_TYPES.has(command)).toBe(false);
+    const request: PortalCommandPayloadMap[typeof command] = {
+      projectId: 'project-1',
+      worktreeId: 'worktree-1',
+      chatId: 'chat-1',
+      turnId: 'prompt-1',
+      failedMessageId: 'failure-1',
+      action: 'retry',
+      idempotencyKey: 'retry-1',
+    };
+    expect(JSON.parse(JSON.stringify(request))).toEqual(request);
+  });
+});
+
 describe('Portal branch picker contract', () => {
   it('negotiates the branch catalogue independently of the existing create payload', () => {
     const command = 'portal.worktree.branches.list';

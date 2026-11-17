@@ -1,5 +1,6 @@
 'use client';
 
+import { ControlButton } from '@canopy/ui-shared/components';
 import {
   FileOverlapChoiceSurface,
   FileOverlapChangeMark,
@@ -262,19 +263,18 @@ function OverlapOption({
       data-selected={selected}
       onClick={chooseFromRow}
     >
-      <button
-        type="button"
+      <ControlButton
         aria-label={choiceLabel}
         aria-pressed={selected}
         aria-describedby={notes === null ? undefined : notesId}
         disabled={disabled}
-        className="focus-ring flex items-center gap-3 self-start rounded text-left text-s font-medium fg-primary disabled:cursor-not-allowed disabled:opacity-60"
+        presentation="compare-side-select"
         data-testid={`file-overlap-choose-${side}`}
         onClick={onChoose}
       >
         <ChoiceMark kind="radio" checked={selected} disabled={disabled} />
         {label}
-      </button>
+      </ControlButton>
       <div className="flex min-w-0 flex-col gap-1 pl-7">
         {text.length === 0 ? (
           <div

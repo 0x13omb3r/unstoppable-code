@@ -212,7 +212,19 @@ describe('Git write commands (CAN-4108)', () => {
       { kind: 'commit-message', message: '  message\n' },
       ['commit', '-m', 'message'],
     ],
-    [{ kind: 'push-head', key: 'dispatch' }, ['push', '-u', 'origin', 'HEAD']],
+    [
+      {
+        kind: 'push-head',
+        key: 'dispatch',
+        branch: 'feat/x',
+        headSha: 'a'.repeat(40),
+      },
+      ['push', 'origin', `${'a'.repeat(40)}:refs/heads/feat/x`],
+    ],
+    [
+      { kind: 'set-upstream', branch: 'feat/x' },
+      ['branch', '--set-upstream-to=refs/remotes/origin/feat/x', 'feat/x'],
+    ],
   ])(
     'plans commit/push %o without force or timeout and refuses it on win32',
     (write, args) => {
@@ -234,7 +246,11 @@ describe('Git write commands (CAN-4108)', () => {
     { kind: 'commit-message', message: 'a\0b' },
     { kind: 'commit-message', message: 'a'.repeat(100001) },
     { kind: 'tracking-head-sha', branch: '-bad' },
-    { kind: 'push-head', key: '' },
+    { kind: 'push-head', key: '', branch: 'main', headSha: 'a'.repeat(40) },
+    { kind: 'push-head', key: 'k', branch: 'main', headSha: 'HEAD' },
+    { kind: 'push-head', key: 'k', branch: '-f', headSha: 'a'.repeat(40) },
+    { kind: 'push-head', key: 'k' },
+    { kind: 'set-upstream', branch: '--bad' },
   ])('rejects invalid commit/push argv %o', (write) => {
     expect(
       refusalCode(() => gitWriteCommandFor('linux', write, environment)),
@@ -430,7 +446,12 @@ posix('Git write host', () => {
     );
     await expect(
       host.port.run(
-        { kind: 'push-head', key: 'one-dispatch' },
+        {
+          kind: 'push-head',
+          key: 'one-dispatch',
+          branch: 'main',
+          headSha: 'a'.repeat(40),
+        },
         dir,
         environment,
       ),
@@ -494,7 +515,12 @@ posix('Git write host', () => {
       {},
     );
     const running = host.port.run(
-      { kind: 'push-head', key: 'pending' },
+      {
+        kind: 'push-head',
+        key: 'pending',
+        branch: 'main',
+        headSha: 'a'.repeat(40),
+      },
       dir,
       environment,
     );

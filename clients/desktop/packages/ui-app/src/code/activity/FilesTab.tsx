@@ -1,6 +1,6 @@
 'use client';
 
-import { FileViewControls } from '@canopy/ui-shared/components';
+import { Chip, FileViewControls } from '@canopy/ui-shared/components';
 import {
   useEffect,
   useId,
@@ -810,12 +810,14 @@ export function FilesTab({
   const searchBody = (
     <>
       {search?.error !== undefined ? (
-        <ErrorBanner
-          errorSource="files-tree-search-error"
-          className="mx-2 my-2"
-          error={search.error}
-          testId="files-tree-search-error"
-        />
+        <div className="px-2 py-2 empty:hidden">
+          <ErrorBanner
+            errorSource="files-tree-search-error"
+            className=""
+            error={search.error}
+            testId="files-tree-search-error"
+          />
+        </div>
       ) : search?.loading || results === null ? (
         <div className="px-3 py-2 text-xs fg-secondary">Searching…</div>
       ) : (
@@ -896,15 +898,10 @@ export function FilesTab({
   );
 
   const renderRootChip = (root: FilesTabRoot): JSX.Element => (
-    <button
+    <Chip
       key={root.localId}
-      type="button"
       onClick={(): void => onSelectRoot?.(root.localId)}
-      className={`focus-ring rounded-md border px-2 py-0.5 text-2xs transition-colors ${
-        root.localId === activeRootLocalId
-          ? 'border-line-accent/40 bg-fg-primary/[0.06] fg-primary'
-          : 'fg-secondary hover:bg-fg-primary/[0.06] hover:fg-primary'
-      }`}
+      selected={root.localId === activeRootLocalId}
     >
       {isCoworkWorkspaceFileRoot({ id: root.localId, kind: root.kind }) ? (
         // The Cowork root carries the user's project title.
@@ -912,7 +909,7 @@ export function FilesTab({
       ) : (
         root.label
       )}
-    </button>
+    </Chip>
   );
 
   const rootSwitcher =
@@ -972,12 +969,14 @@ export function FilesTab({
 
   const downloadErrorNode =
     downloadError === undefined ? null : (
-      <ErrorBanner
-        errorSource="activity-files-download-error"
-        className="mx-2 my-1"
-        error={downloadError}
-        testId="activity-files-download-error"
-      />
+      <div className="px-2 py-1 empty:hidden">
+        <ErrorBanner
+          errorSource="activity-files-download-error"
+          className=""
+          error={downloadError}
+          testId="activity-files-download-error"
+        />
+      </div>
     );
 
   return (
@@ -1134,28 +1133,30 @@ export function FilesTab({
         )}
       </div>
       {actionError !== null && (
-        <Notice
-          errorSource="files-tree-action-error"
-          intent="destructive"
-          className="mx-2 my-2"
-          data-testid="files-tree-action-error"
-          dismissLabel="Dismiss copy error"
-          onDismiss={(): void => setActionError(null)}
-        >
-          {actionError}
-        </Notice>
+        <div className="px-2 py-2">
+          <Notice
+            errorSource="files-tree-action-error"
+            intent="destructive"
+            data-testid="files-tree-action-error"
+            dismissLabel="Dismiss copy error"
+            onDismiss={(): void => setActionError(null)}
+          >
+            {actionError}
+          </Notice>
+        </div>
       )}
       {mutations?.error && editor === null && (
-        <Notice
-          errorSource="files-tree-mutation-error"
-          intent="destructive"
-          className="mx-2 my-2"
-          data-testid="files-tree-mutation-error"
-          dismissLabel="Dismiss file error"
-          onDismiss={mutations.onClearError}
-        >
-          {mutations.error}
-        </Notice>
+        <div className="px-2 py-2">
+          <Notice
+            errorSource="files-tree-mutation-error"
+            intent="destructive"
+            data-testid="files-tree-mutation-error"
+            dismissLabel="Dismiss file error"
+            onDismiss={mutations.onClearError}
+          >
+            {mutations.error}
+          </Notice>
+        </div>
       )}
       {menu !== null && (
         <FilesTabActionMenu

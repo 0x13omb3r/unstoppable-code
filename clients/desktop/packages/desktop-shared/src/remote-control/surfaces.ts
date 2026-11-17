@@ -1,5 +1,5 @@
+import { isBotProjectId } from '@canopy/protocol/chat-targets';
 import {
-  APP_ADVISOR_PROJECT_ID,
   type AppAdvisorAction,
   type AppAdvisorBrowserAction,
   type AppAdvisorRendererToolRequest,
@@ -44,7 +44,7 @@ export function targetsAppAdvisorSurface(
       !request.action.projectId &&
       !request.action.worktreeId) ||
     (request.kind === 'show_files' &&
-      request.payload.target.projectId === APP_ADVISOR_PROJECT_ID)
+      isBotProjectId(request.payload.target.projectId))
   );
 }
 

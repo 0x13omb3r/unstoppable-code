@@ -4,6 +4,7 @@ import { isRetiredTemporaryWorkspace } from '@canopy/desktop-shared/lib/workspac
 import { getCanopyCloudCredentials } from '../lib/canopy-cloud-account-store';
 import { getWorkspaceContextService } from '../lib/workspace-context-service';
 import { readAllSidebarItemsSnapshot } from '../lib/sidebar-items';
+import { readPersonalProjectPreviewRows } from './personal-project-preview-rows';
 import { readWorkspaceOwnership } from '../lib/workspace-persistence';
 import { getOrgMemberCodeCreator } from '../lib/org-member-code-create-deps';
 import { getOrgMemberMultiRepoCreator } from '../lib/org-member-multi-repo-create-deps';
@@ -48,9 +49,13 @@ import {
 let service:
   | ReturnType<typeof createPersonalOrganizationUpgradeService>
   | undefined;
+export function getPersonalOrganizationUpgradeAccountEpoch(): number {
+  return getWorkspaceContextService().accountEpoch();
+}
+
 async function identity(): Promise<UpgradeIdentity> {
   const context = getWorkspaceContextService();
-  const epoch = context.accountEpoch();
+  const epoch = getPersonalOrganizationUpgradeAccountEpoch();
   const credentials = await getCanopyCloudCredentials();
   const accountId = credentials.account?.id;
   if (!accountId || context.accountEpoch() !== epoch)
@@ -77,13 +82,27 @@ export function getPersonalOrganizationUpgradeService(): PersonalOrganizationUpg
         ) === true
       );
     },
-    async workspaces() {
+    previewProjects: readPersonalProjectPreviewRows,
+    async workspaces(selected) {
       const snapshot = await readAllSidebarItemsSnapshot();
       if (
         snapshot.indexAuthority !== 'ok' &&
         snapshot.indexAuthority !== 'absent'
       )
         throw new Error('Workspace index unavailable');
+      if (selected) {
+        const ids = new Set(selected.workspaceIds);
+        for (const warning of snapshot.file.warnings ?? []) {
+          if (
+            warning.code !== 'invalid-canopy-json' ||
+            !ids.has(warning.workspaceId)
+          )
+            continue;
+          const ownership = await readWorkspaceOwnership(warning.workspaceId);
+          if (ownership.authority === 'ok' && !ownership.owner)
+            selected.reportInvalidConfig(warning.workspaceId);
+        }
+      }
       const workspaces: UpgradeWorkspace[] = [];
       for (const item of snapshot.file.items) {
         if (item.type !== 'single-repo' && item.type !== 'multi-repo') continue;

@@ -928,70 +928,72 @@ export function SidebarWorkspacesSection({
         )}
 
         {hiddenListedProjects.length > 0 && (
-          <SidebarSection
-            as="div"
-            className="group/section mt-3 flex flex-col"
-            data-testid="hidden-workspaces-section"
-            collapsed={!hiddenExpanded}
-            onCollapsedChange={(nextCollapsed): void =>
-              setHiddenExpanded(!nextCollapsed)
-            }
-            headerButtonProps={{ 'data-testid': 'hidden-workspaces-toggle' }}
-            headerVariant="hidden-workspaces"
-            spacing="inset"
-            header={
-              <div className="flex h-8 min-w-0 items-center gap-1 px-1 text-s font-normal">
-                <span className="min-w-0 truncate fg-quaternary transition-colors group-hover/hidden-workspaces:fg-secondary group-focus-within/hidden-workspaces:fg-secondary">
-                  Hidden
-                </span>
-                <ChevronDownMediumIcon
-                  size="sm"
-                  data-testid="sidebar-hidden-workspaces-chevron"
-                  className={`shrink-0 fg-quaternary transition-[color,opacity] group-hover/hidden-workspaces:fg-secondary group-hover/hidden-workspaces:opacity-100 group-focus-within/hidden-workspaces:fg-secondary group-focus-within/hidden-workspaces:opacity-100 ${
-                    hiddenExpanded ? 'opacity-0' : '-rotate-90 opacity-100'
-                  }`}
-                />
-              </div>
-            }
-          >
-            <SidebarList>
-              {hiddenListedProjects.map((project, index) =>
-                isGitSidebarItem(project) ? (
-                  <SidebarProjectSection
-                    key={project.id}
-                    project={project}
-                    disableDrag
-                    flattenHiddenWorktrees
-                    hasFollowingWorkspace={
-                      index < hiddenListedProjects.length - 1
-                    }
-                    isCreatingWorktree={model.creatingWorktreeForProject.has(
-                      project.id,
-                    )}
-                    hasSettingsWarning={
-                      project.type === 'multi-repo'
-                        ? project.repos.length === 0 ||
-                          Boolean(
-                            model.workspaceReferenceRepoStatus[project.id]
-                              ?.warnings?.length,
-                          )
-                        : undefined
-                    }
-                    {...commonSectionProps}
+          <div className="pt-3 empty:hidden">
+            <SidebarSection
+              as="div"
+              className="group/section flex flex-col"
+              data-testid="hidden-workspaces-section"
+              collapsed={!hiddenExpanded}
+              onCollapsedChange={(nextCollapsed): void =>
+                setHiddenExpanded(!nextCollapsed)
+              }
+              headerButtonProps={{ 'data-testid': 'hidden-workspaces-toggle' }}
+              headerVariant="hidden-workspaces"
+              spacing="inset"
+              header={
+                <div className="flex h-8 min-w-0 items-center gap-1 px-1 text-s font-normal">
+                  <span className="min-w-0 truncate fg-quaternary transition-colors group-hover/hidden-workspaces:fg-secondary group-focus-within/hidden-workspaces:fg-secondary">
+                    Hidden
+                  </span>
+                  <ChevronDownMediumIcon
+                    size="sm"
+                    data-testid="sidebar-hidden-workspaces-chevron"
+                    className={`shrink-0 fg-quaternary transition-[color,opacity] group-hover/hidden-workspaces:fg-secondary group-hover/hidden-workspaces:opacity-100 group-focus-within/hidden-workspaces:fg-secondary group-focus-within/hidden-workspaces:opacity-100 ${
+                      hiddenExpanded ? 'opacity-0' : '-rotate-90 opacity-100'
+                    }`}
                   />
-                ) : (
-                  <SidebarCoworkWorkspaceRow
-                    key={project.id}
-                    item={project}
-                    disableDrag
-                    hasFollowingWorkspace={
-                      index < hiddenListedProjects.length - 1
-                    }
-                  />
-                ),
-              )}
-            </SidebarList>
-          </SidebarSection>
+                </div>
+              }
+            >
+              <SidebarList>
+                {hiddenListedProjects.map((project, index) =>
+                  isGitSidebarItem(project) ? (
+                    <SidebarProjectSection
+                      key={project.id}
+                      project={project}
+                      disableDrag
+                      flattenHiddenWorktrees
+                      hasFollowingWorkspace={
+                        index < hiddenListedProjects.length - 1
+                      }
+                      isCreatingWorktree={model.creatingWorktreeForProject.has(
+                        project.id,
+                      )}
+                      hasSettingsWarning={
+                        project.type === 'multi-repo'
+                          ? project.repos.length === 0 ||
+                            Boolean(
+                              model.workspaceReferenceRepoStatus[project.id]
+                                ?.warnings?.length,
+                            )
+                          : undefined
+                      }
+                      {...commonSectionProps}
+                    />
+                  ) : (
+                    <SidebarCoworkWorkspaceRow
+                      key={project.id}
+                      item={project}
+                      disableDrag
+                      hasFollowingWorkspace={
+                        index < hiddenListedProjects.length - 1
+                      }
+                    />
+                  ),
+                )}
+              </SidebarList>
+            </SidebarSection>
+          </div>
         )}
 
         <SharedContainerSidebarSection

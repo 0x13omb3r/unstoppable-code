@@ -1,11 +1,11 @@
 import { join, isAbsolute } from 'node:path';
 import {
-  APP_ADVISOR_PROJECT_ID,
   PIPELINE_EDITOR_PROJECT_ID,
   SHARED_CONTAINER_VIEWER_PROJECT_ID,
   type PortalCommandEnvelope,
   type PersistedChatMessage,
 } from '@canopy/desktop-shared/types';
+import { isBotProjectId } from '@canopy/protocol/chat-targets';
 import {
   isVisiblePersistedChatMessage,
   portalChatAttachmentPaths,
@@ -66,11 +66,10 @@ function validateScope(projectId: string, worktreeId: string): void {
   validateId(projectId, 'projectId');
   validateId(worktreeId, 'worktreeId');
   if (
-    [
-      APP_ADVISOR_PROJECT_ID,
-      PIPELINE_EDITOR_PROJECT_ID,
-      SHARED_CONTAINER_VIEWER_PROJECT_ID,
-    ].includes(projectId)
+    isBotProjectId(projectId) ||
+    [PIPELINE_EDITOR_PROJECT_ID, SHARED_CONTAINER_VIEWER_PROJECT_ID].includes(
+      projectId,
+    )
   ) {
     throw new PortalServiceError(
       'invalid_target',

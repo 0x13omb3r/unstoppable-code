@@ -229,6 +229,10 @@ export class PipelineEventJournal {
         append({ kind: 'notification', ...notification });
         return true;
       },
+      onChild: (event, execution) => {
+        append({ kind: 'child', event, execution });
+        this.keep(tracked);
+      },
       onEnd: (error) => this.end(executionId, tracked, error),
     });
     // What an earlier attempt sent that no stream did carries over; a late

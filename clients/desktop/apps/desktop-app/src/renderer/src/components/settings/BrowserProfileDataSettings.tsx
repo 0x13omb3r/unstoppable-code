@@ -478,33 +478,34 @@ export function BrowserProfileDataSettings({
               </p>
             )}
             {inventory?.nextOffset !== undefined && (
-              <Button
-                size="compact"
-                variant="secondary"
-                className="my-1"
-                disabled={busy}
-                onClick={() =>
-                  void run(async () => {
-                    const epoch = generation.current;
-                    const next = await api.inventoryGet({
-                      profileId,
-                      storageGeneration,
-                      offset: inventory.nextOffset,
-                    });
-                    if (epoch === generation.current)
-                      setInventory({
-                        ...next,
-                        sites: [...inventory.sites, ...next.sites],
-                        cookieDomains: [
-                          ...inventory.cookieDomains,
-                          ...next.cookieDomains,
-                        ],
+              <div className="py-1 empty:hidden">
+                <Button
+                  size="compact"
+                  variant="secondary"
+                  disabled={busy}
+                  onClick={() =>
+                    void run(async () => {
+                      const epoch = generation.current;
+                      const next = await api.inventoryGet({
+                        profileId,
+                        storageGeneration,
+                        offset: inventory.nextOffset,
                       });
-                  }, "Couldn't load more sites.")
-                }
-              >
-                Load more sites
-              </Button>
+                      if (epoch === generation.current)
+                        setInventory({
+                          ...next,
+                          sites: [...inventory.sites, ...next.sites],
+                          cookieDomains: [
+                            ...inventory.cookieDomains,
+                            ...next.cookieDomains,
+                          ],
+                        });
+                    }, "Couldn't load more sites.")
+                  }
+                >
+                  Load more sites
+                </Button>
+              </div>
             )}
           </div>
         </SettingsRow>

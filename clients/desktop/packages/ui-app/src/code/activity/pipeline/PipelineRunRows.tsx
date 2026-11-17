@@ -1,5 +1,6 @@
 'use client';
 
+import { CompositeListRow } from '@canopy/ui-shared/components';
 import { RunStepTimeline } from '@canopy/ui-shared/components';
 import { type JSX, type ReactNode } from 'react';
 import { CHAT_UNIT_LABEL, ORCHESTRATOR_LABEL } from '@canopy/protocol';
@@ -372,12 +373,13 @@ export function RerunLineageLabel({
   const sourceSummary = summaryLookup[sourceId];
   const label = sourceSummary?.pipeline_name ?? sourceId.slice(0, 8);
   return (
-    <ExecutionActionButton
-      label={`Started over from ${label}`}
-      ariaLabel={`Started over from ${label}`}
-      onClick={(): void => onOpenSource(sourceId)}
-      className="mt-1"
-    />
+    <div className="pt-1 empty:hidden">
+      <ExecutionActionButton
+        label={`Started over from ${label}`}
+        ariaLabel={`Started over from ${label}`}
+        onClick={(): void => onOpenSource(sourceId)}
+      />
+    </div>
   );
 }
 
@@ -392,13 +394,14 @@ export function SubPipelineButton({
 }): JSX.Element {
   const subPipelineLabel = `${count} sub-workflow${count !== 1 ? 's' : ''}`;
   return (
-    <ExecutionActionButton
-      label={subPipelineLabel}
-      ariaLabel={subPipelineLabel}
-      icon={<ChevronIcon open={expanded} />}
-      onClick={onClick}
-      className="mt-1.5"
-    />
+    <div className="pt-1.5 empty:hidden">
+      <ExecutionActionButton
+        label={subPipelineLabel}
+        ariaLabel={subPipelineLabel}
+        icon={<ChevronIcon open={expanded} />}
+        onClick={onClick}
+      />
+    </div>
   );
 }
 
@@ -477,18 +480,10 @@ export function ActiveRunRow({
     !inputRequested;
   return (
     <Surface variant="group" interactive padding="compact">
-      <div
-        role="button"
-        tabIndex={0}
+      <CompositeListRow
         data-testid={`pipeline-run-card-${summary.id}`}
-        className="cursor-pointer"
+        presentation="workflow-card"
         onClick={onOpenDetail}
-        onKeyDown={(event): void => {
-          if (event.key === 'Enter' || event.key === ' ') {
-            event.preventDefault();
-            onOpenDetail();
-          }
-        }}
       >
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
@@ -512,7 +507,7 @@ export function ActiveRunRow({
               {renderAdvisorBadge?.(summary)}
               {renderWatcherButton?.(summary)}
             </div>
-            <div className="mt-1 truncate text-xs font-medium fg-primary/80">
+            <div className="pt-1 truncate text-xs font-medium fg-primary/80">
               {summary.pipeline_name}
             </div>
             <RerunLineageLabel
@@ -563,7 +558,7 @@ export function ActiveRunRow({
             onJobClick={onJobClick}
           />
         )}
-      </div>
+      </CompositeListRow>
       {childrenSection}
     </Surface>
   );
@@ -675,18 +670,10 @@ export function CompletedRunRow({
             </Button>
           </div>
         )}
-        <div
-          role="button"
-          tabIndex={0}
+        <CompositeListRow
           data-testid={`pipeline-run-card-${summary.id}`}
-          className="cursor-pointer"
+          presentation="workflow-card"
           onClick={onOpenDetail}
-          onKeyDown={(event): void => {
-            if (event.key === 'Enter' || event.key === ' ') {
-              event.preventDefault();
-              onOpenDetail();
-            }
-          }}
         >
           <div className="flex flex-wrap items-center gap-2">
             <Badge {...pipelineRunStatusBadge(summary.status, { muted: true })}>
@@ -703,7 +690,7 @@ export function CompletedRunRow({
             {renderAdvisorBadge?.(summary)}
             {renderWatcherButton?.(summary)}
           </div>
-          <div className="mt-1 truncate text-xs fg-secondary">
+          <div className="pt-1 truncate text-xs fg-secondary">
             {summary.pipeline_name}
           </div>
           <RerunLineageLabel
@@ -722,7 +709,7 @@ export function CompletedRunRow({
             canRetry ||
             canRerun ||
             (onDebugFailure !== undefined && summary.status === 'failure')) && (
-            <div className="mt-3 flex flex-wrap gap-2">
+            <div className="pt-3 flex flex-wrap gap-2">
               {onDebugFailure !== undefined && summary.status === 'failure' && (
                 <ExecutionActionButton
                   label={
@@ -769,7 +756,7 @@ export function CompletedRunRow({
             </div>
           )}
           {(hasPlanActions || hasReportActions) && (
-            <div className="mt-3 flex flex-wrap gap-2">
+            <div className="pt-3 flex flex-wrap gap-2">
               {hasPlanActions && (
                 <div className="flex flex-wrap items-center gap-2">
                   <span className="text-3xs font-medium fg-secondary/60">
@@ -830,7 +817,7 @@ export function CompletedRunRow({
               )}
             </div>
           )}
-        </div>
+        </CompositeListRow>
         {childrenSection}
       </div>
     </Surface>

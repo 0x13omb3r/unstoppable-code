@@ -1,3 +1,4 @@
+import { ControlButton } from '@canopy/ui-shared/components';
 // Automations panel: the Automations and Watchers tabs of the Workflows page
 // (CAN-3980), reached via the left-nav `Workflows` entry. Triggered activities are owned by
 // the renderer-side `useAutomationsStore` (which mirrors the persisted main
@@ -1399,31 +1400,24 @@ function StatusBadgeDropdown({
 
   const failed = activity.lastResult?.status === 'failure' && !activity.enabled;
   const label = isRunning ? 'Running' : triggeredActivityStatusLabel(activity);
-  let toneClasses: string;
-  let dotTone: DotTone;
+  let statusTone: 'working' | 'attention' | 'danger' | 'success' | 'filter';
   if (isRunning) {
-    toneClasses = 'border-fg-info/40 bg-info-subtle fg-primary';
-    dotTone = 'working';
+    statusTone = 'working';
   } else if (activity.sharedPipelineReview) {
-    toneClasses = 'border-line-attention/40 bg-warning-subtle fg-warning';
-    dotTone = 'attention';
+    statusTone = 'attention';
   } else if (failed) {
-    toneClasses =
-      'border-line-destructive/40 bg-destructive-subtle fg-destructive';
-    dotTone = 'danger';
+    statusTone = 'danger';
   } else if (activity.enabled) {
-    toneClasses = 'border-line-positive/40 bg-success-subtle fg-primary';
     // A named deviation in docs/design/markers.md: green is the pill's on
     // state, not a live connection.
-    dotTone = 'success';
+    statusTone = 'success';
   } else {
-    toneClasses = 'bg-fg-primary/[0.04] fg-secondary';
-    dotTone = 'filter';
+    statusTone = 'filter';
   }
 
   return (
     <>
-      <button
+      <ControlButton
         ref={anchorRef}
         type="button"
         onClick={(event): void => {
@@ -1434,12 +1428,13 @@ function StatusBadgeDropdown({
         aria-expanded={open}
         aria-controls={open ? menuId : undefined}
         data-testid={`automations-toggle-${activity.id}`}
-        className={`focus-ring inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-3xs font-medium transition-colors ${toneClasses}`}
+        presentation="automation-status-picker"
+        appearance={statusTone}
       >
-        <Dot tone={dotTone} />
+        <Dot tone={statusTone} />
         <span>{label}</span>
         <ChevronDownIcon size="sm" />
-      </button>
+      </ControlButton>
       <FloatingPickerMenu
         id={menuId}
         open={open}

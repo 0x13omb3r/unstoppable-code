@@ -76,10 +76,17 @@ export function createRecordedWorkerGitCommitPushHost<
           await succeeded({ kind: 'commit-message', message });
           return succeeded({ kind: 'head-sha' });
         },
-        push: async () => {
+        push: async ({ branch, headSha }) => {
           const key = context.metadata.idempotencyKey;
           if (!key) throw new GitRepositoryWriteError('invalid_request');
-          await succeeded({ kind: 'push-head', key });
+          await succeeded({ kind: 'push-head', key, branch, headSha });
+          // The push landed: tracking it is a convenience, as `-u` was, so
+          // a failure here doesn't turn the landed push into an error.
+          try {
+            await run({ kind: 'set-upstream', branch });
+          } catch {
+            // Left untracked; the next push sets it again.
+          }
         },
       };
     },

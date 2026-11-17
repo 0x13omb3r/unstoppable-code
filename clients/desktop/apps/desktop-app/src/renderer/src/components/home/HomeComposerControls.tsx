@@ -1204,6 +1204,7 @@ export function HomeComposerControls({
 
       {pluginsModalOpen && (
         <ChatPluginsModal
+          restoreFocusRef={plusTriggerRef}
           effectiveProviderType={
             effectiveModel === 'cursor-default' ? 'cursor' : undefined
           }

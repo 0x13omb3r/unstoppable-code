@@ -179,8 +179,16 @@ export function registerSkillHandlers(): void {
   );
   registerIpcHandler(
     SKILLS_CHANNELS.REMOVE,
-    (_event, sourceId: string, skillName: string) =>
-      removeSkillThroughCore(sourceId, skillName),
+    async (_event, sourceId: string, skillName: string) => {
+      const result = await removeSkillThroughCore(sourceId, skillName);
+      // Removed for every harness, so its install record goes (CAN-6817).
+      if (result.success) {
+        const { forgetItemHarnessInstalls } =
+          await import('../plugins/harness-install-runtime');
+        await forgetItemHarnessInstalls({ kind: 'skill', sourceId, skillName });
+      }
+      return result;
+    },
   );
   registerIpcHandler(
     SKILLS_CHANNELS.UPDATE,

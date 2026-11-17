@@ -270,7 +270,9 @@ export const DESKTOP_OPERATIONS = {
   'canopy.credits_recovery_action': {
     kind: 'product',
     posthogEvent: 'billing:credits_recovery_click',
-    contextKeys: ['recovery_surface', 'recovery_action'],
+    // `recovery_provider` is the provider-choice row a click acted on: one of
+    // the fixed `ProviderSourceId` strings (`@canopy/app-state/provider-choice`).
+    contextKeys: ['recovery_surface', 'recovery_action', 'recovery_provider'],
   },
   'canopy.share_dialog': {
     kind: 'product',

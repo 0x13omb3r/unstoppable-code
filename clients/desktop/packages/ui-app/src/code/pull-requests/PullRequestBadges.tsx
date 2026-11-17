@@ -1,6 +1,8 @@
 'use client';
 
 import {
+  Badge,
+  Button,
   PullRequestHeaderLink,
   PullRequestHeaderStatus,
 } from '@canopy/ui-shared/components';
@@ -68,7 +70,7 @@ const PR_STATE_ICON: Record<
   draft: { Icon: GitDraftIcon, className: 'fg-secondary', label: 'draft' },
 };
 
-export function PrStateBadge({
+export function PrStateIndicator({
   state,
   prNumber,
   prUrl,
@@ -123,7 +125,7 @@ const CI_STATUS_DOT: Record<PullRequestSectionCheckStatus, DotTone> = {
   none: 'filter',
 };
 
-export function CiStatusBadge({ status }: CiStatusBadgeProps): JSX.Element {
+export function CiStatusIndicator({ status }: CiStatusBadgeProps): JSX.Element {
   return (
     <PullRequestHeaderStatus
       // The dot carries the state and the visible text is just `CI`, so the
@@ -171,7 +173,7 @@ export function CiStatusBadgeWithPopover({
 }: CiStatusBadgeWithPopoverProps): JSX.Element {
   const badge = (
     <span className="electron-no-drag inline-flex" data-testid={badgeTestId}>
-      <CiStatusBadge status={status} />
+      <CiStatusIndicator status={status} />
     </span>
   );
   // The rich check list is the real preview, but it only exists when the
@@ -213,7 +215,7 @@ export function PullRequestStateBadgeWithTooltip({
       disabled={!pr.tooltip}
       content={pr.tooltip ? <PrBadgeTooltipContent pr={pr.tooltip} /> : null}
     >
-      <PrStateBadge state={pr.state} prNumber={pr.number} prUrl={pr.url} />
+      <PrStateIndicator state={pr.state} prNumber={pr.number} prUrl={pr.url} />
     </RichHoverTooltip>
   );
 }
@@ -248,7 +250,7 @@ function RepoPrStatusRow({
  * The multi-repo `N PRs` badge: hovering lists each repository's PR and CI;
  * clicking opens the host's PR details.
  */
-export function MultiRepoPrBadge({
+export function MultiRepoPrControl({
   openRepos,
   onOpen,
 }: {
@@ -279,17 +281,22 @@ export function MultiRepoPrBadge({
         </div>
       }
     >
-      <button
-        type="button"
+      <Button
+        variant="ghost"
+        size="compact"
         onClick={onOpen}
-        className={`electron-no-drag inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs font-medium transition-colors hover:opacity-90 ${
-          openRepos.every((r) => r.pr?.state === 'merged')
-            ? 'border-fg-special-strong/30 bg-special-subtle fg-special-strong'
-            : 'border-fg-success-strong/30 bg-success-subtle fg-success-strong'
-        }`}
+        className="electron-no-drag"
       >
-        {openRepos.length} {openRepos.length === 1 ? 'PR' : 'PRs'}
-      </button>
+        <Badge
+          tone={
+            openRepos.every((repo) => repo.pr?.state === 'merged')
+              ? 'special'
+              : 'success'
+          }
+        >
+          {openRepos.length} {openRepos.length === 1 ? 'PR' : 'PRs'}
+        </Badge>
+      </Button>
     </RichHoverTooltip>
   );
 }

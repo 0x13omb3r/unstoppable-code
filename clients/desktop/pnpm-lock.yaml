@@ -163,6 +163,7 @@ settings:
   excludeLinksFromLockfile: false
 
 patchedDependencies:
+  '@posthog/core@1.55.2': b042174649f18c53c92cf4f7bb2fde6daaf2804b1fcc23361b0e7a7bcac72ddd
   builder-util-runtime@9.5.1: 24aa7ce6b2a37dd3ac402553705ed169ff843be1b8ef3217abd0046e018900da
   electron-vite@5.0.0: 42373e3996bd93f486111b6d6871b42cba3b594916ea52466fa448a42f67a2e6
   playwright-core@1.64.1: 26fb2b68a441cf0d29b3561c0754a3956ddaed453e1512d45a216b6ef07b2f45
@@ -7283,10 +7284,10 @@ snapshots:
 
   '@posthog/browser-common@0.9.0':
     dependencies:
-      '@posthog/core': 1.55.2
+      '@posthog/core': 1.55.2(patch_hash=b042174649f18c53c92cf4f7bb2fde6daaf2804b1fcc23361b0e7a7bcac72ddd)
       '@posthog/types': 1.413.0
 
-  '@posthog/core@1.55.2':
+  '@posthog/core@1.55.2(patch_hash=b042174649f18c53c92cf4f7bb2fde6daaf2804b1fcc23361b0e7a7bcac72ddd)':
     dependencies:
       '@posthog/types': 1.413.0
 
@@ -10210,7 +10211,7 @@ snapshots:
   posthog-js@1.434.8(@types/react@19.2.14)(react@19.2.4):
     dependencies:
       '@posthog/browser-common': 0.9.0
-      '@posthog/core': 1.55.2
+      '@posthog/core': 1.55.2(patch_hash=b042174649f18c53c92cf4f7bb2fde6daaf2804b1fcc23361b0e7a7bcac72ddd)
       '@posthog/types': 1.413.0
       core-js: 3.50.0
       dompurify: 3.4.17
@@ -10227,7 +10228,7 @@ snapshots:
 
   posthog-node@5.52.5(rxjs@7.8.2):
     dependencies:
-      '@posthog/core': 1.55.2
+      '@posthog/core': 1.55.2(patch_hash=b042174649f18c53c92cf4f7bb2fde6daaf2804b1fcc23361b0e7a7bcac72ddd)
     optionalDependencies:
       rxjs: 7.8.2
 

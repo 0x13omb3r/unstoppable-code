@@ -39,7 +39,7 @@ export const SteeringTitle = memo(function SteeringTitle(): JSX.Element {
   return (
     <span
       data-testid="steering-title"
-      className="mb-1 flex items-center gap-1.5 text-3xs font-medium fg-secondary"
+      className="pb-1 flex items-center gap-1.5 text-3xs font-medium fg-secondary"
     >
       <SteerIcon
         data-testid="steering-title-icon"

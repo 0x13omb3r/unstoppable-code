@@ -1,5 +1,6 @@
 'use client';
 
+import { ControlButton } from '@canopy/ui-shared/components';
 import {
   SidebarArchivedRow,
   SidebarGroupStrip,
@@ -3280,7 +3281,7 @@ export function WorkspacesSidebarSections({
                   archivedCount !== undefined &&
                   archivedItemCount > 0 && (
                     <div
-                      className="mt-1"
+                      className="pt-1"
                       data-testid="archived-worktrees-section"
                       data-archived-workspace-id={workspace.localId}
                     >
@@ -3316,8 +3317,7 @@ export function WorkspacesSidebarSections({
                           <div className="flex flex-col gap-0.5">
                             {archivedItems.map((entry) => (
                               <SidebarArchivedRow key={entry.id}>
-                                <button
-                                  type="button"
+                                <ControlButton
                                   data-testid={testIds?.archivedWorktreeRow?.(
                                     workspace.localId,
                                     entry.id,
@@ -3330,7 +3330,7 @@ export function WorkspacesSidebarSections({
                                       entry.id,
                                     )
                                   }
-                                  className="focus-ring flex min-h-8 min-w-0 flex-1 items-center gap-1.5 rounded-row py-1 pl-8 pr-1.5 text-left group-hover:pr-8 group-focus-within:pr-8"
+                                  presentation="sidebar-archived-entry"
                                 >
                                   <span className="min-w-0 flex-1">
                                     <span
@@ -3359,7 +3359,7 @@ export function WorkspacesSidebarSections({
                                       {entry.timestamp}
                                     </span>
                                   )}
-                                </button>
+                                </ControlButton>
                                 {renderArchivedActions ? (
                                   <span className="absolute inset-y-0 right-0.5 flex items-center">
                                     {renderArchivedActions(

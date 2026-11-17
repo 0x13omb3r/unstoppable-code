@@ -1,3 +1,4 @@
+import type { z } from 'zod';
 import { createStore, type StoreApi } from 'zustand/vanilla';
 import {
   CORE_PIPELINE_ARTIFACT_READ_LENGTH_MAX,
@@ -6,6 +7,7 @@ import {
   CanopyStreamCursorSchema,
   CorePipelineArtifactReadResultSchema,
   CorePipelineStepLogReadResultSchema,
+  CostCloudRunGetResultSchema,
   WorkerPipelineControlResultSchema,
   WorkerPipelineExecutionEventsItemSchema,
   WorkerPipelineExecutionGetResultSchema,
@@ -34,7 +36,8 @@ import { cloudErrorOf, requestCloud } from './request';
  * `worker.pipeline.execution.events` push, a step's full log read by
  * position with `core.pipeline.execution.stepLog.read` instead of the
  * bounded output the events carry, its saved reports through
- * `core.pipeline.execution.artifact.read`, and every CAN-4141 control.
+ * `core.pipeline.execution.artifact.read`, what it was charged through
+ * `core.cost.cloudRun.get` (CAN-6881), and every CAN-4141 control.
  *
  * Output and gap items only say there is more to read: the log itself is
  * always read by index, so a line is never shown twice or out of order.
@@ -46,6 +49,19 @@ export const CLOUD_RUN_LOG_LINES_MAX = 20_000;
 export const CLOUD_RUN_ARTIFACT_BYTES_MAX = 16 * 1024 * 1024;
 /** How long events are gathered before the detail is read again. */
 const DETAIL_REREAD_MS = 250;
+/**
+ * How often an open run's cost is read again (CAN-6881): its model calls
+ * settle as it runs, and its sandbox is settled after it ends, with no
+ * status change to read it on.
+ */
+export const CLOUD_RUN_COST_REREAD_MS = 60_000;
+/**
+ * How often the child runs a run's steps started are read again while any
+ * has not ended (CAN-6868): a child's events go to its own stream, so a
+ * child that pauses or ends while its parent waits changes nothing the
+ * parent's stream sends; a read that failed is tried again then too.
+ */
+export const CLOUD_RUN_CHILD_REREAD_MS = 10_000;
 /** Stream reopens in a row that may fail before the run reads offline. */
 const STREAM_REOPENS_MAX = 3;
 const STREAM_REOPEN_MS = 2_000;
@@ -76,6 +92,14 @@ export interface CloudPipelineRunLog {
   readonly error: CanopyErrorPayload | null;
 }
 
+/** What a run was charged, as its ledger records it (CAN-6881). */
+export interface CloudPipelineRunCost {
+  /** Null until read, and while the web core serves no run cost. */
+  readonly view: z.output<typeof CostCloudRunGetResultSchema> | null;
+  /** The web core doesn't serve a run's cost: nothing is shown. */
+  readonly unavailable: boolean;
+}
+
 /** Where the events stream stands. */
 export type CloudPipelineRunLiveState =
   | 'connecting'
@@ -95,6 +119,13 @@ export interface CloudPipelineRunSessionState {
   readonly pending: Readonly<Partial<Record<CloudPipelineRunControl, true>>>;
   /** The last control's refusal, in the cloud's words. */
   readonly controlError: string | null;
+  readonly cost: CloudPipelineRunCost;
+  /**
+   * The child runs its `run-pipeline` steps started (CAN-6868), by
+   * execution id, as each was last read: its workflow name and status. A
+   * child that could not be read yet is absent.
+   */
+  readonly children: Readonly<Record<string, WorkerPipelineExecution>>;
 }
 
 export interface CloudPipelineRunArtifactContent {
@@ -225,6 +256,8 @@ export function createCloudPipelineRunSession({
     log: null,
     pending: {},
     controlError: null,
+    cost: { view: null, unavailable: false },
+    children: {},
   }));
   let opened = false;
   let closed = false;
@@ -243,7 +276,100 @@ export function createCloudPipelineRunSession({
   let following = false;
   const unsettled = controlKeys;
 
+  // The run's cost is read when the run opens, whenever its status changes,
+  // and every CLOUD_RUN_COST_REREAD_MS while the session is open, so charges
+  // settled after the run ended show too; only a newer read applies.
+  let costRequested = 0;
+  let costStatus: string | null = null;
+  let costTimer: Timer | null = null;
+  const scheduleCost = (): void => {
+    if (closed || costTimer !== null || store.getState().cost.unavailable)
+      return;
+    costTimer = setTimer(() => {
+      costTimer = null;
+      void readCost();
+    }, CLOUD_RUN_COST_REREAD_MS);
+  };
+  const readCost = async (): Promise<void> => {
+    const seq = ++costRequested;
+    try {
+      const view = await requestCloud(
+        invoker,
+        'core.cost.cloudRun.get',
+        { executionId },
+        CostCloudRunGetResultSchema,
+      );
+      if (closed || seq !== costRequested) return;
+      store.setState({ cost: { view, unavailable: false } });
+    } catch (error) {
+      if (closed || seq !== costRequested) return;
+      // A web core that serves no run cost shows none; any other failure
+      // keeps what was shown, and the next status change reads it again.
+      if (cloudErrorOf(error).kind === 'capability_unavailable')
+        store.setState({ cost: { view: null, unavailable: true } });
+    } finally {
+      scheduleCost();
+    }
+  };
+
+  /** The child reads in flight, by execution id. */
+  const childReads = new Set<string>();
+  let childTimer: Timer | null = null;
+  const scheduleChildren = (): void => {
+    if (closed || childTimer !== null) return;
+    childTimer = setTimer(() => {
+      childTimer = null;
+      const view = store.getState().view;
+      if (view !== null) readChildren(view);
+    }, CLOUD_RUN_CHILD_REREAD_MS);
+  };
+
+  /**
+   * Reads each child run a step of `view` names that is not known to have
+   * ended: its name and status show under the step that started it. Runs
+   * as the run's own view changes, and every CLOUD_RUN_CHILD_REREAD_MS
+   * while a child has not been read as ended.
+   */
+  const readChildren = (view: WorkerPipelineExecutionView): void => {
+    const known = store.getState().children;
+    let anyOpen = false;
+    for (const job of view.detail?.jobs ?? [])
+      for (const variant of job.variants)
+        for (const step of variant.steps) {
+          const childId = step.childExecutionId;
+          if (childId === null) continue;
+          const read = known[childId];
+          if (read !== undefined && isTerminalCloudRun(read)) continue;
+          anyOpen = true;
+          if (childReads.has(childId)) continue;
+          childReads.add(childId);
+          void requestCloud(
+            invoker,
+            'worker.pipeline.execution.get',
+            { executionId: childId },
+            WorkerPipelineExecutionGetResultSchema,
+          )
+            .then((child) => {
+              if (closed) return;
+              store.setState({
+                children: {
+                  ...store.getState().children,
+                  [childId]: child.execution,
+                },
+              });
+            })
+            // An unreadable child stays as it was until it is read again.
+            .catch(() => undefined)
+            .finally(() => childReads.delete(childId));
+        }
+    if (anyOpen) scheduleChildren();
+  };
+
   const setView = (view: WorkerPipelineExecutionView): void => {
+    if (view.execution.status !== costStatus) {
+      costStatus = view.execution.status;
+      if (!store.getState().cost.unavailable) void readCost();
+    }
     const current = store.getState().view;
     // A summary-only view keeps the detail already read.
     const next =
@@ -252,6 +378,7 @@ export function createCloudPipelineRunSession({
         : view;
     store.setState({ view: next, error: null });
     onView?.(next);
+    readChildren(next);
   };
 
   const readDetail = async (): Promise<void> => {
@@ -566,8 +693,12 @@ export function createCloudPipelineRunSession({
       closed = true;
       if (rereadTimer !== null) clearTimer(rereadTimer);
       if (reopenTimer !== null) clearTimer(reopenTimer);
+      if (costTimer !== null) clearTimer(costTimer);
+      if (childTimer !== null) clearTimer(childTimer);
       rereadTimer = null;
       reopenTimer = null;
+      costTimer = null;
+      childTimer = null;
       const current = stream;
       stream = null;
       if (current) void current.close().catch(() => undefined);

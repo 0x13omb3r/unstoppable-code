@@ -1,7 +1,7 @@
 import type { ButtonHTMLAttributes, JSX, ReactNode } from 'react';
-import { SHARE_LANDER_BUTTON_CLASS_NAME } from '../lib/share-lander';
 import {
   Button,
+  ControlButton,
   isAriaDisabled,
   swallowUnavailableClick,
   type ButtonSize,
@@ -142,21 +142,17 @@ export function LoadingButton({
     // The public landers' squared control is not a house capsule, so it keeps
     // its own element and recipe.
     return (
-      <button
+      <ControlButton
         {...buttonProps}
         type={type}
-        className={
-          className
-            ? `${SHARE_LANDER_BUTTON_CLASS_NAME} ${className}`
-            : SHARE_LANDER_BUTTON_CLASS_NAME
-        }
+        presentation="share-lander-primary"
         disabled={disabled}
         aria-disabled={loading || buttonProps['aria-disabled']}
         aria-busy={loading}
         onClick={onClick}
       >
         {content}
-      </button>
+      </ControlButton>
     );
   }
   return (

@@ -17,6 +17,7 @@ export function registerSidebarItemGroupHandlers(): void {
   stopProjection?.();
   stopProjection = onSidebarItemGroupsChanged((workspaceId) => {
     const scope: SidebarItemGroupScope =
+      // Default Bot only: the Portal scope has a dedicated Orchestrator key.
       workspaceId === 'app-advisor'
         ? { appAdvisor: true }
         : { workspaceLocalId: workspaceId };

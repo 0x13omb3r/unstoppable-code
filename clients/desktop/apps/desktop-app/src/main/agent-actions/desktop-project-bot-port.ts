@@ -26,7 +26,7 @@ import type {
   PipelineSenderSource,
 } from '../agent-messaging/sender-context';
 import type { PipelineTrustedCaller } from '../agent-messaging/pipeline-caller';
-import { APP_ADVISOR_PROJECT_ID } from '@canopy/desktop-shared/types';
+import { isBotProjectId } from '@canopy/protocol/chat-targets';
 import type { DesktopEnvironmentPort } from './desktop-environment-port';
 import type { ChatSendAdmissionTab } from '../services/chat-send-admission';
 
@@ -215,12 +215,12 @@ function sendAdmissions(
 /**
  * An agent-originated run's admissions (D11): the recording agent's own, as
  * its scheduled deliveries are admitted, with no attending user or tool turn.
- * Orchestrator agents have no project admission.
+ * Bot agents have no project admission.
  */
 function pipelineAgentAdmissions(
   agentOrigin: AgentSenderRuntimeSource,
 ): Pick<AgentChatSendContext, 'admission' | 'startAdmission'> {
-  if (agentOrigin.projectId === APP_ADVISOR_PROJECT_ID) return {};
+  if (isBotProjectId(agentOrigin.projectId)) return {};
   return sendAdmissions(desktopAgentAdmissions, {
     scope: {
       workspaceId: agentOrigin.projectId,

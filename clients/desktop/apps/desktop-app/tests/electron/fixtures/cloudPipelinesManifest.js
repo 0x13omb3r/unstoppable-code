@@ -23,16 +23,27 @@ const kindOf = (name) =>
  */
 export function cloudRunManifestOperations(available) {
   if (!available) return [];
-  return CLOUD_RUN_OPERATIONS.map((name) => ({
-    name,
-    kind: kindOf(name),
-    version: 1,
-    placement: 'target-selectable',
-    requiredGrants: [
-      kindOf(name) === 'instruction'
-        ? 'core.pipeline.write'
-        : 'core.pipeline.read',
-    ],
-    available: true,
-  }));
+  return [
+    ...CLOUD_RUN_OPERATIONS.map((name) => ({
+      name,
+      kind: kindOf(name),
+      version: 1,
+      placement: 'target-selectable',
+      requiredGrants: [
+        kindOf(name) === 'instruction'
+          ? 'core.pipeline.write'
+          : 'core.pipeline.read',
+      ],
+      available: true,
+    })),
+    // A cloud run's cost (CAN-6881), served behind the same flag.
+    {
+      name: 'core.cost.cloudRun.get',
+      kind: 'query',
+      version: 1,
+      placement: 'core-only',
+      requiredGrants: ['core.cost.read'],
+      available: true,
+    },
+  ];
 }

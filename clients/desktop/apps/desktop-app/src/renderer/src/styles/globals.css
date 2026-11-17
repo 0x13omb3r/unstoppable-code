@@ -130,7 +130,8 @@
   -webkit-app-region: drag;
 }
 
-.electron-no-drag {
+.electron-no-drag,
+[data-sidebar-projects-pin-bottom] {
   -webkit-app-region: no-drag;
 }
 

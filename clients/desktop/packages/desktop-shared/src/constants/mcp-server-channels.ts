@@ -35,4 +35,6 @@ export const MCP_SERVER_CHANNELS = {
   RESOLVE_REMOTE_IMAGE: 'mcp-servers:resolve-remote-image',
   LIST_STATUS: 'mcp-servers:list-status',
   GET_TOOLS: 'mcp-servers:get-tools',
+  INSTALL_FOR_HARNESSES: 'mcp-servers:install-for-harnesses',
+  RETRY_HARNESS_INSTALL: 'mcp-servers:retry-harness-install',
 } as const;

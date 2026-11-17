@@ -24,7 +24,7 @@ export interface DescriptionMarkdownProps {
 }
 
 const DESCRIPTION_PROSE_BASE_CLASS =
-  'prose [--tw-prose-bullets:var(--fg-tertiary)] [--tw-prose-counters:var(--fg-tertiary)] dark:prose-invert max-w-prose break-words prose-p:my-1 prose-ul:my-1 prose-ol:my-1 prose-li:my-0.5 prose-pre:my-1.5 prose-pre:overflow-x-auto prose-pre:bg-fg-primary/[0.06] prose-pre:fg-primary/80 prose-code:fg-primary prose-code:before:content-none prose-code:after:content-none prose-blockquote:my-1 prose-a:fg-accent prose-strong:fg-primary [&>:first-child]:mt-0 [&>:last-child]:mb-0';
+  'prose [--tw-prose-bullets:var(--fg-tertiary)] [--tw-prose-counters:var(--fg-tertiary)] dark:prose-invert canopy-description-prose canopy-compact-prose max-w-prose break-words prose-li:my-0.5 prose-pre:overflow-x-auto prose-pre:bg-fg-primary/[0.06] prose-pre:fg-primary/80 prose-code:fg-primary prose-code:before:content-none prose-code:after:content-none prose-a:fg-accent prose-strong:fg-primary [&>:first-child]:mt-0 [&>:last-child]:mb-0';
 
 const DESCRIPTION_PROSE_TONE_CLASS: Record<DescriptionMarkdownTone, string> = {
   secondary: '[--tw-prose-body:var(--fg-secondary)] fg-secondary',

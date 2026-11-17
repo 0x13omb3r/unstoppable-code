@@ -1,8 +1,6 @@
 import { create } from 'zustand';
-import {
-  APP_ADVISOR_PROJECT_ID,
-  type WorktreeSelection,
-} from '@canopy/desktop-shared/types';
+import { type WorktreeSelection } from '@canopy/desktop-shared/types';
+import { isBotProjectId } from '@canopy/protocol/chat-targets';
 import { isCoworkChatTarget } from '@/lib/cowork';
 import { canNavigateToWorktreeFromSidebarItems } from '@/lib/worktreeNavigation';
 import { useArchivedContainersStore } from '@/stores/archivedContainersStore';
@@ -170,13 +168,13 @@ function captureSharedContainer():
 /**
  * The archived-container viewer participates in main-page history when it
  * targets a code workspace (work-entry viewers belong to the chat page /
- * App Advisor popout, which history intentionally leaves alone).
+ * Bot renderer, which history intentionally leaves alone).
  */
 function captureArchivedContainer(): NavigationHistoryArchivedContainer | null {
   const viewer = useArchivedContainersStore.getState().viewer;
   if (
     viewer === null ||
-    viewer.workspaceId === APP_ADVISOR_PROJECT_ID ||
+    isBotProjectId(viewer.workspaceId) ||
     isCoworkChatTarget(viewer.workspaceId)
   ) {
     return null;

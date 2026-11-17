@@ -61,6 +61,7 @@ import { getWorkspaceType } from '../lib/workspace-registry';
 import { enqueueWorkspaceLocalMemoryImportBatch } from '../memory/local/import/import-job';
 
 function legacyArchiveWorktreeId(projectId: string): string {
+  // Default Bot only: pre-entry archives use the Orchestrator's global slot.
   return projectId === APP_ADVISOR_PROJECT_ID
     ? APP_ADVISOR_WORKTREE_ID
     : COWORK_HOME_WORKTREE_ID;

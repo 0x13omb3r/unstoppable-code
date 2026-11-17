@@ -45,6 +45,7 @@ async function listDesktopSummaryScopes(): Promise<SummaryScope[]> {
   const scopes: SummaryScope[] = [];
   for (const projectId of [
     ...listRegisteredWorkspaceIds(),
+    // Default Bot only: the only Bot until the Bot registry lists the rest.
     APP_ADVISOR_PROJECT_ID,
   ]) {
     let names: string[];

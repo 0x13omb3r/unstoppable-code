@@ -1,5 +1,6 @@
 'use client';
 
+import { ControlButton } from '@canopy/ui-shared/components';
 import {
   createContext,
   useContext,
@@ -15,7 +16,6 @@ import {
   TranscriptMarkdownAnchor,
   isNavigableTranscriptHref,
   type MarkdownOptions,
-  TRANSCRIPT_LINK_CLASS,
   Tooltip,
 } from '@canopy/ui-shared/components';
 import {
@@ -97,8 +97,6 @@ function lineAttribute(location: FileLinkLineLocation): string {
     : `${location.line}-${location.lineEnd}`;
 }
 
-const FILE_LINK_CLASSES = `focus-ring inline cursor-pointer break-all rounded-sm disabled:cursor-progress ${TRANSCRIPT_LINK_CLASS}`;
-
 function TranscriptFileLinkAnchor(props: AnchorProps): JSX.Element {
   const { href, children } = props;
   const interaction = useContext(TranscriptFileLinkInteractionContext);
@@ -164,9 +162,8 @@ function TranscriptFileLinkAnchor(props: AnchorProps): JSX.Element {
   return (
     <FileLinkStatus failure={failure}>
       <Tooltip label={href} contentClassName="max-w-96 break-all" replayBlock>
-        <button
-          type="button"
-          className={FILE_LINK_CLASSES}
+        <ControlButton
+          presentation="transcript-file-open"
           data-testid="markdown-file-link"
           data-file-link-state={state}
           data-file-link-line={
@@ -177,7 +174,7 @@ function TranscriptFileLinkAnchor(props: AnchorProps): JSX.Element {
           onClick={onClick}
         >
           {children}
-        </button>
+        </ControlButton>
       </Tooltip>
     </FileLinkStatus>
   );

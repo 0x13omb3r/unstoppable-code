@@ -38,7 +38,7 @@ export function BaseBranchDriftTooltipContent({
   const singleDrift = drifts.length === 1 ? drifts[0] : null;
   return (
     <>
-      <div className="mb-1 font-semibold fg-primary">Base branch drift</div>
+      <div className="pb-1 font-semibold fg-primary">Base branch drift</div>
       {singleDrift ? (
         <p className="fg-secondary">
           The locally tracked base branch{' '}
@@ -69,7 +69,7 @@ export function BaseBranchDriftTooltipContent({
           </ul>
         </div>
       )}
-      <p className="mt-1.5 fg-tertiary">Click to align with the PR.</p>
+      <p className="pt-1.5 fg-tertiary">Click to align with the PR.</p>
     </>
   );
 }
@@ -109,7 +109,7 @@ export function AlignBaseBranchConfirmation({
             {drifts.map((drift) => (
               <li key={drift.repoId} className="min-w-0">
                 {drifts.length > 1 && (
-                  <span className="mr-1 font-semibold">{drift.repoName}:</span>
+                  <span className="pr-1 font-semibold">{drift.repoName}:</span>
                 )}
                 <span className="font-mono fg-secondary">
                   {drift.localBaseBranch}
@@ -118,7 +118,7 @@ export function AlignBaseBranchConfirmation({
                 <span className="font-mono font-medium">
                   {drift.prBaseBranch}
                 </span>
-                <span className="ml-1 fg-tertiary">PR #{drift.prNumber}</span>
+                <span className="pl-1 fg-tertiary">PR #{drift.prNumber}</span>
               </li>
             ))}
           </ul>

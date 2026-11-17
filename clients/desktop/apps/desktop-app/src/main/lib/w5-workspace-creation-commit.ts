@@ -4,7 +4,8 @@ import type { SidebarItem } from '@canopy/desktop-shared/types';
 import { randomUUID } from 'node:crypto';
 import { lstat } from 'node:fs/promises';
 import { isMissingFileError } from './fs-utils';
-import { validateId } from './validation';
+import { IdentifierValidationError, validateId } from './validation';
+import { isBotProjectId } from '@canopy/protocol/chat-targets';
 import {
   workspaceCreationDiagnosticsSchema,
   type WorkspaceCreationDiagnostics,
@@ -106,11 +107,24 @@ export async function withWorkspaceCreationCommit<T>(
   }
 }
 
+/**
+ * Bot project IDs (`app-advisor`, `bot--<ulid>`) are derived from Bot IDs and
+ * never belong to a saved project. Allocation never hands one out
+ * (`allocateSafeWorkspaceId`); this refuses a caller-supplied one.
+ */
+function refuseBotProjectId(workspaceId: string): void {
+  if (isBotProjectId(workspaceId))
+    throw new IdentifierValidationError(
+      'Invalid workspaceId: reserved for Bots',
+    );
+}
+
 /** Enter inside the existing workspace mutation queue, which covers application. */
 export async function commitWorkspaceCreation<T extends SidebarItem>(
   work: () => Promise<T>,
   workspaceIds: readonly string[] = [],
 ): Promise<T> {
+  workspaceIds.forEach(refuseBotProjectId);
   const scope = context.getStore();
   if (!scope?.active) return work();
   const locks: W5RepositoryLock[] = [
@@ -175,6 +189,7 @@ export async function reserveWorkspaceCreation(
   options?: WorkspaceCreationReservationOptions,
 ): Promise<WorkspaceCreationReservation> {
   validateId(workspaceId, 'workspaceId');
+  refuseBotProjectId(workspaceId);
   const store = getW5IdentityStore();
   if (!store)
     return {

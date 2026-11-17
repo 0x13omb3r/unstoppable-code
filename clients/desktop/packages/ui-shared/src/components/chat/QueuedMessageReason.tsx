@@ -37,7 +37,7 @@ export type QueuedMessageReasonProps = {
 /** The label and reason share one readable size and ink. */
 export const QUEUED_MESSAGE_LABEL_TEXT_CLASS = 'text-xs fg-secondary';
 /** Compatibility for callers whose parent has not adopted the queued content group. */
-export const QUEUED_MESSAGE_LABEL_CLASS = `mb-1 ${QUEUED_MESSAGE_LABEL_TEXT_CLASS}`;
+export const QUEUED_MESSAGE_LABEL_CLASS = `pb-1 ${QUEUED_MESSAGE_LABEL_TEXT_CLASS}`;
 
 export const QueuedMessageReason = memo(function QueuedMessageReason(
   props: QueuedMessageReasonProps,

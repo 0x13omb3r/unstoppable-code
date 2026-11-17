@@ -32,6 +32,7 @@ export {
 } from './useComposerMenu';
 export {
   appendFileReference,
+  appendTextAtEnd,
   buildEditorValueFromMessage,
   createChatEditor,
   focusEditor,

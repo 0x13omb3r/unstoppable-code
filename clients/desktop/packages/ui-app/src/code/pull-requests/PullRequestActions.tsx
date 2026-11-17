@@ -31,7 +31,7 @@ import type {
 } from './pull-request-actions-plan';
 import {
   CiStatusBadgeWithPopover,
-  MultiRepoPrBadge,
+  MultiRepoPrControl,
   PullRequestStateBadgeWithTooltip,
 } from './PullRequestBadges';
 
@@ -346,7 +346,9 @@ export function PullRequestActions({
         aria-label="Fix failing CI checks"
       >
         {activity.startingCiFix ? (
-          <ThinkingSpinner tone="emphasis" quiet className="mr-1" />
+          <div className="pr-1 empty:hidden">
+            <ThinkingSpinner tone="emphasis" quiet />
+          </div>
         ) : (
           <ChatIcon size="sm" />
         )}
@@ -382,7 +384,7 @@ export function PullRequestActions({
     <>
       {badges !== null && badges.pr === null && (
         <>
-          <MultiRepoPrBadge
+          <MultiRepoPrControl
             openRepos={badges.openRepos}
             onOpen={() => onAction({ kind: 'open-pr-details' })}
           />
@@ -650,7 +652,9 @@ export function PullRequestActions({
               data-testid="pr-status-bar-resolve-conflicts"
             >
               {activity.startingConflictResolution ? (
-                <ThinkingSpinner tone="primary" quiet className="mr-1" />
+                <div className="pr-1 empty:hidden">
+                  <ThinkingSpinner tone="primary" quiet />
+                </div>
               ) : (
                 <ChatIcon size="sm" />
               )}

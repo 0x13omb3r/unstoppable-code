@@ -1,11 +1,11 @@
 import {
-  APP_ADVISOR_PROJECT_ID,
   getExecutionHarnessForModel,
   getModelSource,
   getProviderForChatModel,
   getProviderForModel,
   isTerminalBackedInterfaceMode,
 } from '@canopy/desktop-shared/types';
+import { isBotProjectId } from '@canopy/protocol/chat-targets';
 import type {
   ChatSendMessageRequest,
   PersistedChatTab,
@@ -171,7 +171,7 @@ async function deliverWithinScope(
   }
 
   const terminalBacked = isTerminalBackedClaudeTab(tab);
-  if (terminalBacked && delivery.projectId === APP_ADVISOR_PROJECT_ID) {
+  if (terminalBacked && isBotProjectId(delivery.projectId)) {
     return 'parent_gone';
   }
 
@@ -282,7 +282,7 @@ async function deliverWithinScope(
       ? { delegationNoticeBatchId: delivery.delegationNoticeBatchId }
       : {}),
     ...(pendingSystemInstructions ? { pendingSystemInstructions } : {}),
-    ...(delivery.projectId === APP_ADVISOR_PROJECT_ID
+    ...(isBotProjectId(delivery.projectId)
       ? { assistantMode: 'app-advisor' }
       : {}),
     initiationSource:

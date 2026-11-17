@@ -119,7 +119,22 @@ export function gitWriteCommandFor(
       const key = field('key');
       if (typeof key !== 'string' || !key.trim() || key.includes('\0'))
         throw invalid();
-      args = ['push', '-u', 'origin', 'HEAD'];
+      // The checked commit itself, so a branch that moves after the
+      // worker's check can't push a commit nobody checked (CAN-6869).
+      args = [
+        'push',
+        'origin',
+        `${objectId(field('headSha'))}:refs/heads/${refValue(field('branch'))}`,
+      ];
+      break;
+    }
+    case 'set-upstream': {
+      const branch = refValue(field('branch'));
+      args = [
+        'branch',
+        `--set-upstream-to=refs/remotes/origin/${branch}`,
+        branch,
+      ];
       break;
     }
     case 'status':

@@ -882,7 +882,7 @@ class PortableIpcCanopyClient implements CanopyClient {
           await channels.invoke(
             C.personalOrganizationUpgradeStatus,
             anyReply<unknown>(),
-            { operationId: args.operationId },
+            args,
           ),
         ),
       'referencePreview.linearScope': () =>
@@ -1630,6 +1630,10 @@ class PortableIpcCanopyClient implements CanopyClient {
           status: 'completed',
           worktreeId: created.id,
           branchName: created.branchName,
+          ...(created.setupPhase === 'git-pending' ||
+          created.setupPhase === 'git-ready'
+            ? { setupPhase: created.setupPhase }
+            : {}),
         };
       },
       'worktree.update': async (args) => {

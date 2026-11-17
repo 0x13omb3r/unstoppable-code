@@ -6,7 +6,7 @@
 import type { CostNavigator, CostSubagentTarget } from '@canopy/app-core';
 import type { CostScopeRef } from '@canopy/protocol/cost-view';
 import type { SubagentKind } from '@canopy/protocol';
-import { APP_ADVISOR_PROJECT_ID } from '@canopy/desktop-shared/types';
+import { isBotProjectId } from '@canopy/protocol/chat-targets';
 import {
   openAutomationRunDestination,
   type AutomationRunDestination,
@@ -69,7 +69,7 @@ function chatDestination(
   scope: CostPanelScope,
   chatId: string,
 ): AutomationRunDestination {
-  if (scope.projectId === APP_ADVISOR_PROJECT_ID) {
+  if (isBotProjectId(scope.projectId)) {
     return { kind: 'app-advisor-chat', chatId };
   }
   if (isCoworkProject(scope.projectId)) {
@@ -122,7 +122,7 @@ export async function openCostChat(
   scope: CostPanelScope,
   chatId: string,
 ): Promise<void> {
-  if (scope.projectId !== APP_ADVISOR_PROJECT_ID) {
+  if (!isBotProjectId(scope.projectId)) {
     const chatStore = useChatStore.getState();
     if (!isLiveChat(scope, chatId)) {
       try {
@@ -183,7 +183,7 @@ async function openSubagentWithRootChat(
   target: CostSubagentTarget,
 ): Promise<void> {
   if (
-    entry.projectId !== APP_ADVISOR_PROJECT_ID &&
+    !isBotProjectId(entry.projectId) &&
     (await isArchivedChat(entry, target.chatId))
   ) {
     // The viewer cannot build a subagent from an archived root chat. Show

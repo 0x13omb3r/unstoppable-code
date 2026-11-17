@@ -49,40 +49,43 @@ export function BillingTogglePanel({
   children,
 }: BillingTogglePanelProps): JSX.Element {
   return (
-    <div className="mt-4">
+    <div className="pt-4">
       <Divider />
       <div className="pt-4" data-testid={testId}>
-        {/* Master toggle */}
-        <p className="text-s font-medium fg-primary">{title}</p>
-        {/* Toggle aligns with the description line, not the subheader above it. */}
-        <div className="mt-1 flex items-center justify-between gap-3">
-          <div className="min-w-0">
-            <p className="text-xs fg-secondary">{description}</p>
-            {learnMoreHref ? (
-              <a
-                href={learnMoreHref}
-                target="_blank"
-                rel="noreferrer"
-                className="text-xs fg-accent hover:underline"
-              >
-                Learn more
-              </a>
-            ) : null}
+        <div className="flex flex-col gap-1">
+          {/* Master toggle */}
+          <p className="text-s font-medium fg-primary">{title}</p>
+          {/* Toggle aligns with the description line, not the subheader above it. */}
+          <div className="flex items-center justify-between gap-3">
+            <div className="min-w-0">
+              <p className="text-xs fg-secondary">{description}</p>
+              {learnMoreHref ? (
+                <a
+                  href={learnMoreHref}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="text-xs fg-accent hover:underline"
+                >
+                  Learn more
+                </a>
+              ) : null}
+            </div>
+            <ToggleSwitch
+              checked={checked}
+              label={ariaLabel}
+              disabled={disabled}
+              onChange={() => onToggle()}
+              dataTestId={toggleTestId}
+            />
           </div>
-          <ToggleSwitch
-            checked={checked}
-            label={ariaLabel}
-            disabled={disabled}
-            onChange={() => onToggle()}
-            dataTestId={toggleTestId}
+        </div>
+        <div className="pt-2 empty:hidden">
+          <ErrorBanner
+            errorSource="billing-toggle-panel"
+            className=""
+            error={error}
           />
         </div>
-
-        <ErrorBanner
-          errorSource="billing-toggle-panel"
-          className="mt-2"
-          error={error}
-        />
 
         {children}
       </div>

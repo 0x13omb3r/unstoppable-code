@@ -1,3 +1,4 @@
+import { ControlButton } from '@canopy/ui-shared/components';
 import {
   SplitActionDivider,
   WorkflowCreateCluster,
@@ -46,7 +47,7 @@ export function CreatePipelineSplitButton({
       ref={clusterRef}
       data-testid={`${testIdPrefix}-split`}
     >
-      <button
+      <ControlButton
         type="button"
         onClick={() => {
           setMenuOpen(false);
@@ -55,12 +56,12 @@ export function CreatePipelineSplitButton({
         disabled={interviewPending}
         aria-busy={interviewPending}
         data-testid={testIdPrefix}
-        className="rounded-l-full pl-3 pr-2.5 text-xs font-medium transition-colors hover:opacity-90 focus-ring disabled:cursor-default disabled:opacity-70"
+        presentation="workflow-create"
       >
         New workflow
-      </button>
+      </ControlButton>
       <SplitActionDivider />
-      <button
+      <ControlButton
         ref={chevronRef}
         type="button"
         onClick={() => setMenuOpen((open) => !open)}
@@ -70,10 +71,10 @@ export function CreatePipelineSplitButton({
         aria-controls={menuOpen ? menuId : undefined}
         disabled={interviewPending}
         data-testid={`${testIdPrefix}-menu`}
-        className="flex items-center rounded-r-full pl-1.5 pr-2 transition-colors hover:opacity-90 focus-ring disabled:cursor-default disabled:opacity-70"
+        presentation="workflow-create-menu"
       >
         <ChevronDownIcon size="sm" aria-hidden="true" />
-      </button>
+      </ControlButton>
       <FloatingMenu
         id={menuId}
         open={menuOpen}

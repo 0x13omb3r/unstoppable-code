@@ -1,9 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
-  APP_ADVISOR_PROJECT_ID,
   DEFAULT_CHAT_PROJECT_ID,
   STANDALONE_CHAT_PROJECT_ID,
 } from '@canopy/desktop-shared/types';
+import { isBotProjectId } from '@canopy/protocol/chat-targets';
 import type { CanopyCloudAiCreditsState } from '@canopy/desktop-shared/types';
 import { CANOPY_CLOUD_ACCOUNT_CHANGED_EVENT } from '@canopy/desktop-shared/constants/canopy-cloud';
 import { chatAiCreditsScope } from '@/lib/aiCreditsScope';
@@ -52,8 +52,8 @@ export function useComposerWorkIsPersonal(
     if (project) return project.owner === undefined ? 'personal' : 'org';
     return 'unknown';
   });
-  // App Advisor is Personal work regardless of the navigation context.
-  if (projectId === APP_ADVISOR_PROJECT_ID) return true;
+  // Bots are Personal work regardless of the navigation context.
+  if (projectId !== undefined && isBotProjectId(projectId)) return true;
   if (projectOwner === 'personal') return true;
   if (projectOwner === 'navigation') return navigationPersonal;
   if (

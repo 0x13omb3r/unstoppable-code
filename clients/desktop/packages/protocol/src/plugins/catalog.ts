@@ -1,4 +1,6 @@
 import type { ResourceOwner } from '../resource-owner';
+import type { HarnessCompatibility } from './harness-compatibility';
+import type { ItemHarnessInstalls } from './harness-installs';
 // ---------------------------------------------------------------------------
 // Neutral plugin-catalog shapes.
 //
@@ -334,6 +336,14 @@ export interface BuiltInPluginInstallStatus {
  *   when their `name` matches (case-insensitive).
  */
 export interface PluginInfo {
+  /** Revision-bound derived metadata; absence preserves provider fallback. */
+  harnessCompatibility?: HarnessCompatibility;
+  /**
+   * Derived (not persisted): what one Add did for each harness (CAN-6816).
+   * Desktop main adds it from its own record file when serving rows; it is
+   * never written into the plugin cache.
+   */
+  harnessInstalls?: ItemHarnessInstalls;
   /** Canopy retains this installation while its Codex facet is parked. Not provider convergence. */
   parked?: boolean;
   /** Optional catalog example prompt; absent in older caches. */

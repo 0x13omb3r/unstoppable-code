@@ -31,8 +31,8 @@ export function autoTopUpToggleSentence(
   orgVariant: boolean,
 ): string {
   return orgVariant
-    ? `Automatically buy AI Credits to keep your team using ${brandName} when you run low.`
-    : `Automatically buy AI Credits to keep using ${brandName} when you run low.`;
+    ? `Automatically buy credits to keep your team using ${brandName} when you run low.`
+    : `Automatically buy credits to keep using ${brandName} when you run low.`;
 }
 
 /** The effective per-refill amount and trigger, defaulted from the catalog. */
@@ -77,17 +77,13 @@ export function AutoTopUpSettingsDetails({
       : 0;
 
   return (
-    <>
+    <div className="flex flex-col gap-4 pt-4">
       {/* Month-to-date spend meter */}
-      <Stack
-        gap="tight"
-        className="mt-4"
-        data-testid={tid('credits-auto-top-up-meter')}
-      >
+      <Stack gap="tight" data-testid={tid('credits-auto-top-up-meter')}>
         <div className="flex items-center justify-between text-xs fg-secondary">
           <span>
             {formatUsd(monthlySpentUsd)} spent
-            <span className="mx-1">·</span>
+            <span className="px-1">·</span>
             Resets {monthlyResetAt}
           </span>
           {cap !== null ? (
@@ -106,7 +102,7 @@ export function AutoTopUpSettingsDetails({
       </Stack>
 
       {/* Current settings summary + adjust */}
-      <div className="mt-4 flex items-center justify-between gap-3">
+      <div className="flex items-center justify-between gap-3">
         <p
           className="min-w-0 text-s fg-secondary"
           data-testid={tid('credits-auto-top-up-summary')}
@@ -129,7 +125,7 @@ export function AutoTopUpSettingsDetails({
         </p>
         {action ?? null}
       </div>
-    </>
+    </div>
   );
 }
 
@@ -199,7 +195,7 @@ export function AutoTopUpSummary({
           action={action}
         />
       ) : action ? (
-        <div className="mt-4 flex justify-end">{action}</div>
+        <div className="pt-4 flex justify-end">{action}</div>
       ) : null}
       {children}
     </BillingTogglePanel>

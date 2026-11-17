@@ -12,6 +12,7 @@ import {
   getAppAdvisorRendererToolRequestOriginChatId,
   getRendererToolRequestScopeKey,
 } from '@canopy/desktop-shared/types';
+import { isBotProjectId } from '@canopy/protocol/chat-targets';
 import { isReplayableAppAdvisorResponse } from '@canopy/desktop-shared/lib/app-advisor-replay';
 import { dispatchAppAction } from '@/lib/app-actions/dispatcher';
 import { useAppAdvisorStore } from '@/stores/appAdvisorStore';
@@ -340,8 +341,7 @@ function RuntimeBridge({
       };
     }
     if (request.kind === 'show_files') {
-      const targetsAdvisor =
-        request.payload.target.projectId === APP_ADVISOR_PROJECT_ID;
+      const targetsAdvisor = isBotProjectId(request.payload.target.projectId);
       if (
         (targetsAdvisor && surface !== 'app-advisor') ||
         (!targetsAdvisor && surface !== 'main')

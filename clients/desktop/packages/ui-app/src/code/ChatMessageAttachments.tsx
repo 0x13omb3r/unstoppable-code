@@ -1,5 +1,6 @@
 'use client';
 
+import { ControlButton } from '@canopy/ui-shared/components';
 import { ImageThumbnail } from '@canopy/ui-shared/components';
 import {
   createContext,
@@ -151,11 +152,10 @@ export function ChatAssetImage({
   const image = useChatAssetImage(reference);
   const interaction = useChatMessageAttachmentInteraction();
   return (
-    <div className="mt-1" data-testid="chat-asset-image">
+    <div className="pt-1" data-testid="chat-asset-image">
       {image.src && (
-        <button
-          type="button"
-          className="focus-ring rounded-md"
+        <ControlButton
+          presentation="attachment-image-open"
           disabled={!interaction?.onOpenImage}
           onClick={() => interaction?.onOpenImage?.(reference)}
         >
@@ -165,7 +165,7 @@ export function ChatAssetImage({
             alt={reference.filename ?? 'Tool image'}
             replay="block"
           />
-        </button>
+        </ControlButton>
       )}
       {image.loading && (
         <span role="status" className="text-xs fg-secondary">

@@ -28,6 +28,7 @@ import {
 } from './plugin-defaults';
 import { normalizePipelineAssets, normalizePipelineLocalState } from './assets';
 import { validatePipelineSandboxHint } from './sandbox-size';
+import { normalizePipelineJobIsolation } from './job-isolation';
 import { normalizePipelineScopes } from './scope';
 import { normalizePipelineRunTarget } from './target';
 import {
@@ -1456,6 +1457,11 @@ function normalizeJob(
       defaultShell,
     ),
   );
+  const isolation = normalizePipelineJobIsolation(
+    jobKey,
+    job,
+    assignedSteps.map((assignedStep) => assignedStep.id),
+  );
 
   return {
     name: job.name?.trim() || jobKey,
@@ -1470,6 +1476,7 @@ function normalizeJob(
     strategy,
     continue_on_error: continueOnError,
     continue_on_error_expression: continueOnErrorExpression,
+    ...(isolation === 'read_only' ? { isolation } : {}),
     steps,
   };
 }

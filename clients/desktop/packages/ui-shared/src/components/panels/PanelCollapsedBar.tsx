@@ -1,3 +1,4 @@
+import { ControlButton } from '../Button';
 import { useId, type JSX, type ReactNode } from 'react';
 import type {
   PanelCollapseEdge,
@@ -185,9 +186,9 @@ export function PanelCollapsedBar({
             label={customTooltip ?? title}
             placement={tooltipPlacement}
           >
-            <button
+            <ControlButton
               type="button"
-              className="canopy-panel-collapsed-tab"
+              presentation="panel-collapsed-tab"
               data-testid={`panel-collapsed-tab-${tab.panelId}`}
               data-active-tab={
                 tab.panelId === group.activePanelId ? 'true' : 'false'
@@ -211,7 +212,7 @@ export function PanelCollapsedBar({
                   {renderTabAccessibleStatus(tab)}
                 </span>
               ) : null}
-            </button>
+            </ControlButton>
           </Tooltip>
         );
       })}

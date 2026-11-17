@@ -37,7 +37,7 @@ import type {
   ActivitySurface,
   WorktreeSelection,
 } from '@canopy/desktop-shared/types';
-import { APP_ADVISOR_PROJECT_ID } from '@canopy/desktop-shared/types';
+import { isBotProjectId } from '@canopy/protocol/chat-targets';
 import { isActivitySectionVisibleForTarget } from '@canopy/app-state';
 import type {
   PortalChatTodoProjection,
@@ -212,7 +212,7 @@ export function SharedActivityPanelAdapter({
   const selectedWorktree =
     worktreeSelection !== undefined ? worktreeSelection : storedSelection;
 
-  // App Advisor keeps no cost. An account that bills every turn to AI
+  // Bots keep no cost. An account that bills every turn to AI
   // Credits (CAN-5028) sees the rail's cost in credits, never USD
   // (DesktopCostCurrencyProvider, CAN-6180).
   const { costInsights } = useScopeCapabilities({
@@ -220,7 +220,7 @@ export function SharedActivityPanelAdapter({
   });
   const costEntry =
     selectedWorktree &&
-    selectedWorktree.projectId !== APP_ADVISOR_PROJECT_ID &&
+    !isBotProjectId(selectedWorktree.projectId) &&
     costInsights === true
       ? selectedWorktree
       : null;
@@ -618,7 +618,11 @@ function SharedActivityPanelAdapterContents({
             (scopeServesActivitySection(scopeCapabilities, section.id) &&
               projectServesActivitySection(projectId ?? '', section.id))) &&
           // A credits-only account sees cost in credits (CAN-6180).
-          !(section.id === 'cost' && projectId === APP_ADVISOR_PROJECT_ID),
+          !(
+            section.id === 'cost' &&
+            typeof projectId === 'string' &&
+            isBotProjectId(projectId)
+          ),
       ),
     [access, projectId, scopeCapabilities, surface],
   );

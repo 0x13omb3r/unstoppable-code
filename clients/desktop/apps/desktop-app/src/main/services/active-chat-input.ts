@@ -12,11 +12,10 @@ import {
   type ChatWatcherHeldOutcome,
 } from '@canopy/desktop-shared/lib/chat-watcher-contracts';
 import {
-  APP_ADVISOR_PROJECT_ID,
   STANDALONE_CHAT_PROJECT_ID,
   isTerminalBackedInterfaceMode,
 } from '@canopy/desktop-shared/types';
-import { APP_ADVISOR_BOT_ID } from '@canopy/desktop-shared/lib/bot-discovery';
+import { botIdForProjectId } from '@canopy/protocol/chat-targets';
 import { isInputLedger } from '@canopy/desktop-shared/chat-input-delivery';
 import { serializeVisibleReadMessage } from '@canopy/desktop-shared/lib/chat-history-serialization';
 import { isUserTurnBoundary } from '@canopy/agent-transcript/lib/turn-boundary';
@@ -50,8 +49,9 @@ export async function resolveCanonicalChatAddress(
     if (!entryId) return null;
     taskId = entryId;
   }
-  if (projectId === APP_ADVISOR_PROJECT_ID) {
-    const bot = requireBot(APP_ADVISOR_BOT_ID);
+  const botId = botIdForProjectId(projectId);
+  if (botId) {
+    const bot = requireBot(botId);
     if (
       !(await readBotEntries(bot.botId)).some(
         (entry) => entry.id === target.worktreeId,
@@ -59,7 +59,7 @@ export async function resolveCanonicalChatAddress(
     )
       return null;
     return {
-      botId: bot.botId,
+      botId,
       taskId: target.worktreeId,
       chatId: target.chatId,
     };

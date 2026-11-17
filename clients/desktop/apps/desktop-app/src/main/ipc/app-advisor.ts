@@ -35,6 +35,7 @@ import {
   getAppAdvisorRendererToolRequestOriginChatId,
   getRendererToolRequestScopeKey,
 } from '@canopy/desktop-shared/types';
+import { isBotProjectId } from '@canopy/protocol/chat-targets';
 import {
   normalizeAgentArtifactNavigationError,
   normalizeAgentArtifactNavigationRequest,
@@ -1510,7 +1511,8 @@ export function registerAppAdvisorHandlers(
         typeof request.path !== 'string' ||
         !request.path.trim() ||
         request.path.includes('\0') ||
-        request.origin?.projectId !== APP_ADVISOR_PROJECT_ID
+        request.origin?.projectId === undefined ||
+        !isBotProjectId(request.origin.projectId)
       )
         throw new Error('Invalid file opening request.');
       validateId(request.target?.projectId, 'projectId');
@@ -1524,7 +1526,7 @@ export function registerAppAdvisorHandlers(
       // Opens where it was clicked: a controlling computer's window opens it
       // there, whoever drives the chat.
       const remote = remoteWindowHostForSender?.(event.sender) ?? null;
-      if (request.target.projectId !== APP_ADVISOR_PROJECT_ID) {
+      if (!isBotProjectId(request.target.projectId)) {
         if (remote) void remote.focusMainWindow().catch(() => undefined);
         else focusMainWindow(accessors.getMainWindow());
       }

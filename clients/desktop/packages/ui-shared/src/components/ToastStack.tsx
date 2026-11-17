@@ -1,5 +1,6 @@
 'use client';
 
+import { ControlButton } from './Button';
 import { Toast } from '@base-ui/react/toast';
 import {
   useEffect,
@@ -602,11 +603,11 @@ export function ToastStackActivatableCard({
       className={`rounded-2xl ${clickable ? 'cursor-pointer has-[[data-toast-open]:focus-visible]:outline-2 has-[[data-toast-open]:focus-visible]:-outline-offset-2 has-[[data-toast-open]:focus-visible]:outline-line-focus' : ''}`}
     >
       {clickable && (
-        <button
+        <ControlButton
           type="button"
           data-toast-open=""
           aria-label={activateLabel}
-          className="sr-only pointer-events-none"
+          presentation="toast-keyboard-open"
           onClick={(e): void => {
             e.stopPropagation();
             if (blurFocusBeforeActivate) e.currentTarget.blur();

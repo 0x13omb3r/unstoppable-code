@@ -68,7 +68,7 @@ function SkillSuggestionRow({
           <div className={`mt-0.5 text-s fg-secondary ${REPLAY_BLOCK_CLASS}`}>
             {suggestion.summary}
           </div>
-          <div className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs fg-tertiary">
+          <div className="pt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs fg-tertiary">
             {suggestion.kind === 'chain' ? (
               <span
                 className="flex flex-wrap items-center gap-1"
@@ -139,7 +139,7 @@ function SkillSuggestionRow({
           </Button>
           {expanded ? (
             <ul
-              className={`mt-1.5 flex flex-col gap-1 ${REPLAY_BLOCK_CLASS}`}
+              className={`pt-1.5 flex flex-col gap-1 ${REPLAY_BLOCK_CLASS}`}
               data-testid="skill-suggestions-row-examples"
             >
               {suggestion.examples.map((example, index) => (

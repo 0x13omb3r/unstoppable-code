@@ -176,7 +176,7 @@ export const AutoResumeMarker = memo(function AutoResumeMarker({
       data-auto-resume-resends={
         autoResume ? String(autoResume.resendsUserMessage) : undefined
       }
-      className="my-2 flex flex-col items-center gap-0.5 text-2xs fg-tertiary"
+      className="flex flex-col items-center py-2 gap-0.5 text-2xs fg-tertiary"
     >
       <div className="flex w-full min-w-0 items-center gap-2">
         <span aria-hidden="true" className="min-w-4 flex-1 border-t" />

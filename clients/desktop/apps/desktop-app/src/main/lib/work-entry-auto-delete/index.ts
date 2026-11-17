@@ -23,6 +23,7 @@ import {
   APP_ADVISOR_WORKTREE_ID,
   IPC_CHANNELS,
 } from '@canopy/desktop-shared/types';
+import { isBotProjectId } from '@canopy/protocol/chat-targets';
 import { subscribeChatSessionActivity } from '../../agents/session-manager';
 import {
   LiveDelegationsError,
@@ -81,6 +82,8 @@ export interface ArmWorkEntryAutoDeleteInput {
   workspaceId: string;
   targetId: string;
   chatId: string;
+  /** The arming chat's own scope when it differs from the target. */
+  chatScope?: { projectId: string; worktreeId: string };
   enabled: boolean;
   archive?: boolean;
   teardown?: WorkEntryAutoDeleteTeardown;
@@ -98,6 +101,14 @@ const removingKeys = new Set<string>();
 let requestEvaluation: (() => void) | undefined;
 const keyOf = (workspaceId: string, targetId: string): string =>
   `${workspaceId}\0${targetId}`;
+/** Where the arming chat lives: its recorded scope, else the target. */
+const armedByScope = (
+  workspaceId: string,
+  arm: WorkEntryAutoDeleteArm,
+): { projectId: string; worktreeId: string } => ({
+  projectId: arm.armedBy.projectId ?? workspaceId,
+  worktreeId: arm.armedBy.worktreeId ?? arm.targetId,
+});
 const describe = (candidate: AutoArchiveCandidate): string =>
   `${candidate.surface === 'single-repo' || candidate.surface === 'multi-repo' ? 'worktree' : 'work entry'} “${candidate.targetName}”`;
 
@@ -123,13 +134,14 @@ async function candidateFor(
   const item = (await readAllSidebarItems()).items.find(
     (item) => item.id === workspaceId,
   );
-  if (workspaceId === APP_ADVISOR_PROJECT_ID || item?.type === 'cowork') {
+  if (isBotProjectId(workspaceId) || item?.type === 'cowork') {
     const entry = (await readWorkEntriesFile(workspaceId)).entries.find(
       (entry) => entry.id === targetId,
     );
     if (!entry) return undefined;
     return {
       surface:
+        // Default Bot only: only the Orchestrator has its own auto-archive surface.
         workspaceId === APP_ADVISOR_PROJECT_ID ? 'app-advisor' : 'cowork',
       workspaceId,
       workspaceName: item?.name ?? 'Orchestrator',
@@ -304,7 +316,7 @@ async function snapshot(
     retained.push(arm);
     armedKeys.add(key);
     const state = await getChatStateService().getCompatibilityTabs(
-      { projectId: workspaceId, worktreeId: arm.targetId },
+      armedByScope(workspaceId, arm),
       { chatIds: [] },
     );
     const title = state.tabs.find(
@@ -359,20 +371,16 @@ async function report(
   text: string,
 ): Promise<void> {
   try {
-    const state = await getChatStateService().getCompatibilityTabs(
-      { projectId: workspaceId, worktreeId: arm.targetId },
-      { chatIds: [] },
-    );
+    const scope = armedByScope(workspaceId, arm);
+    const state = await getChatStateService().getCompatibilityTabs(scope, {
+      chatIds: [],
+    });
     if (
       !state.tabs.some((tab) => tab.id === arm.armedBy.chatId && !tab.readOnly)
     )
       return;
     await getAppAdvisorWatcherService().deliverSystemMessage(
-      {
-        projectId: workspaceId,
-        worktreeId: arm.targetId,
-        chatId: arm.armedBy.chatId,
-      },
+      { ...scope, chatId: arm.armedBy.chatId },
       text,
     );
   } catch (error) {
@@ -386,6 +394,16 @@ export async function setWorkEntryAutoDeleteFromAgent(
   return withArmWriter(async () => {
     validateTarget(input);
     validateId(input.chatId, 'chatId');
+    const crossScope =
+      input.chatScope &&
+      (input.chatScope.projectId !== input.workspaceId ||
+        input.chatScope.worktreeId !== input.targetId)
+        ? input.chatScope
+        : undefined;
+    if (crossScope) {
+      validateId(crossScope.projectId, 'projectId');
+      validateId(crossScope.worktreeId, 'worktreeId');
+    }
     const refuse = (reason: string): WorkEntryAutoDeleteToolResult => ({
       ok: false,
       message: `Auto-delete was not armed: ${reason}.`,
@@ -398,6 +416,7 @@ export async function setWorkEntryAutoDeleteFromAgent(
     )
       return refuse('enabled: false cannot be combined with other options');
     if (
+      // Default Bot only: its legacy global slot cannot be removed.
       input.workspaceId === APP_ADVISOR_PROJECT_ID &&
       input.targetId === APP_ADVISOR_WORKTREE_ID
     )
@@ -438,7 +457,7 @@ export async function setWorkEntryAutoDeleteFromAgent(
         DEFAULT_WORK_ENTRY_AUTO_DELETE_UNMERGED_BRANCH,
       state: 'armed',
       armedAt: new Date().toISOString(),
-      armedBy: { chatId: input.chatId },
+      armedBy: { chatId: input.chatId, ...crossScope },
       identity: {
         createdAt: candidate.createdAt,
         ...(candidate.worktree
@@ -450,7 +469,7 @@ export async function setWorkEntryAutoDeleteFromAgent(
     const waiting = await waitingFor(candidate);
     const state = previous
       ? await getChatStateService().getCompatibilityTabs(
-          { projectId: input.workspaceId, worktreeId: input.targetId },
+          armedByScope(input.workspaceId, previous),
           { chatIds: [] },
         )
       : undefined;
@@ -475,6 +494,7 @@ export async function listWorkEntryAutoDeleteSnapshots(): Promise<
   return withArmWriter(async () => {
     const items = (await readAllSidebarItems()).items;
     const ids = new Set(items.map((item) => item.id));
+    // Default Bot only: the only Bot until the Bot registry lists the rest.
     ids.add(APP_ADVISOR_PROJECT_ID);
     const attention = await readAttention([...ids]);
     return Promise.all(
@@ -779,7 +799,13 @@ async function evaluate(
       removalStarted && !teardownFailed
         ? 'Removal did not complete. Inspect the worktree and its recovery state before retrying.'
         : 'Nothing was changed.';
-    const text = `Auto-delete for ${candidate ? describe(candidate) : `work entry “${arm.targetId}”`} did not run: ${detail}. ${recovery} Auto-delete is now off. Fix the problem and call SetWorkEntryAutoDelete again${teardownFailed && arm.teardown === 'error' ? ', or use teardown: "force" to continue without a failing teardown script' : ''}.`;
+    // A chat outside the target armed it by name; SetWorkEntryAutoDelete there
+    // would arm that chat's own work entry instead.
+    const retry =
+      arm.armedBy.projectId === undefined
+        ? 'SetWorkEntryAutoDelete'
+        : `SetProjectWorkEntryAutoDelete with projectId “${workspaceId}” and worktreeId “${arm.targetId}”`;
+    const text = `Auto-delete for ${candidate ? describe(candidate) : `work entry “${arm.targetId}”`} did not run: ${detail}. ${recovery} Auto-delete is now off. Fix the problem and call ${retry} again${teardownFailed && arm.teardown === 'error' ? ', or use teardown: "force" to continue without a failing teardown script' : ''}.`;
     await report(workspaceId, arm, text);
     if (candidate)
       emitAutoArchiveNotification({
@@ -842,6 +868,7 @@ export function startWorkEntryAutoDeleteScheduler(): {
           const ids = new Set(
             (await readAllSidebarItems()).items.map((item) => item.id),
           );
+          // Default Bot only: the only Bot until the Bot registry lists the rest.
           ids.add(APP_ADVISOR_PROJECT_ID);
           for (const id of ids)
             for (const arm of await readArms(id))

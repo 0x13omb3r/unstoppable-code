@@ -1,5 +1,8 @@
 'use client';
 
+import { archivedOverviewRowClassName } from './control-button-shared';
+export { ARCHIVED_ROW_ACTIONS_RESERVE_WIDE } from './control-button-shared';
+import { ControlButton } from './Button';
 import type { JSX, ReactNode } from 'react';
 import { ArchivedStateIcon } from '../icons/ArchivedStateIcon';
 import { LoadingSpinner } from './LoadingSpinner';
@@ -21,8 +24,6 @@ export const ARCHIVED_LIST_CONTAINER_CLASS_NAME = '@container/archived-list';
 // can read verbatim from source, so these must not be built from a template.
 export const ARCHIVED_ROW_ACTIONS_VISIBLE_WIDE =
   '@min-[36rem]/archived-list:pointer-events-auto @min-[36rem]/archived-list:opacity-100';
-export const ARCHIVED_ROW_ACTIONS_RESERVE_WIDE =
-  '@min-[36rem]/archived-list:pr-8';
 
 export interface ArchivedOverviewRowProps {
   state: ArchivedContainerState;
@@ -78,9 +79,6 @@ export interface OverviewListRowProps {
   busy?: boolean;
 }
 
-const OVERVIEW_ROW_BODY_BASE_CLASS_NAME =
-  'flex min-w-0 flex-1 items-center gap-2 rounded-md px-2 py-1.5 text-left transition-colors';
-
 /**
  * Layout shell for one row of an overview list: leading glyph, truncated
  * title, optional indicators, a date, and an absolutely positioned action
@@ -103,10 +101,7 @@ export function OverviewListRow({
   state,
   busy = false,
 }: OverviewListRowProps): JSX.Element {
-  const bodyClassName =
-    actionsReserve === 'reveal'
-      ? `${OVERVIEW_ROW_BODY_BASE_CLASS_NAME} group-hover:pr-8 group-focus-within:pr-8 pointer-coarse:pr-12 ${ARCHIVED_ROW_ACTIONS_RESERVE_WIDE}`
-      : `${OVERVIEW_ROW_BODY_BASE_CLASS_NAME} pr-24`;
+  const bodyClassName = archivedOverviewRowClassName(actionsReserve);
   const body = (
     <>
       {leading}
@@ -133,14 +128,15 @@ export function OverviewListRow({
       aria-busy={busy ? 'true' : undefined}
     >
       {onOpen ? (
-        <button
+        <ControlButton
           type="button"
           data-testid={openTestId}
           onClick={onOpen}
-          className={`focus-ring ${bodyClassName}`}
+          presentation="archived-overview-row"
+          appearance={{ actionsReserve }}
         >
           {body}
-        </button>
+        </ControlButton>
       ) : (
         <div className={bodyClassName}>{body}</div>
       )}

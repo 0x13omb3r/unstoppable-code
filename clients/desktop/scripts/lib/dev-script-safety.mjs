@@ -12,6 +12,13 @@ import {
 import { hostname, freemem, tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
+import {
+  hasProcessAncestor,
+  hasProcessAncestorFallback,
+  parseVmStatAvailableMb,
+  readProcessTable,
+  summarizeDevScriptArgv,
+} from './dev-script-process-monitor.mjs';
 
 export const DEFAULT_MEMORY_PRESSURE_THRESHOLD_MB = 4096;
 export const MEMORY_PRESSURE_THRESHOLD_ENV =
@@ -34,20 +41,20 @@ const INCOMPLETE_HOLDER_GRACE_MS = 30_000;
 const MUTATION_LOCK_STALE_GRACE_MS = 1_000;
 const MUTATION_LOCK_RETRY_MS = 10;
 const MUTATION_LOCK_TIMEOUT_MS = 5_000;
-const SUITE_CONFIG = {
-  performance: {
-    concurrencyEnv: 'CANOPY_DEV_PERF_SUITE_MAX_RUN_CONCURRENCY',
-    defaultMaxConcurrency: 1,
-    lockNamespace: 'desktop-runtime',
-  },
-  e2e: {
-    concurrencyEnv: 'CANOPY_DEV_E2E_SUITE_MAX_RUN_CONCURRENCY',
-    defaultMaxConcurrency: 1,
-    lockNamespace: 'desktop-runtime',
-  },
-  unit: null,
-  lint: null,
+export const DEV_SUITE_LEASE_ENV = 'CANOPY_DEV_SUITE_LEASE';
+export const DEV_SUITE_CONCURRENCY_ENV = 'CANOPY_DEV_SUITE_MAX_RUN_CONCURRENCY';
+const HEAVY_SUITE_CONFIG = {
+  concurrencyEnv: DEV_SUITE_CONCURRENCY_ENV,
+  defaultMaxConcurrency: 1,
+  // Reuse the perf/E2E namespace so already-running older guards also exclude us.
+  lockNamespace: 'desktop-runtime',
 };
+const SUITE_CONFIG = Object.fromEntries(
+  ['performance', 'e2e', 'unit', 'lint'].map((suite) => [
+    suite,
+    HEAVY_SUITE_CONFIG,
+  ]),
+);
 
 class DevScriptGuardBlockedError extends Error {
   constructor(message, guard) {
@@ -74,9 +81,7 @@ export function readPositiveIntegerSetting(env, name, defaultValue) {
   if (!raw) return defaultValue;
   const value = Number(raw);
   if (!Number.isSafeInteger(value) || value < 1) {
-    throw new Error(
-      `${name} must be a positive integer; received ${JSON.stringify(raw)}.`,
-    );
+    throw new Error(`${name} must be a positive integer.`);
   }
   return value;
 }
@@ -119,22 +124,7 @@ function readAvailableMemoryFromVmStat() {
       stdio: ['ignore', 'pipe', 'ignore'],
       timeout: 2_000,
     });
-    const pageSize = Number(output.match(/page size of (\d+) bytes/)?.[1]);
-    if (!Number.isFinite(pageSize)) return null;
-    const pageLabels = [
-      'Pages free',
-      'Pages inactive',
-      'Pages speculative',
-      'Pages purgeable',
-    ];
-    let pages = 0;
-    for (const label of pageLabels) {
-      const count = Number(
-        output.match(new RegExp(`^${label}:\\s+(\\d+)\\.$`, 'm'))?.[1] ?? 0,
-      );
-      pages += count;
-    }
-    return (pages * pageSize) / 1024 / 1024;
+    return parseVmStatAvailableMb(output);
   } catch {
     return null;
   }
@@ -174,6 +164,9 @@ function removeStaleSlot(slotPath, isProcessAlive) {
   const holder = readHolder(slotPath);
   if (holder) {
     if (isProcessAlive(holder.pid)) return false;
+    // The supervisor owns teardown. Its diagnostic child/survivor metadata
+    // must not strand a machine-wide slot after that owner has died, even
+    // when process-table probes are unavailable or a PID has been reused.
   } else {
     try {
       if (
@@ -212,7 +205,11 @@ function formatHolder(holder) {
   if (holder.status === 'initializing') {
     return `  - ${holder.slot}: holder metadata is still initializing`;
   }
-  return `  - pid=${holder.pid} parentPid=${holder.parentPid} cwd=${holder.cwd} command=${holder.command} startedAt=${holder.startedAt}`;
+  // Older worktrees wrote raw argv into this shared namespace.
+  const command = summarizeDevScriptArgv(
+    typeof holder.command === 'string' ? holder.command.split(/\s+/) : [],
+  );
+  return `  - pid=${holder.pid} parentPid=${holder.parentPid} command=${command} startedAt=${holder.startedAt}`;
 }
 
 function concurrencyLimitError(suite, maxConcurrency, holders) {
@@ -286,7 +283,7 @@ export async function acquireSuiteConcurrencyLease({
   }
 
   const suitePath = join(lockRoot, SUITE_CONFIG[suite].lockNamespace ?? suite);
-  mkdirSync(suitePath, { recursive: true });
+  mkdirSync(suitePath, { recursive: true, mode: 0o700 });
   const mutationLease = await acquireMutationLease(suitePath);
   const token = randomUUID();
   const metadata = {
@@ -294,8 +291,7 @@ export async function acquireSuiteConcurrencyLease({
     suite,
     pid: holder.pid ?? process.pid,
     parentPid: holder.parentPid ?? process.ppid,
-    cwd: holder.cwd ?? process.cwd(),
-    command: holder.command ?? process.argv.join(' '),
+    command: summarizeDevScriptArgv(holder.argv ?? process.argv),
     hostname: holder.hostname ?? hostname(),
     startedAt: holder.startedAt ?? new Date().toISOString(),
   };
@@ -309,12 +305,12 @@ export async function acquireSuiteConcurrencyLease({
       const slotPath = join(suitePath, `slot-${index}`);
       for (let attempt = 0; attempt < 2; attempt += 1) {
         try {
-          mkdirSync(slotPath);
+          mkdirSync(slotPath, { mode: 0o700 });
           try {
             writeFileSync(
               holderFilePath(slotPath),
               `${JSON.stringify(metadata, null, 2)}\n`,
-              'utf8',
+              { encoding: 'utf8', mode: 0o600 },
             );
           } catch (error) {
             rmSync(slotPath, { recursive: true, force: true });
@@ -324,7 +320,33 @@ export async function acquireSuiteConcurrencyLease({
           return {
             metadata,
             slotPath,
+            recordChild(childPid, processGroupId) {
+              metadata.childPid = childPid;
+              metadata.processGroupId = processGroupId;
+              if (readHolder(slotPath)?.token === token) {
+                writeFileSync(
+                  holderFilePath(slotPath),
+                  `${JSON.stringify(metadata, null, 2)}\n`,
+                  { mode: 0o600 },
+                );
+              }
+            },
+            retainSurvivors(survivors) {
+              metadata.cleanupUnconfirmed = true;
+              metadata.survivors = survivors.map(({ pid, startedAt }) => ({
+                pid,
+                startedAt,
+              }));
+              if (readHolder(slotPath)?.token === token) {
+                writeFileSync(
+                  holderFilePath(slotPath),
+                  `${JSON.stringify(metadata, null, 2)}\n`,
+                  { mode: 0o600 },
+                );
+              }
+            },
             async release() {
+              if (metadata.cleanupUnconfirmed) return;
               if (released) return;
               released = true;
               if (readHolder(slotPath)?.token === token) {
@@ -348,6 +370,53 @@ export async function acquireSuiteConcurrencyLease({
   }
 }
 
+export function inheritedSuiteLease({
+  env = process.env,
+  lockRoot = DEFAULT_LOCK_ROOT,
+  isProcessAlive = processIsAlive,
+  processTable = readProcessTable,
+  ancestorFallback = hasProcessAncestorFallback,
+} = {}) {
+  // A nested wrapper shares only a live ancestor's lease. An inherited env
+  // marker alone must never disable machine-wide exclusion.
+
+  if (env[DEV_SUITE_LEASE_ENV]) {
+    try {
+      const marker = JSON.parse(env[DEV_SUITE_LEASE_ENV]);
+      if (/^slot-[1-9]\d*$/.test(marker.slot)) {
+        const slotPath = join(
+          lockRoot,
+          HEAVY_SUITE_CONFIG.lockNamespace,
+          marker.slot,
+        );
+        const metadata = readHolder(slotPath);
+        if (
+          metadata?.token === marker.token &&
+          metadata?.pid === marker.pid &&
+          (isProcessAlive ?? processIsAlive)(marker.pid)
+        ) {
+          let related;
+          try {
+            related = hasProcessAncestor(
+              process.pid,
+              marker.pid,
+              processTable(),
+            );
+          } catch {
+            related = ancestorFallback(process.pid, marker.pid);
+          }
+          if (related)
+            return { metadata, slotPath, inherited: true, async release() {} };
+        }
+      }
+    } catch {
+      // A missing, stale or malformed marker falls back to normal acquisition.
+    }
+  }
+
+  return null;
+}
+
 export async function applyDevScriptSafety({
   suite,
   env = process.env,
@@ -358,6 +427,7 @@ export async function applyDevScriptSafety({
   lockRoot = DEFAULT_LOCK_ROOT,
   holder,
   isProcessAlive,
+  processTable = readProcessTable,
 } = {}) {
   const config = SUITE_CONFIG[suite];
   if (config === undefined) {
@@ -366,6 +436,13 @@ export async function applyDevScriptSafety({
   if (forceCiBypass || isCiEnvironment(env)) {
     return { ciBypass: true, memory: { skipped: true }, lease: null };
   }
+
+  const inheritedLease = inheritedSuiteLease({
+    env,
+    lockRoot,
+    isProcessAlive,
+    processTable,
+  });
 
   let memory;
   if (skipMemoryPressureSafetyCheck) {
@@ -390,8 +467,8 @@ export async function applyDevScriptSafety({
     memory = { skipped: false, availableMb, thresholdMb };
   }
 
-  let lease = null;
-  if (config && !skipConcurrencySafetyLock) {
+  let lease = inheritedLease;
+  if (config && !lease && !skipConcurrencySafetyLock) {
     const maxConcurrency = readPositiveIntegerSetting(
       env,
       config.concurrencyEnv,
@@ -478,6 +555,14 @@ export function parseGuardedCommandArgs(argv) {
   const skipConcurrencySafetyLock = rawCommand.includes(CONCURRENCY_SKIP_FLAG);
   const skipMemoryPressureSafetyCheck = rawCommand.includes(MEMORY_SKIP_FLAG);
   const noGuardWait = rawCommand.includes(NO_GUARD_WAIT_FLAG);
+  if (
+    wrapperArgs.includes('--reject-safety-flags') &&
+    (skipConcurrencySafetyLock || skipMemoryPressureSafetyCheck || noGuardWait)
+  ) {
+    throw new Error(
+      'This guarded command does not support safety bypass or no-wait flags. Use the individual guarded check entrypoints instead.',
+    );
+  }
   const commandParts = rawCommand.filter(
     (argument) =>
       argument !== CONCURRENCY_SKIP_FLAG &&

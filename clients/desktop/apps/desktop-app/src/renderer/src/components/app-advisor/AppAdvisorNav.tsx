@@ -1,3 +1,4 @@
+import { OrchestratorNavFrame } from '@canopy/ui-app/orchestrator/OrchestratorNavFrame';
 import { useDesktopAutoDeleteAttention } from '@/components/worktree/useDesktopAutoDeleteAttention';
 import { DesktopAutoDeleteAttention } from '@/components/worktree/DesktopAutoDeleteAttention';
 import {
@@ -5,7 +6,6 @@ import {
   SidebarAutoDeleteProvider,
   SidebarAutoDeleteNotice,
 } from '@canopy/ui-app';
-import { ORCHESTRATOR_LABEL } from '@canopy/protocol';
 import { useCurrentUiStateReporter } from '@/hooks/useCurrentUiStateReporter';
 /**
  * Collapsible App Advisor-only navigation rail for the popout workspace.
@@ -322,6 +322,7 @@ function AppAdvisorNavContent({ collapsed }: AppAdvisorNavProps): JSX.Element {
       .filter(
         (question) =>
           question.answeredAt === undefined &&
+          // Default Bot only: this nav lists the Orchestrator's own questions.
           question.projectId === APP_ADVISOR_PROJECT_ID,
       )
       .map((question) => question.worktreeId)
@@ -382,11 +383,13 @@ function AppAdvisorNavContent({ collapsed }: AppAdvisorNavProps): JSX.Element {
   // The archived container currently open in the viewer for this workspace
   // (primitive selector so unrelated viewer changes don't re-render the nav).
   const openContainerId = useArchivedContainersStore((s) =>
+    // Default Bot only: this nav is scoped to the Orchestrator workspace.
     s.viewer !== null && s.viewer.workspaceId === APP_ADVISOR_PROJECT_ID
       ? s.viewer.containerId
       : null,
   );
   const archivedOverviewOpen = useArchivedContainersStore(
+    // Default Bot only: this nav is scoped to the Orchestrator workspace.
     (s) => s.overview?.workspaceId === APP_ADVISOR_PROJECT_ID,
   );
 
@@ -723,23 +726,13 @@ function AppAdvisorNavContent({ collapsed }: AppAdvisorNavProps): JSX.Element {
   }, []);
 
   return (
-    <nav
-      ref={navRef}
-      data-testid="app-advisor-nav"
-      data-collapsed={collapsed ? 'true' : 'false'}
-      aria-label={`${ORCHESTRATOR_LABEL} navigation`}
+    <OrchestratorNavFrame
+      presentation="window"
+      navRef={navRef}
+      testId="app-advisor-nav"
+      collapsed={collapsed}
       onTransitionEnd={handleTransitionEnd}
-      // No divider: like the main window's sidebar in the inset layout, the
-      // nav sits on the window material and the cards beside it draw the edge.
-      className={`flex h-full shrink-0 flex-col overflow-hidden transition-[width] duration-150 ease-out ${
-        collapsed ? 'w-0' : 'w-60'
-      }`}
     >
-      {/* Header: a drag-region row reserving height beneath the persistent
-          AppAdvisorTitlebarCorner overlay (which owns the control buttons at
-          constant window coordinates). */}
-      {!collapsed && <div className="electron-drag h-10.75 shrink-0" />}
-
       {/* Entry list + legacy archives — unmounted while collapsed (the nav
           is zero-width; the corner overlay stays put above the top bar). */}
       {!collapsed && (
@@ -926,6 +919,6 @@ function AppAdvisorNavContent({ collapsed }: AppAdvisorNavProps): JSX.Element {
         />
       )}
       <SidebarAutoDeleteNotice />
-    </nav>
+    </OrchestratorNavFrame>
   );
 }

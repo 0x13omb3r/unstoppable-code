@@ -74,15 +74,17 @@ function ThresholdMeter({
 function PopoverDivider(): JSX.Element {
   // `border-*` color utilities are inert (CAN-2734); paint the hairline: one
   // device pixel in the quietest line role, with 16px of room either side
-  // (the section gap plus this margin). The bottom margin takes a second
+  // (the section gap plus the inset). The bottom inset takes a second
   // hairline so the divider's box is whole CSS pixels: a half-pixel box
   // shifts everything under it, and the footer band's own hairline then
   // falls between device pixels and disappears.
   return (
     <div
       aria-hidden="true"
-      className="mb-[calc(0.25rem+var(--border-hairline))] mt-1 h-[var(--border-hairline)] shrink-0 bg-line-quaternary"
-    />
+      className="shrink-0 pb-[calc(0.25rem+var(--border-hairline))] pt-1"
+    >
+      <div className="h-[var(--border-hairline)] bg-line-quaternary" />
+    </div>
   );
 }
 
@@ -598,22 +600,24 @@ export default function UsagePopover({
           // stops one hairline short of the edge so the surface's inset rim
           // (part of its shadow, painted under content) still shows, and its
           // corners follow the surface's radius less that hairline.
-          <div className="mx-[calc(var(--border-hairline)-0.75rem)] mb-[calc(var(--border-hairline)-0.75rem)] mt-1 flex flex-col overflow-hidden rounded-b-[calc(var(--radius-lg)-var(--border-hairline))]">
-            <div
-              aria-hidden="true"
-              // Inset like the popover's other dividers: back to the 12px
-              // content edge from the band's near-full bleed.
-              className="mx-[calc(0.75rem-var(--border-hairline))] h-[var(--border-hairline)] shrink-0 bg-line-quaternary"
-            />
-            {/* The whole band is the link: hovering anywhere on it lights the
+          <div className="pt-1">
+            <div className="mx-[calc(var(--border-hairline)-0.75rem)] mb-[calc(var(--border-hairline)-0.75rem)] flex flex-col overflow-hidden rounded-b-[calc(var(--radius-lg)-var(--border-hairline))]">
+              <div
+                aria-hidden="true"
+                // Inset like the popover's other dividers: back to the 12px
+                // content edge from the band's near-full bleed.
+                className="mx-[calc(0.75rem-var(--border-hairline))] h-[var(--border-hairline)] shrink-0 bg-line-quaternary"
+              />
+              {/* The whole band is the link: hovering anywhere on it lights the
                 label and its chevron. The band's clipped corners would cut a
                 focus ring, so keyboard focus tints the band instead. */}
-            <UsageActionRow
-              label="See detailed breakdown"
-              onClick={onSeeDetails}
-              testId="usage-indicator-see-details"
-              band
-            />
+              <UsageActionRow
+                label="See detailed breakdown"
+                onClick={onSeeDetails}
+                testId="usage-indicator-see-details"
+                band
+              />
+            </div>
           </div>
         )}
       </div>

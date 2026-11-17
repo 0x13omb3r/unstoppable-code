@@ -1,43 +1,13 @@
-// "Continue on <credits model>" from the usage-limit banner (CAN-4900).
+// Moving a chat onto the default credits model from the provider list's
+// credits row (CAN-4900, CAN-6860).
 //
 // A chat on a model with no gateway route cannot bill to AI Credits, so the
-// banner offers to move it onto the default credits model instead. The model
-// switch must land before routing is saved: routing is never written against a
-// model that can't carry it, and a rejected switch leaves routing untouched.
+// credits row offers to move it onto the default credits model instead. The
+// model switch must land before routing is saved: routing is never written
+// against a model that can't carry it, and a rejected switch leaves routing
+// untouched.
 
-import {
-  isAgentModel,
-  type AgentProviderType,
-  type ChatModel,
-} from '@canopy/desktop-shared/types';
-
-export interface CreditsModelSwitchOfferInput {
-  model: ChatModel | undefined;
-  billingProvider: AgentProviderType;
-  hasWorktreeTarget: boolean;
-  creditsModelRoutable: boolean;
-}
-
-/**
- * Whether this chat's notice may offer the switch. The default credits model
- * is a Codex model and the switch writes per-chat routing, so it needs a Codex
- * worktree chat and a routable target. An Agent is never switched: the plain
- * credits model would drop its instructions, so the notice names the gate
- * without the button.
- */
-export function canOfferCreditsModelSwitch({
-  model,
-  billingProvider,
-  hasWorktreeTarget,
-  creditsModelRoutable,
-}: CreditsModelSwitchOfferInput): boolean {
-  return (
-    creditsModelRoutable &&
-    hasWorktreeTarget &&
-    billingProvider === 'codex' &&
-    !isAgentModel(model)
-  );
-}
+import type { ChatModel } from '@canopy/desktop-shared/types';
 
 export interface CreditsModelSwitchTarget {
   projectId: string;

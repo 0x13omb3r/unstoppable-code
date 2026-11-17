@@ -1,10 +1,10 @@
 import {
-  APP_ADVISOR_PROJECT_ID,
   STANDALONE_CHAT_PROJECT_ID,
   serializeWorkspaceContext,
   type WorkspaceContext,
   type WorktreeSelection,
 } from '@canopy/desktop-shared/types';
+import { isBotProjectId } from '@canopy/protocol/chat-targets';
 import { isSameWorkspaceContext } from '@canopy/protocol/workspace-context';
 import { getSidebarScopingContext } from '@/components/sidebar/useSidebarScopingContext';
 import { sharedContainerHomeContext } from '@/lib/shared-containers/home-context';
@@ -68,7 +68,7 @@ export function syncSelectionForContextChange(
 /**
  * A selection belongs to its workspace's owner. A Personal checkout linked to
  * an organization still belongs to Personal (CAN-4781). The Personal
- * standalone and global App Advisor sentinels can have no workspace row.
+ * standalone and Bot sentinels can have no workspace row.
  * A missing workspace was deleted and is not restorable.
  */
 function selectionFitsContext(
@@ -79,7 +79,7 @@ function selectionFitsContext(
   const project = projects.find((item) => item.id === selection.projectId);
   if (!project) {
     return (
-      selection.projectId === APP_ADVISOR_PROJECT_ID ||
+      isBotProjectId(selection.projectId) ||
       (context.kind === 'personal' &&
         selection.projectId === STANDALONE_CHAT_PROJECT_ID)
     );

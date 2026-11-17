@@ -26,6 +26,7 @@ export function ledgerContainerForViewScope(
     {
       projectId: scope.projectId,
       worktreeId: scope.worktreeId,
+      // Default Bot only: assistantMode is a singleton Ledger-view setting.
       assistantMode:
         scope.projectId === APP_ADVISOR_PROJECT_ID ? 'app-advisor' : 'default',
     },

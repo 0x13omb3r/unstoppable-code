@@ -3,6 +3,7 @@ import { createMarketplaceSourceOperations } from '@canopy/app-core/client';
 export const marketplaceSourceOperations = createMarketplaceSourceOperations();
 
 import { useState, useEffect, useCallback, useRef } from 'react';
+import type { ItemHarnessInstalls } from '@canopy/protocol/plugins';
 import type {
   MarketplaceInfo,
   MarketplaceRemovalResult,
@@ -84,6 +85,34 @@ export function applyCodexCompatDisabledToMarketplaceCaches(
             plugins: marketplace.plugins.map((plugin) =>
               plugin.name.toLowerCase() === target
                 ? { ...plugin, codexCompatDisabled: disabled }
+                : plugin,
+            ),
+          },
+    ),
+  }));
+}
+
+/**
+ * Add one plugin's per-harness install record (CAN-6816) to every mounted
+ * marketplace cache, changing nothing else on its row, so a record that lands
+ * after the page that asked for it closed never replaces a newer row.
+ */
+export function applyHarnessInstallsToMarketplaceCaches(
+  marketplaceId: string,
+  pluginName: string,
+  harnessInstalls: ItemHarnessInstalls,
+): void {
+  const target = pluginName.toLowerCase();
+  patchAllMarketplaceCaches((cache) => ({
+    ...cache,
+    marketplaces: cache.marketplaces.map((marketplace) =>
+      marketplace.id !== marketplaceId
+        ? marketplace
+        : {
+            ...marketplace,
+            plugins: marketplace.plugins.map((plugin) =>
+              plugin.name.toLowerCase() === target
+                ? { ...plugin, harnessInstalls }
                 : plugin,
             ),
           },

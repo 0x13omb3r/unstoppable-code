@@ -70,6 +70,8 @@ export interface ListRowProps
    * `actions`, gives the row its wrapper. The other props stay on the press.
    */
   readonly rowProps?: ListRowRootProps;
+  /** Keep the 44px hit area in a touch layout even with a fine pointer. */
+  readonly touchTarget?: boolean;
 }
 
 /** The anchor a host renders for a `ListRowLink`, such as its router's link. */
@@ -329,6 +331,7 @@ export const ListRow = forwardRef<HTMLButtonElement, ListRowProps>(
       actions,
       actionsReveal = size !== 'lg',
       rowProps,
+      touchTarget = false,
       className = '',
       type = 'button',
       disabled = false,
@@ -353,13 +356,16 @@ export const ListRow = forwardRef<HTMLButtonElement, ListRowProps>(
         disabled={disabled}
         onClick={softDisabled ? swallowClick : onClick}
         data-disabled={inactive ? '' : undefined}
-        className={pressClassName({
-          wrapped,
-          fill,
-          size,
-          description,
-          className,
-        })}
+        className={joinClassNames(
+          pressClassName({
+            wrapped,
+            fill,
+            size,
+            description,
+            className,
+          }),
+          touchTarget ? 'min-h-11' : '',
+        )}
       >
         <ListRowContent
           description={description}
@@ -634,6 +640,118 @@ const LIST_ROW_FRAME_STATE = {
   'sidebar-selected-interactive':
     'bg-muted fg-primary focus-ring cursor-pointer',
 } as const;
+
+type CompositeListRowPresentation =
+  | {
+      presentation: 'workflow-card' | 'sidebar-activity' | 'inline-actions';
+      appearance?: never;
+    }
+  | { presentation: 'surface'; className: string; appearance?: never }
+  | {
+      presentation: 'standalone-chat';
+      appearance: {
+        height: 'touch' | 'two-lines' | 'single-line';
+        state: 'selected' | 'archived' | 'active';
+        archiving: boolean;
+      };
+    }
+  | {
+      presentation: 'work-entry';
+      appearance: {
+        touchTarget: boolean;
+        draggable: boolean;
+        dragging: boolean;
+        selected: boolean;
+        menuMarked: boolean;
+        removing: boolean;
+      };
+    };
+
+type CompositeListRowProps = Omit<HTMLAttributes<HTMLDivElement>, 'className'> &
+  CompositeListRowPresentation;
+
+function compositeListRowClassName(
+  props: CompositeListRowPresentation,
+): string {
+  switch (props.presentation) {
+    case 'workflow-card':
+      return 'cursor-pointer';
+    case 'sidebar-activity':
+      return 'focus-ring rounded-row outline-none';
+    case 'inline-actions':
+      return 'focus-ring flex items-center justify-between gap-2 rounded-row px-2 text-s';
+    case 'surface':
+      return props.className;
+    case 'standalone-chat': {
+      const { height, state, archiving } = props.appearance;
+      const heightClass = {
+        touch: 'min-h-11',
+        'two-lines': 'min-h-8 py-1',
+        'single-line': 'h-8 py-0',
+      }[height];
+      const stateClass = {
+        selected: 'bg-muted fg-primary',
+        archived: 'fg-tertiary hover:bg-subtle',
+        active: 'fg-secondary hover:bg-subtle',
+      }[state];
+      return `group group/sidebar-item flex w-full min-w-0 cursor-pointer items-center ${heightClass} gap-1.5 rounded-row px-1.5 text-left text-s transition-colors ${stateClass} ${archiving ? 'pointer-events-none opacity-50' : ''}`;
+    }
+    case 'work-entry': {
+      const {
+        touchTarget,
+        draggable,
+        dragging,
+        selected,
+        menuMarked,
+        removing,
+      } = props.appearance;
+      const stateClass = selected
+        ? 'bg-muted fg-primary'
+        : `fg-secondary hover:bg-subtle${menuMarked ? ' bg-subtle' : ''}`;
+      return `group group/sidebar-item relative flex ${touchTarget ? 'min-h-11' : 'h-8'} w-full items-center gap-1.5 rounded-row px-1.5 py-0 text-left text-s transition-opacity ${draggable ? 'touch-none select-none' : ''} ${stateClass} ${removing ? 'pointer-events-none opacity-50' : ''} ${dragging ? 'opacity-50' : ''}`;
+    }
+  }
+}
+
+/**
+ * A keyboard-operable row whose controls must remain independent of the row
+ * action. Use ListRow when the action contains no focusable children.
+ */
+export const CompositeListRow = forwardRef<
+  HTMLDivElement,
+  CompositeListRowProps
+>(function CompositeListRow(props, ref): JSX.Element {
+  const { tabIndex = 0, onKeyDown, presentation, ...domProps } = props;
+  delete domProps.appearance;
+  return (
+    <div
+      {...domProps}
+      className={compositeListRowClassName(props)}
+      data-composite-row={presentation}
+      ref={ref}
+      role="button"
+      tabIndex={tabIndex}
+      onKeyDown={(event): void => {
+        if (onKeyDown) {
+          onKeyDown(event);
+          return;
+        }
+        if (
+          event.target !== event.currentTarget ||
+          (event.key !== 'Enter' && event.key !== ' ')
+        ) {
+          return;
+        }
+        event.preventDefault();
+        if (
+          props['aria-disabled'] !== true &&
+          props['aria-disabled'] !== 'true'
+        )
+          event.currentTarget.click();
+      }}
+    />
+  );
+});
 
 export type ListRowFrameProps<Tag extends 'div' | 'li' = 'div'> =
   ComponentPropsWithRef<Tag> & {

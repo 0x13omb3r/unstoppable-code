@@ -397,18 +397,20 @@ export function WorkflowsRunsTable({
                           .join(' · ')}
                       </span>
                       {expanded && row.output !== undefined ? (
-                        <Surface
-                          variant="group"
-                          size="small"
-                          className="mt-1 overflow-hidden"
-                        >
-                          <pre
-                            className={`max-h-40 overflow-auto whitespace-pre-wrap p-2 font-mono text-xs fg-secondary ${REPLAY_BLOCK_CLASS}`}
-                            data-testid="workflows-run-output"
+                        <div className="pt-1 empty:hidden">
+                          <Surface
+                            variant="group"
+                            size="small"
+                            className="overflow-hidden"
                           >
-                            {row.output}
-                          </pre>
-                        </Surface>
+                            <pre
+                              className={`max-h-40 overflow-auto whitespace-pre-wrap p-2 font-mono text-xs fg-secondary ${REPLAY_BLOCK_CLASS}`}
+                              data-testid="workflows-run-output"
+                            >
+                              {row.output}
+                            </pre>
+                          </Surface>
+                        </div>
                       ) : null}
                     </div>
                   </div>

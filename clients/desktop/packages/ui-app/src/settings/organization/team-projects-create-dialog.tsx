@@ -345,7 +345,7 @@ export function TeamProjectsCreateDialog({
                         String(repository.id) === result.providerRepoId,
                     )?.fullName ?? result.providerRepoId}
                   </span>
-                  <span className="ml-3">
+                  <span className="pl-3">
                     {result.outcome === 'created'
                       ? 'Created'
                       : result.outcome === 'exists'

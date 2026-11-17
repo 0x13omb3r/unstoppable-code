@@ -100,11 +100,15 @@ export function registerPersonalOrganizationUpgradeHandlers(): void {
   );
   registerIpcHandler(
     IPC_CHANNELS.personalOrganizationUpgradeStatus,
-    async (_event, value: unknown) =>
-      PersonalProjectOperationSchema.nullable().parse(
-        await (
-          await getService()
-        ).status(PersonalProjectStatusRequestSchema.parse(value).operationId),
-      ),
+    async (_event, value: unknown) => {
+      const { operationId, acknowledgeTerminal } =
+        PersonalProjectStatusRequestSchema.parse(value);
+      const service = await getService();
+      return PersonalProjectOperationSchema.nullable().parse(
+        await (acknowledgeTerminal
+          ? service.status(operationId, undefined, true)
+          : service.status(operationId)),
+      );
+    },
   );
 }

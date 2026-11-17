@@ -195,7 +195,7 @@ export function unavailableMessage(
 export function failureMessage(code: ModelRoutingBacktestFailureCode): string {
   switch (code) {
     case 'insufficient_credits':
-      return 'Ran out of AI Credits. Buy AI Credits to finish; turns already replayed aren’t charged again.';
+      return 'Ran out of AI Credits. Buy credits to finish; turns already replayed aren’t charged again.';
     case 'policy_blocked':
       return 'Your organization’s model settings turn off model routing.';
     case 'transcripts_disabled':

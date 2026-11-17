@@ -108,6 +108,7 @@ import {
   logMainProcessWarn,
 } from '../lib/main-process-logging';
 import { sendToAllWindows } from '../lib/window-send';
+import { confirmSetUpHarnesses } from '../lib/confirm-set-up-harnesses';
 import { listDetectedMcpServersForSelections } from '../plugins/mcp-inventory';
 import {
   buildPluginHttpMcpServerForAuth,
@@ -139,9 +140,21 @@ import {
 } from '../lib/validation';
 import {
   listCuratedMcpServers,
+  readCachedCuratedMcpServers,
   refreshCuratedMcpServers,
 } from '../mcp/curated-catalog';
+import {
+  MCP_HARNESS_STAGERS,
+  createMcpHarnessInstallStore,
+  forgetMcpServerHarnessInstalls,
+  installMcpServerForHarnesses,
+  resyncMcpServerHarnessInstalls,
+  retryMcpServerHarnessInstall,
+  withMcpHarnessInstalls,
+  type McpHarnessInstallDeps,
+} from '../mcp/harness-installs';
 import { resolveRemoteImageDataUrl } from '../mcp/remote-image-cache';
+import { isCustomizeDiscoveryEnabledInMain } from '../lib/customize-discovery-enabled';
 import { refreshProjectedPortalMcpServers } from '../portal/adapters/mcp-adapter';
 import {
   MCP_ACCEPT_HEADER,
@@ -177,6 +190,46 @@ import {
 } from '../mcp/server-ref-rewrite-outcome';
 
 const SAFE_ID_RE = /^[a-f0-9-]+$/;
+
+// One Add for every harness (CAN-6815): records beside the index.
+const harnessInstallStore = createMcpHarnessInstallStore();
+const harnessInstallDeps: McpHarnessInstallDeps = {
+  store: harnessInstallStore,
+  loadServer: (serverId) =>
+    readServer(serverId).catch((): undefined => undefined),
+  compatibility: async (file) => {
+    const key = file.server.definition.curated?.key;
+    if (key === undefined) return undefined;
+    const catalog = await readCachedCuratedMcpServers().catch((): null => null);
+    return catalog?.servers.find((entry) => entry.key === key)
+      ?.harnessCompatibility;
+  },
+  stagers: MCP_HARNESS_STAGERS,
+  now: () => new Date().toISOString(),
+  confirmedSetUpHarnesses: confirmSetUpHarnesses,
+};
+
+const harnessInstallRequestSchema = z
+  .object({
+    serverId: z.string().regex(SAFE_ID_RE),
+    configId: z.string().regex(SAFE_ID_RE),
+    harnesses: z
+      .array(z.enum(['claude', 'codex', 'cursor', 'copilot', 'opencode']))
+      .max(5),
+    pendingHarnesses: z
+      .array(z.enum(['claude', 'codex', 'cursor', 'copilot', 'opencode']))
+      .max(5)
+      .optional(),
+    mode: z.enum(['add', 'catch-up']).optional(),
+  })
+  .strict();
+
+const harnessRetryRequestSchema = z
+  .object({
+    serverId: z.string().regex(SAFE_ID_RE),
+    harness: z.enum(['claude', 'codex', 'cursor', 'copilot', 'opencode']),
+  })
+  .strict();
 
 const updateAccountSchema = z
   .object({
@@ -342,6 +395,17 @@ async function deleteMcpServerAndOAuthTokens(id: string): Promise<void> {
   });
   // Cleanup failure retains config identities for retries.
   await configRepository.remove(id, inMcpRefRewritePhase);
+  // The server is gone from every harness it was installed for; a record
+  // left behind by a failed write is never served without its server.
+  const forgotten = await forgetMcpServerHarnessInstalls(
+    harnessInstallStore,
+    id,
+  ).catch((): boolean => false);
+  if (!forgotten)
+    logMainProcessWarn(
+      '[mcp-harness-installs]',
+      'Could not remove the install record from disk; it is ignored until a later write removes it.',
+    );
   await notifyConfigIndexChanged();
   await refreshProjectedPortalMcpServers().catch((error: unknown) => {
     logMainProcessError('Portal MCP projection refresh failed', error);
@@ -1578,7 +1642,7 @@ export async function saveMcpServer(
       ? server.definition.createdAt
       : new Date().toISOString(),
   };
-  return configRepository.withServerMutation(id, async () => {
+  const saved = await configRepository.withServerMutation(id, async () => {
     // Kept stored secrets resolve against the server as stored now, inside
     // its lease, so a value kept here is the one this save replaces.
     const current = server.definition.id
@@ -1599,6 +1663,19 @@ export async function saveMcpServer(
         : {}),
     });
   });
+  // Every harness it was installed for is checked against the saved
+  // definition (CAN-6817). The save already succeeded, so a failure here is
+  // only logged; the record keeps its last result.
+  if (server.definition.id && (await isCustomizeDiscoveryEnabledInMain()))
+    await resyncMcpServerHarnessInstalls(harnessInstallDeps, id).catch(
+      (error: unknown) => {
+        logMainProcessWarn(
+          '[mcp-harness-installs]',
+          `Could not update the install record: ${error instanceof Error ? error.message : String(error)}`,
+        );
+      },
+    );
+  return saved;
 }
 
 const destinationChanged = (): StoredSecretError =>
@@ -2346,8 +2423,43 @@ export function registerMcpServerHandlers(
   // Account rows are ephemeral; CRUD writers always read the device-only index.
   registerIpcHandler(
     MCP_SERVER_CHANNELS.LOAD_INDEX,
+    // Records join device rows before account inventory nests matching
+    // device copies under their account rows, so those copies keep them.
     async (): Promise<McpServersIndexFile> =>
-      withAccountMcpInventory(await readIndexWithUrlBackfill()),
+      withAccountMcpInventory(
+        withMcpHarnessInstalls(
+          await readIndexWithUrlBackfill(),
+          await harnessInstallStore
+            .read()
+            .catch((): Record<string, never> => ({})),
+        ),
+      ),
+  );
+
+  // One Add for every harness (CAN-6815). The renderer calls these only
+  // while the `customize-discovery` Labs experiment is on.
+  registerIpcHandler(
+    MCP_SERVER_CHANNELS.INSTALL_FOR_HARNESSES,
+    async (_event, request: unknown) => {
+      const parsed = harnessInstallRequestSchema.parse(request);
+      // Only the record file changes; the window that asked reloads the
+      // index it shows.
+      return configRepository.withServerMutation(parsed.serverId, () =>
+        installMcpServerForHarnesses(harnessInstallDeps, parsed),
+      );
+    },
+  );
+
+  registerIpcHandler(
+    MCP_SERVER_CHANNELS.RETRY_HARNESS_INSTALL,
+    async (_event, request: unknown) => {
+      const parsed = harnessRetryRequestSchema.parse(request);
+      // Only the record file changes; the window that asked reloads the
+      // index it shows.
+      return configRepository.withServerMutation(parsed.serverId, () =>
+        retryMcpServerHarnessInstall(harnessInstallDeps, parsed),
+      );
+    },
   );
 
   registerIpcHandler(MCP_SERVER_CHANNELS.LIST_PROVIDER_CONNECTORS, async () => {

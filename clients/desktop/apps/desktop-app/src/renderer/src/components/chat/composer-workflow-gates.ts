@@ -3,7 +3,7 @@ import {
   type CanopyCapabilities,
   type ChatWorkflowTarget,
 } from '@canopy/app-core';
-import { APP_ADVISOR_PROJECT_ID } from '@canopy/desktop-shared/types';
+import { isBotProjectId } from '@canopy/protocol/chat-targets';
 import { isCoworkChatTarget } from '@/lib/cowork';
 
 export interface ComposerWorkflowGates {
@@ -18,7 +18,7 @@ function composerWorkflowTarget(
 ): ChatWorkflowTarget | undefined {
   if (projectId === undefined) return undefined;
   // App Advisor composers send to Work Entry chats; the global slot has none.
-  if (projectId === APP_ADVISOR_PROJECT_ID) return 'app-advisor-entry';
+  if (isBotProjectId(projectId)) return 'app-advisor-entry';
   return isCoworkChatTarget(projectId) ? 'cowork' : 'worktree';
 }
 

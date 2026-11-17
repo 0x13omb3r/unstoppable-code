@@ -1,9 +1,9 @@
 import {
-  APP_ADVISOR_PROJECT_ID,
   PIPELINE_EDITOR_PROJECT_ID,
   type ChatCommandRequest,
   type PortalCommandEnvelope,
 } from '@canopy/desktop-shared/types';
+import { isBotProjectId } from '@canopy/protocol/chat-targets';
 import { validateId } from '../../lib/validation';
 import { projectPersistedChatTranscript } from '../../services/chat-transcript-projector';
 import {
@@ -47,10 +47,7 @@ async function resolvePortalChatReadTarget(
       validateId(payload.worktreeId, 'worktreeId');
       const projectId = payload.projectId;
       const worktreeId = payload.worktreeId;
-      if (
-        projectId === APP_ADVISOR_PROJECT_ID ||
-        projectId === PIPELINE_EDITOR_PROJECT_ID
-      )
+      if (isBotProjectId(projectId) || projectId === PIPELINE_EDITOR_PROJECT_ID)
         throw new Error('Embedded scope');
       if (
         (command.target?.workspaceLocalId &&

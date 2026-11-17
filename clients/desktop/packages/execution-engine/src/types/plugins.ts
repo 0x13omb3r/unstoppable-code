@@ -15,6 +15,9 @@
 // ---------------------------------------------------------------------------
 
 import type {
+  InstallItemForHarnessesRequest,
+  ItemHarnessInstalls,
+  RetryItemHarnessInstallRequest,
   ListSharedPluginsRequest,
   ListSharedPluginsResponse,
   MarketplaceInfo,
@@ -418,6 +421,18 @@ export interface PluginsAPI {
   installBuiltInPlugin(
     request: InstallBuiltInPluginRequest,
   ): Promise<IPCResult<InstallBuiltInPluginResult>>;
+  /**
+   * One Add for every harness (CAN-6816): check an installed plugin or skill
+   * against the set-up harnesses and record what each loads. Resolves `null`
+   * when there is no harness to record. Absent on hosts that cannot.
+   */
+  installForHarnesses?(
+    request: InstallItemForHarnessesRequest,
+  ): Promise<ItemHarnessInstalls | null>;
+  /** Check one harness of an earlier install again (CAN-6816). */
+  retryHarnessInstall?(
+    request: RetryItemHarnessInstallRequest,
+  ): Promise<ItemHarnessInstalls>;
   listShared(
     request: ListSharedPluginsRequest,
   ): Promise<IPCResult<ListSharedPluginsResponse>>;

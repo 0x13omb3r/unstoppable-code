@@ -29,6 +29,7 @@ export const PIPELINE_HOST_FAILURE_REASONS = [
   'needs_host',
   'setup_failed',
   'setup_timed_out',
+  'turn_failed',
   'reply_timed_out',
 ] as const;
 

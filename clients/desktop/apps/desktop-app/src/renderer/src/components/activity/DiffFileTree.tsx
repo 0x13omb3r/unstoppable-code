@@ -1,3 +1,4 @@
+import { ControlButton } from '@canopy/ui-shared/components';
 import {
   useState,
   useCallback,
@@ -11,7 +12,7 @@ import type {
   ChangedFileInfo,
   FileDiffSource,
 } from '@canopy/desktop-shared/types';
-import { Surface, DiffLineCounts } from '@canopy/ui-shared/components';
+import { Surface, DiffFileTreeRow } from '@canopy/ui-shared/components';
 import {
   ChevronDownIcon,
   ChevronRightIcon,
@@ -25,9 +26,7 @@ import {
 } from '@canopy/ui-shared/icons/AppIcons';
 import { normalizeRepoKey } from '@/components/code-review/codeReviewLayout';
 import { ResizeHandle } from '@/components/shared/ResizeHandle';
-import { RichHoverTooltip } from '@/components/shared/RichHoverTooltip';
 import { Button } from '@canopy/ui-shared/components';
-import { DiffFileStatusMarker } from '@canopy/ui-shared/components';
 
 type FileContextMenu = (
   file: ChangedFileInfo,
@@ -212,11 +211,11 @@ function FolderRow({
 }: FolderRowProps): JSX.Element {
   const fileCount = node.fileCount;
   return (
-    <button
+    <ControlButton
       type="button"
       onClick={onToggle}
       aria-expanded={expanded}
-      className="flex w-max min-w-full items-center gap-1.5 rounded-md px-2 py-1 text-xs fg-secondary transition-colors hover:bg-fg-primary/[0.04]"
+      presentation="diff-folder"
       style={{ paddingLeft: `${depth * 16 + 8}px` }}
     >
       {expanded ? (
@@ -231,7 +230,7 @@ function FolderRow({
           {fileCount}
         </span>
       )}
-    </button>
+    </ControlButton>
   );
 }
 
@@ -262,46 +261,30 @@ function FileNodeRow({
     : (entry.file.path.split(/[\\/]/).pop() ?? entry.file.path);
 
   return (
-    <RichHoverTooltip
-      content={fileRowTitle(entry.file, showDiffCounts)}
-      triggerWrapperClassName={
-        showFullPath ? 'w-full min-w-0' : 'w-max min-w-full'
+    <DiffFileTreeRow
+      testId={`diff-file-tree-row-${fileRowTestId(entry.file, entry.source)}`}
+      details={fileRowTitle(entry.file, showDiffCounts)}
+      layout={showFullPath ? 'tree-full-path' : 'tree'}
+      indentation={depth * 16 + 8}
+      file={{
+        filePath: entry.file.path,
+        label: fileName,
+        status: entry.file.status,
+        selected: isSelected,
+        insertions: showDiffCounts ? entry.file.insertions : undefined,
+        deletions: showDiffCounts ? entry.file.deletions : undefined,
+      }}
+      onSelect={() => onSelect(entry.file, entry.source)}
+      onContextMenu={
+        onFileContextMenu
+          ? (event) => {
+              event.preventDefault();
+              onFileContextMenu(entry.file, entry.source, event);
+            }
+          : undefined
       }
-      surfaceClassName="w-max max-w-96"
-      surfacePadding="compact"
-    >
-      <button
-        type="button"
-        // Stable automation hook for every surface that mounts this tree (code
-        // review, archived changes). Keyed exactly like `fileBadges`.
-        data-testid={`diff-file-tree-row-${fileRowTestId(entry.file, entry.source)}`}
-        data-selected={isSelected ? 'true' : 'false'}
-        aria-label={fileRowTitle(entry.file, showDiffCounts)}
-        onClick={() => onSelect(entry.file, entry.source)}
-        onContextMenu={(event) => {
-          if (onFileContextMenu) {
-            event.preventDefault();
-            onFileContextMenu(entry.file, entry.source, event);
-          }
-        }}
-        className={`flex ${showFullPath ? 'w-full min-w-0' : 'w-max min-w-full'} items-center gap-1.5 rounded-md px-2 py-1 text-xs transition-colors ${
-          isSelected
-            ? 'bg-accent/[0.08] fg-primary'
-            : 'fg-primary/80 hover:bg-fg-primary/[0.06]'
-        }`}
-        style={{
-          paddingLeft: `${depth * 16 + 8}px`,
-        }}
-      >
-        <DiffFileStatusMarker status={entry.file.status} review />
-        <span
-          className={
-            showFullPath ? 'min-w-0 truncate text-left' : 'whitespace-nowrap'
-          }
-        >
-          {fileName}
-        </span>
-        <span className="ml-auto flex shrink-0 items-center gap-1.5 pl-2">
+      trailing={
+        <>
           {badge && badge.annotations > 0 && (
             <span
               data-testid="review-file-annotation-badge"
@@ -322,17 +305,9 @@ function FileNodeRow({
               {badge.comments}
             </span>
           )}
-          {showDiffCounts && (
-            <DiffLineCounts
-              insertions={entry.file.insertions}
-              deletions={entry.file.deletions}
-              size="compact"
-              tone="strong"
-            />
-          )}
-        </span>
-      </button>
-    </RichHoverTooltip>
+        </>
+      }
+    />
   );
 }
 

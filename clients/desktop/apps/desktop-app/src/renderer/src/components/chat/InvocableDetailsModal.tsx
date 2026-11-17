@@ -1,3 +1,4 @@
+import { ControlButton } from '@canopy/ui-shared/components';
 import { useMemo, useRef, useState, type JSX, type ReactNode } from 'react';
 import { POSTHOG_REPLAY_BLOCK_CLASS } from '@canopy/desktop-instrumentation/posthog-replay-privacy';
 import { getDocument } from '@canopy/ui-shared/panels';
@@ -134,16 +135,16 @@ export function InvocableDetailsButton({
   const { content, loading } = useInvocableMentionContent(target, open);
   return (
     <>
-      <button
+      <ControlButton
         ref={buttonRef}
         type="button"
         data-testid="using-skill-details"
         aria-label={`Open ${target.label} details`}
-        className="focus-ring rounded bg-fg-primary/[0.08] px-1 py-0.5 font-mono text-2xs hover:bg-fg-primary/[0.14]"
+        presentation="transcript-command-token"
         onClick={() => setOpen(true)}
       >
         {children}
-      </button>
+      </ControlButton>
       {open && typeof document !== 'undefined' ? (
         <InvocableDetailsModal
           target={target}

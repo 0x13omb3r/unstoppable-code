@@ -252,7 +252,9 @@ export function createElectronExecutionRuntime(
       createTrackedPlan,
       updateTrackedPlan,
     },
-    resolvePipelinePluginCollections,
+    // The executor's third argument names the execution, not a catalog.
+    resolvePipelinePluginCollections: (collections, preferences) =>
+      resolvePipelinePluginCollections(collections, preferences),
     resolveClaudeModAdmissionContext: (request) =>
       resolveClaudeModAdmissionContext(request),
     resolveClaudeCompatibleInvocation,

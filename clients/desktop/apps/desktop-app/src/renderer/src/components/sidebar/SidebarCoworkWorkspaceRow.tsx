@@ -1,3 +1,4 @@
+import { ControlButton } from '@canopy/ui-shared/components';
 import {
   SidebarDropLine,
   SidebarWorkspaceFrame,
@@ -1921,12 +1922,12 @@ function SidebarCoworkWorkspaceRowImpl({
             </WorkspaceIconDisclosureSwap>
           </WorkspaceIconSlot>
         ) : (
-          <button
+          <ControlButton
             type="button"
             aria-label={`Reorder ${item.name}`}
             data-workspace-drag-activator="icon"
             data-testid={`sidebar-cowork-project-${item.id}-drag-handle${testIdSuffix}`}
-            className="focus-ring relative inline-flex h-5 w-5 shrink-0 cursor-default items-center justify-center rounded-full"
+            presentation="workspace-drag-handle"
             {...attributes}
             {...listeners}
           >
@@ -1940,17 +1941,17 @@ function SidebarCoworkWorkspaceRowImpl({
                 testIdSuffix={testIdSuffix}
               />
             </WorkspaceIconDisclosureSwap>
-          </button>
+          </ControlButton>
         )}
 
-        <button
+        <ControlButton
           type="button"
           onClick={handleToggleExpanded}
           aria-expanded={expanded}
           aria-label={`${expanded ? 'Collapse' : 'Expand'} ${item.name}${item.pinned === true ? ', Pinned' : ''}`}
           data-workspace-drag-activator="label"
           data-testid={`sidebar-cowork-project-${item.id}-toggle${testIdSuffix}`}
-          className="focus-ring flex min-w-0 flex-1 items-center gap-1 text-left group-hover/sidebar-item:pr-19 group-focus-within/sidebar-item:pr-19"
+          presentation="workspace-label-toggle"
         >
           <span
             className={`${POSTHOG_REPLAY_MASK_CLASS} min-w-0 truncate text-s font-normal leading-snug`}
@@ -1958,16 +1959,17 @@ function SidebarCoworkWorkspaceRowImpl({
           >
             {item.name}
           </span>
-        </button>
+        </ControlButton>
 
         {item.pinned === true && (
           // Hidden while the hover actions overlay its pixels, like the
           // code project header's pin.
-          <SidebarPinnedBadge
-            testId={`sidebar-cowork-project-${item.id}-pinned${testIdSuffix}`}
-            className="mr-1.5"
-            hideOnCoarsePointer
-          />
+          <div className="pr-1.5 empty:hidden">
+            <SidebarPinnedBadge
+              testId={`sidebar-cowork-project-${item.id}-pinned${testIdSuffix}`}
+              hideOnCoarsePointer
+            />
+          </div>
         )}
 
         {/* Inert at rest so the whole row still reads as one hover target,

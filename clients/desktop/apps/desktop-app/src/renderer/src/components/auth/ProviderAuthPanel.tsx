@@ -389,7 +389,7 @@ function TerminalProviderAuthPanel({
 
   const containerSpacing = compact
     ? 'flex flex-col gap-3'
-    : 'flex flex-col gap-4 mt-8 first:mt-0';
+    : 'flex flex-col gap-4 pt-8 first:pt-0';
 
   return (
     <div className={containerSpacing} data-testid={`auth-panel-${provider}`}>
@@ -889,7 +889,7 @@ function GitHubAuthPanel({
 
   const containerSpacing = compact
     ? 'flex flex-col gap-3'
-    : 'flex flex-col gap-4 mt-8';
+    : 'flex flex-col gap-4 pt-8';
 
   return (
     <div className={containerSpacing} data-testid="auth-panel-github">

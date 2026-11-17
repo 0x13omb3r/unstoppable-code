@@ -37,10 +37,8 @@
  * Advisor-owned run, whose layouts live in the App Advisor window) open in the
  * app-level compatibility host instead of acquiring a fabricated owner.
  */
-import {
-  APP_ADVISOR_PROJECT_ID,
-  STANDALONE_CHAT_PROJECT_ID,
-} from '@canopy/desktop-shared/types';
+import { STANDALONE_CHAT_PROJECT_ID } from '@canopy/desktop-shared/types';
+import { isBotProjectId } from '@canopy/protocol/chat-targets';
 import type { ExecutionState } from '@canopy/execution-engine/types/pipeline';
 import type { PipelineExecutionDetailTarget } from '@/components/activity/details/pipelineDetailTypes';
 import { dismissPageLikeViewers } from '@/lib/dismissPageLikeViewers';
@@ -518,7 +516,7 @@ export function classifyPipelineExecutionOwner(
   // sentinel predates Work Entries and has no layout. Neither can host a
   // main-window panel.
   if (
-    owner.projectId === APP_ADVISOR_PROJECT_ID ||
+    isBotProjectId(owner.projectId) ||
     owner.projectId === STANDALONE_CHAT_PROJECT_ID
   ) {
     return 'unsupported';

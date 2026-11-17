@@ -1,3 +1,4 @@
+import { ControlButton } from '@canopy/ui-shared/components';
 import {
   SplitTerminalTabLabel,
   TerminalRunningMark,
@@ -285,14 +286,14 @@ function GroupRow({
             onCancel={onCancelEdit}
           />
         ) : (
-          <button
+          <ControlButton
             type="button"
             onClick={(): void => onSelectGroup(group.id)}
             aria-label={ariaLabel}
-            className="flex min-w-0 flex-1 items-center gap-1.5 text-left font-mono text-2xs"
+            presentation="terminal-group-row"
           >
             {headerContent}
-          </button>
+          </ControlButton>
         )}
         {!isHeaderEditing && (
           <span className="shrink-0 opacity-0 transition-opacity group-hover:opacity-100">
@@ -345,14 +346,14 @@ function GroupRow({
             onCancel={onCancelEdit}
           />
         ) : (
-          <button
+          <ControlButton
             type="button"
             onClick={(): void => onSelectGroup(group.id)}
             aria-label={ariaLabel}
-            className="flex min-w-0 flex-1 items-center gap-1.5 text-left font-mono text-2xs"
+            presentation="terminal-group-row"
           >
             {headerContent}
-          </button>
+          </ControlButton>
         )}
         {!isHeaderEditing && (
           <span className="shrink-0 opacity-0 transition-opacity group-hover:opacity-100">
@@ -413,11 +414,11 @@ function GroupRow({
                   onCancel={onCancelEdit}
                 />
               ) : (
-                <button
+                <ControlButton
                   type="button"
                   onClick={(): void => onSelectTerminal(group.id, id)}
                   aria-label={`Terminal ${paneNumber}`}
-                  className="flex min-w-0 flex-1 items-center gap-1.5 text-left font-mono text-3xs"
+                  presentation="terminal-pane-row"
                 >
                   <AppCatalogTerminalIcon size={14} className="shrink-0" />
                   {paneDisplayName !== null ? (
@@ -429,7 +430,7 @@ function GroupRow({
                   {paneStateLabel !== null && (
                     <RowState label={paneStateLabel} />
                   )}
-                </button>
+                </ControlButton>
               )}
               {!isPaneEditing && (
                 <span className="shrink-0 opacity-0 transition-opacity group-hover/pane:opacity-100">

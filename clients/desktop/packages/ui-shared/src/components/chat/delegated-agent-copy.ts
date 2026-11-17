@@ -10,6 +10,9 @@ import type {
 /** Header status for delegated work waiting for a free slot. */
 export const DELEGATED_AGENT_QUEUED_LABEL = 'Queued';
 
+/** Header status for a delegation that finished its task. */
+export const DELEGATED_AGENT_DONE_LABEL = 'Done';
+
 /** Header status for a delegation stopped by the user or by policy. */
 export const DELEGATED_AGENT_CANCELLED_LABEL = 'Cancelled';
 
@@ -103,7 +106,7 @@ const statusLabels: Readonly<
 > = {
   pending: DELEGATED_AGENT_QUEUED_LABEL,
   running: '',
-  completed: '',
+  completed: DELEGATED_AGENT_DONE_LABEL,
   failed: 'Failed',
   cancelled: DELEGATED_AGENT_CANCELLED_LABEL,
   interrupted: 'Interrupted',
@@ -111,8 +114,8 @@ const statusLabels: Readonly<
 };
 
 /**
- * Header status for a delegation, or an empty string when the spinner (or
- * nothing, for a successful run) says it all.
+ * Header status for a delegation, or an empty string while it runs and the
+ * spinner says it all. A finished run says Done, as its Subagents row does.
  */
 export function delegatedAgentStatusLabel(
   snapshot: Pick<

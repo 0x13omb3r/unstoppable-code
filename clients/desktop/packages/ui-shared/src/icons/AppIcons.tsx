@@ -601,6 +601,7 @@ export const McpServerIcon = McpIcon;
 export const MessageIcon = /* @__PURE__ */ createAppIcon(IconBubbleText);
 export const MicIcon = /* @__PURE__ */ createAppIcon(IconMicrophone);
 export const MinusIcon = /* @__PURE__ */ createAppIcon(IconMinusSmall);
+export const LaptopIcon = /* @__PURE__ */ createAppIcon(IconMacbook);
 export const MonitorIcon = /* @__PURE__ */ createAppIcon(IconDevices);
 export const MoreHorizontalIcon = /* @__PURE__ */ createAppIcon(
   IconDotGrid1x3Horizontal,

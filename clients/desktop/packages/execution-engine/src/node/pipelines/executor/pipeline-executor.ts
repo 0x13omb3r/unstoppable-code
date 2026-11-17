@@ -51,7 +51,8 @@ import {
   recoverInterruptedState,
   saveExecutionState,
 } from './execution-state';
-import { runJob } from './job-runner';
+import { runJob, type RunJobOptions } from './job-runner';
+import { runIsolatedJob, runIsolatedJobAsVariant } from './isolated-jobs';
 import {
   commitMatrixExpansion,
   isJobGroupTerminal,
@@ -1530,8 +1531,8 @@ function executeState(
     signal: AbortSignal,
     matrix?: MatrixContext,
     saveState: () => Promise<void> = persistState,
-  ): Promise<JobResult> =>
-    runJob({
+  ): Promise<JobResult> => {
+    const jobOptions: RunJobOptions = {
       executionId: currentState.id,
       jobId,
       pipeline: normalizedPipeline,
@@ -1611,7 +1612,28 @@ function executeState(
             },
           }
         : {}),
-    });
+    };
+    // A read-only job's variants run in sandboxes of their own where the
+    // runtime places them (a cloud runner, CAN-6892); elsewhere, here.
+    const outputDir = getExecutionOutputDir(
+      options.runtime.executionsDir,
+      currentState.id,
+    );
+    // A variant's own run (CAN-6892 part 2) runs the request its owner
+    // holds instead of its definition's job.
+    const isolatedVariant = options.runtime.isolatedVariant;
+    if (isolatedVariant && (options.depth ?? 0) === 0)
+      return runIsolatedJobAsVariant(jobOptions, isolatedVariant, {
+        outputDir,
+      });
+    const isolatedJobs = options.runtime.isolatedJobs;
+    return normalizedJob.isolation === 'read_only' && isolatedJobs
+      ? runIsolatedJob(jobOptions, isolatedJobs, {
+          outputDir,
+          logicalJobId: normalizedJob.logical_job_id,
+        })
+      : runJob(jobOptions);
+  };
   const applyMatrixFailFast = async (
     logicalJobId: string,
     failedJobId: string,
@@ -2819,6 +2841,7 @@ export async function executePipeline(
   const pluginCollectionState = await resolveExecutionPluginCollections(
     normalizedPipeline,
     executionOptions,
+    executionId,
   );
   const activeEventName = executionOptions.eventName ?? 'dispatch';
   const resolvedInputs = resolvePipelineInputs(

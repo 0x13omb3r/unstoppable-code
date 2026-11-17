@@ -1,3 +1,4 @@
+import { ControlButton } from '@canopy/ui-shared/components';
 import { SidebarFooterBannerSurface } from '@canopy/ui-shared/components';
 import { type JSX, type ReactNode } from 'react';
 import {
@@ -5,10 +6,6 @@ import {
   RichHoverTooltip,
   Tooltip,
 } from '@canopy/ui-shared/components';
-import {
-  SIDEBAR_STATUS_HOVER_WASH_CLASSNAME,
-  SIDEBAR_STATUS_SURFACE_CLASSNAME,
-} from '@canopy/ui-shared/lib';
 import { useLabsExperimentEnabled } from '@/stores/labsExperimentsStore';
 
 interface SidebarFooterBannerAction {
@@ -41,10 +38,6 @@ interface SidebarFooterBannerProps {
   trailingAction?: SidebarFooterBannerAction;
 }
 
-// Height comes first so early access can swap it: there banners take the
-// sidebar rows' 32px (`h-8`), so every item shares one height and corner.
-const BASE_CLASSNAME =
-  'flex w-full items-center gap-1.5 overflow-hidden whitespace-nowrap rounded-row py-0 pl-1 pr-2 text-xs font-normal';
 /**
  * Shared compact surface for status banners anchored immediately above the
  * sidebar account divider. Static development context and interactive prompts
@@ -60,15 +53,6 @@ export function SidebarFooterBanner({
   trailingAction,
 }: SidebarFooterBannerProps): JSX.Element {
   const tall = useLabsExperimentEnabled('sidebar');
-  const heightClassName = tall ? 'h-8' : 'h-7';
-  const surfaceClassName =
-    surface === 'development'
-      ? 'bg-warning-subtle fg-primary shadow-md'
-      : surface === 'status'
-        ? `${SIDEBAR_STATUS_SURFACE_CLASSNAME} ${SIDEBAR_STATUS_HOVER_WASH_CLASSNAME}`
-        : '';
-  const classes = `${heightClassName} ${BASE_CLASSNAME} focus-ring text-left ${surfaceClassName}`;
-
   if (onClick && trailingAction) {
     return (
       <SidebarFooterBannerSurface
@@ -90,16 +74,16 @@ export function SidebarFooterBanner({
           surfacePadding="compact"
           content={<span className="text-xs fg-primary">{title}</span>}
         >
-          <button
+          <ControlButton
             type="button"
             onClick={onClick}
             aria-label={ariaLabel}
-            className="focus-ring flex h-full w-full min-w-0 items-center gap-1.5 overflow-hidden whitespace-nowrap rounded-row text-left"
+            presentation="sidebar-banner-primary"
             data-testid={testId}
             data-banner-primary
           >
             {children}
-          </button>
+          </ControlButton>
         </RichHoverTooltip>
         {/* The shared 28px quiet icon button sits 2px from the banner's
             trailing edge (-mr-1.5 against the banner's pr-2), which puts the
@@ -131,15 +115,16 @@ export function SidebarFooterBanner({
         suppressed={title === undefined}
         className="w-full"
       >
-        <button
+        <ControlButton
           type="button"
           onClick={onClick}
           aria-label={ariaLabel}
-          className={classes}
+          presentation="sidebar-banner-action"
+          appearance={{ tall, surface: surface ?? 'plain' }}
           data-testid={testId}
         >
           {children}
-        </button>
+        </ControlButton>
       </Tooltip>
     );
   }
@@ -171,7 +156,7 @@ export type SidebarFooterBannerIconTone =
  * label starts on the same line. The glyph's ink carries the state; the label
  * stays `fg-primary`.
  */
-export function SidebarFooterBannerIcon({
+export function SidebarFooterBannerIconSlot({
   tone = 'secondary',
   children,
 }: {
@@ -195,3 +180,5 @@ export function SidebarFooterBannerIcon({
     </span>
   );
 }
+
+export { SidebarFooterBannerIconSlot as SidebarFooterBannerIcon };

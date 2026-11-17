@@ -243,6 +243,12 @@ export interface PipelineTriggerModalProps {
     pluginCollectionContext: PipelinePluginCollectionRunContext,
   ) => Promise<void>;
   isRunning?: boolean;
+  /**
+   * A started run is waiting (a cloud worktree being set up, CAN-6869): its
+   * settings, Back and Run stay off, since a resend carries what was sent,
+   * while Cancel and close stay available.
+   */
+  settingsLocked?: boolean;
   runError?: string | null;
   onClearError?: () => void;
   runLabel?: string;
@@ -280,6 +286,12 @@ export interface PipelineRunContextReview {
   blockedReason?: string;
   /** The run targets the current task, so repository and watcher controls apply. */
   targeted: boolean;
+  /**
+   * The run goes with one of the task's repositories even when it doesn't
+   * run here (a task's cloud run, CAN-6869), so the repository choice
+   * shows. Defaults to `targeted`.
+   */
+  repositoryApplies?: boolean;
   /**
    * The run executes off this computer (Run on: Cloud, CAN-6187), so this
    * computer's model settings, such as Fast mode, don't apply to it.
@@ -599,6 +611,7 @@ export function PipelineTriggerModal({
   onClose,
   onRun,
   isRunning = false,
+  settingsLocked = false,
   runError = null,
   onClearError,
   runLabel = 'Run',
@@ -1334,6 +1347,8 @@ export function PipelineTriggerModal({
     ? runContext?.blockedReason
     : undefined;
   const showTargetControls = runContext?.targeted ?? true;
+  const showRepositoryChoice =
+    runContext?.repositoryApplies ?? showTargetControls;
   // A run off this computer (Run on: Cloud) takes neither this computer's
   // model settings nor its package setup; the cloud checks its own.
   const runsOnThisComputer = runContext?.executesElsewhere !== true;
@@ -1841,8 +1856,11 @@ export function PipelineTriggerModal({
     onClearError?.();
   };
 
+  // A waiting run keeps what it sent: nothing here changes meanwhile.
+  const settingsOff = isRunning || settingsLocked;
+
   const handleContinue = (): void => {
-    if (!selectedPipeline || selectedPipelineError || isRunning) return;
+    if (!selectedPipeline || selectedPipelineError || settingsOff) return;
     if (packageReadinessLoading) return;
     if (!collectionReadyToRun || !aliasReadyToRun) return;
     // With no configure step, Run starts right away, so a blocked run waits.
@@ -1899,7 +1917,7 @@ export function PipelineTriggerModal({
   ]);
 
   const handleBack = (): void => {
-    if (isRunning) return;
+    if (settingsOff) return;
     setStep('select');
     setInputValues({});
     setInputErrors({});
@@ -1957,7 +1975,7 @@ export function PipelineTriggerModal({
   // The working directory shows with the workflow list and with a
   // workflow's run settings, which a run can open on (CAN-6406).
   const repoSelector =
-    showRepoDropdown && showTargetControls && repoChoices ? (
+    showRepoDropdown && showRepositoryChoice && repoChoices ? (
       <div data-testid="pipeline-trigger-modal-repo-select">
         <DialogFormField
           label="Working directory"
@@ -1971,7 +1989,7 @@ export function PipelineTriggerModal({
               value: choice.repoId,
               label: choice.repoName,
             }))}
-            disabled={isRunning}
+            disabled={settingsOff}
           />
         </DialogFormField>
       </div>
@@ -2201,7 +2219,7 @@ export function PipelineTriggerModal({
               variant="ghost"
               size="compact"
               onClick={handleBack}
-              disabled={isRunning}
+              disabled={settingsOff}
               className="self-start"
             >
               <AppCatalogChevronLeftMediumIcon size="sm" />
@@ -2247,7 +2265,7 @@ export function PipelineTriggerModal({
                           value={inputValues[name] ?? ''}
                           error={inputErrors[name]}
                           onChange={handleInputChange}
-                          disabled={isRunning}
+                          disabled={settingsOff}
                         />
                       ))}
                     </Stack>
@@ -2328,7 +2346,7 @@ export function PipelineTriggerModal({
                 <ChoiceField
                   checked={fastMode}
                   onChange={(event) => setFastMode(event.target.checked)}
-                  disabled={isRunning}
+                  disabled={settingsOff}
                   label="Fast mode"
                   description="Runs supported model providers in fast mode."
                 />
@@ -2488,7 +2506,7 @@ export function PipelineTriggerModal({
                 disabled={
                   !selectedPipeline ||
                   Boolean(selectedPipelineError) ||
-                  isRunning ||
+                  settingsOff ||
                   packageReadinessLoading ||
                   !collectionReadyToRun ||
                   !aliasReadyToRun ||
@@ -2512,7 +2530,7 @@ export function PipelineTriggerModal({
                 disabled={
                   !selectedPipeline ||
                   Boolean(selectedPipelineError) ||
-                  isRunning ||
+                  settingsOff ||
                   packageReadinessLoading ||
                   !collectionReadyToRun ||
                   !aliasReadyToRun ||

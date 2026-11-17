@@ -2,6 +2,7 @@ import { MARKETPLACE_PUBLIC_SHARE_PREFIXES } from '../marketplace';
 import type { ResourceOwner } from '../resource-owner';
 import type { WorkspaceContext } from '../workspace-context';
 import type { PublicShareVersion, ShareRemoteMetadata } from '../sharing';
+import type { HarnessCompatibility } from '../plugins/harness-compatibility';
 // ---------------------------------------------------------------------------
 // Shared custom-skill API contracts.
 //
@@ -119,6 +120,7 @@ export interface SharedSkillSavedFromInfo {
 }
 
 export interface SharedSkillSummary {
+  harnessCompatibility?: HarnessCompatibility;
   id: string;
   name: string;
   description: string;
@@ -269,6 +271,7 @@ export interface AvailableSkill {
 // ---- Installed Skill Info (for renderer display) ----
 
 export interface InstalledSkillInfo {
+  harnessCompatibility?: HarnessCompatibility;
   name: string;
   sourceId: string;
   description: string;

@@ -10,6 +10,10 @@ import type {
   DelegationModelChoice,
   DelegationModelDiscovery,
 } from '@canopy/protocol/delegation/discovery';
+import {
+  filterManagedDelegationCapabilities,
+  type ManagedDelegationSurface,
+} from '@canopy/protocol/delegation';
 import { discoverDelegationModels } from '@canopy/desktop-shared/node/delegation/discovery';
 import { resolveAnthropicMockEnvOverride } from '@canopy/execution-engine/node/e2e-mock-env';
 import {
@@ -43,7 +47,7 @@ import {
   openDelegationFiles,
 } from './file-process';
 
-const capabilities = [
+const modelCapabilities = [
   'read',
   'search',
   'write',
@@ -61,7 +65,13 @@ const capabilities = [
 export async function discoverManagedDelegationModels(
   owner: AgentSessionOptions,
   signal?: AbortSignal,
+  surface: ManagedDelegationSurface = owner.managedDelegationSurface ??
+    'worktree-chat',
 ): Promise<DelegationModelDiscovery> {
+  const capabilities = filterManagedDelegationCapabilities(
+    surface,
+    modelCapabilities,
+  );
   const workOwner = await resolveSessionWorkOwner(owner);
   const baseModels = listAuthoritativeConfiguredModels();
   const agents = await listAgentModels();

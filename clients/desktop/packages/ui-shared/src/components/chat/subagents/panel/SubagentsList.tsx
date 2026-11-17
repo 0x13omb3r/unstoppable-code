@@ -22,7 +22,7 @@ import {
   DataTableHeaderCell,
   DataTableRow,
 } from '../../../DataTable';
-import { Button } from '../../../Button';
+import { ControlButton, Button } from '../../../Button';
 import { DisclosureChevron, DisclosureToggle } from '../../../Disclosure';
 import { formatSubagentElapsed } from '../common/subagent-format';
 import { SubagentChangesLabel } from '../common/SubagentChangesLabel';
@@ -280,7 +280,7 @@ export const SubagentsListRow = memo(function SubagentsListRow({
           <span className="w-4 shrink-0" />
         )}
         <SubagentStatusGlyph status={node.status} />
-        <button
+        <ControlButton
           type="button"
           aria-pressed={selected}
           data-testid={`subagents-list-select-${node.id}`}
@@ -288,7 +288,7 @@ export const SubagentsListRow = memo(function SubagentsListRow({
             event.stopPropagation();
             onSelect(node);
           }}
-          className="min-w-0 flex-1 truncate text-left fg-primary focus-ring"
+          presentation="subagent-chat-row"
         >
           <span id={titleId} className={REPLAY_MASK_CLASS}>
             {node.title}
@@ -296,7 +296,7 @@ export const SubagentsListRow = memo(function SubagentsListRow({
           {columns === 'minimal' ? (
             <span className="sr-only">, {subagentStatusDetail(node)}</span>
           ) : null}
-        </button>
+        </ControlButton>
         {via && via.length > 0 ? (
           <span className="min-w-0 w-1/3 shrink-0 truncate text-2xs fg-tertiary">
             {subagentViaLabel(via)}
@@ -481,7 +481,7 @@ function SubagentWorkflowRunListRow({
           <span className="w-4 shrink-0" />
         )}
         <SubagentWorkflowMark size={12} />
-        <button
+        <ControlButton
           type="button"
           aria-pressed={selected}
           data-testid={`subagents-list-select-${node.id}`}
@@ -489,7 +489,7 @@ function SubagentWorkflowRunListRow({
             event.stopPropagation();
             onSelect(node);
           }}
-          className="min-w-0 flex-1 truncate text-left font-medium fg-primary focus-ring"
+          presentation="subagent-workflow-row"
         >
           <span id={titleId} className={REPLAY_MASK_CLASS}>
             {node.title}
@@ -499,7 +499,7 @@ function SubagentWorkflowRunListRow({
               , <SubagentWorkflowRunStatusText tree={tree} run={node} short />
             </span>
           ) : null}
-        </button>
+        </ControlButton>
         <span
           className={`min-w-0 truncate text-2xs fg-tertiary ${
             columns === 'minimal' || columns === 'compact'

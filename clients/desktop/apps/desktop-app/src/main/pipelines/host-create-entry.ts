@@ -42,6 +42,7 @@ import {
   type CreateProjectEntryInputs,
 } from '@canopy/execution-engine/pipelines/host-create-entry';
 import { APP_ADVISOR_PROJECT_ID } from '@canopy/desktop-shared/types';
+import { APP_ADVISOR_BOT_ID } from '@canopy/protocol/chat-targets';
 import type { SidebarItemGroupScope } from '@canopy/protocol/sidebar';
 import { z } from 'zod';
 import {
@@ -210,7 +211,8 @@ async function resolveEntryTarget(
   const { botId } = request.inputs;
   // App Advisor isn't owner-limited. An agent-originated run's Orchestrator
   // access setting is checked at dispatch; other runs aren't gated.
-  if (botId !== 'app_advisor') {
+  // Default Bot only: this registry-style pipeline refusal admits the Orchestrator.
+  if (botId !== APP_ADVISOR_BOT_ID) {
     throw new PipelineHostRefusal(
       'not_found',
       `Bot \`${botId}\` isn't available to this pipeline`,

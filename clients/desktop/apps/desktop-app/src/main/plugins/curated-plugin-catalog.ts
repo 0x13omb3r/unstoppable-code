@@ -2,6 +2,7 @@ import { mkdir, readFile, writeFile, rename, rm } from 'node:fs/promises';
 import { randomUUID } from 'node:crypto';
 import { dirname } from 'node:path';
 import { BRAND } from '@canopy/brand/current';
+import { parseHarnessCompatibility } from '@canopy/protocol/plugins';
 import {
   PLUGIN_CATALOG_API_VERSION,
   isCuratedPluginContentResponse,
@@ -64,6 +65,7 @@ function normalizeSkillManifest(
 
 function normalizePlugin(entry: CuratedPluginEntry): CuratedPluginEntry {
   return {
+    harnessCompatibility: parseHarnessCompatibility(entry.harnessCompatibility),
     key: entry.key.trim(),
     name: entry.name.trim(),
     shortDescription: entry.shortDescription.trim(),

@@ -225,6 +225,9 @@ const INDEX_FILE_FIELDS = knownFields<McpServersIndexFile>({
   accountConnectionsUnavailableReason: true,
 });
 const INDEX_ENTRY_FIELDS = knownFields<McpServerIndexEntry>({
+  harnessCompatibility: true,
+  // Served only; the record lives in its own file (CAN-6815).
+  harnessInstalls: true,
   accountConnection: true,
   deviceCopies: true,
   scope: true,

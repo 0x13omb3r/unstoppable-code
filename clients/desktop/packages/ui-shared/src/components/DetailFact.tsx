@@ -1,5 +1,5 @@
 import type { JSX, ReactNode } from 'react';
-import { Fact, FactList, type FactListPlacement } from './FactList';
+import { Fact, FactList } from './FactList';
 
 /**
  * The label and value columns of a detail page's facts (Website, Marketplace,
@@ -12,10 +12,8 @@ export const DETAIL_FACT_GRID_CLASS =
 export const DETAIL_FACT_VALUE_OFFSET_CLASS = 'pl-[10rem]';
 
 export function DetailFactList({
-  placement,
   children,
 }: {
-  placement?: FactListPlacement;
   children: ReactNode;
 }): JSX.Element {
   return (
@@ -25,7 +23,6 @@ export function DetailFactList({
       rowGap="1"
       rowHeight="control"
       labelTone="secondary"
-      placement={placement}
     >
       {children}
     </FactList>

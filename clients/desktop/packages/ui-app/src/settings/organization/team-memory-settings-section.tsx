@@ -1,5 +1,6 @@
 'use client';
 
+import { ControlButton } from '@canopy/ui-shared/components';
 import {
   SETTINGS_CARD_CLASS,
   SETTINGS_CARD_GROUP_CLASS,
@@ -161,27 +162,31 @@ function MemorySettingsCard({
         </p>
       </div>
       <div className={SETTINGS_CARD_GROUP_CLASS}>
-        <p className="mt-2 text-xs fg-secondary">
+        <p className="pt-2 text-xs fg-secondary">
           Disabling a member expires facts sourced solely from that member.
           Re-enabling them does not restore expired facts.
         </p>
 
-        <ErrorBanner
-          errorSource="memory-settings-card-load"
-          className="mt-3"
-          error={loadError?.copy}
-          details={loadError?.details}
-          onRetry={retryLoad}
-        />
-        <ErrorBanner
-          errorSource="memory-settings-card"
-          className="mt-3"
-          error={error?.copy}
-          details={error?.details}
-        />
+        <div className="pt-3 empty:hidden">
+          <ErrorBanner
+            errorSource="memory-settings-card-load"
+            className=""
+            error={loadError?.copy}
+            details={loadError?.details}
+            onRetry={retryLoad}
+          />
+        </div>
+        <div className="pt-3 empty:hidden">
+          <ErrorBanner
+            errorSource="memory-settings-card"
+            className=""
+            error={error?.copy}
+            details={error?.details}
+          />
+        </div>
 
         {loading ? (
-          <div className="mt-4">
+          <div className="pt-4">
             <DelayedLoadingPlaceholder>
               <MemoryParticipationSkeleton orgName={orgName} />
             </DelayedLoadingPlaceholder>
@@ -313,23 +318,23 @@ function QuietParticipationLabel({
   orgName: string;
 }): JSX.Element {
   return (
-    <Tooltip
-      label={
-        <span className="block max-w-60 whitespace-normal">
-          {`No chats contributed to ${orgName} memory in 30 days.`}
-        </span>
-      }
-      className="mt-1"
-    >
-      <button
-        type="button"
-        data-settings-control="disclosure"
-        data-testid={`memory-participation-quiet-${userId}`}
-        className="text-left text-xs fg-secondary"
+    <div className="pt-1">
+      <Tooltip
+        label={
+          <span className="block max-w-60 whitespace-normal">
+            {`No chats contributed to ${orgName} memory in 30 days.`}
+          </span>
+        }
       >
-        No recent chat contributions
-      </button>
-    </Tooltip>
+        <ControlButton
+          data-settings-control="disclosure"
+          data-testid={`memory-participation-quiet-${userId}`}
+          presentation="participation-tooltip-trigger"
+        >
+          No recent chat contributions
+        </ControlButton>
+      </Tooltip>
+    </div>
   );
 }
 

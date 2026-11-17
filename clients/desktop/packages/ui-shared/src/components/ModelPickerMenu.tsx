@@ -74,7 +74,7 @@ import {
   type PickerMenuOptionTrailingSlots,
   type PickerMenuSampleLabelWidth,
 } from './PickerMenu';
-import { Button } from './Button';
+import { ControlButton, Button } from './Button';
 import { Fact, FactList } from './FactList';
 import { RichHoverCard, RichHoverTooltip } from './RichHoverTooltip';
 import { SearchField } from './SearchField';
@@ -86,7 +86,7 @@ import { LockedModelRow, type LockedModelRowLock } from './LockedModelRow';
 import { IconToggleButton } from './IconToggleButton';
 import { Tooltip } from './Tooltip';
 import { CompactToggleIndicator } from './ToggleSwitch';
-import { SECONDARY_SURFACE_SHELL_CLASS } from '../lib/row-chips';
+
 import { ModelProviderIcon } from '../icons/ModelProviderIcon';
 
 const PICKER_CHROME_SLOT_PX = 36;
@@ -101,7 +101,7 @@ const PICKER_RAIL_GLYPH_SIZE = 18;
 const PICKER_ROW_GLYPH_SIZE = 14;
 /**
  * The longest row recovery label the default picker width fits, as the
- * former 15-character credits tag did (`Buy AI Credits` still fits).
+ * former 15-character credits tag did (`Choose provider` still fits).
  */
 const DEFAULT_WIDTH_ROW_LABEL_MAX_LENGTH = 15;
 
@@ -175,8 +175,8 @@ export const MODEL_PICKER_AUTO_DETAIL =
 
 /** Canonical disabled reasons (plan Phase 3 §2). */
 export const MODEL_PICKER_AUTO_REASONS = {
-  creditsLoading: 'Checking AI Credits…',
-  noCredits: 'Buy AI Credits to use this',
+  creditsLoading: 'Checking credits…',
+  noCredits: 'Runs on credits',
   tooFewCandidates: 'Needs two or more models',
   organizationBlocked: 'Turned off by your organization',
   unsupportedHarness: 'Auto model selection is not available for this harness.',
@@ -212,7 +212,7 @@ export interface ModelPickerAutoOption {
  * in the document and made each transcript insertion recalculate styles for
  * all of them.
  */
-const PICKER_GROUP_SPACING_CLASS = '[[data-picker-gap="3"]+&]:mt-3';
+const PICKER_GROUP_SPACING_CLASS = '[[data-picker-gap="3"]+&]:pt-3';
 
 /** Group of connect rows for harnesses that are not connected yet. */
 const CONNECT_SECTION_LABEL = 'Bring your subscription';
@@ -231,6 +231,14 @@ const EXTRA_CHARGE_TEXT_CLASS = 'fg-destructive';
 
 /** Internal id of the Auto row the harness layout renders for `autoOption`. */
 const AUTO_ROW_ID = 'auto';
+
+function ModelSettingsSeparator(): JSX.Element {
+  return (
+    <div role="separator" className="px-2 py-1">
+      <div className="h-px bg-line-base" />
+    </div>
+  );
+}
 
 /** Both local and paired pickers use the host's explicit managed-route facts. */
 export function managedOpenCodeAutoUnavailableReason(
@@ -1327,8 +1335,7 @@ export function ModelPickerMenu({
           icon: (
             <ModelProviderIcon
               provider={sectionIconProvider(option)}
-              width={10}
-              height={10}
+              size="xs"
             />
           ),
           options: [option],
@@ -2020,8 +2027,7 @@ export function ModelPickerMenu({
     <ModelProviderIcon
       provider={resolvedTriggerProvider}
       central={variant === 'capsule'}
-      width={variant === 'capsule' ? 16 : 13}
-      height={variant === 'capsule' ? 16 : 13}
+      size={variant === 'capsule' ? 'md' : 'sm'}
       className={
         foldTriggerIcon
           ? 'shrink-0 fg-secondary'
@@ -2212,7 +2218,7 @@ export function ModelPickerMenu({
       className={
         divided
           ? // Bleeds to the search bar's edge, like its bottom border.
-            `mt-2 border-t pt-2 ${modelSearch ? '-mx-1 px-1' : '-mr-1 pr-1'}`
+            `relative pt-4 before:pointer-events-none before:absolute before:inset-x-0 before:top-2 before:h-[var(--border-hairline)] before:bg-line-base ${modelSearch ? '-mx-1 px-1' : '-mr-1 pr-1'}`
           : PICKER_GROUP_SPACING_CLASS
       }
     >
@@ -2316,7 +2322,7 @@ export function ModelPickerMenu({
               </span>
             }
           >
-            <button
+            <ControlButton
               type="button"
               role="menuitem"
               tabIndex={-1}
@@ -2336,10 +2342,10 @@ export function ModelPickerMenu({
                 setOptionDetail('cursor-experimental', 'focus', false)
               }
               data-testid={`${testIdPrefix}-experimental-cursor`}
-              className="flex h-5 w-5 items-center justify-center rounded fg-secondary hover:fg-primary focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1"
+              presentation="model-picker-experimental"
             >
               <ExperimentIcon size="sm" aria-hidden="true" />
-            </button>
+            </ControlButton>
           </Tooltip>
         ) : undefined
       }
@@ -2753,15 +2759,17 @@ export function ModelPickerMenu({
   };
 
   const renderAutoModeBlock = (option: ModelCatalogOption): JSX.Element => (
-    <Stack gap="tight" className="mb-2">
-      {renderHarnessOption(option)}
-      {/* Full width, edge to edge like the search row's line above it:
+    <div className="pb-2">
+      <Stack gap="tight">
+        {renderHarnessOption(option)}
+        {/* Full width, edge to edge like the search row's line above it:
           `-mx-1` cancels the list's inset. */}
-      <div
-        className="-mx-1 border-b"
-        data-testid={`${testIdPrefix}-auto-divider`}
-      />
-    </Stack>
+        <div
+          className="-mx-1 border-b"
+          data-testid={`${testIdPrefix}-auto-divider`}
+        />
+      </Stack>
+    </div>
   );
 
   const pickerChrome = harnessTabs?.chrome === 'picker';
@@ -3066,7 +3074,7 @@ export function ModelPickerMenu({
                       <span className="pointer-events-none absolute right-0 top-1/2 h-6 w-0.5 -translate-y-1/2 rounded-l bg-accent" />
                     ) : null;
                   const tabButton = (
-                    <button
+                    <ControlButton
                       key={pickerChrome ? undefined : tab.id}
                       type="button"
                       role="menuitemradio"
@@ -3093,33 +3101,17 @@ export function ModelPickerMenu({
                           }
                         }
                       }}
-                      className={`focus-ring flex items-center justify-center transition-colors ${
-                        pickerChrome
-                          ? `mx-1 size-9 shrink-0 rounded-md [&>span]:!size-4.5 ${
-                              active
-                                ? `${SECONDARY_SURFACE_SHELL_CLASS} ${
-                                    tab.connected
-                                      ? 'fg-primary'
-                                      : 'fg-quaternary'
-                                  }`
-                                : tab.connected
-                                  ? `${tab.id === 'favorites' ? 'fg-tertiary' : 'fg-secondary'} hover:bg-subtle hover:fg-primary`
-                                  : 'fg-quaternary hover:bg-subtle'
-                            }`
-                          : `relative h-10 w-full shrink-0 rounded-none hover:bg-subtle ${
-                              active
-                                ? tab.connected
-                                  ? 'bg-subtle fg-primary'
-                                  : 'bg-subtle fg-quaternary'
-                                : tab.connected
-                                  ? 'fg-secondary hover:fg-primary'
-                                  : 'fg-quaternary'
-                            }`
-                      }`}
+                      presentation="model-harness-tab"
+                      appearance={{
+                        pickerChrome: !!pickerChrome,
+                        active,
+                        connected: tab.connected,
+                        favorite: tab.id === 'favorites',
+                      }}
                     >
                       {tab.icon}
                       {pickerChrome ? null : indicator}
-                    </button>
+                    </ControlButton>
                   );
                   const labelledTabButton = tab.tooltip ? (
                     <Tooltip
@@ -3137,7 +3129,7 @@ export function ModelPickerMenu({
                     <Fragment key={tab.id}>
                       <div
                         hidden={Boolean(modelSearch)}
-                        className="relative flex h-9 shrink-0"
+                        className="relative flex h-9 shrink-0 px-1"
                       >
                         {labelledTabButton}
                         {indicator}
@@ -3146,7 +3138,7 @@ export function ModelPickerMenu({
                         <div
                           hidden={Boolean(modelSearch)}
                           data-testid={`${testIdPrefix}-favorites-divider`}
-                          className="mx-3 flex h-1.75 shrink-0 items-center"
+                          className="flex h-1.75 shrink-0 items-center px-3"
                         >
                           <div className="w-full border-b" />
                         </div>
@@ -3229,46 +3221,48 @@ export function ModelPickerMenu({
                   </div>
                 </div>
               ) : (
-                <div className="mx-3 shrink-0 border-b">
-                  <SearchField
-                    ref={searchRef}
-                    size="lg"
-                    // The 44px header's own inset, less this row's margin,
-                    // keeps the glyph where the picker's rows start.
-                    className="-ml-3"
-                    aria-label="Search models"
-                    value={modelSearch}
-                    onValueChange={setModelSearch}
-                    // Escape closes the picker, as it does from its rows.
-                    clearOnEscape={false}
-                    onKeyDown={(event): void => {
-                      if (
-                        event.key === 'ArrowDown' ||
-                        event.key === 'ArrowUp'
-                      ) {
-                        const options = event.currentTarget
-                          .closest('[role="menu"]')
-                          ?.querySelectorAll<HTMLButtonElement>(
-                            SEARCH_ENTRY_ROW_SELECTOR,
-                          );
-                        const row =
-                          event.key === 'ArrowDown'
-                            ? options?.[0]
-                            : options?.[options.length - 1];
-                        event.preventDefault();
-                        event.stopPropagation();
-                        row?.focus();
-                        row?.scrollIntoView({ block: 'nearest' });
-                      } else if (
-                        event.key !== 'Escape' &&
-                        event.key !== 'Tab'
-                      ) {
-                        event.stopPropagation();
-                      }
-                    }}
-                    placeholder="Search models"
-                    data-testid={`${testIdPrefix}-search`}
-                  />
+                <div className="shrink-0 px-3">
+                  <div className="border-b">
+                    <SearchField
+                      ref={searchRef}
+                      size="lg"
+                      // The 44px header's own inset, less this row's margin,
+                      // keeps the glyph where the picker's rows start.
+                      className="-ml-3"
+                      aria-label="Search models"
+                      value={modelSearch}
+                      onValueChange={setModelSearch}
+                      // Escape closes the picker, as it does from its rows.
+                      clearOnEscape={false}
+                      onKeyDown={(event): void => {
+                        if (
+                          event.key === 'ArrowDown' ||
+                          event.key === 'ArrowUp'
+                        ) {
+                          const options = event.currentTarget
+                            .closest('[role="menu"]')
+                            ?.querySelectorAll<HTMLButtonElement>(
+                              SEARCH_ENTRY_ROW_SELECTOR,
+                            );
+                          const row =
+                            event.key === 'ArrowDown'
+                              ? options?.[0]
+                              : options?.[options.length - 1];
+                          event.preventDefault();
+                          event.stopPropagation();
+                          row?.focus();
+                          row?.scrollIntoView({ block: 'nearest' });
+                        } else if (
+                          event.key !== 'Escape' &&
+                          event.key !== 'Tab'
+                        ) {
+                          event.stopPropagation();
+                        }
+                      }}
+                      placeholder="Search models"
+                      data-testid={`${testIdPrefix}-search`}
+                    />
+                  </div>
                 </div>
               )}
               {harnessTabs.emptyCatalog &&
@@ -3589,12 +3583,12 @@ export function ModelPickerMenu({
                                 harnessTabs.leadingFavorites
                                   ? PICKER_GROUP_SPACING_CLASS
                                   : section.key === 'supported-models'
-                                    ? 'mt-2 border-t pt-2'
+                                    ? 'relative pt-4 before:pointer-events-none before:absolute before:inset-x-0 before:top-2 before:h-[var(--border-hairline)] before:bg-line-base'
                                     : index === 0
                                       ? undefined
                                       : pickerChrome
-                                        ? 'mt-4'
-                                        : 'mt-1'
+                                        ? 'pt-4'
+                                        : 'pt-1'
                               }
                             >
                               {renderSectionHeader(
@@ -3676,7 +3670,9 @@ export function ModelPickerMenu({
         ) : (
           <>
             {autoRow ? (
-              <div className="mb-1 border-b pb-0.5">{autoRow}</div>
+              <div className="relative pb-1.5 after:pointer-events-none after:absolute after:inset-x-0 after:bottom-1 after:h-[var(--border-hairline)] after:bg-line-base">
+                {autoRow}
+              </div>
             ) : null}
             {workspaceDefaultOption}
             {sections.map((section, index) => (
@@ -3689,7 +3685,11 @@ export function ModelPickerMenu({
                  * section rather than as another row. Suppressed on the first
                  * section, which needs no rule against the menu's own edge.
                  */
-                className={index === 0 ? undefined : 'mt-1 border-t pt-1'}
+                className={
+                  index === 0
+                    ? undefined
+                    : 'relative pt-2 before:pointer-events-none before:absolute before:inset-x-0 before:top-1 before:h-[var(--border-hairline)] before:bg-line-base'
+                }
               >
                 {/* Shared group heading (CAN-2540 §3): identical presentation to
                 the Harnesses settings page, with the menu's historical test
@@ -4419,7 +4419,7 @@ function ModelPickerOption({
                 </DropdownMenuItem>
               ))}
               {billingPreference && onBillingChange ? (
-                <div role="separator" className="mx-2 my-1 h-px bg-line-base" />
+                <ModelSettingsSeparator />
               ) : null}
             </>
           ) : null}
@@ -4450,10 +4450,7 @@ function ModelPickerOption({
               {billingFallback &&
               billingPreference.payment === 'subscription' ? (
                 <>
-                  <div
-                    role="separator"
-                    className="mx-2 my-1 h-px bg-line-base"
-                  />
+                  <ModelSettingsSeparator />
                   <DropdownMenuItem
                     role="menuitemcheckbox"
                     aria-checked={billingPreference.fallback}
@@ -4493,60 +4490,62 @@ function ModelPickerOption({
           surfacePadding="relaxed"
           surfaceClassName="w-64 whitespace-normal"
         >
-          {/* Quieter lines dim the inverse ink, as ModelRowDetail does:
+          <Stack gap="tight">
+            {/* Quieter lines dim the inverse ink, as ModelRowDetail does:
               fg-secondary is too faint on the inverse surface. */}
-          {/* The row already describes itself with this hint. */}
-          {lock || hasExtraCharge || hasDescription ? (
-            <Stack gap="tight">
-              {lock ? (
-                <div aria-hidden="true" className="text-xs leading-snug">
-                  {lock.hint}
-                </div>
-              ) : null}
-              {hasExtraCharge ? (
-                <div className="text-xs leading-snug">
-                  <div>Extra charge only</div>
-                  {option.extraChargeMessage ? (
-                    <div className="mt-0.5 opacity-70">
-                      {option.extraChargeMessage}
-                    </div>
-                  ) : null}
-                </div>
-              ) : null}
-              {hasDescription ? (
-                <div
-                  data-testid={
-                    uniformTestIds
-                      ? `${testIdPrefix}-option-tooltip-description`
-                      : `${testIdPrefix}-option-tooltip-description-${option.id}`
-                  }
-                  className={`text-xs leading-snug${hasExtraCharge || lock ? ' opacity-70' : ''}`}
-                >
-                  {option.description}
-                </div>
-              ) : null}
-            </Stack>
-          ) : null}
-          {contextWindowLabel ? (
-            <div
-              className="text-xs leading-snug mt-1 opacity-70"
-              data-testid={`${testIdPrefix}-option-context-window`}
-            >
-              {contextWindowLabel} context
-            </div>
-          ) : null}
-          {showReasonInTooltip ? (
-            <div
-              className="text-xs leading-snug mt-1 opacity-70"
-              data-testid={
-                uniformTestIds
-                  ? undefined
-                  : `${testIdPrefix}-unavailable-tooltip`
-              }
-            >
-              {state.unavailableReason}
-            </div>
-          ) : null}
+            {/* The row already describes itself with this hint. */}
+            {lock || hasExtraCharge || hasDescription ? (
+              <Stack gap="tight">
+                {lock ? (
+                  <div aria-hidden="true" className="text-xs leading-snug">
+                    {lock.hint}
+                  </div>
+                ) : null}
+                {hasExtraCharge ? (
+                  <div className="text-xs leading-snug">
+                    <div>Extra charge only</div>
+                    {option.extraChargeMessage ? (
+                      <div className="mt-0.5 opacity-70">
+                        {option.extraChargeMessage}
+                      </div>
+                    ) : null}
+                  </div>
+                ) : null}
+                {hasDescription ? (
+                  <div
+                    data-testid={
+                      uniformTestIds
+                        ? `${testIdPrefix}-option-tooltip-description`
+                        : `${testIdPrefix}-option-tooltip-description-${option.id}`
+                    }
+                    className={`text-xs leading-snug${hasExtraCharge || lock ? ' opacity-70' : ''}`}
+                  >
+                    {option.description}
+                  </div>
+                ) : null}
+              </Stack>
+            ) : null}
+            {contextWindowLabel ? (
+              <div
+                className="text-xs leading-snug opacity-70"
+                data-testid={`${testIdPrefix}-option-context-window`}
+              >
+                {contextWindowLabel} context
+              </div>
+            ) : null}
+            {showReasonInTooltip ? (
+              <div
+                className="text-xs leading-snug opacity-70"
+                data-testid={
+                  uniformTestIds
+                    ? undefined
+                    : `${testIdPrefix}-unavailable-tooltip`
+                }
+              >
+                {state.unavailableReason}
+              </div>
+            ) : null}
+          </Stack>
         </RichHoverCard>
       ) : null}
     </>

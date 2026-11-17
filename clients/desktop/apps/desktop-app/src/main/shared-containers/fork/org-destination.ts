@@ -4,6 +4,7 @@ import type { SharedContainerForkErrorCode } from '@canopy/protocol/shared-conta
 import {
   MEMBER_ORG_PROJECT_LIMIT,
   ORG_PROJECT_LIMITS,
+  type OrgProjectSummary,
 } from '@canopy/protocol/org-projects';
 import type {
   CreateOrgMemberCodeProjectResult,
@@ -17,6 +18,10 @@ import { readWorkspaceOwnership } from '../../lib/workspace-persistence';
 import { getObservabilityService } from '../../observability';
 import { W5RevisionConflictError } from '../../lib/w5-commit-log-file-store';
 import { describeErrorForAppDiagnostic } from '../../observability/app-diagnostic-privacy';
+import { resolveMultiRepoRepositories } from '../../lib/org-member-multi-repo-repositories';
+import type { BoundCopyRepository } from '../../lib/org-project-setup-journal';
+import type { W5CommitOptions } from '../../lib/w5-commit-scope';
+import type { ForkCopyRootMarker } from '../../lib/fork-copy-root-marker';
 import {
   assertForkWorkspaceOwner,
   SharedContainerForkError,
@@ -51,7 +56,7 @@ export function organizationForkError(
     | 'organization-project-limit'
     | 'organization-already-bound'
     | 'organization-repository-inaccessible'
-    | 'organization-shape-unsupported'
+    | 'organization-repositories-missing'
     | 'organization-creation-failed'
   >,
   organizationName: string | undefined,
@@ -109,10 +114,13 @@ export function organizationForkError(
         `${Organization} has a project for this repository that you can't use, so the copy wasn't made.`,
         errorOptions,
       );
-    case 'organization-shape-unsupported':
+    case 'organization-repositories-missing':
+      // CAN-4856's copy. Unlike its neighbours it ends "can't be made there":
+      // a retry won't help until the organization has the projects, and
+      // another destination (Personal, or an existing workspace) still can.
       return new SharedContainerForkError(
         code,
-        `Shares with several repositories can't be copied into a new workspace in ${organization} yet, so the copy wasn't made.`,
+        `${Organization} doesn't have projects for every repository in this share, so the copy can't be made there.`,
         errorOptions,
       );
     case 'organization-creation-failed':
@@ -202,29 +210,60 @@ async function forkProjectRetired(
  * unbound here, so a new copy replays either one. The key covers every field
  * the server compares on replay.
  */
-export function forkOrganizationCreationKey(input: {
-  shape: 'single-repo' | 'cowork';
-  containerId: string;
-  revisionId: string;
-  organizationId: string;
-  name: string;
-  remoteUrl?: string | null;
-  generation: number;
-}): string {
-  return createHash('sha256')
-    .update(
-      JSON.stringify([
-        'shared-container-fork',
-        input.shape,
-        input.containerId,
-        input.revisionId,
-        input.organizationId,
-        input.name,
-        input.remoteUrl ?? null,
-        input.generation,
-      ]),
-    )
-    .digest('hex');
+export function forkOrganizationCreationKey(
+  input:
+    | {
+        shape: 'single-repo' | 'cowork';
+        containerId: string;
+        revisionId: string;
+        organizationId: string;
+        name: string;
+        remoteUrl?: string | null;
+        generation: number;
+      }
+    | {
+        shape: 'multi-repo';
+        containerId: string;
+        revisionId: string;
+        organizationId: string;
+        name: string;
+        /**
+         * One entry per repository in layout order, as the layout stores it;
+         * `null` for a snapshot. The server compares the gathered holders, so
+         * the key covers the repositories that decide them.
+         */
+        remoteUrls: ReadonlyArray<string | null>;
+        generation: number;
+      },
+): string {
+  const tuple: unknown[] = [
+    'shared-container-fork',
+    input.shape,
+    input.containerId,
+    input.revisionId,
+    input.organizationId,
+    input.name,
+    input.shape === 'multi-repo' ? null : (input.remoteUrl ?? null),
+    input.generation,
+  ];
+  // Appended only for a multi-repo copy, so single-repo and Cowork keys hash
+  // exactly as they did before CAN-4856.
+  if (input.shape === 'multi-repo') tuple.push([...input.remoteUrls]);
+  return createHash('sha256').update(JSON.stringify(tuple)).digest('hex');
+}
+
+const FORK_MULTI_REPO_CREATION_SUBJECT_PREFIX = 'shared-container-fork:';
+
+/**
+ * The server-side creation subject for a multi-repo copy's member project
+ * (CAN-4856). The server keys the member's multi-repo receipt on this value as
+ * `localWorkspaceId`, so every retry of one key replays one project while the
+ * local workspace keeps an ordinary id. The colon keeps it from ever matching
+ * a real workspace id: send it only to the server's create, never in a claim
+ * or a journal.
+ */
+export function forkMultiRepoCreationSubject(creationKey: string): string {
+  return `${FORK_MULTI_REPO_CREATION_SUBJECT_PREFIX}${creationKey}`;
 }
 
 /**
@@ -293,9 +332,11 @@ async function findBoundRepositoryWorkspace(
 
 /**
  * Refuse, before promotion or any other effect, a new organization copy this
- * member cannot make: the shape is unsupported, organization projects are
- * unavailable to them, or the organization already has the repository here.
- * The creators recheck authorization at creation time; the server decides.
+ * member cannot make: organization projects are unavailable to them, or the
+ * organization already has the repository here. A multi-repo copy
+ * (CAN-4856) takes the member-code check; its holders are resolved later,
+ * still before any effect. The creators recheck authorization at creation
+ * time; the server decides.
  */
 export async function assertOrganizationForkEligible(input: {
   owner: WorkspaceContext;
@@ -306,11 +347,6 @@ export async function assertOrganizationForkEligible(input: {
 }): Promise<void> {
   const { owner } = input;
   if (owner.kind !== 'organization') return;
-  if (input.shape === 'multi-repo')
-    throw organizationForkError(
-      'organization-shape-unsupported',
-      input.organizationName,
-    );
   const { isOrgCoworkOperationEligible, isOrgMemberCodeOperationEligible } =
     await import('../../lib/org-cowork-binding-deps');
   let eligible: boolean;
@@ -727,6 +763,351 @@ export async function bindForkCoworkWorkspaceToOrganization(input: {
     throw conversionError(result.code, input.organizationName, createError);
   }
   throw refusal;
+}
+
+/** One repository of a multi-repo share, with the project that holds it. */
+export interface ForkMultiRepoRepository {
+  repoId: string;
+  name: string;
+  /** As the layout stores it; `null` for a snapshot. */
+  remoteUrl: string | null;
+  /** The organization project holding the repository; `null` for a snapshot. */
+  holder: OrgProjectSummary | null;
+}
+
+export interface ForkMultiRepoHolders {
+  repositories: ForkMultiRepoRepository[];
+  /** De-duplicated in layout order; empty for an all-snapshot share. */
+  repositoryProjectIds: string[];
+}
+
+/**
+ * Before any effect, the organization project holding each repository of a
+ * multi-repo share (CAN-4856). A repository with a remote that no project of
+ * the organization holds refuses the copy; a snapshot is neutral. A share
+ * larger than the server's create limit refuses here too.
+ */
+export async function resolveForkMultiRepoHolders(input: {
+  owner: WorkspaceContext;
+  organizationName?: string;
+  repositories: ReadonlyArray<{
+    repoId: string;
+    repoName: string;
+    remoteUrl: string | null;
+  }>;
+}): Promise<ForkMultiRepoHolders> {
+  const { owner } = input;
+  if (owner.kind !== 'organization')
+    throw new Error('A multi-repo organization copy needs an organization');
+  // The server's create and the journal marker both cap the repositories.
+  if (input.repositories.length > ORG_PROJECT_LIMITS.repositoriesPerCreate)
+    throw organizationForkError(
+      'organization-creation-failed',
+      input.organizationName,
+    );
+  let catalog: OrgProjectSummary[];
+  try {
+    const { getOrgProjectCatalogService } =
+      await import('../../services/org-project-catalog-service');
+    const snapshot = await getOrgProjectCatalogService().refresh(owner, {
+      force: true,
+    });
+    if (snapshot.stale || snapshot.error)
+      throw new Error('Organization catalog unavailable');
+    const organizationId = owner.organizationId.toLowerCase();
+    catalog = snapshot.projects.filter(
+      (row) => row.organizationId?.toLowerCase() === organizationId,
+    );
+  } catch (error) {
+    throw organizationForkError(
+      'organization-creation-unavailable',
+      input.organizationName,
+      { cause: error },
+    );
+  }
+  const repositories: ForkMultiRepoRepository[] = [];
+  const repositoryProjectIds: string[] = [];
+  for (const repository of input.repositories) {
+    // One checkout at a time names each repository's own holder, which the
+    // journal marker records.
+    const resolution = resolveMultiRepoRepositories(catalog, [
+      {
+        name: repository.repoName,
+        remoteUrl: repository.remoteUrl,
+        root: false,
+      },
+    ]);
+    if (!resolution.ok && resolution.reason === 'outside-organization')
+      throw organizationForkError(
+        'organization-repositories-missing',
+        input.organizationName,
+      );
+    // For one checkout the resolution is exhaustive: a remote resolves to
+    // exactly one holder or refuses above as outside the organization, and
+    // only a snapshot (no remote) reads `no-repositories`. So a null holder
+    // below is always a snapshot, never an unresolved repository.
+    const holderId = resolution.ok
+      ? resolution.repositoryProjectIds[0]
+      : undefined;
+    const holder =
+      holderId === undefined
+        ? null
+        : (catalog.find((row) => row.id === holderId) ?? null);
+    if (holderId !== undefined && holder === null)
+      throw organizationForkError(
+        'organization-repositories-missing',
+        input.organizationName,
+      );
+    if (holder && !repositoryProjectIds.includes(holder.id))
+      repositoryProjectIds.push(holder.id);
+    repositories.push({
+      repoId: repository.repoId,
+      name: repository.repoName,
+      remoteUrl: repository.remoteUrl,
+      holder,
+    });
+  }
+  return { repositories, repositoryProjectIds };
+}
+
+/** What a bound workspace a copy's key already made turns out to be. */
+export type ForkMultiRepoBoundInspection =
+  /** An earlier copy of this revision finished there: move on. */
+  | { kind: 'finished' }
+  /** An unfinished copy of this key: continue the fork inside it. */
+  | { kind: 'unfinished'; marker: ForkCopyRootMarker }
+  | { kind: 'other' };
+
+export type ForkMultiRepoCopyOutcome =
+  | { kind: 'created'; workspaceId: string; root: string }
+  | { kind: 'continued'; workspaceId: string; marker: ForkCopyRootMarker };
+
+type CopyPrepareResult =
+  | { ok: true; path: string; repositories: BoundCopyRepository[] }
+  | { ok: false; reason: 'root-in-use' | 'root-unowned' };
+
+/**
+ * Publish a new organization copy of a multi-repo share (CAN-4856) by
+ * walking its creation keys. Each generation sends one create under a
+ * subject derived from its key, so a retry replays the same project. A key
+ * whose project an earlier finished copy holds here moves on; an unfinished
+ * one is continued; anything final stops. The bound publication owns the
+ * create, the claim and the binding; this only decides between keys.
+ */
+export async function publishForkMultiRepoCopy(input: {
+  owner: WorkspaceContext;
+  organizationName?: string;
+  containerId: string;
+  revisionId: string;
+  title: string;
+  holders: ForkMultiRepoHolders;
+  commit?: W5CommitOptions;
+  /** Stage the checkout for this key once its project is known and unbound. */
+  prepare(
+    creationKey: string,
+    project: OrgProjectSummary,
+  ): Promise<CopyPrepareResult>;
+  /** Classify a workspace already bound to this key's project. */
+  inspectBound(
+    workspaceId: string,
+    creationKey: string,
+  ): Promise<ForkMultiRepoBoundInspection>;
+  /** The workspace the publication made, for the fork's rollback. */
+  onCreated(workspaceId: string): void;
+}): Promise<ForkMultiRepoCopyOutcome> {
+  const { owner } = input;
+  if (owner.kind !== 'organization')
+    throw new Error('A multi-repo organization copy needs an organization');
+  const [first] = input.holders.repositories;
+  const name = forkOrganizationProjectName(input.title, first?.name ?? '');
+  const remoteUrls = input.holders.repositories.map(
+    (repository) => repository.remoteUrl,
+  );
+  const { getOrgProjectMaterialization } =
+    await import('../../lib/org-project-materialization');
+  const { CanopyCloudClientError } = await import('../../canopy-cloud/client');
+  let refusal = organizationForkError(
+    'organization-creation-failed',
+    input.organizationName,
+  );
+  let conflicts = 0;
+  let conflictGeneration = -1;
+  for (
+    let generation = 0;
+    generation < FORK_CREATION_KEY_GENERATIONS;
+    generation += 1
+  ) {
+    const creationKey = forkOrganizationCreationKey({
+      shape: 'multi-repo',
+      containerId: input.containerId,
+      revisionId: input.revisionId,
+      organizationId: owner.organizationId,
+      name,
+      remoteUrls,
+      generation,
+    });
+    let createError: unknown;
+    let prepared: string | undefined;
+    const result =
+      await getOrgProjectMaterialization().publishMemberMultiRepoCopy(
+        {
+          organizationId: owner.organizationId,
+          name,
+          creationSubject: forkMultiRepoCreationSubject(creationKey),
+          creationKey,
+          repositoryProjectIds: input.holders.repositoryProjectIds,
+        },
+        {
+          prepare: async (project) => {
+            const staged = await input.prepare(creationKey, project);
+            if (staged.ok) prepared = staged.path;
+            return staged;
+          },
+          ...(input.commit ? { commit: input.commit } : {}),
+          onCreateRefused: (error) => {
+            createError = error;
+          },
+        },
+      );
+    if (result.ok) {
+      if (prepared === undefined)
+        throw organizationForkError(
+          'organization-creation-failed',
+          input.organizationName,
+        );
+      input.onCreated(result.workspaceId);
+      return {
+        kind: 'created',
+        workspaceId: result.workspaceId,
+        root: prepared,
+      };
+    }
+    if (result.cleanupPending === true && result.boundWorkspaceId === undefined)
+      throw organizationForkError(
+        'organization-creation-failed',
+        input.organizationName,
+        { cleanupPending: true },
+      );
+    // A staged root that a later step refused belongs to this attempt; the
+    // walk stops so the fork's rollback removes it rather than staging more.
+    // Access lost before the claim still reads as unavailable, as on create.
+    if (prepared !== undefined)
+      throw organizationForkError(
+        result.code === 'disabled'
+          ? 'organization-creation-unavailable'
+          : 'organization-creation-failed',
+        input.organizationName,
+      );
+    if (result.code === 'project-already-bound') {
+      // A copy still `claimed` or `bound` there is removed by the next
+      // launch's sweep; nothing may continue inside it.
+      if (result.cleanupPending === true)
+        throw organizationForkError(
+          'organization-creation-failed',
+          input.organizationName,
+          { cleanupPending: true },
+        );
+      const inspection: ForkMultiRepoBoundInspection =
+        result.boundWorkspaceId === undefined
+          ? { kind: 'other' }
+          : await input.inspectBound(result.boundWorkspaceId, creationKey);
+      if (inspection.kind === 'unfinished' && result.boundWorkspaceId)
+        return {
+          kind: 'continued',
+          workspaceId: result.boundWorkspaceId,
+          marker: inspection.marker,
+        };
+      if (inspection.kind !== 'finished')
+        refusal = organizationForkError(
+          'organization-already-bound',
+          input.organizationName,
+          { alreadyBound: 'share' },
+        );
+      continue;
+    }
+    if (result.prepareRefusal === 'root-in-use') continue;
+    if (result.prepareRefusal === 'root-unowned')
+      throw organizationForkError(
+        'organization-creation-failed',
+        input.organizationName,
+      );
+    const cloud =
+      createError instanceof CanopyCloudClientError ? createError : undefined;
+    // Only an unclassified conflict on the create is transient.
+    if (
+      cloud?.status === 409 &&
+      cloud.serverCode === 'conflict' &&
+      (conflicts = conflictCount(generation, conflictGeneration, conflicts)) <
+        FORK_CREATION_CONFLICT_ATTEMPTS
+    ) {
+      conflictGeneration = generation;
+      await waitBeforeConflictRetry(conflicts);
+      generation -= 1;
+      continue;
+    }
+    const cause = createError === undefined ? {} : { cause: createError };
+    if (result.code === 'member-project-limit')
+      throw organizationForkError(
+        'organization-project-limit',
+        input.organizationName,
+        cause,
+      );
+    if (result.code === 'repository-mismatch')
+      throw organizationForkError(
+        'organization-repositories-missing',
+        input.organizationName,
+        cause,
+      );
+    if (
+      result.code === 'disabled' ||
+      result.code === 'project-unavailable' ||
+      cloud?.status === 403
+    )
+      throw organizationForkError(
+        'organization-creation-unavailable',
+        input.organizationName,
+        cause,
+      );
+    // A name conflict, an exhausted conflict, `busy`, offline, an unreadable
+    // index, or anything else.
+    throw organizationForkError(
+      'organization-creation-failed',
+      input.organizationName,
+      {
+        ...cause,
+        ...(result.cleanupPending === true ? { cleanupPending: true } : {}),
+      },
+    );
+  }
+  throw refusal;
+}
+
+/**
+ * Compensation for a new multi-repo organization copy (CAN-4856) whose fork
+ * failed after its publication bound the workspace: hand the instance back,
+ * then delete the workspace this attempt made. A detach that fails keeps the
+ * bound workspace and throws, so the copy is reported as left behind. The
+ * server project stays; a retry reuses it through the creation subject.
+ */
+export async function discardForkMultiRepoCopy(
+  workspaceId: string | undefined,
+  deleteWorkspace: (workspaceId: string) => Promise<void>,
+): Promise<void> {
+  if (workspaceId === undefined) return;
+  const current = await readWorkspaceOwnership(workspaceId);
+  if (current.authority === 'absent') return;
+  if (current.authority !== 'ok')
+    throw new Error(
+      `Preserved fork workspace ${workspaceId}: its ownership is unreadable`,
+    );
+  if (current.owner !== undefined) {
+    const { getOrgProjectMaterialization } =
+      await import('../../lib/org-project-materialization');
+    await getOrgProjectMaterialization().releaseMemberMultiRepoCopyInstance(
+      current.owner.instanceId,
+    );
+  }
+  await deleteWorkspace(workspaceId);
 }
 
 /**

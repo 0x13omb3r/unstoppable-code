@@ -28,7 +28,10 @@ import {
   repositoryNameFromCloneUrl,
 } from '@canopy/protocol/portal';
 import { normalizeWorkspaceOwner } from '@canopy/execution-engine/lib/workspace-owner';
-import type { MultiRepoSetupRepository } from './org-project-setup-journal';
+import type {
+  BoundCopyRepository,
+  MultiRepoSetupRepository,
+} from './org-project-setup-journal';
 import { isRetiredTemporaryWorkspace } from '@canopy/desktop-shared/lib/workspace-visibility';
 import type { WorkspaceOwnerBinding } from '@canopy/desktop-shared/types';
 import { mkdir, realpath, writeFile } from 'node:fs/promises';
@@ -1834,21 +1837,60 @@ export function toWorkspaceCliRecord(item: SidebarItem): WorkspaceCliRecord {
   };
 }
 
-/** Trusted setup publication: no import, conversion, source mutation, or clone. */
-export async function registerBoundMultiRepoWorkspace(input: {
-  path: string;
-  localWorkspaceId: string;
-  owner: WorkspaceOwnerBinding;
+/**
+ * The repositories a bound multi-repo publication registers: a setup's
+ * validated clones, or a new organization copy's staged checkouts (CAN-4856).
+ */
+export type BoundMultiRepoRepositories =
+  | { repositories: MultiRepoSetupRepository[]; copyRepositories?: never }
+  | { copyRepositories: BoundCopyRepository[]; repositories?: never };
+
+/** The manifest URL a setup or copy registration records for a repository. */
+function manifestUrlFor(repository: {
+  host: string;
+  owner: string;
   name: string;
-  repositories: MultiRepoSetupRepository[];
-}): Promise<MultiRepoSidebarItem> {
+}): string {
+  return `https://${repository.host}/${repository.owner}/${repository.name}.git`;
+}
+
+/**
+ * Trusted setup publication: no import, conversion, source mutation, or clone.
+ * A copy's held repository registers from its manifest URL as setup's does; a
+ * snapshot (no holder) registers as a local repository with no URL, so an
+ * all-snapshot copy has local repositories and no links.
+ */
+export async function registerBoundMultiRepoWorkspace(
+  input: {
+    path: string;
+    localWorkspaceId: string;
+    owner: WorkspaceOwnerBinding;
+    name: string;
+  } & BoundMultiRepoRepositories,
+): Promise<MultiRepoSidebarItem> {
   const owner = normalizeWorkspaceOwner(input.owner);
-  if (
-    !owner ||
-    !isAbsolute(input.path) ||
-    input.repositories.length < 1 ||
-    input.repositories.some((entry) => !entry.validated)
-  )
+  const repos: WorkspaceConfigFile['repos'] | null = input.copyRepositories
+    ? input.copyRepositories.map((entry) => ({
+        id: entry.relativePath.slice('repos/'.length),
+        name: entry.repository?.name ?? entry.name,
+        repoPath: join(input.path, entry.relativePath),
+        ...(entry.repository
+          ? {
+              source: 'manifest' as const,
+              manifestUrl: manifestUrlFor(entry.repository),
+            }
+          : { source: 'local' as const }),
+      }))
+    : input.repositories.some((entry) => !entry.validated)
+      ? null
+      : input.repositories.map((entry) => ({
+          id: entry.relativePath.slice('repos/'.length),
+          name: entry.repository.name,
+          repoPath: join(input.path, entry.relativePath),
+          source: 'manifest' as const,
+          manifestUrl: manifestUrlFor(entry.repository),
+        }));
+  if (!owner || !isAbsolute(input.path) || !repos || repos.length < 1)
     throw new Error('Invalid bound multi-repo setup');
   validateId(input.localWorkspaceId, 'workspace id');
   return withStorageAdmission(PROJECT_W5_STORAGE, () =>
@@ -1936,13 +1978,7 @@ export async function registerBoundMultiRepoWorkspace(input: {
             ...buildMultiRepoSidebarItem(
               input.localWorkspaceId,
               input.name,
-              input.repositories.map((entry) => ({
-                id: entry.relativePath.slice('repos/'.length),
-                name: entry.repository.name,
-                repoPath: join(input.path, entry.relativePath),
-                source: 'manifest',
-                manifestUrl: `https://${entry.repository.host}/${entry.repository.owner}/${entry.repository.name}.git`,
-              })),
+              repos,
               live.length,
               input.path,
             ),

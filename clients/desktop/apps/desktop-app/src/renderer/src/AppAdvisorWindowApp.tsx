@@ -131,6 +131,7 @@ function getActiveBrowserId(entryId: string): string | null {
  */
 function resolveAppAdvisorFindFallback(): FindTarget | null {
   const standalone = useStandaloneChatStore.getState();
+  // Default Bot only: this popout owns the Orchestrator chat scope.
   const entryId =
     standalone.activeChatProjectId === APP_ADVISOR_PROJECT_ID &&
     useAppAdvisorStore.getState().layout !== 'floating'
@@ -338,6 +339,7 @@ export function AppAdvisorWindowApp(): JSX.Element {
       if (isShortcutEvent(event, 'w')) {
         event.preventDefault();
         const standalone = useStandaloneChatStore.getState();
+        // Default Bot only: this popout owns the Orchestrator chat scope.
         const entryId =
           standalone.activeChatProjectId === APP_ADVISOR_PROJECT_ID
             ? standalone.activeWorkEntryId
@@ -375,6 +377,7 @@ export function AppAdvisorWindowApp(): JSX.Element {
       if (isShortcutEvent(event, 't')) {
         event.preventDefault();
         const standalone = useStandaloneChatStore.getState();
+        // Default Bot only: this popout owns the Orchestrator chat scope.
         if (standalone.activeChatProjectId !== APP_ADVISOR_PROJECT_ID) {
           // Scoped bootstrap has not completed yet — safe no-op (the chord
           // stays consumed so it cannot fall through to anything else).
@@ -404,6 +407,7 @@ export function AppAdvisorWindowApp(): JSX.Element {
       }
 
       const standalone = useStandaloneChatStore.getState();
+      // Default Bot only: this popout owns the Orchestrator chat scope.
       if (standalone.activeChatProjectId !== APP_ADVISOR_PROJECT_ID) {
         return;
       }

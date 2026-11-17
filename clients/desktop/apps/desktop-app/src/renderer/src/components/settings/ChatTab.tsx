@@ -39,6 +39,7 @@ import { brandText } from '@/lib/brand';
 import { subscribePreferencesUpdated } from '@/lib/preferences-events';
 import { ModelThinkingPreferenceRow } from './ModelThinkingPreferenceRow';
 import { SettingsPluginPicker } from './SettingsPluginPicker';
+import { UsageLimitRoutingRow } from './UsageLimitRoutingRow';
 import {
   SettingsSelect,
   ToggleSwitch,
@@ -735,6 +736,14 @@ export function ChatTab(): JSX.Element {
             }
             includeOllama={false}
           />
+        </SettingsGroup>
+      </SettingsSection>
+
+      {/* A device preference, so it lives here rather than in the hosted
+          account settings (CAN-6860). */}
+      <SettingsSection title="Usage limits">
+        <SettingsGroup>
+          <UsageLimitRoutingRow stored={prefs.aiCreditsRoutingMode} />
         </SettingsGroup>
       </SettingsSection>
 

@@ -2,8 +2,8 @@ import {
   ChevronLeftMediumIcon,
   ChevronRightMediumIcon,
 } from '../../icons/AppIcons';
-import type { JSX, ReactNode } from 'react';
-import { Button } from '../Button';
+import type { JSX, MouseEventHandler, ReactNode } from 'react';
+import { ControlButton, Button } from '../Button';
 import { DiffLineCounts } from '../DiffLineCounts';
 import { RichHoverTooltip } from '../RichHoverTooltip';
 import { Heading } from '../Heading';
@@ -42,9 +42,15 @@ export const DIFF_STATUS_DOT_COLORS: Record<DiffFileStatus, string> = {
 export function DiffFileStatusMarker({
   status,
   review = false,
+  label,
+  size = 'compact',
+  className = '',
 }: {
   readonly status: DiffFileStatus;
   readonly review?: boolean;
+  readonly label?: string;
+  readonly size?: 'compact' | 'regular';
+  readonly className?: string;
 }): JSX.Element {
   const color =
     review && (status === 'added' || status === 'untracked')
@@ -54,10 +60,13 @@ export function DiffFileStatusMarker({
         : DIFF_STATUS_DOT_COLORS[status];
   return (
     <svg
-      aria-hidden="true"
+      aria-hidden={label === undefined ? true : undefined}
+      role={label === undefined ? undefined : 'img'}
+      aria-label={label}
       viewBox="0 0 7 7"
-      className="h-1.75 w-1.75 shrink-0"
+      className={`shrink-0 ${size === 'compact' ? 'size-1.75' : 'size-2'} ${className}`}
     >
+      {label === undefined ? null : <title>{label}</title>}
       <circle
         cx="3.5"
         cy="3.5"
@@ -267,11 +276,12 @@ function DiffFileTreeGroupRow({
       ) : (
         <ul className="flex flex-col gap-0.5">
           {group.files.map((file) => (
-            <DiffFileTreeRow
-              key={file.key}
-              file={file}
-              onSelect={(): void => onSelect(file, groupIndex)}
-            />
+            <li key={file.key}>
+              <DiffFileTreeRow
+                file={file}
+                onSelect={(): void => onSelect(file, groupIndex)}
+              />
+            </li>
           ))}
         </ul>
       )}
@@ -280,53 +290,96 @@ function DiffFileTreeGroupRow({
 }
 
 interface DiffFileTreeRowProps {
-  file: DiffFileTreeFile;
+  file: Omit<DiffFileTreeFile, 'key'>;
   onSelect: () => void;
+  onContextMenu?: MouseEventHandler<HTMLButtonElement>;
+  testId?: string;
+  details?: string;
+  trailing?: ReactNode;
+  layout?: 'flat' | 'tree' | 'tree-full-path';
+  indentation?: number;
 }
 
-function DiffFileTreeRow({
+export function DiffFileTreeRow({
   file,
   onSelect,
+  onContextMenu,
+  testId = 'diff-file-tree-row',
+  details,
+  trailing,
+  layout = 'flat',
+  indentation,
 }: DiffFileTreeRowProps): JSX.Element {
   const status = resolveStatus(file.status);
-  const selectedClass = file.selected
-    ? 'border-l-2 border-line-accent bg-accent/[0.08] fg-primary pl-1.5'
-    : 'fg-primary/80 hover:bg-fg-primary/[0.06]';
-  return (
-    <li>
-      <RichHoverTooltip
-        content={<span className="font-mono">{file.filePath}</span>}
-        triggerWrapperClassName="w-full"
-        surfaceClassName="w-max max-w-96"
-        surfacePadding="compact"
+  const selected = !!file.selected;
+  const flat = layout === 'flat';
+  const fullPath = layout === 'tree-full-path';
+  const rowProps = {
+    onClick: onSelect,
+    onContextMenu,
+    'data-testid': testId,
+    'data-selected': selected ? 'true' : 'false',
+    'aria-label': details ?? file.filePath,
+  };
+  const content = (
+    <>
+      <DiffFileStatusMarker status={status} review={!flat} />
+      <span
+        className={
+          flat
+            ? 'truncate font-mono'
+            : fullPath
+              ? 'min-w-0 truncate text-left'
+              : 'whitespace-nowrap'
+        }
       >
-        <button
-          type="button"
-          onClick={onSelect}
-          data-testid="diff-file-tree-row"
-          data-selected={file.selected ? 'true' : 'false'}
-          // Rows under a directory heading show only the base name, so the
-          // visible text alone is ambiguous when two directories hold the same
-          // filename. The full path stays the accessible name (and tooltip).
-          aria-label={file.filePath}
-          className={`flex w-full items-center gap-1.5 rounded-md px-2 py-1 text-xs transition-colors ${selectedClass}`}
+        {file.label ?? file.filePath}
+      </span>
+      <span
+        className={`ml-auto flex shrink-0 items-center gap-1.5 ${flat ? '' : 'pl-2'}`}
+      >
+        {trailing}
+        <DiffLineCounts
+          insertions={file.insertions}
+          deletions={file.deletions}
+          size="compact"
+          tone={flat ? undefined : 'strong'}
+        />
+        {flat && (
+          <span className="text-3xs fg-secondary">
+            {DIFF_STATUS_LABELS[status]}
+          </span>
+        )}
+      </span>
+    </>
+  );
+  return (
+    <RichHoverTooltip
+      content={details ?? <span className="font-mono">{file.filePath}</span>}
+      triggerWrapperClassName={
+        flat ? 'w-full' : fullPath ? 'w-full min-w-0' : 'w-max min-w-full'
+      }
+      surfaceClassName="w-max max-w-96"
+      surfacePadding="compact"
+    >
+      {flat ? (
+        <ControlButton
+          {...rowProps}
+          presentation="diff-file-choice"
+          appearance={{ selected }}
         >
-          <DiffFileStatusMarker status={status} />
-          <span className="truncate font-mono">
-            {file.label ?? file.filePath}
-          </span>
-          <span className="ml-auto flex shrink-0 items-center gap-1.5">
-            <DiffLineCounts
-              insertions={file.insertions}
-              deletions={file.deletions}
-              size="compact"
-            />
-            <span className="text-3xs fg-secondary">
-              {DIFF_STATUS_LABELS[status]}
-            </span>
-          </span>
-        </button>
-      </RichHoverTooltip>
-    </li>
+          {content}
+        </ControlButton>
+      ) : (
+        <ControlButton
+          {...rowProps}
+          presentation="diff-file"
+          appearance={{ fullPath, selected }}
+          style={{ paddingLeft: indentation }}
+        >
+          {content}
+        </ControlButton>
+      )}
+    </RichHoverTooltip>
   );
 }

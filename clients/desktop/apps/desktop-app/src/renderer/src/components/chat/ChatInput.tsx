@@ -122,6 +122,7 @@ import { ReactEditor } from 'slate-react';
 import {
   clearResumedChatUsageLimitBanner,
   resolveLaneForTarget,
+  resolveProviderDefaults,
   resolveTabDefaults,
   useChatStore as useLiveChatStore,
   useChatTabRenderState,
@@ -193,6 +194,7 @@ import { useWebCoreStartingTurnStore } from '@/stores/chat/web-core/starting-tur
 import { loadWebCoreModels, webCoreChatId } from '@/stores/chat/web-core';
 import { useWebCoreFastModeStore } from '@/stores/chat/web-core/fast-mode';
 import type { CodexSpeed } from '@canopy/protocol/automations';
+import { isBotProjectId } from '@canopy/protocol/chat-targets';
 import {
   useWebCoreModelCatalogStore,
   webCoreModelLabel,
@@ -273,7 +275,6 @@ import {
   isChatAttachmentPromptKind,
   DEFAULT_CREDITS_CODEX_MODEL,
   isAgentModel,
-  resolveRuntimeModel,
 } from '@canopy/desktop-shared/types';
 import { DEFAULT_VOICE_DICTATION_ENABLED } from '@canopy/desktop-shared/constants/preferences';
 import { computeUsageLimitResumePrompt } from '@canopy/execution-engine/lib/usage-limit-resume-prompt';
@@ -363,8 +364,11 @@ import { useCatchingUpLag } from '@/stores/ingestionLagStore';
 import {
   isGatewayOnlyModel,
   isOrgGatewayRoute,
+  resolveGatewayModelEntry,
   resolveOrgGatewayOrganizationId,
 } from '@canopy/execution-engine/lib/gateway-model-availability';
+import { personalGatewaySwitch } from '@/stores/chat/defaults';
+import { useDesktopAiGatewayEntry } from '@/components/aiGateway/DesktopAiGatewayEntry';
 import { openPendingPlanExit } from '@/lib/plans/open-tracked-plan';
 import { PlanReadyPipelineModal } from './PlanReadyPipelineModal';
 import { usePipelineRunWatcher } from '@/components/activity/usePipelineRunWatcher';
@@ -377,8 +381,15 @@ import {
   type ChatBillingResolution,
   type BillingFramework,
 } from '@/lib/chatBillingFramework';
+import type { ProviderSourceId } from '@canopy/app-state/provider-choice';
 import {
-  canOfferCreditsModelSwitch,
+  accountUsageLimits,
+  buildDesktopAccountSources,
+  buildDesktopGatewaySource,
+  type DesktopChoiceModel,
+  type DesktopProviderChoiceContext,
+} from './providerChoice/providerChoiceFacts';
+import {
   continueOnCreditsModel,
   type CreditsModelSwitchResult,
   type CreditsModelSwitchTarget,
@@ -449,7 +460,7 @@ import {
 } from '@/lib/promptMentionExpansion';
 import { useWorkspaceItemsStore } from '@/stores/workspaceItemsStore';
 import { AttachmentPillCarousel } from './AttachmentPillCarousel';
-import { ScheduledSendChip } from './ScheduledSendChip';
+import { ScheduledSendControl } from './ScheduledSendChip';
 import { ApprovalModePicker } from './ApprovalModePicker';
 import {
   PLAN_APPROVAL_BOX_CLASS,
@@ -546,6 +557,7 @@ import {
 } from '@canopy/ui-shared/components';
 import {
   canSwitchChatProvider,
+  describeLockedProviderReason,
   isContinuableHarnessPair,
 } from '@/lib/chatProviderLock';
 import { nextMsgId } from '@/stores/chat/ids';
@@ -1222,7 +1234,7 @@ function ChatInputContent({
     // entry-keyed chats are the primary watcher recipients.
     if (
       isCoworkChatTarget(selectedWorktree.projectId) &&
-      selectedWorktree.projectId !== APP_ADVISOR_PROJECT_ID
+      !isBotProjectId(selectedWorktree.projectId)
     ) {
       return null;
     }
@@ -1846,7 +1858,7 @@ function ChatInputContent({
     autoRouting.offered &&
     tab !== null &&
     autoRoutingProjectId !== undefined &&
-    autoRoutingProjectId !== APP_ADVISOR_PROJECT_ID &&
+    !isBotProjectId(autoRoutingProjectId) &&
     autoRoutingProjectId !== PIPELINE_EDITOR_PROJECT_ID &&
     autoRoutingProjectId !== PLAN_EXPLORE_CHAT_PROJECT_ID &&
     autoRoutingProjectId !== CODE_REVIEW_CHAT_PROJECT_ID;
@@ -2636,7 +2648,8 @@ function ChatInputContent({
   // questions: its composer takes the question its chat asked, and one whose
   // chat is not in this Work Entry (or names none), so a question is never
   // out of sight; it answers through that store.
-  const isAppAdvisorComposer = composerProjectId === APP_ADVISOR_PROJECT_ID;
+  const isAppAdvisorComposer =
+    composerProjectId !== undefined && isBotProjectId(composerProjectId);
   const appAdvisorEntryTabIds = useChatStore(
     useShallow((s): string[] =>
       isAppAdvisorComposer
@@ -3278,6 +3291,7 @@ function ChatInputContent({
   const worktreeChatTarget = useMemo(() => {
     if (!sessionChatTarget) return null;
     if (
+      // Default Bot only: `global` is the legacy Orchestrator slot.
       sessionChatTarget.projectId === APP_ADVISOR_PROJECT_ID &&
       sessionChatTarget.worktreeId === APP_ADVISOR_WORKTREE_ID
     ) {
@@ -3520,8 +3534,9 @@ function ChatInputContent({
   const billingProvider =
     getProviderForModel(modelForBilling) ?? effectiveProviderType ?? 'claude';
   // Whether this chat's model, and the default credits model, can bill to AI
-  // Credits (CAN-4900). The usage-limit banner, its actions, the switch to the
-  // credits model, and stale-routing cleanup all read these. The answer
+  // Credits (CAN-4900). The usage-limit banner, the provider list's credits
+  // row and its switch to the credits model, and stale-routing cleanup all
+  // read these. The answer
   // depends on the gateway catalog, so it re-derives when model facts change.
   const creditsModelRoutability = useMemo(
     () => resolveCreditsModelRoutability(modelForBilling),
@@ -3536,16 +3551,6 @@ function ChatInputContent({
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [modelFactsVersion],
   );
-  // An Agent bills as its base model, so the gate names the base model.
-  const chatModelLabel = useMemo((): string | undefined => {
-    if (!modelForBilling) return undefined;
-    const baseModel = isAgentModel(modelForBilling)
-      ? (resolveRuntimeModel(modelForBilling) ?? modelForBilling)
-      : modelForBilling;
-    return getModelDisplayName(baseModel);
-    // Display names come from the model registry, which React cannot see.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [modelForBilling, modelFactsVersion]);
   // Stored "just this time" routing stops after its reset time or a native
   // account change; main ignores it from then on, so the composer does too
   // (CAN-4200).
@@ -3591,7 +3596,9 @@ function ChatInputContent({
     ],
   );
   const creditNotice = creditNoticeVisibility({
-    creditHeld: tab?.queuedCreditHeld === true,
+    creditHeld:
+      tab?.queuedCreditHeld === true ||
+      tab?.aiCreditsNoBillingSource !== undefined,
     aiCreditsBannerVisible: billingResolution.aiCreditsBannerVisible,
   });
   // Whether the "Using AI Credits" card will show once this chat can spend
@@ -4016,15 +4023,16 @@ function ChatInputContent({
     worktreeChatTarget,
   ]);
 
-  // "Continue on <default credits model>" (CAN-4900): a chat on a model with no gateway
-  // route moves onto the default credits model, then routes this session
+  // The provider list's credits row on a worktree chat whose model has no
+  // gateway route (CAN-4900, CAN-6860): the chat moves onto the default
+  // credits model, then routes this session
   // through AI Credits until the limit resets. Once the "Using AI Credits"
   // card replaces the notice, focus follows it so it is not lost with the
   // notice. The flag is set before the switch because the card can render
   // before the switch's promise settles. The tab takes the new model before
   // the store's settings write settles, so for that one round trip the notice
-  // can show the ordinary offer for the now-routable model; routing is written
-  // as soon as the switch resolves and the card replaces it.
+  // can show its provider choice for the now-routable model; routing is
+  // written as soon as the switch resolves and the card replaces it.
   const pendingCardFocusRef = useRef(false);
   const handleContinueOnCreditsModel =
     useCallback(async (): Promise<CreditsModelSwitchResult> => {
@@ -4122,6 +4130,226 @@ function ChatInputContent({
   const handleContinueOnAiCredits = useCallback((): void => {
     void resumeInterruptedTurnOnAiCredits();
   }, [resumeInterruptedTurnOnAiCredits]);
+
+  // Provider choice (CAN-6860): what the recovery notices offer in place of a
+  // purchase. One context for both composer notices; each adds the credits
+  // purchase facts from its own coverage read.
+  const providerChoiceModelDefaults = useChatStore((s) => s.modelDefaults);
+  const providerChoiceProjectId = (targetOverride ?? selectedWorktree)
+    ?.projectId;
+  const usageLimitProvider = usageLimitBanner?.provider;
+  const usageLimitResetsAt = usageLimitBanner?.resetsAt;
+  // A usage limit is the account's, not the chat's: a limit another chat
+  // reached, or one this chat's banner no longer shows, still holds until it
+  // resets, so the list never offers a provider that is still limited.
+  const usageLimitByChat = useAiCreditsBannerStore((s) => s.usageLimitByChat);
+  // The AI gateway row: present when gateway setup is available here, ready
+  // once this computer holds the key and the gateway has a sendable model.
+  const providerChoiceGateway = useDesktopAiGatewayEntry();
+  const providerChoiceGatewaySwitch = useMemo(
+    () => personalGatewaySwitch(),
+    // Re-derive when the gateway catalog or lane facts change; React can't
+    // see either.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [modelFactsVersion, laneFactsVersion],
+  );
+  const providerChoiceContext = useMemo<
+    DesktopProviderChoiceContext | undefined
+  >(() => {
+    if (!bannerTarget) return undefined;
+    const toChoiceModel = (id: ChatModel): DesktopChoiceModel => ({
+      id,
+      label: getModelDisplayName(id),
+    });
+    // The chat's selected provider is its current source. The No billing
+    // source notice clears it: nothing pays for that chat, so its list names
+    // no current row and the notice reads "Choose provider".
+    const current: ProviderSourceId | null =
+      billingResolution.framework === 'ai-credits'
+        ? 'credits'
+        : billingProvider === 'claude' || billingProvider === 'codex'
+          ? billingProvider
+          : null;
+    // A started chat changes provider only in place, where main allows the
+    // pair and nothing blocks the hand-over (`canSwitchChatProvider`).
+    const providerSwitchBlockedReason = (
+      provider: AgentProviderType,
+    ): string | undefined => {
+      if (lockedProvider === undefined || provider === lockedProvider) {
+        return undefined;
+      }
+      if (
+        provider === continueTargetProvider &&
+        continueEligibility?.ok === true
+      ) {
+        return undefined;
+      }
+      return continueEligibility?.ok === false
+        ? continueEligibility.reason
+        : describeLockedProviderReason(lockedProvider, provider);
+    };
+    // The switch onto the default credits model keeps the guards the earlier
+    // "Continue on <credits model>" had: an Agent is never switched (the plain
+    // credits model would drop its instructions), and a worktree chat's
+    // switch writes Codex session routing without the switch dialog, so it
+    // needs a Codex chat. Elsewhere the switch dialog applies, so it needs a
+    // provider change the chat allows.
+    const creditsSwitchOffered =
+      creditsTargetRoutable &&
+      !isAgentModel(modelForBilling) &&
+      (worktreeChatTarget !== null
+        ? billingProvider === 'codex'
+        : providerSwitchBlockedReason(
+            getProviderForModel(DEFAULT_CREDITS_CODEX_MODEL) ?? 'codex',
+          ) === undefined);
+    // Outside worktree chats, moving onto credits is the per-chat billing
+    // choice, so it honors the billing toggle's lock.
+    const creditsUseBlockedReason =
+      worktreeChatTarget === null && billingControl?.disabled === true
+        ? (billingControl.lockedReason ?? 'Start a new chat to change billing.')
+        : undefined;
+    // A chat on a Personal gateway model bills that gateway, not a
+    // subscription or credits.
+    const gatewayEntry = resolveGatewayModelEntry(modelForBilling);
+    const chatOnGateway =
+      providerChoiceGateway !== null &&
+      gatewayEntry?.origin === 'org-gateway' &&
+      gatewayEntry.organizationId === providerChoiceGateway.organizationId;
+    const providerChoiceGatewayModel = providerChoiceGatewaySwitch.model;
+    const gatewaySwitchProvider =
+      providerChoiceGatewayModel !== undefined
+        ? getProviderForModel(providerChoiceGatewayModel)
+        : undefined;
+    const gatewayBlockedReason =
+      gatewaySwitchProvider !== undefined
+        ? providerSwitchBlockedReason(gatewaySwitchProvider)
+        : providerChoiceGatewaySwitch.unavailableReason;
+    const gatewaySources =
+      providerChoiceGateway === null
+        ? []
+        : [
+            buildDesktopGatewaySource({
+              configured: providerChoiceGateway.summary !== null,
+              keyHeld: providerChoiceGatewaySwitch.keyHeld,
+              ...(providerChoiceGatewayModel !== undefined
+                ? { switchModel: toChoiceModel(providerChoiceGatewayModel) }
+                : {}),
+              chatOnGateway,
+              ...(gatewayBlockedReason !== undefined
+                ? { blockedReason: gatewayBlockedReason }
+                : {}),
+            }),
+          ];
+    return {
+      current: chatOnGateway ? 'gateway' : current,
+      ...(providerChoiceGateway?.summary
+        ? { gatewayName: providerChoiceGateway.summary.name }
+        : {}),
+      accountSources: [
+        ...buildDesktopAccountSources({
+          modelProvider: billingProvider,
+          modelRunsNatively: !isGatewayOnlyModel(modelForBilling),
+          availability: providerAvailability,
+          blockedReasonFor: providerSwitchBlockedReason,
+          limited: accountUsageLimits(
+            Object.values(usageLimitByChat),
+            usageLimitProvider !== undefined
+              ? { provider: usageLimitProvider, resetsAt: usageLimitResetsAt }
+              : null,
+            Date.now(),
+          ),
+          defaultModelFor: (provider) => {
+            if (!providerChoiceProjectId) return undefined;
+            const { model: providerDefault } = resolveProviderDefaults(
+              providerChoiceProjectId,
+              providerChoiceModelDefaults,
+              provider,
+            );
+            return providerDefault !== undefined
+              ? toChoiceModel(providerDefault)
+              : undefined;
+          },
+        }),
+        ...gatewaySources,
+      ],
+      credits: {
+        runsTargetModel: creditsModelRoutability === 'routable',
+        ...(creditsSwitchOffered
+          ? { defaultModel: toChoiceModel(DEFAULT_CREDITS_CODEX_MODEL) }
+          : {}),
+        ...(creditsUseBlockedReason !== undefined
+          ? { useBlockedReason: creditsUseBlockedReason }
+          : {}),
+      },
+      formatResetsAt: (resetsAt): string =>
+        formatUsageLimitTimeLabel(resetsAt) ?? '',
+      onUse: async (row): Promise<boolean> => {
+        if (row.source === 'credits') {
+          if (row.outcome.kind === 'switch-model') {
+            // Routing is written only once the model change is accepted
+            // (`continueOnCreditsModel`); a cancelled switch writes nothing.
+            if (worktreeChatTarget) {
+              return (await handleContinueOnCreditsModel()) === 'switched';
+            }
+            return handleRecoveryCommit(row.outcome.target.id, 'ai-credits');
+          }
+          // Same model: today's "Just this chat" on worktree chats, the
+          // per-chat billing choice elsewhere, then resend what stopped.
+          if (worktreeChatTarget) {
+            if (!enableSessionCreditsRouting(worktreeChatTarget)) return false;
+          } else {
+            selectBillingFramework('ai-credits', bannerTarget);
+          }
+          if (sessionChatTarget !== null && interruptedTurnPending) {
+            handleContinueOnAiCredits();
+          }
+          return true;
+        }
+        if (row.source === 'gateway') {
+          // The gateway pays for its own models: the switch carries no
+          // billing choice, exactly as picking the model in the picker does.
+          return row.outcome.kind === 'switch-model'
+            ? handleRecoveryCommit(row.outcome.target.id)
+            : row.outcome.kind === 'same-model';
+        }
+        if (row.outcome.kind === 'switch-model') {
+          return handleRecoveryCommit(row.outcome.target.id, 'subscription');
+        }
+        if (row.outcome.kind === 'same-model') {
+          selectBillingFramework('subscription', bannerTarget);
+          return true;
+        }
+        return false;
+      },
+    };
+  }, [
+    bannerTarget,
+    billingControl,
+    billingProvider,
+    billingResolution.framework,
+    continueEligibility,
+    continueTargetProvider,
+    creditsModelRoutability,
+    creditsTargetRoutable,
+    enableSessionCreditsRouting,
+    handleContinueOnAiCredits,
+    handleContinueOnCreditsModel,
+    handleRecoveryCommit,
+    interruptedTurnPending,
+    lockedProvider,
+    modelForBilling,
+    providerAvailability,
+    providerChoiceGateway,
+    providerChoiceGatewaySwitch,
+    providerChoiceModelDefaults,
+    providerChoiceProjectId,
+    selectBillingFramework,
+    sessionChatTarget,
+    usageLimitByChat,
+    usageLimitProvider,
+    usageLimitResetsAt,
+    worktreeChatTarget,
+  ]);
 
   const emptyCompletionRepeatsToolActivity =
     tab?.emptyCompletionRepeatsToolActivity === true;
@@ -7308,7 +7536,7 @@ function ChatInputContent({
       }
       scheduledSendSlot={
         !promptOpen && showScheduledSendDraft && scheduledSendDraft ? (
-          <ScheduledSendChip
+          <ScheduledSendControl
             runAt={scheduledSendDraft.runAt}
             error={scheduleSendError}
             editable={supportsScheduledSends}
@@ -7745,6 +7973,7 @@ function ChatInputContent({
           <>
             <AiCreditsUsageLimitBanner
               target={bannerTarget}
+              providerChoice={providerChoiceContext}
               {...(billingResolution.framework !== null
                 ? {
                     billsToAiCredits:
@@ -7753,22 +7982,6 @@ function ChatInputContent({
                 : {})}
               aiCreditsCardVisible={aiCreditsCardVisible}
               modelRoutability={creditsModelRoutability}
-              {...(chatModelLabel !== undefined
-                ? { modelLabel: chatModelLabel }
-                : {})}
-              {...(canOfferCreditsModelSwitch({
-                model: modelForBilling,
-                billingProvider,
-                hasWorktreeTarget: worktreeChatTarget !== null,
-                creditsModelRoutable: creditsTargetRoutable,
-              })
-                ? {
-                    creditsModelLabel: getModelDisplayName(
-                      DEFAULT_CREDITS_CODEX_MODEL,
-                    ),
-                    onContinueOnCreditsModel: handleContinueOnCreditsModel,
-                  }
-                : {})}
               {...(worktreeChatTarget
                 ? { onUseJustThisTime: handleUseAiCreditsJustThisTime }
                 : {})}
@@ -7863,6 +8076,9 @@ function ChatInputContent({
             unbillableModelSwitch ? null : (
               <NoBillingSourceBanner
                 provider={billingProvider}
+                {...(providerChoiceContext !== undefined
+                  ? { providerChoice: providerChoiceContext }
+                  : {})}
                 availability={providerAvailability[billingProvider]}
                 target={bannerTarget}
                 queuedCreditHeld={creditNotice.queuedCreditNoticeVisible}
@@ -8455,6 +8671,7 @@ function ChatInputContent({
 
       {pluginsModalOpen && webCoreProjectId === undefined && (
         <ChatPluginsModal
+          restoreFocusRef={plusTriggerRef}
           initial={
             pluginsModalInheritedLayers
               ? effectiveChatPluginSelections({

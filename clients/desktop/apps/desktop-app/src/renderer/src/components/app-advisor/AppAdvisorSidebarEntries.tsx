@@ -30,6 +30,7 @@ import { useCurrentUiStateStore } from '@/stores/currentUiStateStore';
  */
 const DOCKED_REFRESH_MS = 1500;
 
+// Default Bot only: the docked Orchestrator nav lists its own entries.
 const ENTRY_KEY_PREFIX = `${APP_ADVISOR_PROJECT_ID}/`;
 
 /** A chat: it has a message, or the person changed it (renamed, pinned). */

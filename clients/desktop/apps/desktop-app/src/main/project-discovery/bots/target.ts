@@ -4,11 +4,11 @@ import type {
   BotsReadHistoryAction,
 } from '@canopy/desktop-shared/lib/bot-discovery';
 import {
-  APP_ADVISOR_PROJECT_ID,
   APP_ADVISOR_WORKTREE_ID,
   COWORK_HOME_WORKTREE_ID,
   type CoworkWorkEntryData,
 } from '@canopy/desktop-shared/types';
+import { isBotProjectId } from '@canopy/protocol/chat-targets';
 import {
   ADVISOR_ACCESS_DISABLED,
   ADVISOR_ACCESS_DISABLED_MESSAGE,
@@ -41,16 +41,15 @@ export interface BotAccessContext {
 
 /**
  * The project agent whose access gates bot targets, or null when none does:
- * App Advisor itself, and pipeline runs that no project agent started.
+ * a Bot itself, and pipeline runs that no project agent started.
  */
 export function botAccessAgent(
   caller: ProjectDiscoveryCaller,
 ): { projectId: string; worktreeId: string } | null {
   if (caller.kind === 'app_advisor') return null;
   if (caller.kind === 'pipeline') {
-    // Orchestrator is never gated by the project-agent setting.
-    return caller.agentOrigin &&
-      caller.agentOrigin.projectId !== APP_ADVISOR_PROJECT_ID
+    // A Bot origin has no project-agent setting.
+    return caller.agentOrigin && !isBotProjectId(caller.agentOrigin.projectId)
       ? {
           projectId: caller.agentOrigin.projectId,
           worktreeId: caller.agentOrigin.worktreeId,

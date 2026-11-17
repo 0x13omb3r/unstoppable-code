@@ -1,5 +1,6 @@
 'use client';
 
+import { ControlButton } from './Button';
 import {
   useId,
   useRef,
@@ -79,8 +80,6 @@ type PickerRow =
 
 // Mirrors Field.tsx's FIELD_CLASS so the searchable field keeps the shared
 // text-field edge, neutral focus, 36px form height, and coarse-pointer floor.
-const FIELD_CLASS =
-  'min-h-9 rounded-lg px-3 py-2 pointer-coarse:min-h-11 w-full bg-transparent text-s fg-primary text-wrap placeholder:text-pretty placeholder:fg-tertiary outline-none shadow-field transition-shadow focus-visible:shadow-field-focus disabled:cursor-not-allowed disabled:bg-disabled disabled:fg-disabled';
 
 function defaultFindOption(
   options: readonly CreatablePickerOption[],
@@ -412,7 +411,7 @@ export function CreatablePickerSelect({
 
   return (
     <span className={withPlacement('relative flex w-full', className)}>
-      <button
+      <ControlButton
         ref={triggerRef}
         id={id}
         type="button"
@@ -433,7 +432,7 @@ export function CreatablePickerSelect({
           setActiveRowId(null);
           setOpen(true);
         }}
-        className={`${FIELD_CLASS} flex cursor-pointer items-center pr-9 text-left disabled:cursor-not-allowed`}
+        presentation="creatable-picker-field"
       >
         {triggerLeading ? (
           <span
@@ -455,7 +454,7 @@ export function CreatablePickerSelect({
             </span>
           ) : null}
         </Inline>
-      </button>
+      </ControlButton>
       <span
         aria-hidden="true"
         className="pointer-events-none absolute right-3 top-1/2 flex -translate-y-1/2 fg-tertiary"

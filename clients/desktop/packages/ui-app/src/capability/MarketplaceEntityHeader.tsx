@@ -47,19 +47,21 @@ export function MarketplaceEntityHeader({
         fit="contain"
       />
       <div className="min-w-0 flex-1">
-        <Heading level={1} variant="page" id={titleId}>
-          {privateName ? (
-            <span className={REPLAY_MASK_CLASS}>{name}</span>
-          ) : (
-            name
+        <div className="flex flex-col gap-2">
+          <Heading level={1} variant="page" id={titleId}>
+            {privateName ? (
+              <span className={REPLAY_MASK_CLASS}>{name}</span>
+            ) : (
+              name
+            )}
+          </Heading>
+          {hasMarkdownDescriptionText(description) && (
+            <DescriptionMarkdown dataTestId="share-description">
+              {description}
+            </DescriptionMarkdown>
           )}
-        </Heading>
-        {hasMarkdownDescriptionText(description) && (
-          <DescriptionMarkdown className="mt-2" dataTestId="share-description">
-            {description}
-          </DescriptionMarkdown>
-        )}
-        {meta && <p className="mt-2 text-xs fg-tertiary">{meta}</p>}
+          {meta && <p className="text-xs fg-tertiary">{meta}</p>}
+        </div>
         {children}
       </div>
     </header>

@@ -68,9 +68,9 @@ export function ProfileHeader({
           {formatMemberSince(member.memberSinceIso)}
         </time>
       </p>
-      {member.bio && <p className="mt-1 text-s fg-primary">{member.bio}</p>}
+      {member.bio && <p className="pt-1 text-s fg-primary">{member.bio}</p>}
       {links.length > 0 && (
-        <ul className="mt-1 flex flex-wrap gap-3 text-s">
+        <ul className="pt-1 flex flex-wrap gap-3 text-s">
           {links.map((link) => (
             <li key={`${link.label}:${link.url}`}>
               <a

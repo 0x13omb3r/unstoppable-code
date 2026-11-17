@@ -1,5 +1,6 @@
 'use client';
 
+import { ControlButton } from '@canopy/ui-shared/components';
 import {
   useCallback,
   useEffect,
@@ -285,13 +286,12 @@ function MarketplaceSourceDetailBody({
         data-plugin-key={plugin.key}
       >
         {isInteractive(plugin) ? (
-          <button
-            type="button"
-            className="focus-ring min-w-0 flex-1 rounded text-left"
+          <ControlButton
+            presentation="directory-entry-open"
             onClick={() => onOpenPlugin?.(source.id, plugin.key)}
           >
             {label}
-          </button>
+          </ControlButton>
         ) : (
           <div className="min-w-0 flex-1">{label}</div>
         )}
@@ -363,11 +363,11 @@ function MarketplaceSourceDetailBody({
           }
         >
           {source.description && (
-            <p className={`mt-2 text-s fg-secondary ${REPLAY_MASK_CLASS}`}>
+            <p className={`pt-2 text-s fg-secondary ${REPLAY_MASK_CLASS}`}>
               {source.description}
             </p>
           )}
-          <div className="mt-3 flex flex-wrap items-center gap-2">
+          <div className="pt-3 flex flex-wrap items-center gap-2">
             <MissingPluginsBadge
               count={missingCount}
               testId="marketplace-source-detail-missing-count"

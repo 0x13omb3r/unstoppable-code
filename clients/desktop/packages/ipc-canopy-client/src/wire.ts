@@ -380,6 +380,7 @@ export interface WirePipelineData {
 
 /** The created worktree from `worktree:create` / `workspace:create-worktree`. */
 export interface WireCreatedWorktree {
+  readonly setupPhase?: 'git-pending' | 'git-ready';
   readonly id: string;
   readonly branchName: string;
   readonly needsRepair?: boolean;

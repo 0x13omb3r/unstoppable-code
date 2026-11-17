@@ -1,4 +1,4 @@
-import { execFileSync } from 'node:child_process';
+import { execFileSync, spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import {
   copyFileSync,
@@ -41,6 +41,8 @@ const suite = process.platform === 'linux' ? describe : describe.skip;
  * linux-migration.ts cold, about 110 ms more. A starved runner once took over
  * the old 10 s (CAN-6849). 30 s is over 30 times the normal spawn, and keeps a
  * hung launcher from stalling the suite: six modes at 30 s is three minutes.
+ * A later 30 s timeout was a process.exit() hang in the fixture script, not a
+ * slow spawn (CAN-6908); a failure reports the launcher's output and status.
  */
 const FIXTURE_SPAWN_BUDGET_MS = 30_000;
 let dir = '',
@@ -503,11 +505,16 @@ const policy=JSON.parse(fs.readFileSync(process.argv[2],'utf8'));
 const prepared=prepareLinuxMigrationQualification({...policy,current:()=>true});
 if(!prepared)throw new Error('fixture preparation refused');
 const composed=createLinuxMigrationComposition(prepared.capability);
-let channel;
-try {channel=composed.connect(process.ppid);} catch(error) {if(error.code==='capability_unavailable'){fs.writeSync(3,'capability_unavailable');prepared.invalidate();process.exit(0);}throw error;}
+let channel=null;
+try {channel=composed.connect(process.ppid);} catch(error) {if(error.code!=='capability_unavailable')throw error;fs.writeSync(3,'capability_unavailable');}
+if(channel){
 await channel.read(AbortSignal.timeout(5000));
 const result=composed.verifyLauncher(channel);
-await channel.write(Buffer.from(result.verified?'verified':result.reason));composed.close();prepared.invalidate();
+await channel.write(Buffer.from(result.verified?'verified':result.reason));
+}
+composed.close();prepared.invalidate();
+// No process.exit(): right after module loading it can deadlock joining a V8
+// worker that waits for a main-thread GC (CAN-6908). End by draining instead.
 `,
       );
       const loader = pathToFileURL(
@@ -528,15 +535,29 @@ await channel.write(Buffer.from(result.verified?'verified':result.reason));compo
         }),
       );
       const started = performance.now();
-      const outcome = execFileSync(helper, [...base, mode], {
+      const run = spawnSync(helper, [...base, mode], {
         encoding: 'utf8',
         timeout: FIXTURE_SPAWN_BUDGET_MS,
         env: { PATH: '/usr/bin:/bin' },
       });
+      const elapsed = Math.round(performance.now() - started);
+      if (run.error || run.status !== 0) {
+        // A timeout kills only the launcher; its Node child must not outlive the case.
+        spawnSync('/usr/bin/pkill', ['-KILL', '-f', script]);
+        const state = JSON.stringify({
+          error: run.error?.message ?? null,
+          status: run.status,
+          signal: run.signal,
+          stdout: run.stdout,
+          stderr: run.stderr,
+        });
+        throw new Error(
+          `Fixture launcher ${mode} failed after ${elapsed} ms: ${state}`,
+        );
+      }
+      const outcome = run.stdout;
       // Logged for CI timing evidence only (CAN-6849); nothing asserts on it.
-      process.stdout.write(
-        `[CAN-6849] fixture spawn ${mode}: ${Math.round(performance.now() - started)} ms\n`,
-      );
+      process.stdout.write(`[CAN-6849] fixture spawn ${mode}: ${elapsed} ms\n`);
       if (!supportsChannels && outcome === 'capability_unavailable')
         expect(outcome).toBe('capability_unavailable');
       else expect(outcome).toBe(mode === 'main' ? 'verified' : 'role');

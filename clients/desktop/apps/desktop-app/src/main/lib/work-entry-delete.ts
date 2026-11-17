@@ -2,6 +2,7 @@ import {
   APP_ADVISOR_PROJECT_ID,
   APP_ADVISOR_WORKTREE_ID,
 } from '@canopy/desktop-shared/types';
+import { isBotProjectId } from '@canopy/protocol/chat-targets';
 import { destroyWorktreeSessions } from '../agents/session-manager';
 import {
   listWorkEntries,
@@ -30,7 +31,7 @@ import { KeyedAsyncLock } from './keyed-async-lock';
 import { logMainProcessError } from './main-process-logging';
 
 /**
- * Tells the Ledger that a Cowork or App Advisor Work Entry was deleted, so its
+ * Tells the Ledger that a Bot or Cowork Work Entry was deleted, so its
  * scope becomes read-only when the deletion committed a retained archive
  * manifest, or retires when it did not. Call only after the entry row is
  * irreversibly removed. The participant returns at once, so no deletion lock
@@ -112,6 +113,7 @@ async function preflightWorkEntryDeletion({
   validateId(workspaceId, 'workspaceId');
   validateId(entryId, 'entryId');
   if (
+    // Default Bot only: protect its legacy global work-entry slot.
     workspaceId === APP_ADVISOR_PROJECT_ID &&
     entryId === APP_ADVISOR_WORKTREE_ID
   ) {
@@ -361,7 +363,7 @@ export async function deleteWorkEntry({
       await destroyWorktreeSessions(workspaceId, entryId);
       sessionsDestroyed = true;
       await chatStateService.runWithScopeDeletion(scope, async () => {
-        if (workspaceId !== APP_ADVISOR_PROJECT_ID) {
+        if (!isBotProjectId(workspaceId)) {
           const summaries = await listWorkEntryChatSummaries(workspaceId);
           removedChatIds =
             summaries
@@ -436,7 +438,7 @@ export async function deleteWorkEntry({
         error,
       );
     }
-    if (workspaceId !== APP_ADVISOR_PROJECT_ID) {
+    if (!isBotProjectId(workspaceId)) {
       try {
         // Load the standalone-chat service only for Cowork removal.
         const { emitStandaloneChatRemovals } =

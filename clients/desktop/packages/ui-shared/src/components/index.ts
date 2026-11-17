@@ -49,6 +49,7 @@ export * from './ClaudeAiCreditsFallbackErrorNotice';
 export * from './CodexAccountModelNotice';
 export * from './AiCreditsCheckFeedback';
 export * from './creditsPromptCopy';
+export * from './providerChoiceCopy';
 export * from './BillingHistoryTable';
 export * from './BillingStatusPill';
 export * from './CreditLedgerTable';
@@ -100,6 +101,7 @@ export * from './useOverlayEscape';
 export * from './DataSharingFeaturePills';
 export * from './DataSharingOptInCta';
 export * from './OrgEnforcedConsentList';
+export * from './SidebarProjectsReturn';
 export * from './Button';
 export * from './ListRow';
 export * from './IconToggleButton';
@@ -258,6 +260,7 @@ export * from './Notice';
 export * from './ModelSelectionNotice';
 export * from './UsageLimitNotice';
 export * from './StuckAgentNotice';
+export * from './RemoteHostUpdateNotice';
 export * from './CatchingUpNotice';
 export * from './BackgroundWorkCapNotice';
 export * from './OnboardingTip';
@@ -397,6 +400,8 @@ export * from './CustomizeSection';
 export * from './CustomizeInstalledRow';
 export * from './CustomizeInstalledList';
 export * from './CustomizeRowMenu';
+export * from './CustomizeRowSplitButton';
+export * from './CustomizeWorksWithChips';
 export * from './CustomizeInstalledUnavailable';
 export * from './UpdateMarker';
 export * from './PluginsPipelineFilters';
@@ -438,6 +443,7 @@ export {
   type CuratedPipelineCatalogProps,
 } from './CuratedPipelineCatalog';
 export * from './CuratedCatalogNotice';
+export * from './HarnessCatchUpNotice';
 export * from './CuratedPipelinePreviewDialog';
 export * from './PipelineTemplatesSection';
 export * from './ArchivedChatsCard';
@@ -536,8 +542,12 @@ export * from './AgentAliasModelFields';
 export * from './AgentModelPicker';
 
 export * from './OrchestratorSettingsFooter';
+export * from './OrchestratorInstructionsPanel';
+export * from './OrchestratorRetentionCard';
 
 export * from './DialogActionFooter';
+
+export { BotGlyph, BotGlyphControl, BotGlyphPicker } from './bots';
 export * from './MediaEditOverlay';
 export * from './OrganizationFeedCard';
 export * from './ScrollableTabFrame';

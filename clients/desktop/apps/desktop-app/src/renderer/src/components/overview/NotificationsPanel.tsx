@@ -195,7 +195,7 @@ function NotificationCard({
               {meta?.workspaceName ?? ''}
             </span>
             {meta?.workspaceName && meta?.worktreeId && (
-              <span className="mx-1 opacity-60">·</span>
+              <span className="px-1 opacity-60">·</span>
             )}
             {placeLabel && (
               <span className={`${POSTHOG_REPLAY_MASK_CLASS} fg-primary/80`}>

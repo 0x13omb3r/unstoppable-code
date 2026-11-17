@@ -1,3 +1,4 @@
+import { ControlButton } from '@canopy/ui-shared/components';
 import { MemoryEvidenceQuote } from '@canopy/ui-shared/components';
 import { memo, type JSX } from 'react';
 import type {
@@ -85,14 +86,13 @@ function FactCardComponent({ fact, onSelect }: FactCardProps): JSX.Element {
         // Keep the original line-box inset below the button. Its content
         // stack has a different baseline from the original block children.
         <div className="pb-0.5">
-          <button
-            type="button"
+          <ControlButton
             data-settings-control="row"
-            className="block w-full text-left"
+            presentation="memory-fact-open"
             onClick={() => onSelect(fact.id)}
           >
             {content}
-          </button>
+          </ControlButton>
         </div>
       )}
     </Surface>

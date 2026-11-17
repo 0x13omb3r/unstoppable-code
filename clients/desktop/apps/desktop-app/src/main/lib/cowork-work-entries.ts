@@ -36,6 +36,7 @@ import { loadLegacyChatMigrationSource } from './legacy-chat-migration';
 import { renameWithRetry } from './atomic-file';
 import { dirname, join } from 'node:path';
 import { CHAT_UNIT_LABEL } from '@canopy/protocol';
+import { isBotProjectId } from '@canopy/protocol/chat-targets';
 import { normalizePluginSelections } from '@canopy/execution-engine/lib/plugin-selections-normalization';
 import type {
   CoworkWorkEntriesFile,
@@ -47,7 +48,6 @@ import type {
   PersistedChatTab,
   PersistedChatMessage,
 } from '@canopy/desktop-shared/types';
-import { APP_ADVISOR_PROJECT_ID } from '@canopy/desktop-shared/types';
 import type { DeltaJournalCheckpointRotation } from '../services/chat-state-v2-backend';
 import { readWorkspaceDefaultLayoutMode } from '@canopy/desktop-shared/node/lib/panel-layout-mode';
 import {
@@ -162,7 +162,7 @@ function summaryCacheKey(workspaceId: string, entryId: string): string {
 }
 
 function resolveWorkEntryWorkspaceId(projectId: string): string {
-  return projectId === APP_ADVISOR_PROJECT_ID
+  return isBotProjectId(projectId)
     ? projectId
     : resolveCoworkWorkspaceId(projectId);
 }
@@ -1338,7 +1338,7 @@ export async function createWorkEntry(
       installed = true;
       options?.assertCanCommit?.();
       if (
-        projectId !== APP_ADVISOR_PROJECT_ID &&
+        !isBotProjectId(projectId) &&
         options?.seedPanelLayoutMode !== false
       ) {
         try {

@@ -1,3 +1,4 @@
+import { ControlButton } from './Button';
 import type { JSX } from 'react';
 import { ArrowUp, StopFilledIcon } from '../icons/AppIcons';
 import { LoadingSpinner } from './LoadingSpinner';
@@ -75,23 +76,12 @@ export type ComposerSendButtonProps =
     };
 
 // Size recipes stay whole literals so Tailwind can see every class.
-const ROUND_SIZE: Record<ComposerSendButtonTapTarget, string> = {
-  compact: 'h-8 w-8',
-  touch: 'h-11 w-11 lg:h-8 lg:w-8',
-};
+
 // Armed, stop widens into the shared md capsule; it keeps its height and has
 // no fixed width.
-const CAPSULE_SIZE: Record<ComposerSendButtonTapTarget, string> = {
-  compact: 'h-8 gap-1.5 px-3',
-  touch: 'h-11 gap-1.5 px-3 lg:h-8',
-};
 
-const BASE =
-  'focus-ring inline-flex items-center justify-center rounded-full fg-emphasis transition-transform enabled:active:scale-97 disabled:cursor-not-allowed';
 // The muted disabled look send and run share, so a disabled control never
 // advertises a hover it cannot honour.
-const MUTED_DISABLED =
-  'disabled:bg-muted disabled:fg-tertiary disabled:opacity-100';
 
 export function ComposerSendButton(
   props: ComposerSendButtonProps,
@@ -123,11 +113,12 @@ export function ComposerSendButton(
       label={blockedReason ?? (pending ? 'Updating model' : 'Send')}
       {...(blockedReason || pending ? {} : { shortcut: '↵' })}
     >
-      <button
+      <ControlButton
         type="button"
         onClick={onSend}
         disabled={disabled || pending}
-        className={`${BASE} ${ROUND_SIZE[tapTarget]} bg-accent enabled:hover:bg-accent/90 ${MUTED_DISABLED}`}
+        presentation="composer-send"
+        appearance={{ tapTarget }}
         aria-label="Send message"
         aria-busy={pending}
         data-testid={dataTestId}
@@ -137,7 +128,7 @@ export function ComposerSendButton(
         ) : (
           <ArrowUp width={16} height={16} aria-hidden />
         )}
-      </button>
+      </ControlButton>
     </Tooltip>
   );
 }
@@ -171,7 +162,7 @@ function ComposerStopButton(props: ComposerStopButtonProps): JSX.Element {
         : 'Stop generation';
   return (
     <Tooltip label={label}>
-      <button
+      <ControlButton
         type="button"
         onClick={props.onStop}
         data-testid={props.dataTestId}
@@ -180,9 +171,8 @@ function ComposerStopButton(props: ComposerStopButtonProps): JSX.Element {
         data-cancel-shortcut-ready={shortcutReady || undefined}
         data-cancel-armed={armed || undefined}
         // The primary action while a turn runs, in send's own recipe.
-        className={`${BASE} ${
-          showArmed ? CAPSULE_SIZE[tapTarget] : ROUND_SIZE[tapTarget]
-        } bg-accent enabled:hover:bg-accent/90 disabled:opacity-40`}
+        presentation="composer-stop"
+        appearance={{ tapTarget, showArmed }}
         aria-label={pending ? 'Stop generation' : label}
       >
         {pending ? (
@@ -197,7 +187,7 @@ function ComposerStopButton(props: ComposerStopButtonProps): JSX.Element {
             )}
           </>
         )}
-      </button>
+      </ControlButton>
     </Tooltip>
   );
 }

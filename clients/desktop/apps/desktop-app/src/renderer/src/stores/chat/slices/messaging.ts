@@ -40,6 +40,7 @@ import type {
   ChatSendAuthRefusal,
   PendingSystemInstruction,
 } from '@canopy/desktop-shared/types';
+import { isBotProjectId } from '@canopy/protocol/chat-targets';
 import {
   presentableStoppedTurnResume,
   STOPPED_TURN_RESUME_FAILED_MESSAGE,
@@ -70,7 +71,6 @@ import {
   getPersistedClaudeChatInterfaceMode,
 } from '@/lib/claude-tui-chats';
 import {
-  APP_ADVISOR_PROJECT_ID,
   DEFAULT_APP_ADVISOR_MODEL,
   getExecutionHarnessForModel,
   getProviderForModel,
@@ -180,6 +180,7 @@ import {
   pressedWebCorePrincipal,
 } from '../web-core/send-binding';
 import {
+  attachCloudSendCommand,
   attachCloudSendPress,
   isCloudSendPressed,
   pressCloudSend,
@@ -649,7 +650,7 @@ export const createMessagingSlice: StateCreator<
     // the actual tab before capturing the turn, so picker and request agree.
     // Explicit settings/picker choices and populated chats retain their paths.
     if (
-      sel.projectId === APP_ADVISOR_PROJECT_ID &&
+      isBotProjectId(sel.projectId) &&
       eagerTab &&
       eagerTab.status === 'idle' &&
       eagerTab.queuedMessages.length === 0 &&
@@ -916,10 +917,7 @@ export const createMessagingSlice: StateCreator<
     // regardless of which surface issued it (the popout's standard chat
     // panels call this without options). Derive it here so the generic send
     // path cannot silently drop the mode for entry-keyed targets.
-    if (
-      sel.projectId === APP_ADVISOR_PROJECT_ID &&
-      options?.assistantMode === undefined
-    ) {
+    if (isBotProjectId(sel.projectId) && options?.assistantMode === undefined) {
       options = { ...(options ?? {}), assistantMode: 'app-advisor' };
     }
 
@@ -2331,6 +2329,8 @@ export const createMessagingSlice: StateCreator<
         bindWebCoreSend(userMessageId, options.webCorePrincipalId);
       if (options?.webCoreSendPress !== undefined)
         attachCloudSendPress(userMessageId, options.webCoreSendPress);
+      if (options?.webCoreCommandId !== undefined)
+        attachCloudSendCommand(userMessageId, options.webCoreCommandId);
       const hostQueueDispatch = chatBackendFor(sel)
         .chat.sendMessage({
           ...(options?.assistantMode
@@ -3114,6 +3114,8 @@ export const createMessagingSlice: StateCreator<
         bindWebCoreSend(userMsg.id, options.webCorePrincipalId);
       if (options?.webCoreSendPress !== undefined)
         attachCloudSendPress(userMsg.id, options.webCoreSendPress);
+      if (options?.webCoreCommandId !== undefined)
+        attachCloudSendCommand(userMsg.id, options.webCoreCommandId);
       const sendResult = await chatBackendFor(sel).chat.sendMessage({
         projectId: sel.projectId,
         worktreeId: sel.worktreeId,
@@ -3731,9 +3733,7 @@ export const createMessagingSlice: StateCreator<
     // Advisor assistant mode, mirroring the sendMessage derivation above.
     const derivedAssistantMode =
       options?.assistantMode ??
-      (sel.projectId === APP_ADVISOR_PROJECT_ID
-        ? ('app-advisor' as const)
-        : undefined);
+      (isBotProjectId(sel.projectId) ? ('app-advisor' as const) : undefined);
     const launchRequest = {
       projectId: sel.projectId,
       worktreeId: sel.worktreeId,

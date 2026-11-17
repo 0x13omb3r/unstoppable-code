@@ -1,0 +1,212 @@
+import type {
+  CreditsPrompt,
+  CreditsPromptCondition,
+  CreditsPromptState,
+} from '../billing/credits/resolve-credits-prompt';
+
+/**
+ * Every source a chat can bill a turn to. Adding a source is one union member
+ * here and one entry in {@link PROVIDER_SOURCE_ORDER}; hosts supply its facts
+ * and presentation.
+ *
+ * `@canopy/ui-shared` cannot import app-state, so its provider-choice copy
+ * mirrors this union; keep the two in step.
+ */
+export type ProviderSourceId =
+  | 'claude'
+  | 'codex'
+  | 'cursor'
+  | 'copilot'
+  | 'gateway'
+  | 'credits';
+
+/**
+ * The tie-break order of rows after connected rows. Credits is last and is
+ * never pinned or emphasized: it is one provider among peers.
+ */
+export const PROVIDER_SOURCE_ORDER: readonly ProviderSourceId[] = [
+  'claude',
+  'codex',
+  'cursor',
+  'copilot',
+  'gateway',
+  'credits',
+];
+
+/** A subscription or gateway source: every source except credits. */
+export type ProviderAccountSourceId = Exclude<ProviderSourceId, 'credits'>;
+
+/** The minimum a model needs for a row to name it ("Continues on {label}"). */
+export interface ProviderChoiceModel {
+  readonly id: string;
+  readonly label: string;
+}
+
+/** Where a source's connection stands, as the host last read it. */
+export type ProviderConnection =
+  | { readonly kind: 'ready' }
+  /** Connected, but its usage limit is reached. `null` when no reset time is known. */
+  | { readonly kind: 'limited'; readonly resetsAt: number | null }
+  | { readonly kind: 'not-connected' }
+  /** The read has not settled yet. A checking row is never usable. */
+  | { readonly kind: 'checking' };
+
+/**
+ * Why a host cannot offer a source at all, independent of the model.
+ *
+ * - `desktop-only`: the host has no `subscriptionProviders` capability.
+ * - `cross-harness`: the source exists but nothing it offers runs on this
+ *   chat's harness, and this host cannot fork the chat.
+ * - `policy`: the organization's policy rules the source out.
+ */
+export type ProviderUnsupportedReason =
+  | 'desktop-only'
+  | 'cross-harness'
+  | 'policy';
+
+/** Facts shared by every source's row. */
+interface ProviderSourceFactsBase<TModel extends ProviderChoiceModel> {
+  readonly unsupported?: ProviderUnsupportedReason;
+  /**
+   * The source can run the target's model: the chat's current model in
+   * `continue-chat` mode, or the requested model in `run-model` mode.
+   */
+  readonly runsTargetModel: boolean;
+  /**
+   * The source's own default model, offered when it cannot run the target's
+   * model in `continue-chat` mode. Omit when the source has no runnable model.
+   */
+  readonly defaultModel?: TModel;
+  /**
+   * A user-facing reason the chat cannot move to this source right now (for
+   * example desktop's `canSwitchChatProvider` reason). Hosts re-check it when
+   * the action runs, because a turn can start while the list is open.
+   */
+  readonly blockedReason?: string;
+}
+
+/** Facts for a subscription provider or an AI gateway. */
+export interface ProviderSourceFacts<
+  TModel extends ProviderChoiceModel = ProviderChoiceModel,
+> extends ProviderSourceFactsBase<TModel> {
+  readonly source: ProviderAccountSourceId;
+  readonly connection: ProviderConnection;
+  /** The host can start this source's connect (or gateway set-up) flow. */
+  readonly connectable: boolean;
+}
+
+/** What the credits balance read found. A failed read is `unknown`, never empty. */
+export type CreditsBalanceState = 'spendable' | 'empty' | 'unknown';
+
+/**
+ * Facts for the credits source. The purchase fields are
+ * {@link CreditsPromptState} minus `condition`, which comes from the input,
+ * so the guest, buyer, organization-member and pending rules stay in
+ * `resolveCreditsPrompt`.
+ */
+export interface CreditsSourceFacts<
+  TModel extends ProviderChoiceModel = ProviderChoiceModel,
+>
+  extends
+    ProviderSourceFactsBase<TModel>,
+    Omit<CreditsPromptState, 'condition'> {
+  readonly source: 'credits';
+  readonly balance: CreditsBalanceState;
+}
+
+export type AnyProviderSourceFacts<
+  TModel extends ProviderChoiceModel = ProviderChoiceModel,
+> = ProviderSourceFacts<TModel> | CreditsSourceFacts<TModel>;
+
+/** What the list is choosing a provider for. */
+export type ProviderChoiceTarget<
+  TModel extends ProviderChoiceModel = ProviderChoiceModel,
+> =
+  /** Recovery: keep this chat going, on its model where a source can run it. */
+  | { readonly kind: 'continue-chat' }
+  /** A locked-model pick: only sources that run exactly this model are usable. */
+  | { readonly kind: 'run-model'; readonly model: TModel };
+
+export interface ProviderChoiceInput<
+  TModel extends ProviderChoiceModel = ProviderChoiceModel,
+> {
+  /** The source this chat bills now, or `null` when it has none. */
+  readonly current: ProviderSourceId | null;
+  /** Why the list is shown; passed to `resolveCreditsPrompt` for the credits row. */
+  readonly condition: CreditsPromptCondition;
+  readonly target: ProviderChoiceTarget<TModel>;
+  /** One entry per source the host offers. Sources without facts get no row. */
+  readonly sources: readonly AnyProviderSourceFacts<TModel>[];
+}
+
+/** Why a row cannot be chosen. */
+export type ProviderChoiceUnavailableReason =
+  | ProviderUnsupportedReason
+  /** `run-model` mode: the source does not offer the requested model. */
+  | 'model-not-offered'
+  /** The source cannot run the chat's model and has no default to offer. */
+  | 'no-runnable-model'
+  /** The source's usage limit is reached. */
+  | 'limited'
+  /** The chat cannot move to this source right now; see `detail`. */
+  | 'blocked';
+
+/** What choosing a row does to the chat's model. */
+export type ProviderChoiceOutcome<
+  TModel extends ProviderChoiceModel = ProviderChoiceModel,
+> =
+  | { readonly kind: 'same-model' }
+  /** Continues on the source's default model ("Continues on {label}"). */
+  | { readonly kind: 'switch-model'; readonly target: TModel }
+  | {
+      readonly kind: 'unavailable';
+      readonly reason: ProviderChoiceUnavailableReason;
+      /** The host's blocked reason, for `blocked`. */
+      readonly detail?: string;
+      /** The reset time, for `limited`; `null` when unknown. */
+      readonly resetsAt?: number | null;
+    };
+
+/**
+ * The one action a row offers. `buy`, `sign-in-to-buy`, `check-again` and
+ * `ask-admin` only ever appear on the credits row.
+ */
+export type ProviderChoiceAction =
+  | 'use'
+  | 'connect'
+  | 'set-up'
+  | 'buy'
+  | 'sign-in-to-buy'
+  | 'check-again'
+  | 'ask-admin'
+  | 'none';
+
+export interface ProviderChoiceRow<
+  TModel extends ProviderChoiceModel = ProviderChoiceModel,
+> {
+  readonly source: ProviderSourceId;
+  /** The chat bills this source now. Its action is always `none`. */
+  readonly isCurrent: boolean;
+  /** Credits report `ready` while spendable and `not-connected` otherwise. */
+  readonly connection: ProviderConnection;
+  readonly outcome: ProviderChoiceOutcome<TModel>;
+  readonly action: ProviderChoiceAction;
+  /** The credits row's full prompt, for its completion controls (Reopen billing). */
+  readonly creditsPrompt?: CreditsPrompt;
+}
+
+/** The single button a recovery notice shows. */
+export type ProviderChoicePrimary =
+  /** Exactly one other row is usable now: "Continue with {provider}". */
+  | { readonly kind: 'continue-with'; readonly source: ProviderSourceId }
+  /** The chat has a current source: "Switch provider" opens the list. */
+  | { readonly kind: 'switch-provider' }
+  /** The chat has no current source, or a `run-model` pick: "Choose provider". */
+  | { readonly kind: 'choose-provider' };
+
+export interface ProviderChoices<
+  TModel extends ProviderChoiceModel = ProviderChoiceModel,
+> {
+  readonly rows: readonly ProviderChoiceRow<TModel>[];
+  readonly primary: ProviderChoicePrimary;
+}

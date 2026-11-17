@@ -270,6 +270,7 @@ const APP_ACTION_TOOL_ALIASES: ReadonlySet<string> = new Set([
   'PreviewVisual',
   'ShowCapabilities',
   'SetWorkEntryAutoDelete',
+  'SetProjectWorkEntryAutoDelete',
   legacyMcpToolName('ShowFiles'),
   legacyCodexToolName('show_files'),
   'ShowFiles',
@@ -811,6 +812,7 @@ type AppAdvisorCapability =
   | 'schedule_wakeup'
   | 'set_auto_archive'
   | 'set_work_entry_auto_delete'
+  | 'set_project_work_entry_auto_delete'
   | 'show_capabilities'
   | 'start_forked_agent'
   | 'search_deferred_tools'
@@ -926,6 +928,7 @@ const APP_ADVISOR_MCP_DISPLAY_TO_CAPABILITY: ReadonlyMap<
   ['SetChatAutoArchive', 'set_auto_archive'],
   ['SetAutoArchive', 'set_auto_archive'],
   ['SetWorkEntryAutoDelete', 'set_work_entry_auto_delete'],
+  ['SetProjectWorkEntryAutoDelete', 'set_project_work_entry_auto_delete'],
   ['ShowCapabilities', 'show_capabilities'],
   ['StartForkedAgent', 'start_forked_agent'],
   ['SearchDeferredTools', 'search_deferred_tools'],
@@ -955,6 +958,7 @@ const APP_ADVISOR_CODEX_SUFFIX_TO_CAPABILITY: ReadonlyMap<
   ['set_chat_auto_archive', 'set_auto_archive'],
   ['set_auto_archive', 'set_auto_archive'],
   ['set_work_entry_auto_delete', 'set_work_entry_auto_delete'],
+  ['set_project_work_entry_auto_delete', 'set_project_work_entry_auto_delete'],
   ['show_capabilities', 'show_capabilities'],
   ['start_forked_agent', 'start_forked_agent'],
   ['search_deferred_tools', 'search_deferred_tools'],
@@ -975,7 +979,7 @@ function getAppAdvisorCapability(
   }
 
   const codexMatch = toolName.match(
-    /^(.+)_app_advisor_(ask_user_question|get_script_output|show_files|get_file_comments|respond_to_file_comment|search_actions|get_current_ui_state|dispatch_action|read_pipeline_yaml|get_pipeline_debug_context|search_watchers|setup_watchers|watch_github_items|get_github_pull_request_status|watch_command|schedule_wakeup|set_chat_auto_archive|set_auto_archive|set_work_entry_auto_delete|show_capabilities|start_forked_agent|search_deferred_tools|load_deferred_tools)$/,
+    /^(.+)_app_advisor_(ask_user_question|get_script_output|show_files|get_file_comments|respond_to_file_comment|search_actions|get_current_ui_state|dispatch_action|read_pipeline_yaml|get_pipeline_debug_context|search_watchers|setup_watchers|watch_github_items|get_github_pull_request_status|watch_command|schedule_wakeup|set_chat_auto_archive|set_auto_archive|set_work_entry_auto_delete|set_project_work_entry_auto_delete|show_capabilities|start_forked_agent|search_deferred_tools|load_deferred_tools)$/,
   );
   if (codexMatch) {
     return APP_ADVISOR_CODEX_SUFFIX_TO_CAPABILITY.get(codexMatch[2]) ?? null;
@@ -1073,6 +1077,8 @@ const APP_ACTION_TOOL_NAME_TO_CAPABILITY: ReadonlyMap<
   ['ShowFiles', 'show_files'],
   ['ShowCapabilities', 'show_capabilities'],
   ['SetWorkEntryAutoDelete', 'set_work_entry_auto_delete'],
+  // Orchestrator's targeted variant renders the same row.
+  ['SetProjectWorkEntryAutoDelete', 'set_work_entry_auto_delete'],
   ['ShowVisual', 'show_visual'],
   ['PreviewVisual', 'preview_visual'],
   [legacyMcpToolName('GetFileComments'), 'get_file_comments'],
@@ -1349,8 +1355,8 @@ function MutedSnippet({ children }: { children: ReactNode }): JSX.Element {
     <span
       className={
         badges
-          ? `ml-1 min-w-0 truncate ${CLEAN_DETAIL_CLASS}`
-          : `ml-1 ${CLEAN_DETAIL_CLASS}`
+          ? `pl-1 min-w-0 truncate ${CLEAN_DETAIL_CLASS}`
+          : `pl-1 ${CLEAN_DETAIL_CLASS}`
       }
     >
       {children}
@@ -2257,6 +2263,7 @@ const APP_ADVISOR_CAPABILITY_RENDERERS: Record<
     renderScheduleWakeup(parsed, input, toolName),
   set_auto_archive: renderSetAutoArchive,
   set_work_entry_auto_delete: renderSetWorkEntryAutoDelete,
+  set_project_work_entry_auto_delete: renderSetWorkEntryAutoDelete,
   show_capabilities: renderShowCapabilities,
   start_forked_agent: (parsed) => ({
     ...renderStartSplitAgent(parsed, '', ''),
@@ -3503,7 +3510,7 @@ export function getToolDisplayInfo(
       label: (
         <>
           <CodeChunk>{prettifyToolName(mcpInfo.server)}</CodeChunk>
-          <span className="mx-1 fg-secondary">&rsaquo;</span>
+          <span className="px-1 fg-secondary">&rsaquo;</span>
           <CodeChunk>{prettifyToolName(mcpInfo.tool)}</CodeChunk>
         </>
       ),

@@ -1,3 +1,4 @@
+import { ControlButton } from './Button';
 import { Badge, type BadgeTone } from './Badge';
 import {
   memo,
@@ -187,14 +188,15 @@ function ScrollArrow({
 }): JSX.Element {
   const isLeft = direction === 'left';
   return (
-    <button
+    <ControlButton
       type="button"
       aria-label={`Scroll ${direction}`}
       onClick={(e: MouseEvent<HTMLButtonElement>): void => {
         e.stopPropagation();
         onClick();
       }}
-      className={`absolute inset-y-0 ${isLeft ? 'left-0' : 'right-0'} z-10 flex w-5 items-center ${isLeft ? 'justify-start bg-gradient-to-r' : 'justify-end bg-gradient-to-l'} from-base to-transparent`}
+      presentation="dag-scroll"
+      appearance={{ isLeft }}
     >
       <svg
         width="10"
@@ -209,7 +211,7 @@ function ScrollArrow({
       >
         <path d={isLeft ? 'm15 18-6-6 6-6' : 'm9 18 6-6-6-6'} />
       </svg>
-    </button>
+    </ControlButton>
   );
 }
 
@@ -285,7 +287,7 @@ function JobDot({
       surfaceClassName="min-w-45 max-w-55"
       dataTestId={`dag-job-detail-${job.jobId}`}
     >
-      <button
+      <ControlButton
         type="button"
         data-job-id={job.jobId}
         onClick={(e: MouseEvent<HTMLButtonElement>): void => {
@@ -297,12 +299,12 @@ function JobDot({
             e.stopPropagation();
           }
         }}
-        className="inline-flex h-3 w-3 shrink-0 cursor-pointer items-center justify-center rounded-full transition-transform hover:scale-125"
+        presentation="dag-job-dot"
         data-status-glyph-state={jobGlyphState(job.status)}
         aria-label={`${job.name}: ${job.status ?? 'pending'}`}
       >
         <StatusGlyph state={jobGlyphState(job.status)} size={12} />
-      </button>
+      </ControlButton>
     </RichHoverTooltip>
   );
 }
@@ -413,7 +415,9 @@ function DagProgressBarInner({
   }
 
   return (
-    <div className={`mt-2.5 border-t pt-2 ${muted ? 'opacity-70' : ''}`}>
+    <div
+      className={`relative pt-[calc(1.125rem+var(--border-hairline))] before:pointer-events-none before:absolute before:inset-x-0 before:top-2.5 before:h-[var(--border-hairline)] before:bg-line-base ${muted ? 'opacity-70' : ''}`}
+    >
       <div className="relative flex items-center">
         {overflow.left && (
           <ScrollArrow direction="left" onClick={handleScrollLeft} />

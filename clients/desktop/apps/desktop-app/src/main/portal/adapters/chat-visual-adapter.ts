@@ -1,10 +1,10 @@
 import { CanopyOperationError } from '@canopy/core-runtime';
 import {
-  APP_ADVISOR_PROJECT_ID,
   COWORK_HOME_WORKTREE_ID,
   PIPELINE_EDITOR_PROJECT_ID,
   type PortalCommandEnvelope,
 } from '@canopy/desktop-shared/types';
+import { isBotProjectId } from '@canopy/protocol/chat-targets';
 import {
   PORTAL_CHAT_VISUAL_PAGE_BYTES,
   readPortalChatPartVisual,
@@ -81,7 +81,7 @@ function validPayload(value: unknown): value is PortalChatVisualReadPayload {
       validateId(value.projectId, 'projectId');
       validateId(value.worktreeId, 'worktreeId');
       if (
-        value.projectId === APP_ADVISOR_PROJECT_ID ||
+        isBotProjectId(value.projectId) ||
         value.projectId === PIPELINE_EDITOR_PROJECT_ID ||
         'projectLocalId' in value
       )

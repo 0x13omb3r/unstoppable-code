@@ -1,16 +1,25 @@
+import { createHash } from 'node:crypto';
 import * as fsp from 'node:fs/promises';
 import * as path from 'node:path';
 import {
+  WORKER_PIPELINE_HOST_ATTACHMENTS_MAX,
+  WORKER_PIPELINE_HOST_ATTACHMENTS_MAX_BYTES,
   WORKER_PIPELINE_HOST_PATH_OUTPUTS,
   WORKER_PIPELINE_HOST_PATH_OUTPUTS_BY_ACTION,
   WorkerPipelineChatSendRecordSchema,
   WorkerPipelineHostActionRequestSchema,
   WorkerPipelineHostResultSchema,
   type WorkerPipelineHostActionRequest,
+  type WorkerPipelineHostAttachment,
   type WorkerPipelineHostFile,
   type WorkerPipelineHostRequest,
   type WorkerPipelineHostResult,
 } from '@canopy/protocol/canopy-core';
+import {
+  isCloudAttachmentFilename,
+  mediaTypeForAttachmentFilename,
+  truncateCloudAttachmentFilename,
+} from '@canopy/protocol/cloud-attachments';
 import { parseWorkspaceContext } from '@canopy/protocol/workspace-context';
 import type { ResolvedSendAgentMessageInputs } from '@canopy/execution-engine/pipelines/host-send-agent-message';
 import type { PipelineChatSendRecord } from '@canopy/execution-engine/types/pipeline';
@@ -283,11 +292,15 @@ export function fromPortableHostActionRequest(
       const {
         action,
         attachmentCount,
+        attachmentFiles,
         attachmentPathCount,
         attachmentPromptContextCount,
         fileReferenceCount,
         ...inputs
       } = request;
+      // A host that reads its own paths never sends copies: a request that
+      // carries them isn't one this host raised.
+      if (attachmentFiles !== undefined) return null;
       const counts: SendHostPathCounts = {
         attachmentCount,
         attachmentPathCount,
@@ -311,4 +324,90 @@ export function fromPortableHostActionRequest(
       // Pipeline owner requests (CAN-5095) are not host steps.
       return null;
   }
+}
+
+/**
+ * Why a step's attachments can't be copied for an owner that can't read
+ * its host paths. Never names a file: its name is the author's data.
+ */
+export type HostAttachmentRefusal = {
+  readonly ok: false;
+  readonly message: string;
+};
+
+/**
+ * A copy of each file a `send-agent-message` step attaches, for an owner
+ * that can't read the step's host paths (the cloud, CAN-6857, G6). The
+ * executor already contained each path in the step's working folder; this
+ * reads each one once, by its name and allowlisted media type, within the
+ * bounds one request may carry. A file that can't be sent refuses the whole
+ * step before anything crosses.
+ */
+export async function hostAttachmentCopies(
+  paths: readonly string[],
+): Promise<
+  | { readonly ok: true; readonly files: WorkerPipelineHostAttachment[] }
+  | HostAttachmentRefusal
+> {
+  if (paths.length > WORKER_PIPELINE_HOST_ATTACHMENTS_MAX)
+    return {
+      ok: false,
+      message: `Cloud runs attach at most ${WORKER_PIPELINE_HOST_ATTACHMENTS_MAX} files to a message`,
+    };
+  const files: WorkerPipelineHostAttachment[] = [];
+  let total = 0;
+  for (const [index, file] of paths.entries()) {
+    const which = `Attachment ${index + 1}`;
+    const filename = truncateCloudAttachmentFilename(path.basename(file));
+    const mediaType = mediaTypeForAttachmentFilename(filename);
+    if (mediaType === null || !isCloudAttachmentFilename(filename))
+      return {
+        ok: false,
+        message: `${which} can't be sent from a cloud run: its file type isn't one a cloud chat takes`,
+      };
+    let bytes: Buffer;
+    try {
+      const stats = await fsp.stat(file);
+      if (!stats.isFile())
+        return { ok: false, message: `${which} isn't a file` };
+      if (total + stats.size > WORKER_PIPELINE_HOST_ATTACHMENTS_MAX_BYTES)
+        return {
+          ok: false,
+          message: `A cloud run attaches at most ${WORKER_PIPELINE_HOST_ATTACHMENTS_MAX_BYTES / (1024 * 1024)} MB of files to a message`,
+        };
+      bytes = await fsp.readFile(file);
+    } catch {
+      return { ok: false, message: `${which} couldn't be read` };
+    }
+    total += bytes.byteLength;
+    if (total > WORKER_PIPELINE_HOST_ATTACHMENTS_MAX_BYTES)
+      return {
+        ok: false,
+        message: `A cloud run attaches at most ${WORKER_PIPELINE_HOST_ATTACHMENTS_MAX_BYTES / (1024 * 1024)} MB of files to a message`,
+      };
+    files.push({
+      filename,
+      mediaType,
+      size: bytes.byteLength,
+      contentSha256: createHash('sha256').update(bytes).digest('hex'),
+      data: bytes.toString('base64'),
+    });
+  }
+  return { ok: true, files };
+}
+
+/**
+ * The portable request with copies of the files it attaches, or null when
+ * the boundary refuses them.
+ */
+export function withHostAttachmentCopies(
+  request: WorkerPipelineHostActionRequest,
+  files: readonly WorkerPipelineHostAttachment[],
+): WorkerPipelineHostActionRequest | null {
+  if (request.action !== 'send-agent-message') return null;
+  const parsed = WorkerPipelineHostActionRequestSchema.safeParse({
+    ...request,
+    attachmentFiles: files,
+  });
+  return parsed.success ? parsed.data : null;
 }

@@ -476,7 +476,7 @@ describe('saved memory consolidation and explorer status (CAN-6056)', () => {
         readFileSync(join(scopeDir, 'topics', 'recovery.md'), 'utf8'),
       ).toBe(orphan);
       expect(readFileSync(join(scopeDir, 'MEMORY.md'), 'utf8')).toBe(
-        '[Build](topics/build-notes.md) Missing detail\n',
+        '[Build](topics/build-notes.md) [Missing detail](topics/missing.md)\n',
       );
       const status = await localMemoryStore.consolidationStatus(scope);
       expect(status.pendingNotes).toBe(0);
@@ -491,6 +491,7 @@ describe('saved memory consolidation and explorer status (CAN-6056)', () => {
       const retry = await import('../../memory/local/consolidation-task').then(
         (module) => module.collectConsolidationInput(scopeDir),
       );
+      expect(retry.linkHealth?.unresolvedLinks).toHaveLength(1);
       expect(retry.linkHealth?.unresolvedLinks).toContainEqual({
         source: 'MEMORY.md',
         target: 'topics/missing.md',

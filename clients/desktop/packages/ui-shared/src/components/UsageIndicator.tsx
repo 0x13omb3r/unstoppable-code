@@ -22,14 +22,13 @@ import { formatCost, formatUsageResetWhen } from '../lib/format-usage';
 import { ProgressRing, type ProgressTone } from './Progress';
 import { REPLAY_BLOCK_CLASS } from '../lib/replay-privacy';
 import { InlineTextSkeleton } from './InlineTextSkeleton';
-import { Button } from './Button';
+import { ControlButton, Button } from './Button';
 
-import { DisclosureChevron } from './Disclosure';
+import { DisclosureChevron, DisclosureToggle } from './Disclosure';
 import { UsageMeter, formatUsagePercent } from './usage-indicator-meter';
 export { USAGE_TOUCH_FLOOR_CLASS } from './usage-indicator-meter';
 import {
   UsageTextAction,
-  USAGE_DISCLOSURE_ROW_CLASS,
   USAGE_DISCLOSURE_INK_CLASS,
 } from './UsageIndicatorActions';
 export {
@@ -539,17 +538,15 @@ export function UsageIndicatorAccountSummary({
         className="relative -mx-2 flex flex-col gap-2 rounded-md bg-depth px-2 pb-3 pt-2"
       >
         {folds ? (
-          <button
-            type="button"
+          // The overlay makes the full account card clickable.
+          <DisclosureToggle
+            variant="usage-account"
+            open={folds.expanded}
             onClick={folds.onToggle}
-            aria-expanded={folds.expanded}
             data-testid="usage-indicator-account-toggle"
-            // As the Context row: the whole card takes the click (its
-            // `after:` overlay), and its quieter ink and chevron brighten.
-            className={`${USAGE_DISCLOSURE_ROW_CLASS} flex-col gap-1.5 after:absolute after:inset-0 after:rounded-md after:content-['']`}
           >
             {header}
-          </button>
+          </DisclosureToggle>
         ) : (
           <div className="flex flex-col gap-1.5 text-xs">{header}</div>
         )}
@@ -960,21 +957,16 @@ export function UsageIndicator({
 
   return (
     <div ref={containerRef} className="relative">
-      <button
+      <ControlButton
         type="button"
         ref={triggerRef}
         onClick={handleClick}
-        className={`focus-ring flex items-center text-2xs fg-secondary transition-colors hover:fg-primary ${
-          // The weekly fill is the hover state; the round hover fill would
-          // sit under it.
-          weeklyRing
-            ? 'group/weekly h-8 w-8 justify-center rounded-full pointer-coarse:min-h-11 pointer-coarse:min-w-11'
-            : capsule
-              ? wideTrigger
-                ? 'h-8 min-w-8 max-w-full justify-center gap-1 rounded-full px-2.5 pointer-coarse:min-h-11 pointer-coarse:min-w-11'
-                : 'h-8 w-8 justify-center rounded-full pointer-coarse:min-h-11 pointer-coarse:min-w-11'
-              : 'gap-1 rounded-md px-1.5 py-0.5'
-        }${weeklyRing ? '' : ' hover:bg-subtle'}`}
+        presentation="usage-indicator-trigger"
+        appearance={{
+          weeklyRing: !!weeklyRing,
+          capsule: !!capsule,
+          wideTrigger,
+        }}
         data-weekly-trigger={weeklyRing ? true : undefined}
         // The name carries the visible balance, so voice control can say it.
         aria-label={[
@@ -1010,7 +1002,7 @@ export function UsageIndicator({
             text={balanceText}
           />
         )}
-      </button>
+      </ControlButton>
 
       {open && (
         // The details load on first open; the shared menu surface places

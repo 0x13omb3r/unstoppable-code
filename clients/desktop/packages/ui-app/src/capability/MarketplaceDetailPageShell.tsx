@@ -116,10 +116,10 @@ export function MarketplaceDetailPageShell({
         data-testid="plugins-entry-detail"
         aria-labelledby="plugins-entry-detail-title"
       >
-        {breadcrumbs !== undefined && (
-          <div className="mb-4 flex shrink-0 items-center">{breadcrumbs}</div>
-        )}
-        <div className="mb-6">
+        <div className="flex flex-col gap-4 pb-6">
+          {breadcrumbs !== undefined && (
+            <div className="flex shrink-0 items-center">{breadcrumbs}</div>
+          )}
           <DetailHeader
             dataTestId="plugins-entry-detail-header"
             title={titleText}
@@ -153,11 +153,7 @@ export function MarketplaceDetailPageShell({
   }
   return (
     <section
-      className={
-        width === 'fluid'
-          ? 'flex min-h-0 w-full flex-col pt-8'
-          : 'mx-auto flex min-h-0 w-full max-w-3xl flex-col pt-8'
-      }
+      className={sectionClassName}
       data-testid="plugins-entry-detail"
       aria-labelledby={
         contentOwnsTitle ? 'plugin-detail-title' : 'plugins-entry-detail-title'
@@ -185,15 +181,8 @@ export function MarketplaceDetailPageShell({
           )}
         </Heading>
       )}
-      {/*
-        `mb-6` matches the 24px `PluginDetailContent` puts under its own Back
-        chrome (`gap-6`), which is the spacing users read as normal on a detail
-        page. It was 8px, which only looked right on the one child that
-        happened to add its own top padding. Children are expected not to add
-        any: the row owns the gap.
-      */}
       {(breadcrumbs !== undefined || onNavigateBack || hasActions) && (
-        <div className="mb-6 flex shrink-0 items-center justify-between gap-2">
+        <div className="flex shrink-0 items-center justify-between gap-2 pb-6">
           {breadcrumbs !== undefined ? (
             breadcrumbs
           ) : onNavigateBack ? (

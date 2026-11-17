@@ -1,4 +1,13 @@
 import {
+  applyClaudeTranscriptEvent,
+  createEmptyTranscriptReducerState,
+  type TranscriptReducerOptions,
+} from '@canopy/agent-transcript';
+import {
+  parseCanopyProxyError,
+  isCanopyProxyErrorBody,
+} from '@canopy/protocol/llm-gateway';
+import {
   createPreferencesRepository,
   type PreferencesDocument,
   type PreferencesRepository,
@@ -32,8 +41,10 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { sweepStartupCrashDumps } from '../crash-dump-sweep';
 import {
+  APP_ERROR_CATALOG,
   classifyError,
   createAppError,
+  createCanopyProxyAppError,
   createSurfacedErrorRecorder,
 } from '@canopy/protocol/app-errors';
 import { JSDOM } from 'jsdom';
@@ -301,6 +312,114 @@ describe('PostHog main gating by usage-data policy', () => {
     );
   }
 
+  it.each([
+    ['no_billing_source', 'external.ai_credits_required', 'Out of AI Credits'],
+    [
+      'credentials_unavailable',
+      'external.sign_in_required',
+      'Your sign-in has expired.',
+    ],
+    [
+      'session_budget_exhausted',
+      'external.ai_credits_budget_exhausted',
+      'session has used',
+    ],
+    [
+      'future_private_code',
+      'external.service_unavailable',
+      "The service didn't respond",
+    ],
+  ])(
+    'CAN-6728: %s uses catalog copy and only classified operation telemetry',
+    async (code, expectedCode, copy) => {
+      await start({ events: false, errors: true, launchEvents: false });
+      const body = JSON.stringify({
+        error: {
+          canopy_proxy: 'CANOPY_AI_CREDITS_PROXY',
+          code,
+          message: 'private raw provider text',
+        },
+      });
+      const proxy = parseCanopyProxyError(body);
+      if (!proxy) throw new Error('Expected marked proxy error');
+      const error = createCanopyProxyAppError(proxy);
+      expect(error.code).toBe(expectedCode);
+      expect(error.copy.title).toContain(copy);
+      if (code === 'credentials_unavailable') {
+        expect(error.copy).toEqual(
+          APP_ERROR_CATALOG['external.sign_in_required'].copy,
+        );
+        expect(error.recovery).toBe(
+          APP_ERROR_CATALOG['external.sign_in_required'].recovery,
+        );
+      }
+      expect(JSON.stringify(error)).not.toContain('private raw provider text');
+      expect(isCanopyProxyErrorBody(body)).toBe(true);
+      expect(isCanopyProxyErrorBody(`Here is an example: ${body}`)).toBe(false);
+      const options: TranscriptReducerOptions = {
+        childToolLiveness: { kind: 'unknown' },
+
+        now: 1,
+        createMessageId: () => 'refusal',
+      };
+      const assistant = applyClaudeTranscriptEvent(
+        createEmptyTranscriptReducerState(),
+        {
+          type: 'assistant',
+          message: { content: [{ type: 'text', text: body }] },
+        },
+        options,
+      );
+      const result = applyClaudeTranscriptEvent(
+        assistant,
+        {
+          type: 'result',
+          is_error: true,
+          result: `Error: ${body}`,
+        },
+        options,
+      );
+      const refusals = result.messages.filter((message) =>
+        message.blocks.some(
+          (block) =>
+            block.type === 'text' &&
+            block.text.includes('CANOPY_AI_CREDITS_PROXY'),
+        ),
+      );
+      expect(refusals).toHaveLength(1);
+      expect(refusals[0]?.role).toBe('system');
+      const report = main.reportMainAppError(error);
+      expect(report?.disposition).toBe('counted');
+      const sent = capturedEvent('app:operation_fail');
+      expect(sent.properties.error_code).toBe(expectedCode);
+      expect(sent.properties.error_reference_id).toBe(error.referenceId);
+      expect(mockCaptureException).not.toHaveBeenCalled();
+    },
+  );
+
+  it('CAN-6728: proxy invalid_request remains a recorded operation defect', async () => {
+    await start({ events: false, errors: true, launchEvents: false });
+    const proxy = parseCanopyProxyError(
+      JSON.stringify({
+        error: {
+          canopy_proxy: 'CANOPY_AI_CREDITS_PROXY',
+          code: 'invalid_request',
+          message: 'private proxy path or generated request detail',
+        },
+      }),
+    );
+    if (!proxy) throw new Error('Expected marked proxy error');
+    const error = createCanopyProxyAppError(proxy);
+    expect(error.code).toBe('app.unexpected');
+    expect(error.kind).toBe('defect');
+    expect(JSON.stringify(error)).not.toContain('private proxy');
+    expect(main.reportMainAppError(error)?.disposition).toBe('recorded');
+    const sent = capturedEvent('app:operation_fail');
+    expect(sent.properties.error_code).toBe('app.unexpected');
+    expect(sent.properties.error_reference_id).toBe(error.referenceId);
+    expect(mockCaptureException).toHaveBeenCalledTimes(1);
+  });
+
   it('CAN-6760: tags only main bytecode and fallback frames before privacy filtering', async () => {
     Object.assign(globalThis, {
       __CANOPY_MAIN_BYTECODE_CHUNK_ID__: '11111111-1111-4111-8111-111111111111',
@@ -317,6 +436,7 @@ describe('PostHog main gating by usage-data policy', () => {
     const sent = latestMainBeforeSend()({
       event: '$exception',
       properties: {
+        $release_id: '33333333-3333-4333-8333-333333333333',
         $exception_list: [
           {
             type: 'Error',
@@ -344,6 +464,7 @@ describe('PostHog main gating by usage-data policy', () => {
     });
     expect(sent).toMatchObject({
       properties: {
+        $release_id: '33333333-3333-4333-8333-333333333333',
         $exception_list: [
           {
             stacktrace: {

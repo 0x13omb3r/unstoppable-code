@@ -37,6 +37,7 @@ export const PIPELINE_EDITOR_APP_WORKSPACE_MIGRATION_KEY =
 export const PIPELINE_EDITOR_HOME_MIGRATION_KEY = 'pipeline_editor_home';
 
 const APP_MANAGED_CHAT_WORKSPACE_IDS = [
+  // Default Bot only: legacy home migration has a single Orchestrator root.
   APP_ADVISOR_PROJECT_ID,
   PLAN_EXPLORE_CHAT_PROJECT_ID,
   CODE_REVIEW_CHAT_PROJECT_ID,

@@ -1136,7 +1136,7 @@ export function ProjectSection({
                 )}
               </DndContext>
               {hiddenWorktrees.length > 0 && (
-                <div className="mt-1" data-testid="hidden-worktrees-section">
+                <div className="pt-1" data-testid="hidden-worktrees-section">
                   <HiddenItemsRow
                     label={`Hidden ${WORKTREE_UNIT_LABEL_PLURAL.toLowerCase()}`}
                     count={hiddenWorktrees.length}

@@ -1,5 +1,6 @@
 'use client';
 
+import { ControlButton } from '@canopy/ui-shared/components';
 import { LinkedMemoryRow } from '@canopy/ui-shared/components';
 import {
   REPLAY_BLOCK_CLASS,
@@ -349,11 +350,10 @@ export const MemoryRow = forwardRef<HTMLButtonElement, MemoryRowProps>(
         data-kind={entry.file.kind}
         data-scope={scope}
       >
-        <button
+        <ControlButton
           ref={ref}
-          type="button"
           onClick={onOpen}
-          className="focus-ring flex min-w-0 flex-1 items-start gap-2.5 rounded-lg py-2 pl-2.5 text-left"
+          presentation="memory-entry-open"
           data-testid="memory-row-open"
         >
           <Icon
@@ -386,7 +386,7 @@ export const MemoryRow = forwardRef<HTMLButtonElement, MemoryRowProps>(
           <span className="mt-0.5 shrink-0 whitespace-nowrap text-2xs tabular-nums fg-tertiary">
             {time}
           </span>
-        </button>
+        </ControlButton>
         <span className="pt-2">{menu}</span>
       </LinkedMemoryRow>
     );

@@ -61,3 +61,9 @@ export type {
 
 export { classifyError, readErrorClassification } from './classification';
 export type { ErrorClassification } from './classification';
+
+export {
+  createCanopyProxyAppError,
+  isExpectedCanopyProxyAppError,
+  AI_CREDITS_REFUSAL_ERROR_SOURCE,
+} from './from-canopy-proxy';

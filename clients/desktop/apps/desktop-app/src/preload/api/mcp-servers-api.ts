@@ -2,6 +2,7 @@ import type { IpcRendererEvent } from 'electron';
 import { ipcRenderer, remoteWindowContext } from '../ipc-router';
 import { MCP_SERVER_CHANNELS } from '@canopy/desktop-shared/constants/mcp-server-channels';
 import type { CuratedMcpServerListResponse } from '@canopy/protocol/mcp-catalog';
+import type { McpServerHarnessInstalls } from '@canopy/protocol/mcp-servers';
 import type {
   AccountMcpConnection,
   AccountMcpConnectionFailure,
@@ -151,5 +152,9 @@ export function createMcpServersAPI(): McpServersAPI {
       configId?: string,
     ): Promise<McpServerToolsCacheEntry | null> =>
       ipcRenderer.invoke(MCP_SERVER_CHANNELS.GET_TOOLS, serverId, configId),
+    installForHarnesses: (request): Promise<McpServerHarnessInstalls | null> =>
+      ipcRenderer.invoke(MCP_SERVER_CHANNELS.INSTALL_FOR_HARNESSES, request),
+    retryHarnessInstall: (request): Promise<McpServerHarnessInstalls> =>
+      ipcRenderer.invoke(MCP_SERVER_CHANNELS.RETRY_HARNESS_INSTALL, request),
   };
 }

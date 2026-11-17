@@ -9,10 +9,8 @@ import type {
   TurnFeedbackEntry,
   TurnFeedbackListResponseIpc,
 } from '@canopy/desktop-shared/types';
-import {
-  APP_ADVISOR_PROJECT_ID,
-  PIPELINE_EDITOR_PROJECT_ID,
-} from '@canopy/desktop-shared/types';
+import { PIPELINE_EDITOR_PROJECT_ID } from '@canopy/desktop-shared/types';
+import { isBotProjectId } from '@canopy/protocol/chat-targets';
 import { CANOPY_CLOUD_ACCOUNT_CHANGED_EVENT } from '@canopy/desktop-shared/constants/canopy-cloud';
 import type {
   TurnFeedbackReason,
@@ -31,7 +29,7 @@ import type { ChatTab } from '../types';
  * rejected, so a mismatch degrades to a null column, never to a failed rating.
  */
 function eventTypeForTarget(projectId: string): string {
-  if (projectId === APP_ADVISOR_PROJECT_ID) return 'app_advisor';
+  if (isBotProjectId(projectId)) return 'app_advisor';
   if (projectId === PIPELINE_EDITOR_PROJECT_ID) return 'pipeline_editor';
   return isCoworkChatTarget(projectId) ? 'standalone_chat' : 'worktree_chat';
 }

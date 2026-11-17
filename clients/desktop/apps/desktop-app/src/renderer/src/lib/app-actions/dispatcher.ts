@@ -155,7 +155,6 @@ import { requestBackgroundTaskStop } from '@canopy/app-state';
 import { ipcCanopyClient } from '@/client/ipc-canopy-client';
 import { readClaudeModSurface } from '@canopy/ui-app';
 import { openModPanePanel } from '@/lib/panels/mod-pane-panel-sync';
-import { addPlanExploreOriginWorktreeKeys } from '@/lib/planExploreWorktreeKeys';
 import { useClaudeTerminalStore } from '@/stores/claudeTerminalStore';
 import { useCodeReviewStore } from '@/stores/codeReviewStore';
 import { useCurrentUiStateStore } from '@/stores/currentUiStateStore';
@@ -425,7 +424,6 @@ import type {
 import { importSharedSkill } from '@/lib/sharedSkillImport';
 import { resolveSharedResourceErrorMessage } from '@/lib/sharedResourceErrors';
 import { requestBrowserPanel } from '@/lib/browserPanelActivation';
-import { requestWorktreeArchiveConfirmation } from '@/lib/worktreeArchiveConfirmationEvents';
 import { requestSharedContainerRevocationConfirmation } from '@/lib/sharedContainerRevocationConfirmationEvents';
 import { requestSharedContainerInvite } from '@/lib/sharedContainerInviteEvents';
 import {
@@ -2258,17 +2256,6 @@ function validateAppAdvisorAction(action: unknown): ActionValidationResult {
       );
     case 'worktree.select':
       return requireStrings(action, ['projectId', 'worktreeId']) ?? valid();
-    case 'worktree.archive':
-      return (
-        requireStrings(action, ['projectId', 'worktreeId']) ??
-        (typeof action.deleteBranch !== 'boolean'
-          ? invalid('deleteBranch')
-          : action.mode !== undefined &&
-              action.mode !== 'delete' &&
-              action.mode !== 'archive'
-            ? invalid('mode')
-            : valid())
-      );
     case 'worktree.create':
       return (
         requireStrings(action, ['workspaceId']) ??
@@ -2930,8 +2917,6 @@ function validateAppAdvisorAction(action: unknown): ActionValidationResult {
           ? valid()
           : invalid('title'))
       );
-    case 'standalone-chat.delete_work_entry':
-      return requireStrings(action, ['projectId', 'workEntryId']) ?? valid();
     case 'standalone-chat.send_message':
       return (
         requireStrings(action, ['projectId', 'chatId', 'text']) ??
@@ -4118,30 +4103,6 @@ function isStringRecord(value: unknown): value is Record<string, string> {
 
 function worktreeKey(projectId: string, worktreeId: string): string {
   return `${projectId}/${worktreeId}`;
-}
-
-function hasActiveWorktreeSession(
-  projectId: string,
-  worktreeId: string,
-): boolean {
-  const chatState = useChatStore.getState();
-  const pendingPlanExitChatIds = new Set(
-    Object.values(chatState.pendingPlanExits).map((exit) => exit.chatId),
-  );
-  const activeScopeKeys = Object.entries(chatState.worktreeChats)
-    .filter(([, chat]) =>
-      chat.tabs.some(
-        (tab) =>
-          tab.status === 'streaming' &&
-          !tab.pendingPlanExit &&
-          !pendingPlanExitChatIds.has(tab.id),
-      ),
-    )
-    .map(([key]) => key);
-  return addPlanExploreOriginWorktreeKeys(
-    activeScopeKeys,
-    useActivityStore.getState().trackedPlans,
-  ).has(worktreeKey(projectId, worktreeId));
 }
 
 /**
@@ -10746,76 +10707,6 @@ async function routeAction(
         .getState()
         .selectWorktree(action.projectId, action.worktreeId);
       return { ok: true };
-    case 'worktree.archive': {
-      await ensureProjectsHydrated();
-      const workspace = getGitWorkspaceOrError(action.projectId);
-      if ('error' in workspace) {
-        return { ok: false, error: workspace.error };
-      }
-      const worktree = workspace.worktrees.find(
-        (candidate) => candidate.id === action.worktreeId,
-      );
-      if (!worktree) {
-        return {
-          ok: false,
-          error: {
-            code: 'not_found',
-            message: `Worktree ${action.worktreeId} was not found in project ${action.projectId}.`,
-          },
-        };
-      }
-      const splitLockError = refuseIfSplitLocked(
-        action.projectId,
-        action.worktreeId,
-      );
-      if (splitLockError) {
-        return { ok: false, error: splitLockError };
-      }
-      if (hasActiveWorktreeSession(action.projectId, action.worktreeId)) {
-        return {
-          ok: false,
-          error: {
-            code: 'surface_unavailable',
-            message:
-              'Stop the active agent session before archiving this worktree.',
-            retryable: true,
-          },
-        };
-      }
-      const mode = action.mode ?? 'delete';
-      const confirmationOpened = requestWorktreeArchiveConfirmation({
-        projectId: action.projectId,
-        worktreeId: action.worktreeId,
-        requestedDeleteBranch: action.deleteBranch,
-        ...(mode === 'archive' ? { lockAfterArchive: true } : {}),
-      });
-      if (!confirmationOpened) {
-        return {
-          ok: false,
-          error: {
-            code: 'surface_unavailable',
-            message:
-              'The worktree archive confirmation dialog is not currently available.',
-            retryable: true,
-          },
-        };
-      }
-      const confirmLabel = mode === 'archive' ? 'Archive' : 'Delete';
-      const requestedBranch = action.deleteBranch
-        ? 'off, so the local branch is deleted'
-        : 'on, so the local branch is kept';
-      return {
-        ok: true,
-        result: {
-          workspaceId: action.projectId,
-          worktreeId: action.worktreeId,
-          confirmationOpened: true,
-          requestedDeleteBranch: action.deleteBranch,
-          mode,
-          note: `The ${confirmLabel} worktree confirmation is open; it has no mode switch. Its Keep the local branch switch starts ${requestedBranch}, and the dialog names that request. The user can flip the switch and confirms with ${confirmLabel} worktree. Nothing is removed until the user confirms.`,
-        },
-      };
-    }
     case 'worktree.create_from_link': {
       await ensureProjectsHydrated();
       const scope = homeLinkScopeKey();
@@ -13487,35 +13378,6 @@ async function routeAction(
         },
       };
     }
-    case 'standalone-chat.delete_work_entry': {
-      const project = await getStandaloneProjectOrError(action.projectId);
-      if ('error' in project) {
-        return { ok: false, error: project.error };
-      }
-      const { entries } = await window.api.workEntries.list({
-        projectId: action.projectId,
-      });
-      if (!entries.some((entry) => entry.id === action.workEntryId)) {
-        return {
-          ok: false,
-          error: {
-            code: 'not_found',
-            message: `Work Entry ${action.workEntryId} was not found in cowork project ${action.projectId}.`,
-          },
-        };
-      }
-      await useStandaloneChatStore
-        .getState()
-        .deleteWorkEntry(action.workEntryId, action.projectId);
-      return {
-        ok: true,
-        result: {
-          projectId: action.projectId,
-          workEntryId: action.workEntryId,
-          deleted: true,
-        },
-      };
-    }
     case 'standalone-chat.send_message':
       return {
         ok: false,
@@ -15625,6 +15487,7 @@ async function runArchivedAction(
   try {
     switch (action.type) {
       case 'archived.open_overview': {
+        // Default Bot only: the archive overview opens in its singleton window.
         if (action.workspaceId === APP_ADVISOR_PROJECT_ID) {
           await window.api.appAdvisor.openWindow({
             focus: true,
@@ -15642,6 +15505,7 @@ async function runArchivedAction(
         };
       }
       case 'archived.open_empty_trash': {
+        // Default Bot only: its confirmation state is reported by its window.
         if (action.workspaceId === APP_ADVISOR_PROJECT_ID) {
           const containers = await window.api.archivedContainers.list({
             projectId: action.workspaceId,

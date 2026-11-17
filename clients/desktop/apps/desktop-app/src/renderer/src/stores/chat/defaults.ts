@@ -1,7 +1,6 @@
 // Provider/model/interface-mode defaults resolution against chat state.
 import {
   AI_GATEWAY_MODELS,
-  APP_ADVISOR_PROJECT_ID,
   CLAUDE_MODELS,
   CODEX_ACCOUNT_MODELS,
   CODEX_MODELS,
@@ -25,6 +24,7 @@ import {
   type ChatModel,
   type ThinkingLevel,
 } from '@canopy/desktop-shared/types';
+import { isBotProjectId } from '@canopy/protocol/chat-targets';
 import {
   isModelBlocked,
   isModelBlockedTriState,
@@ -200,13 +200,35 @@ function personalGatewayCreditsLane(): PersonalGatewayLane | undefined {
   if (getRendererBillingLaneAvailability().creditsEligible !== false) {
     return undefined;
   }
-  // Organization work can't use Personal models; the owner-scoped exclusion
-  // removes them there, exactly as main's resolver does.
-  const models = listPersonalGatewayDefaultModels(
+  const models = personalGatewayModels();
+  return models.length > 0 ? { models } : undefined;
+}
+
+/**
+ * The Personal gateway's models this computer can run, in default order:
+ * only once it holds the gateway key (main adds them to the credits-lane
+ * registry then). Organization work can't use Personal models; the
+ * owner-scoped exclusion removes them there, exactly as main's resolver does.
+ */
+function personalGatewayModels(): readonly ChatModel[] {
+  return listPersonalGatewayDefaultModels(
     getRendererModelGatewayIndex(),
     laneCatalog('ai-credits'),
   ).filter((model) => !isOrgGatewayExcluded(model));
-  return models.length > 0 ? { models } : undefined;
+}
+
+/** The first of `models` the next send would accept. */
+function firstSendableGatewayModel(
+  models: readonly ChatModel[] | undefined,
+): ChatModel | undefined {
+  // The same filters the fallback walk applies, so a switch never offers a
+  // model the next send would refuse.
+  const policy = getRendererModelPolicy();
+  return models?.find(
+    (model) =>
+      !isModelBlocked(model, policy) &&
+      isModelRunnableForAccountOnLane('ai-credits', model),
+  );
 }
 
 /**
@@ -215,14 +237,51 @@ function personalGatewayCreditsLane(): PersonalGatewayLane | undefined {
  * account can't bill (CAN-6444).
  */
 export function firstPersonalGatewayDefaultModel(): ChatModel | undefined {
-  // The same filters the fallback walk applies, so the switch never offers a
-  // model the next send would refuse.
-  const policy = getRendererModelPolicy();
-  return personalGatewayCreditsLane()?.models.find(
-    (model) =>
-      !isModelBlocked(model, policy) &&
-      isModelRunnableForAccountOnLane('ai-credits', model),
+  return firstSendableGatewayModel(personalGatewayCreditsLane()?.models);
+}
+
+/** The provider-choice list's AI gateway row, as this computer sees it. */
+export interface PersonalGatewaySwitch {
+  /**
+   * This computer holds the gateway key: main lists the gateway's models
+   * only then, so a listed model means the key is here.
+   */
+  readonly keyHeld: boolean;
+  /** The model a switch continues on, when the next send would accept one. */
+  readonly model?: ChatModel;
+  /** Why a gateway with its key here still has no model to continue on. */
+  readonly unavailableReason?: string;
+}
+
+/**
+ * The Personal gateway model the provider-choice list's AI gateway row
+ * continues on, whether or not AI Credits are available: the same default
+ * order and send filters, without the stand-in-for-credits condition. Keeps
+ * "the key is here" apart from "a model is sendable", so a set-up gateway
+ * with no sendable model explains why instead of offering setup again.
+ */
+export function personalGatewaySwitch(): PersonalGatewaySwitch {
+  const listed = listPersonalGatewayDefaultModels(
+    getRendererModelGatewayIndex(),
+    laneCatalog('ai-credits'),
   );
+  if (listed.length === 0) return { keyHeld: false };
+  const usable = listed.filter((model) => !isOrgGatewayExcluded(model));
+  if (usable.length === 0) {
+    return {
+      keyHeld: true,
+      unavailableReason:
+        "Your Personal gateway isn't available for organization work.",
+    };
+  }
+  const model = firstSendableGatewayModel(usable);
+  return model !== undefined
+    ? { keyHeld: true, model }
+    : {
+        keyHeld: true,
+        unavailableReason:
+          "None of this gateway's models are available right now.",
+      };
 }
 
 /**
@@ -478,7 +537,7 @@ export function resolveTabDefaults(
   // App Advisor tabs default to the dedicated appAdvisor* preferences (the
   // same defaults quick prompts, automations, and watchers consume), not the
   // generic cowork chat defaults its cowork classification would select.
-  if (projectId === APP_ADVISOR_PROJECT_ID) {
+  if (isBotProjectId(projectId)) {
     const advisorLane = resolveLaneForTarget(projectId, modelDefaults);
     const advisorResolved =
       advisorLane?.outcome === 'resolved' ? advisorLane : undefined;
@@ -691,7 +750,7 @@ export function resolveDeferredToolsAllowedDefault(
   defaults: ChatState['deferredToolsDefaults'],
 ): boolean {
   if (!defaults) return true;
-  if (projectId === APP_ADVISOR_PROJECT_ID) {
+  if (isBotProjectId(projectId)) {
     return defaults.deferredToolsAppAdvisorEnabled ?? true;
   }
   if (
@@ -716,7 +775,7 @@ export function resolvePersistedDefaultChatInterfaceMode(
     return 'canopy';
   }
   if (!modelDefaults) return undefined;
-  if (projectId === APP_ADVISOR_PROJECT_ID) {
+  if (isBotProjectId(projectId)) {
     return modelDefaults.defaultAppAdvisorInterfaceMode;
   }
   return isCoworkChatTarget(projectId)

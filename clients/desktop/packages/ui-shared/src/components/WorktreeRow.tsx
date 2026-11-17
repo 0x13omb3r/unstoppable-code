@@ -26,7 +26,7 @@ import {
   useState,
 } from 'react';
 import { LoadingSpinner } from './LoadingSpinner';
-import { Button } from './Button';
+import { ControlButton, Button } from './Button';
 import { GroupedDiffStats } from './GroupedDiffStats';
 import {
   ITEM_PREVIEW_OPEN_DELAY_MS,
@@ -606,8 +606,7 @@ const CLASSIC_TRAILING_DOT_CLASS =
  * grows only into the gap beside it: a taller area would cover the title line
  * above and send taps meant for the row to the warning.
  */
-const HEALTH_WARNING_COARSE_HIT_AREA =
-  "relative before:absolute before:inset-0 before:content-[''] pointer-coarse:before:-inset-x-1.5 pointer-coarse:before:-inset-y-1";
+
 /**
  * Grows a 12px subtitle badge's hover and click target to 16x20 without moving
  * its neighbours; the badges' 6px gap keeps the grown areas apart.
@@ -932,7 +931,7 @@ function PrBadgeContent({
 }
 
 /** Classic subtitle glyph for an open PR waiting in its merge queue. */
-function ClassicMergeQueueIcon({
+function ClassicMergeQueueIndicator({
   status,
   testIdSuffix,
 }: {
@@ -949,12 +948,12 @@ function ClassicMergeQueueIcon({
         testIdSuffix,
       )}
     >
-      <GitMergeQueueIcon size={12} />
+      <GitMergeQueueIcon size="sm" />
     </span>
   );
 }
 
-function ClassicApprovedReviewIcon({
+function ClassicReviewApprovalIndicator({
   isMergeReady,
   hasUnresolvedComments,
   plain = false,
@@ -2072,14 +2071,14 @@ function WorktreeRowImpl(
   const leadingMetadataIndicator = showHealthWarning ? (
     withStatusTooltip(
       healthIssue?.reason ?? 'Worktree issue',
-      <button
+      <ControlButton
         type="button"
         onClick={onWarningClick}
-        className={`focus-ring inline-flex h-4 w-4 shrink-0 items-center justify-center rounded fg-warning ${HEALTH_WARNING_COARSE_HIT_AREA}`}
+        presentation="worktree-health-badge"
         aria-label="Worktree issue - click for details"
       >
         <WarningIcon size="xs" />
-      </button>,
+      </ControlButton>,
     )
   ) : showPrBadge ? (
     <span
@@ -2476,7 +2475,7 @@ function WorktreeRowImpl(
           'worktree-row-subtitle-diff',
           testIdSuffix,
         )}
-        className="ml-1.5 inline-flex"
+        className="pl-1.5 inline-flex"
       >
         <DiffStatsBadge
           stats={diffStats}
@@ -2569,13 +2568,13 @@ function WorktreeRowImpl(
               {prLabel}
             </span>
             {showClassicMergeQueueIcon && (
-              <ClassicMergeQueueIcon
+              <ClassicMergeQueueIndicator
                 status={lastKnownPrStatus}
                 testIdSuffix={testIdSuffix}
               />
             )}
             {showClassicApprovalIcon && (
-              <ClassicApprovedReviewIcon
+              <ClassicReviewApprovalIndicator
                 testIdSuffix={testIdSuffix}
                 plain={focusedStatus}
                 isMergeReady={lastKnownPrStatus.isMergeReady === true}
@@ -2602,13 +2601,13 @@ function WorktreeRowImpl(
               {prLabel}
             </span>
             {showClassicMergeQueueIcon && (
-              <ClassicMergeQueueIcon
+              <ClassicMergeQueueIndicator
                 status={lastKnownPrStatus}
                 testIdSuffix={testIdSuffix}
               />
             )}
             {showClassicApprovalIcon && (
-              <ClassicApprovedReviewIcon
+              <ClassicReviewApprovalIndicator
                 testIdSuffix={testIdSuffix}
                 plain={focusedStatus}
                 isMergeReady={lastKnownPrStatus.isMergeReady === true}
@@ -3628,7 +3627,7 @@ function WorktreeRowImpl(
               {showHealthWarning &&
                 withStatusTooltip(
                   healthIssue?.reason ?? 'Worktree issue',
-                  <button
+                  <ControlButton
                     type="button"
                     onClick={onWarningClick}
                     // fg-warning: the fallback triangle must still read as a
@@ -3636,11 +3635,11 @@ function WorktreeRowImpl(
                     // -m-0.5 cancels the click padding visually, so the glyph
                     // sits exactly in the shared subtitle icon column with the
                     // plain-span badges (terminal, script, hook, …).
-                    className={`focus-ring -m-0.5 p-0.5 shrink-0 rounded transition-colors fg-warning hover:bg-subtle hover:fg-primary ${HEALTH_WARNING_COARSE_HIT_AREA}`}
+                    presentation="worktree-health-warning"
                     aria-label="Worktree issue - click for details"
                   >
                     <WarningIcon size="xs" />
-                  </button>,
+                  </ControlButton>,
                 )}
 
               {/* Subject badges: one glyph per subsystem, tinted by its
@@ -3838,14 +3837,14 @@ function WorktreeRowImpl(
                       inlineDepthBadge !== null &&
                       worktreeIdentity !== null &&
                       worktreeIdentity !== undefined && (
-                        <span className="mx-1" aria-hidden="true">
+                        <span className="px-1" aria-hidden="true">
                           ·
                         </span>
                       )}
                     {!focusedStatus && nestedChildDepth !== undefined && (
                       <>
                         {nestedChildIndicator}
-                        <span className="mx-1" aria-hidden="true">
+                        <span className="px-1" aria-hidden="true">
                           ·
                         </span>
                       </>
@@ -3866,7 +3865,7 @@ function WorktreeRowImpl(
 
                     {splitStatusMessage && (
                       <>
-                        <span className="mx-1" aria-hidden="true">
+                        <span className="px-1" aria-hidden="true">
                           ·
                         </span>
                         <span>{splitStatusMessage}</span>
@@ -3875,7 +3874,7 @@ function WorktreeRowImpl(
 
                     {isTearingDown && (
                       <>
-                        <span className="mx-1" aria-hidden="true">
+                        <span className="px-1" aria-hidden="true">
                           ·
                         </span>
                         <span>
@@ -3890,7 +3889,7 @@ function WorktreeRowImpl(
                           worktreeIdentity !== undefined) ||
                           splitStatusMessage ||
                           focusedDiffMetadata) && (
-                          <span className="mx-1" aria-hidden="true">
+                          <span className="px-1" aria-hidden="true">
                             ·
                           </span>
                         )}
@@ -3902,7 +3901,7 @@ function WorktreeRowImpl(
                         {((worktreeIdentity !== null &&
                           worktreeIdentity !== undefined) ||
                           splitStatusMessage) && (
-                          <span className="mx-1" aria-hidden="true">
+                          <span className="px-1" aria-hidden="true">
                             ·
                           </span>
                         )}
@@ -3911,7 +3910,7 @@ function WorktreeRowImpl(
                     )}
                     {!isRunningSetup && !isTearingDown && isPendingGitSetup && (
                       <>
-                        <span className="mx-1" aria-hidden="true">
+                        <span className="px-1" aria-hidden="true">
                           ·
                         </span>
                         {withStatusTooltip(
@@ -3926,7 +3925,7 @@ function WorktreeRowImpl(
                         <>
                           {isDone && !focusedStatus && (
                             <>
-                              <span className="mx-1" aria-hidden="true">
+                              <span className="px-1" aria-hidden="true">
                                 ·
                               </span>
                               <span
@@ -3946,7 +3945,7 @@ function WorktreeRowImpl(
                           )}
                           {classicPrMetadata && !focusedStatus && (
                             <>
-                              <span className="mx-1" aria-hidden="true">
+                              <span className="px-1" aria-hidden="true">
                                 ·
                               </span>
                               {/* The merge spinner shares one flex line with the PR
@@ -3970,7 +3969,7 @@ function WorktreeRowImpl(
                             !showPrBadge &&
                             isCreatingPr && (
                               <>
-                                <span className="mx-1" aria-hidden="true">
+                                <span className="px-1" aria-hidden="true">
                                   ·
                                 </span>
                                 <span className="inline-flex items-center gap-2 fg-secondary">
@@ -3983,7 +3982,7 @@ function WorktreeRowImpl(
                             )}
                           {isDiscovering && (
                             <>
-                              <span className="mx-1" aria-hidden="true">
+                              <span className="px-1" aria-hidden="true">
                                 ·
                               </span>
                               <span className="fg-secondary">

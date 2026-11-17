@@ -1,9 +1,9 @@
 import {
-  APP_ADVISOR_PROJECT_ID,
   PLAN_EXPLORE_CHAT_PROJECT_ID,
   CODE_REVIEW_CHAT_PROJECT_ID,
   PIPELINE_EDITOR_PROJECT_ID,
 } from '@canopy/desktop-shared/types';
+import { isBotProjectId } from '@canopy/protocol/chat-targets';
 import { classifyResourceOwner } from '@canopy/execution-engine/lib/resource-context';
 import type { ResourceContextInput } from '@canopy/execution-engine/lib/resource-context-policy';
 import { CLIENT_FEATURE_FLAGS } from '@canopy/protocol/feature-flags';
@@ -75,7 +75,7 @@ export async function assertSkillContext(
     throw new Error('Skill unavailable (unknown-provenance)');
   let target: ResourceContextInput['target'];
   const appSurface =
-    projectId === APP_ADVISOR_PROJECT_ID ||
+    (projectId !== undefined && isBotProjectId(projectId)) ||
     projectId === PLAN_EXPLORE_CHAT_PROJECT_ID ||
     projectId === CODE_REVIEW_CHAT_PROJECT_ID ||
     projectId === PIPELINE_EDITOR_PROJECT_ID;

@@ -60,7 +60,7 @@ export function SlashCommandGroupHeading({
       className={
         compact
           ? 'px-2 pb-0.5 pt-2 text-xs fg-tertiary'
-          : `${divider ? 'mt-1 border-t ' : ''}px-3 pb-1 pt-2 text-xs font-medium fg-secondary`
+          : `px-3 pb-1 ${divider ? 'relative pt-3 before:pointer-events-none before:absolute before:inset-x-0 before:top-1 before:h-[var(--border-hairline)] before:bg-line-base' : 'pt-2'} text-xs font-medium fg-secondary`
       }
     >
       {label}

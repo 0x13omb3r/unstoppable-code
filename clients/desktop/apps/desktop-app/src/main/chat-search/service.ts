@@ -35,6 +35,7 @@ import {
   type WorkspaceOwnerBinding,
   type WorktreeSummaryData,
 } from '@canopy/desktop-shared/types';
+import { isBotProjectId } from '@canopy/protocol/chat-targets';
 import { workspaceOwnerMatchesContext } from '@canopy/execution-engine/lib/workspace-owner';
 import {
   getAppManagedChatWorkspaceDir,
@@ -271,7 +272,7 @@ export interface ChatSearchServiceOptions {
 async function resolvePersistedWorkspaceOwner(
   workspaceId: string,
 ): Promise<WorkspaceOwnerBinding | undefined | null> {
-  if (workspaceId === APP_ADVISOR_PROJECT_ID) return null;
+  if (isBotProjectId(workspaceId)) return null;
   const { config, authority, ownerMalformed } =
     await readWorkspaceConfigDetailed(workspaceId);
   return authority !== 'ok' || ownerMalformed ? null : config.owner;
@@ -2591,7 +2592,7 @@ export class ChatSearchService {
     >();
     return async (entry): Promise<boolean> => {
       if (!this.isVisibleEntry(entry)) return false;
-      if (entry.projectId === APP_ADVISOR_PROJECT_ID) return true;
+      if (isBotProjectId(entry.projectId)) return true;
       let owner = owners.get(entry.projectId);
       if (!owner) {
         owner = this.resolveWorkspaceOwner(entry.projectId);
@@ -2860,6 +2861,7 @@ export class ChatSearchService {
       await this.enumerateArchivedContainers(descriptors, projectId);
     }
 
+    // Default Bot only: the only Bot until the Bot registry lists the rest.
     await this.enumerateFlatJsonSources(
       descriptors,
       dirname(

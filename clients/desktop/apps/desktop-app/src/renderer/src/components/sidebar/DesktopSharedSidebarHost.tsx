@@ -101,10 +101,10 @@ import type {
   WorktreeDiffStatsStyle,
 } from '@canopy/desktop-shared/types';
 import {
-  APP_ADVISOR_PROJECT_ID,
   defaultCoworkWorkspaceIdForContext,
   isDefaultCoworkWorkspaceId,
 } from '@canopy/desktop-shared/types';
+import { isBotProjectId } from '@canopy/protocol/chat-targets';
 import {
   ActionMenuRowStyle,
   DelayedLoadingPlaceholder,
@@ -156,7 +156,6 @@ import {
   type DeleteAction,
 } from '@/components/worktree/worktree-delete-action';
 import { resolveArchiveRetentionDays } from '@canopy/desktop-shared/lib/archive-retention';
-import { subscribeToWorktreeArchiveConfirmationRequests } from '@/lib/worktreeArchiveConfirmationEvents';
 import { useGitHubStore } from '@/stores/githubStore';
 import { hasVisibleWorkspaceContent } from '@canopy/desktop-shared/lib/workspace-visibility';
 import { InviteTeammateModal } from '@/components/shared/InviteTeammateModal';
@@ -1036,12 +1035,10 @@ export function DesktopSharedSidebarHost({
       : undefined;
   // Worktree removal confirms the way the legacy row did: Delete on a row
   // with no local work runs at once; anything else (and every Archive) opens
-  // desktop's confirmation with the branch-handling choice. Chat surfaces
-  // request that same confirmation for a worktree through a window event.
+  // desktop's confirmation with the branch-handling choice.
   const [removalConfirm, setRemovalConfirm] = useState<{
     readonly target: WorktreeArchiveConfirmationTarget;
     readonly mode: WorktreeRemovalMode;
-    readonly requestedDeleteBranch?: boolean;
   } | null>(null);
   const splitLockedWorktrees = useGitHubStore(
     (state) => state.splitLockedWorktrees,
@@ -1106,24 +1103,13 @@ export function DesktopSharedSidebarHost({
     worktreeId: string,
     label: string,
     mode: WorktreeRemovalMode,
-    source: 'row' | 'external',
-    requestedDeleteBranch?: boolean,
   ): boolean => {
     const inputs = removalInputs(workspaceId, worktreeId);
     if (!inputs) return false;
-    // An external request (App Advisor's `worktree.archive`) is promised a
-    // confirmation dialog, so it always gets one, opened on the branch choice
-    // as the legacy row did: the dialog shows a blocked state for a disabled
-    // or in-flight removal, and a clean worktree is never removed without the
-    // user confirming. Only a direct row gesture takes the silent paths below.
-    const external = source === 'external';
-    if (
-      !external &&
-      (inputs.deleteAction === 'disabled' || inputs.archiveInProgress)
-    ) {
+    if (inputs.deleteAction === 'disabled' || inputs.archiveInProgress) {
       return true;
     }
-    if (!external && mode === 'delete' && inputs.deleteAction === 'delete') {
+    if (mode === 'delete' && inputs.deleteAction === 'delete') {
       model.onArchiveWorktree(workspaceId, worktreeId, {
         deleteWithoutRetentionIfMissing: true,
       });
@@ -1139,9 +1125,6 @@ export function DesktopSharedSidebarHost({
         branchName: inputs.worktree.branchName,
       },
       mode,
-      ...(external && requestedDeleteBranch !== undefined
-        ? { requestedDeleteBranch }
-        : {}),
     });
     return true;
   };
@@ -1187,30 +1170,6 @@ export function DesktopSharedSidebarHost({
   useCurrentUiStateReporter(
     'workEntry.batchRemovalDialog',
     workEntryBatchState === null ? null : { ...workEntryBatchState },
-  );
-  const requestRemovalRef = useRef(requestRemoval);
-  requestRemovalRef.current = requestRemoval;
-  useEffect(
-    () =>
-      subscribeToWorktreeArchiveConfirmationRequests((request) => {
-        const project = model.sortedProjects.find(
-          (item) => item.id === request.projectId,
-        );
-        if (!project || project.type === 'cowork') return false;
-        const worktree = project.worktrees.find(
-          (item) => item.id === request.worktreeId,
-        );
-        if (!worktree) return false;
-        return requestRemovalRef.current(
-          request.projectId,
-          request.worktreeId,
-          worktree.label?.trim() || worktree.branchName,
-          request.lockAfterArchive === true ? 'archive' : 'delete',
-          'external',
-          request.requestedDeleteBranch,
-        );
-      }),
-    [model.sortedProjects],
   );
   const removalConfirmInputs = removalConfirm
     ? removalInputs(
@@ -2045,15 +2004,7 @@ export function DesktopSharedSidebarHost({
           worktreeId,
           label,
           mode,
-        ) =>
-          requestRemoval(
-            workspaceId,
-            worktreeId,
-            label,
-            mode ?? 'delete',
-            'row',
-          )
-        }
+        ) => requestRemoval(workspaceId, worktreeId, label, mode ?? 'delete')}
         // Branch grouping input, as the legacy section built it: the diff-stats
         // base branch, falling back to the tracked base so a fresh "Branch
         // from" worktree groups at once. Pinned rows keep their parent here;
@@ -2384,7 +2335,7 @@ export function DesktopSharedSidebarHost({
           const archiveCoversNotice = [archive.viewer, archive.overview].some(
             (entry) =>
               entry !== null &&
-              entry.workspaceId !== APP_ADVISOR_PROJECT_ID &&
+              !isBotProjectId(entry.workspaceId) &&
               !isCoworkChatTarget(entry.workspaceId),
           );
           if (
@@ -3009,7 +2960,6 @@ export function DesktopSharedSidebarHost({
             removalConfirmInputs.splitLocked ||
             !removalIdentityMatches
           }
-          requestedDeleteBranch={removalConfirm.requestedDeleteBranch}
           onCancel={(): void => setRemovalConfirm(null)}
           onConfirm={(deleteBranch): void => {
             const { target, mode } = removalConfirm;

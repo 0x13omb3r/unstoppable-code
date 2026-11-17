@@ -11,6 +11,7 @@ import {
 import { useStore } from 'zustand';
 import type {
   CloudPipelineRunArtifactContent,
+  CloudPipelineRunCost,
   CloudPipelineRunSession,
 } from '@canopy/app-state/cloud-pipeline-runs';
 import type {
@@ -22,9 +23,16 @@ import {
   Button,
   Fact,
   FactList,
+  Heading,
   Notice,
   Surface,
+  ValueRow,
+  ValueRows,
 } from '@canopy/ui-shared/components';
+import {
+  formatCostAmountIn,
+  useCostCurrency,
+} from '@canopy/ui-shared/components/cost';
 import { Markdown } from '@canopy/ui-shared/components/Markdown';
 import {
   canCancelMatrixVariant,
@@ -155,10 +163,12 @@ function CloudRunDetailBody({
   const live = useStore(session, (state) => state.live);
   const pending = useStore(session, (state) => state.pending);
   const controlError = useStore(session, (state) => state.controlError);
+  const cost = useStore(session, (state) => state.cost);
+  const children = useStore(session, (state) => state.children);
 
   const detailView = useMemo(
-    () => (view === null ? null : cloudRunDetailView(view)),
-    [view],
+    () => (view === null ? null : cloudRunDetailView(view, children)),
+    [view, children],
   );
   const steps = useMemo(
     () =>
@@ -258,10 +268,13 @@ function CloudRunDetailBody({
       rerunning={pending.rerun === true}
       mutationPending={Object.keys(pending).length > 0}
       {...(controlError === null ? {} : { errorMessage: controlError })}
+      // A step's child run opens as a run of its own (CAN-6868).
+      {...(onOpenRun !== undefined && { onOpenChild: onOpenRun })}
     >
       <CloudRunFacts
         view={view}
         live={live}
+        cost={cost}
         onOpenPlan={onOpenPlan}
         renderRunChat={renderRunChat}
       />
@@ -278,11 +291,13 @@ function CloudRunDetailBody({
 function CloudRunFacts({
   view,
   live,
+  cost,
   onOpenPlan,
   renderRunChat,
 }: {
   readonly view: WorkerPipelineExecutionView;
   readonly live: ReturnType<CloudPipelineRunSession['getState']>['live'];
+  readonly cost: CloudPipelineRunCost;
   readonly onOpenPlan?: (planId: string) => void;
   readonly renderRunChat?: (view: WorkerPipelineExecutionView) => ReactNode;
 }): JSX.Element {
@@ -307,6 +322,7 @@ function CloudRunFacts({
   );
   const plan = detail?.plan ?? null;
   const runChat = renderRunChat?.(view);
+  const currency = useCostCurrency();
   return (
     <div className="flex flex-col gap-2" data-testid="cloud-run-facts">
       <FactList size="xs" labelWidth="6rem" dataTestId="cloud-run-fact-list">
@@ -321,6 +337,11 @@ function CloudRunFacts({
         <Fact label="Started" numeric>
           {formatRunStarted(Date.parse(execution.startedAt), Date.now())}
         </Fact>
+        {cost.view !== null && (
+          <Fact label="Cost" numeric dataTestId="cloud-run-cost">
+            {formatCostAmountIn(cost.view.run.totals.usd, currency, true)}
+          </Fact>
+        )}
         {plan?.saved === true && (
           <Fact label="Plan" dataTestId="cloud-run-plan">
             {plan.planId !== null && onOpenPlan !== undefined ? (
@@ -341,6 +362,9 @@ function CloudRunFacts({
           </Fact>
         )}
       </FactList>
+      {cost.view !== null && cost.view.steps.length > 0 && (
+        <CloudRunStepCosts steps={cost.view.steps} />
+      )}
       {runChat}
       {reasons.map((group) => (
         <Notice
@@ -368,6 +392,49 @@ function CloudRunFacts({
         </Notice>
       )}
     </div>
+  );
+}
+
+/**
+ * What each agent step was charged (CAN-6881): its model calls, every
+ * attempt counted. The run's cost also holds its sandbox compute and calls no
+ * step made, so the steps can sum to less than it.
+ */
+function CloudRunStepCosts({
+  steps,
+}: {
+  readonly steps: NonNullable<CloudPipelineRunCost['view']>['steps'];
+}): JSX.Element {
+  const currency = useCostCurrency();
+  return (
+    <section
+      aria-label="Cost by step"
+      className="flex flex-col gap-1"
+      data-testid="cloud-run-step-costs"
+    >
+      <Heading level={3} variant="label">
+        Cost by step
+      </Heading>
+      {/* A run with many steps scrolls its costs inside a capped box, so the
+          pause form and the log stay in view in the detail's dialog. */}
+      <div
+        className="max-h-32 overflow-y-auto"
+        tabIndex={0}
+        data-testid="cloud-run-step-costs-list"
+      >
+        <ValueRows>
+          {steps.map((step) => (
+            <ValueRow
+              key={`${step.jobId}:${step.stepId}`}
+              label={step.label}
+              value={formatCostAmountIn(step.totals.usd, currency, true)}
+              numeric
+              dataTestId={`cloud-run-step-cost-${step.stepId}`}
+            />
+          ))}
+        </ValueRows>
+      </div>
+    </section>
   );
 }
 

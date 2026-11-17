@@ -1,6 +1,7 @@
 import {
   toAppError,
   createAppErrorHandler,
+  isExpectedCanopyProxyAppError,
   type AppErrorHandler,
   type AppErrorReport,
   type AppErrorReportOptions,
@@ -1062,7 +1063,7 @@ function captureMainAppError(
   mainAppErrorAdmissions++;
   const properties = buildAppErrorPostHogProperties(record);
   forwardGatedPostHogEvent({ event: APP_ERROR_POSTHOG_EVENT, properties });
-  if (!record.isRepeatSummary) {
+  if (!record.isRepeatSummary && !isExpectedCanopyProxyAppError(record.error)) {
     captureDesktopPostHogException(
       appErrorException(record, frames),
       thrownType === undefined

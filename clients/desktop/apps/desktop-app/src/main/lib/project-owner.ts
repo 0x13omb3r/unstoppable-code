@@ -1,11 +1,11 @@
 import {
-  APP_ADVISOR_PROJECT_ID,
   CODE_REVIEW_CHAT_PROJECT_ID,
   PLAN_EXPLORE_CHAT_PROJECT_ID,
   STANDALONE_CHAT_PROJECT_ID,
   type AutomationAction,
   type ProjectOwnerContext,
 } from '@canopy/desktop-shared/types';
+import { isBotProjectId } from '@canopy/protocol/chat-targets';
 import {
   agentAutomationTargetProject,
   type AgentAutomationTargetProject,
@@ -17,9 +17,9 @@ import { logMainProcessWarn } from './main-process-logging';
 import { getPlanExploreTarget } from './plan-explore-registry';
 
 /**
- * A project's saved owner as policy sees it. `none` is App Advisor, which
- * deliberately has no owner; `unknown` means the owner could not be read and
- * every caller must fail closed.
+ * A project's saved owner as policy sees it. `none` is a Bot, which
+ * deliberately has no workspace owner; `unknown` means the owner could not be
+ * read and every caller must fail closed.
  */
 export type ResolvedProjectOwner =
   | ProjectOwnerContext
@@ -56,11 +56,11 @@ async function resolveRealTarget(
 export async function resolveProjectSavedOwner(
   target: ProjectOwnerTarget,
 ): Promise<ResolvedProjectOwner> {
-  if (target.projectId === APP_ADVISOR_PROJECT_ID) return { kind: 'none' };
+  if (isBotProjectId(target.projectId)) return { kind: 'none' };
   try {
     const realTarget = await resolveRealTarget(target);
     if (!realTarget) return { kind: 'unknown' };
-    if (realTarget.projectId === APP_ADVISOR_PROJECT_ID) {
+    if (isBotProjectId(realTarget.projectId)) {
       return { kind: 'none' };
     }
     const { workspaceOwner } = await resolveBackgroundWorkspaceTarget(
@@ -122,7 +122,7 @@ async function isMissingProjectTarget(
 /**
  * Same-owner rule outcome for a code or cowork caller reaching a target
  * project. `hidden` means the target must look exactly like an unknown one:
- * another owner, App Advisor's project, or a project that does not exist.
+ * another owner, a Bot, or a project that does not exist.
  * An owner that exists but cannot be read is reported as a typed context
  * failure, for the caller or for the target.
  */
@@ -146,8 +146,8 @@ const DEFAULT_SAME_OWNER_DEPENDENCIES: SameOwnerAccessDependencies = {
 
 /**
  * Apply the same-owner rule. Resolve the caller once with
- * {@link resolveProjectSavedOwner} and pass it in. App Advisor (owner
- * `none`) is not owner-limited.
+ * {@link resolveProjectSavedOwner} and pass it in. Bots (owner `none`) are not
+ * owner-limited.
  */
 export async function decideSameOwnerAccess(
   callerOwner: ResolvedProjectOwner,

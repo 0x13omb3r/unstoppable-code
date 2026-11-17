@@ -19,9 +19,10 @@ import {
   stageAllChanges,
   getCurrentBranch,
   getHeadCommitSha,
+  pushCommitToBranch,
   resolveRefSha,
 } from '../lib/git';
-import { pushBranchWithAuthFailure } from '../lib/github-push';
+import { withGitHubPushAuthFailure } from '../lib/github-push';
 import { desktopWorkerGitBranchWriteHost } from './worker-git-adapter';
 import { LOCAL_DESKTOP_AUTHORITY_ID } from './desktop-runtime-identity';
 
@@ -91,9 +92,12 @@ export function desktopGitCommitPushPort(repoPath: string): GitCommitPushPort {
         throw error;
       }
     },
-    push: async () => {
+    push: async ({ branch, headSha }) => {
       try {
-        await pushBranchWithAuthFailure(repoPath);
+        // The commit the worker checked, not HEAD as it stands by now.
+        await withGitHubPushAuthFailure(repoPath, () =>
+          pushCommitToBranch(repoPath, branch, headSha),
+        );
       } catch (error) {
         throw new CanopyOperationError(
           {

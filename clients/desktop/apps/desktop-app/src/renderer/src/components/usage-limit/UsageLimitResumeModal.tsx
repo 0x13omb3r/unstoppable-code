@@ -397,7 +397,7 @@ function groupSessionsByWorktree(
 }
 
 /** Subscribe only to the icon's repository path, not live worktree status. */
-function ResumeWorkspaceIcon({
+function ResumeWorkspaceIdentity({
   group,
 }: {
   group: UsageLimitedSessionGroup;
@@ -2040,7 +2040,7 @@ function UsageLimitResumeModalContent(): JSX.Element | null {
                         onChange={(): void => toggleWorkspace(group)}
                         label={
                           <span className="flex min-w-0 items-center gap-2 font-medium">
-                            <ResumeWorkspaceIcon group={group} />
+                            <ResumeWorkspaceIdentity group={group} />
                             <span id={groupLabelId} className="truncate">
                               {group.workspaceName}
                             </span>

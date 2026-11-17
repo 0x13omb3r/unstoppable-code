@@ -15,9 +15,13 @@ import {
   curatedMcpDesktopOnly,
   type CuratedMcpServerEntry,
 } from '@canopy/protocol/mcp-catalog';
-import type {
-  McpServerIndexEntry,
-  McpServerStatusEntry,
+import type { HarnessCompatibilityHarness } from '@canopy/protocol/plugins';
+import {
+  MCP_INSTALL_HARNESSES,
+  mcpFailedHarnessInstalls,
+  mcpInstalledHarnesses,
+  type McpServerIndexEntry,
+  type McpServerStatusEntry,
 } from '@canopy/protocol/mcp-servers';
 import {
   mcpAuthConnectLabel,
@@ -33,7 +37,15 @@ import {
   type PluginInfo,
   type PluginSkillInfo,
   type SharedPluginSummary,
+  ITEM_INSTALL_HARNESSES,
+  PLUGIN_STAND_IN_NAME_MAX_LENGTH,
+  chatGptAppMissingHarnesses,
+  itemFailedHarnessInstalls,
+  itemInstalledHarnesses,
   officialMarketplaceRelativePackageUrl,
+  parseHarnessCompatibility,
+  standInEndpoint,
+  standInEndpointHost,
 } from '@canopy/protocol/plugins';
 import type { SharedAgentSummary } from '@canopy/protocol/agents';
 import {
@@ -73,6 +85,8 @@ import {
   type UnifiedEntryConnectionStatus,
   type UnifiedEntryFoldedConnector,
   type UnifiedEntryFoldedPlugin,
+  type UnifiedEntryHarnessInstalls,
+  type UnifiedEntryHarnessRecord,
   type UnifiedEntryAlternative,
   type UnifiedEntryBundledServer,
   type UnifiedEntryBundledServerRow,
@@ -80,6 +94,7 @@ import {
   type UnifiedEntryPluginLink,
   type UnifiedEntryPublicShare,
   type UnifiedEntryRequirement,
+  type UnifiedEntryStandIn,
   type UnifiedPluginEntry,
   type UnifiedWorkflowFacets,
   type WorkflowLastRun,
@@ -88,11 +103,13 @@ import {
 import { markdownDescriptionToPlainText } from '@canopy/ui-shared/lib/markdown-plain-text';
 import {
   CLAUDE_PLUGIN_MARKETPLACE_ID,
+  marketplaceDisplayName,
   marketplacePublisherDisplayName,
 } from '@canopy/ui-shared/lib/official-marketplace-products';
 import {
   describeMarketplaceVariant,
   marketplacePackageGroup,
+  mergeEntryHarnessInstalls,
   officialMarketplaceProvider,
   sourceLabelProvider,
 } from '@canopy/ui-shared/lib/unified-plugin-entry';
@@ -158,6 +175,9 @@ export interface UnifiedMarketplacePluginInput extends Pick<
   | 'globalInstallStatus'
   | 'codexCompatDisabled'
   | 'parked'
+  | 'cachedAt'
+  | 'harnessCompatibility'
+  | 'harnessInstalls'
 > {
   marketplaceId: string;
   /** Local inventory only. Never used as a cross-provider key on its own. */
@@ -216,6 +236,7 @@ export type UnifiedInstalledSkillInput = Pick<
       | 'updatedAt'
       | 'remote'
       | 'installedFromShare'
+      | 'harnessCompatibility'
     >
   > & {
     /** Existing browser-safe author-side identity supplied by the Portal. */
@@ -407,6 +428,9 @@ export function curatedCatalogFromMarketplaces(
       recommended: plugin.recommended === true,
       sortOrder: index,
       contentHash: '',
+      ...(plugin.harnessCompatibility
+        ? { harnessCompatibility: plugin.harnessCompatibility }
+        : {}),
       mcpServers: (details?.mcpServers ?? []).map((server) => server.name),
       skills: (details?.skills ?? []).map((skill) => ({
         key: skill.name,
@@ -555,6 +579,19 @@ function pluginProviderSupport(
   return capabilityReach(plugin.providerSupport);
 }
 
+/**
+ * The catalog item's own compatibility metadata, computed at ingestion or
+ * refresh, as an optional row fact. The projection only validates and carries
+ * it: invalid or unsupported versions read as unknown, and the row and its
+ * `providerSupport` fallback stay exactly as they were.
+ */
+function harnessCompatibilityFact(
+  value: unknown,
+): Pick<UnifiedPluginEntry, 'harnessCompatibility'> {
+  const harnessCompatibility = parseHarnessCompatibility(value);
+  return harnessCompatibility ? { harnessCompatibility } : {};
+}
+
 function builtInAnyProviderInstalled(
   status: PluginInfo['globalInstallStatus'],
 ): boolean {
@@ -665,6 +702,9 @@ function buildCuratedPluginEntries(
         name,
         skills: entry.skills.length,
         installed: curatedPluginInstalled(row),
+        // Its record joins the card's, so its warnings and a harness set up
+        // later reach it (CAN-6817).
+        ...pluginHarnessInstallsFact(row),
       });
       continue;
     }
@@ -699,6 +739,9 @@ function buildCuratedPluginEntries(
         agents: 0,
       },
       providerSupport,
+      // The catalog entry's own metadata; the marketplace row is not a
+      // revision-matched source for it, so it never fills a gap here.
+      ...harnessCompatibilityFact(entry.harnessCompatibility),
       ...installedPluginFacts(row),
       state,
       recommended: entry.recommended === true,
@@ -1128,6 +1171,9 @@ function buildCuratedMcpEntry(
     availabilityLabel: availabilityLabel(state),
     components: { ...mcpAppComponents(), skills: plugin?.skills ?? 0 },
     providerSupport: NEUTRAL_PROVIDER_SUPPORT,
+    // The server's own catalog metadata; a folded plugin keeps its own.
+    ...harnessCompatibilityFact(entry.harnessCompatibility),
+    ...cardHarnessInstallsFact(servers, plugin),
     state,
     ...(surface ? { surface } : {}),
     ...(connection ? { connection } : {}),
@@ -1158,6 +1204,60 @@ function buildCuratedMcpEntry(
   };
 }
 
+/**
+ * An integration card's per-harness result: its servers' and its folded
+ * plugin's, merged by the shared rule (CAN-6817).
+ */
+function cardHarnessInstallsFact(
+  servers: readonly McpServerIndexEntry[],
+  plugin: UnifiedEntryFoldedPlugin | undefined,
+): Pick<UnifiedPluginEntry, 'harnessInstalls'> {
+  const merged = mergeEntryHarnessInstalls(
+    [
+      harnessInstallsFact(...servers).harnessInstalls,
+      plugin?.harnessInstalls,
+    ].filter((result) => result !== undefined),
+  );
+  return merged === undefined ? {} : { harnessInstalls: merged };
+}
+
+/** One Add's per-harness result (CAN-6815), read only by New Customize. */
+function harnessInstallsFact(
+  ...servers: readonly McpServerIndexEntry[]
+): Pick<UnifiedPluginEntry, 'harnessInstalls'> {
+  const installed = new Set<HarnessCompatibilityHarness>();
+  const failed: UnifiedEntryHarnessInstalls['failed'][number][] = [];
+  const records: UnifiedEntryHarnessRecord[] = [];
+  for (const server of servers) {
+    const record = server.harnessInstalls;
+    // A plugin's ChatGPT app stand-in shows through the plugin's record,
+    // which also adds newly set-up harnesses to it (CAN-6818).
+    if (record === undefined || isAccountServer(server)) continue;
+    for (const harness of mcpInstalledHarnesses(record)) installed.add(harness);
+    for (const failure of mcpFailedHarnessInstalls(record))
+      failed.push({ ...failure, serverId: server.id });
+    records.push({
+      serverId: server.id,
+      configId: record.configId,
+      harnesses: MCP_INSTALL_HARNESSES.filter(
+        (harness) => record.harnesses[harness] !== undefined,
+      ),
+    });
+  }
+  // A record with any result stays addressable for a harness set up later
+  // (CAN-6817); the row's lines read only its installed and failed lists.
+  if (records.every((record) => record.harnesses.length === 0)) return {};
+  return {
+    harnessInstalls: {
+      installed: MCP_INSTALL_HARNESSES.filter((harness) =>
+        installed.has(harness),
+      ),
+      failed: failed.filter((failure) => !installed.has(failure.harness)),
+      records,
+    },
+  };
+}
+
 function buildLocalMcpEntry(
   server: McpServerIndexEntry,
   state: UnifiedEntryState,
@@ -1184,6 +1284,8 @@ function buildLocalMcpEntry(
     availabilityLabel: availabilityLabel(state),
     components: mcpAppComponents(),
     providerSupport: NEUTRAL_PROVIDER_SUPPORT,
+    ...harnessCompatibilityFact(server.harnessCompatibility),
+    ...harnessInstallsFact(server),
     state,
     surface:
       server.scope === 'account' || server.accountConnection
@@ -1487,7 +1589,58 @@ export function marketplacePluginLogo(
   };
 }
 
+/**
+ * One Add for every harness's record for an installed plugin (CAN-6816),
+ * read only by New Customize. A record left behind by an uninstalled plugin
+ * says nothing.
+ */
+function pluginHarnessInstallsFact(
+  plugin: UnifiedMarketplacePluginInput | undefined,
+): Pick<UnifiedPluginEntry, 'harnessInstalls'> {
+  const record = plugin?.harnessInstalls;
+  if (
+    plugin === undefined ||
+    record === undefined ||
+    marketplacePluginState(plugin) !== 'installed'
+  )
+    return {};
+  const item = {
+    kind: 'plugin',
+    marketplaceId: plugin.marketplaceId,
+    pluginName: plugin.name,
+  } as const;
+  // Turning Codex compatibility off after Add means Codex no longer runs
+  // it, whatever the record says; the provider facts read it the same way.
+  const runs = (harness: HarnessCompatibilityHarness): boolean =>
+    harness !== 'codex' || plugin.codexCompatDisabled !== true;
+  const installed = itemInstalledHarnesses(record).filter(runs);
+  const failed = itemFailedHarnessInstalls(record)
+    .filter((failure) => runs(failure.harness))
+    .map((failure) => ({ ...failure, item }));
+  const harnesses = ITEM_INSTALL_HARNESSES.filter(
+    (harness) => record.harnesses[harness] !== undefined,
+  );
+  // Every harness skipped still leaves a record a harness set up later is
+  // added to (CAN-6817); the row's lines read only installed and failed.
+  if (harnesses.length === 0) return {};
+  return {
+    harnessInstalls: { installed, failed, records: [{ item, harnesses }] },
+  };
+}
+
 function installedPluginFacts(
+  plugin: UnifiedMarketplacePluginInput | undefined,
+): Pick<
+  UnifiedPluginEntry,
+  'version' | 'installedHarnesses' | 'harnessInstalls'
+> {
+  return {
+    ...providerInstallFacts(plugin),
+    ...pluginHarnessInstallsFact(plugin),
+  };
+}
+
+function providerInstallFacts(
   plugin: UnifiedMarketplacePluginInput | undefined,
 ): Pick<UnifiedPluginEntry, 'version' | 'installedHarnesses'> {
   const status = plugin?.globalInstallStatus;
@@ -1561,6 +1714,7 @@ function buildMarketplacePluginEntries(
         authorName: author,
         typeLabel: 'Plugin',
         sourceLabel: pluginSourceLabel(marketplace, plugin),
+        marketplaceSourceName: marketplaceDisplayName(marketplace.name),
         ownershipLabel: author,
         availabilityLabel: availabilityLabel(marketplacePluginState(plugin)),
         components: {
@@ -1575,8 +1729,13 @@ function buildMarketplacePluginEntries(
         marketplaceVersion: plugin.version || undefined,
         browseInstallAvailable: plugin.browseInstallAvailable,
         providerSupport: pluginProviderSupport(plugin),
+        ...harnessCompatibilityFact(plugin.harnessCompatibility),
         state: marketplacePluginState(plugin),
         ...installedPluginFacts(plugin),
+        // Breaks ties between installed copies of one integration (CAN-6811).
+        ...(plugin.cachedAt && marketplacePluginState(plugin) !== 'available'
+          ? { installedAt: plugin.cachedAt }
+          : {}),
         recommended: false,
         ref: {
           type: 'marketplace-plugin',
@@ -1714,6 +1873,7 @@ export function buildPluginSkillEntries(
           authorName: undefined,
           typeLabel: 'Skill',
           sourceLabel: pluginSourceLabel(marketplace, plugin),
+          marketplaceSourceName: marketplaceDisplayName(marketplace.name),
           availabilityLabel: 'Installed',
           components: { ...emptyComponents(), skills: 1 },
           providerSupport: pluginProviderSupport(plugin),
@@ -1822,6 +1982,7 @@ function projectInstalledSkill(
     availabilityLabel: 'Installed',
     components: { ...emptyComponents(), skills: 1 },
     providerSupport: NEUTRAL_PROVIDER_SUPPORT,
+    ...harnessCompatibilityFact(skill.harnessCompatibility),
     state: 'installed',
     updateAvailable: skill.updateAvailable,
     builtIn: skill.builtIn,
@@ -2130,6 +2291,7 @@ function buildSharedSkillEntries(
       availabilityLabel: installedEntryId ? 'Installed' : 'Available',
       components: { ...emptyComponents(), skills: 1 },
       providerSupport: NEUTRAL_PROVIDER_SUPPORT,
+      ...harnessCompatibilityFact(skill.harnessCompatibility),
       state: installedEntryId ? 'installed' : 'available',
       ...(installedEntryId ? { installedEntryId } : {}),
       recommended: false,
@@ -3623,6 +3785,97 @@ function integrationSource(
 }
 
 /**
+ * The publisher's MCP server that stands in for a plugin's ChatGPT app
+ * (CAN-6818): the integration's preferred endpoint (CAN-6808), when it is an
+ * https address. Once any listing of the row is installed, its harnesses
+ * are only the stand-ins desktop main served from the installed copy; while
+ * none is, they are the catalog's estimate: harnesses where a listing's
+ * ChatGPT app doesn't run but it bundles an MCP server on that endpoint's
+ * host and that harness loads its MCP servers. Named after the MCP catalog card on that host when the
+ * integration has one, else after the plugin.
+ */
+function chatGptAppStandIn(
+  entry: UnifiedPluginEntry,
+  integration: CatalogIntegration,
+  curatedKeyById: ReadonlyMap<string, string>,
+  facts: IntegrationFacts,
+): UnifiedEntryStandIn | undefined {
+  if (entry.ref.type !== 'marketplace-plugin') return undefined;
+  const endpoint = standInEndpoint(integration.preferredEndpoint);
+  if (endpoint === undefined) return undefined;
+  const host = standInEndpointHost(endpoint);
+  if (host === undefined) return undefined;
+  const onHost = (url: string | undefined): boolean =>
+    url !== undefined && standInEndpointHost(url) === host;
+  const listings = [entry, ...(entry.marketplaceListings ?? [])];
+  // The candidate goes with any plugin whose ChatGPT app doesn't run on some
+  // harness, so every Add (a reinstall of an older install too) hands it to
+  // main, which decides from the installed copy. The harnesses it claims
+  // are separate and may be empty.
+  if (
+    !listings.some(
+      (listing) =>
+        chatGptAppMissingHarnesses(listing.harnessCompatibility).length > 0,
+    )
+  )
+    return undefined;
+  // Installed (as `marketplaceEntryIsInstalled` reads a row's state): only
+  // main's served stand-ins count, read from the installed copy. A host
+  // without that record (the Portal's list rows, or an install from before
+  // one Add for every harness) claims nothing rather than guess.
+  const installed = listings.filter(
+    (listing) =>
+      listing.state === 'installed' || listing.state === 'needs-auth',
+  );
+  const harnesses =
+    installed.length > 0
+      ? installed.flatMap((listing) => {
+          const record = facts.marketplacePlugins.get(
+            listing.id,
+          )?.harnessInstalls;
+          return ITEM_INSTALL_HARNESSES.filter(
+            (harness) => record?.standIns?.[harness] !== undefined,
+          );
+        })
+      : // Nothing installed yet: the catalog's estimate of where it will
+        // stand in once added.
+        listings.flatMap((listing) => {
+          const bundles = (facts.bundledServers.get(listing.id) ?? []).some(
+            (server) => onHost(server.url),
+          );
+          if (!bundles) return [];
+          return chatGptAppMissingHarnesses(
+            listing.harnessCompatibility,
+          ).filter((harness) => {
+            const result = listing.harnessCompatibility?.harnesses[harness];
+            return (
+              result?.level === 'partial' &&
+              !result.missing.includes('mcpServers')
+            );
+          });
+        });
+  const curated = integration.memberIds.flatMap((id) => {
+    const key = curatedKeyById.get(id);
+    const catalog = key === undefined ? undefined : facts.curatedMcp.get(key);
+    return key !== undefined && catalog !== undefined && onHost(catalog.url)
+      ? [{ key, name: catalog.name }]
+      : [];
+  })[0];
+  const name = (curated?.name ?? entry.name)
+    .trim()
+    .slice(0, PLUGIN_STAND_IN_NAME_MAX_LENGTH);
+  if (name === '') return undefined;
+  return {
+    endpoint,
+    name,
+    ...(curated !== undefined ? { curatedKey: curated.key } : {}),
+    harnesses: ITEM_INSTALL_HARNESSES.filter((harness) =>
+      harnesses.includes(harness),
+    ),
+  };
+}
+
+/**
  * Stamps `integrationKey` and `integrationEndpoint` on every integration copy
  * (CAN-6808), including the listings behind a grouped marketplace row. Only
  * adds optional fields: ids, order and every other field stay as they were.
@@ -3639,16 +3892,29 @@ function withIntegrationKeys(
   for (const integration of groupCatalogIntegrations(sources)) {
     for (const id of integration.memberIds) byId.set(id, integration);
   }
+  const curatedKeyById = new Map<string, string>();
+  for (const entry of entries)
+    if (entry.ref.type === 'curated-mcp')
+      curatedKeyById.set(entry.id, entry.ref.key);
   const stamp = (
     entry: UnifiedPluginEntry,
     integration: CatalogIntegration,
-  ): UnifiedPluginEntry => ({
-    ...entry,
-    integrationKey: integration.key,
-    ...(integration.preferredEndpoint !== undefined
-      ? { integrationEndpoint: integration.preferredEndpoint }
-      : {}),
-  });
+  ): UnifiedPluginEntry => {
+    const standIn = chatGptAppStandIn(
+      entry,
+      integration,
+      curatedKeyById,
+      facts,
+    );
+    return {
+      ...entry,
+      integrationKey: integration.key,
+      ...(integration.preferredEndpoint !== undefined
+        ? { integrationEndpoint: integration.preferredEndpoint }
+        : {}),
+      ...(standIn !== undefined ? { chatGptAppStandIn: standIn } : {}),
+    };
+  };
   return entries.map((entry) => {
     const integration = byId.get(entry.id);
     if (integration === undefined) return entry;

@@ -1,4 +1,12 @@
 import {
+  CAPABILITY_TILE_CELL_CLASS,
+  INTERACTIVE_CLASS,
+  ROW_TRIGGER_CLASS,
+  TRIGGER_CLASS,
+} from './control-button-shared';
+export { CAPABILITY_TILE_CELL_CLASS } from './control-button-shared';
+import { ControlButton } from './Button';
+import {
   createContext,
   memo,
   useContext,
@@ -93,8 +101,6 @@ const TONE_INK: Record<CapabilityTileTone, string> = {
  * subgrid support the card just fills its cell and the footer sits at the
  * bottom of the card.
  */
-export const CAPABILITY_TILE_CELL_CLASS =
-  'h-full w-full supports-[grid-template-rows:subgrid]:row-span-2 supports-[grid-template-rows:subgrid]:grid supports-[grid-template-rows:subgrid]:grid-rows-subgrid';
 
 // The 12px card radius shared with the other Agent activity cards; the
 // Agent activity box's 20px corners nest it at the box's 8px inset. 16px
@@ -104,8 +110,6 @@ export const CAPABILITY_TILE_CELL_CLASS =
 // content stays at the top (a block button would centre it vertically). As
 // a subgrid its one column spans the card, so short content still runs to
 // the right padding.
-const TRIGGER_CLASS = `flex flex-col rounded-lg border bg-card px-4 pt-3.25 pb-4 text-left no-underline supports-[grid-template-rows:subgrid]:grid-cols-1 supports-[grid-template-rows:subgrid]:gap-y-0 ${CAPABILITY_TILE_CELL_CLASS}`;
-const INTERACTIVE_CLASS = `focus-ring ${TRIGGER_CLASS} transition-colors hover:bg-fg-primary/[0.04]`;
 
 /**
  * How a tile draws: a card (`tile`, the default) or, inside a turn's Agent
@@ -139,8 +143,6 @@ export function CapabilityTileLayoutProvider({
 
 // A row is the step row itself: no surface and no hover change, so it reads
 // as part of the turn; keyboard focus draws the ring.
-const ROW_TRIGGER_CLASS =
-  'focus-ring flex min-w-0 flex-1 rounded-sm text-left no-underline';
 
 function isPlainClick(event: MouseEvent<HTMLAnchorElement>): boolean {
   return (
@@ -334,7 +336,7 @@ function RowBody({
       icon={<Icon size="sm" />}
       label={model.name}
       detail={detail === '' ? undefined : `· ${detail}`}
-      className="w-full"
+      extent="fill"
       trailing={
         <>
           {model.external ? (
@@ -420,7 +422,7 @@ export const CapabilityTile = memo(function CapabilityTile({
     );
   } else if (action.kind === 'action') {
     trigger = (
-      <button
+      <ControlButton
         type="button"
         aria-label={label}
         onClick={action.onActivate}
@@ -430,11 +432,12 @@ export const CapabilityTile = memo(function CapabilityTile({
           event.preventDefault();
           action.onActivate();
         }}
-        className={interactiveClass}
+        presentation="capability-trigger"
+        appearance={{ row }}
         data-testid={testId}
       >
         {body}
-      </button>
+      </ControlButton>
     );
   } else {
     trigger = (

@@ -1,3 +1,4 @@
+import { ControlButton } from '../Button';
 import {
   createContext,
   memo,
@@ -1097,9 +1098,9 @@ function PanelTabBarComponent({
       canCloseTab && !canCloseTab(tab) ? null : (
         <span className="canopy-panel-tab-close-probe">
           <span className="canopy-panel-tab-close-slot inline-flex">
-            <button
+            <ControlButton
               type="button"
-              className="canopy-panel-tab-close"
+              presentation="panel-tab-close"
               data-testid={`panel-tab-close-${tab.panelId}`}
               aria-label={`Close ${title}`}
               tabIndex={-1}
@@ -1112,7 +1113,7 @@ function PanelTabBarComponent({
               }}
             >
               <CloseGlyph />
-            </button>
+            </ControlButton>
           </span>
         </span>
       );
@@ -1387,9 +1388,9 @@ function PanelTabBarComponent({
               // of the laggy native `title`.
               <span className="canopy-panel-tab-close-slot inline-flex">
                 <Tooltip label={`Close ${title}`} disabled={hoverCard !== null}>
-                  <button
+                  <ControlButton
                     type="button"
-                    className="canopy-panel-tab-close"
+                    presentation="panel-tab-close"
                     data-testid={`panel-tab-close-${tab.panelId}`}
                     aria-label={`Close ${title}`}
                     tabIndex={-1}
@@ -1402,7 +1403,7 @@ function PanelTabBarComponent({
                     }}
                   >
                     <CloseGlyph />
-                  </button>
+                  </ControlButton>
                 </Tooltip>
               </span>
             )}

@@ -1,3 +1,4 @@
+import { ControlButton } from '@canopy/ui-shared/components';
 import {
   acquireModelRecoveryLease,
   supersedeModelRecovery,
@@ -3202,7 +3203,7 @@ function ConcreteModelPicker(
                                 </span>
                               }
                             >
-                              <button
+                              <ControlButton
                                 type="button"
                                 role="menuitemcheckbox"
                                 aria-checked={billing.value === 'ai-credits'}
@@ -3290,11 +3291,8 @@ function ConcreteModelPicker(
                                   }
                                   billing.onChange(nextBilling);
                                 }}
-                                className={`outline-none flex h-8 w-full items-center justify-between rounded-md px-2 text-s fg-primary/80 transition-colors ${
-                                  billing.disabled
-                                    ? 'cursor-not-allowed opacity-50'
-                                    : 'group hover:bg-subtle focus-visible:bg-subtle'
-                                }`}
+                                presentation="model-billing-option"
+                                appearance={billing.disabled === true}
                               >
                                 {/* Verb-framed billing-mode label keeps the chat-wide switch
                     distinct from the family-grouped model rows above. */}
@@ -3302,7 +3300,7 @@ function ConcreteModelPicker(
                                 <CompactToggleIndicator
                                   checked={billing.value === 'ai-credits'}
                                 />
-                              </button>
+                              </ControlButton>
                             </RichHoverTooltip>
                           </div>
                           {billing.disabled && billing.lockedReason ? (

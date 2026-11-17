@@ -27,11 +27,11 @@ import type {
   PluginSelectionTombstones,
 } from '../types';
 import {
-  APP_ADVISOR_PROJECT_ID,
   CODE_REVIEW_CHAT_PROJECT_ID,
   PIPELINE_EDITOR_PROJECT_ID,
   PLAN_EXPLORE_CHAT_PROJECT_ID,
 } from '../types';
+import { isBotProjectId } from '@canopy/protocol/chat-targets';
 import type {
   AccountMcpConnection,
   McpHttpAuthPreference,
@@ -42,7 +42,7 @@ import { normalizePluginSelections } from '@canopy/execution-engine/lib/plugin-s
 /**
  * Single source of truth for which chat surfaces inherit default plugins
  * (the project layer and the global overlay). Worktree and cowork chats do;
- * purpose-built surfaces (App Advisor, plan-explore, code-review, pipeline
+ * purpose-built surfaces (Bots, plan-explore, code-review, pipeline
  * editor) keep only their explicit selections. Every call site that opts a
  * session, discovery request, terminal, or picker into the inherited layers
  * must use this predicate — hand-rolled exclusion lists drift.
@@ -51,7 +51,7 @@ export function chatSurfaceUsesGlobalPluginDefaults(
   projectId: string,
 ): boolean {
   return (
-    projectId !== APP_ADVISOR_PROJECT_ID &&
+    !isBotProjectId(projectId) &&
     projectId !== PLAN_EXPLORE_CHAT_PROJECT_ID &&
     projectId !== CODE_REVIEW_CHAT_PROJECT_ID &&
     projectId !== PIPELINE_EDITOR_PROJECT_ID

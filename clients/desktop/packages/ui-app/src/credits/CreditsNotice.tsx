@@ -10,6 +10,7 @@ import {
   type CreditsPromptViewer,
   type CreditsPurchaseMode,
 } from '@canopy/app-state/billing/credits';
+import type { ProviderChoicePrimary } from '@canopy/app-state/provider-choice';
 import type { SettingsPaymentOwner } from '@canopy/protocol/billing';
 import type { SettingsPaymentHandoffIntent } from '@canopy/protocol/settings/payment-handoff';
 import {
@@ -24,10 +25,13 @@ import {
   ModelUnlockConfirmedNotice,
   ModelUnlockPendingNotice,
   NoticeButton,
+  retainedMessageCopy,
   UsageLimitNotice,
   type NoticeActionsPlacement,
 } from '@canopy/ui-shared/components';
 import { TimeslotIcon } from '@canopy/ui-shared/icons/AppIcons';
+import { providerChoicePrimaryLabel } from '../providers/provider-choice-primary';
+import { ProviderChoiceContinueMenu } from '../providers/ProviderChoiceContinueMenu';
 import {
   useCreditsPurchase,
   type CreditsCheckoutOptions,
@@ -59,7 +63,41 @@ import {
  * unless the host keeps a purchase control of its own (`purchase.kind ===
  * 'host'`): a tracked browser hand-off whose Check again and arrival record
  * live with the host. Nothing here branches on which host renders it.
+ *
+ * Recovery offers provider choice (`providerChoice`): on a usage limit, out
+ * of credits, no billing source or a held message, the notice shows one
+ * provider-choice control ("Switch provider", "Choose provider", or a
+ * Continue menu offering "Continue with X" and Choose provider) and no
+ * purchase or contact-admin line; both move to the credits row of the
+ * provider list the control opens. A purchase started from that row comes
+ * back here as `pending`, with the host's `completion` controls, and the
+ * notice then shows only those two buttons. Without
+ * `providerChoice` the notice still sells, which the recorded exceptions
+ * (the cloud terminal and the web new-task funding notice) rely on.
  */
+
+/** The conditions where provider choice replaces the purchase. */
+const PROVIDER_CHOICE_CONDITIONS: ReadonlySet<CreditsPromptCondition> =
+  new Set<CreditsPromptCondition>([
+    'quota_limit',
+    'out_of_credits',
+    'no_billing_source',
+    'queued_held',
+  ]);
+
+/** The notice's single provider-choice button. */
+export interface CreditsNoticeProviderChoice {
+  readonly primary: ProviderChoicePrimary;
+  /** The `continue-with` source's display name. */
+  readonly providerName: string;
+  /** "Continue with X": acts as choosing that row in the list would. */
+  readonly onContinue: () => void;
+  /** "Switch provider" / "Choose provider": opens the provider list. */
+  readonly onSwitchProvider: () => void;
+  /** Disables the button while its action runs, so it acts once. */
+  readonly busy?: boolean;
+  readonly testId?: string;
+}
 
 /** Where a notice sits. The composer stack sets the notice's own shape. */
 export type CreditsNoticePlacement =
@@ -146,6 +184,10 @@ export type CreditsNoticePurchase =
 
 export interface CreditsNoticeProps {
   readonly condition: CreditsPromptCondition;
+  /** Approved billing-refusal copy, independent of host purchase mechanics. */
+  readonly outOfCredits?: boolean;
+  readonly canConnectClaude?: boolean;
+  readonly orgPoolUnavailable?: boolean;
   readonly owner: CreditsNoticeOwner;
   readonly placement: CreditsNoticePlacement;
   /**
@@ -173,6 +215,17 @@ export interface CreditsNoticeProps {
   readonly arrived?: CreditsNoticeArrival | null;
   /** Defaults to the shared purchase action. */
   readonly purchase?: CreditsNoticePurchase;
+  /**
+   * Offer provider choice in place of the purchase; see the module comment.
+   * Ignored outside the recovery conditions.
+   */
+  readonly providerChoice?: CreditsNoticeProviderChoice;
+  /**
+   * The host's controls that finish a purchase started from the provider
+   * list (Check again), rendered only while `pending` is set and
+   * `providerChoice` is on.
+   */
+  readonly completion?: ReactNode;
   /** The limited provider (`quota_limit`). */
   readonly provider?: 'claude' | 'codex';
   /** The model a purchase unlocks (`model_locked`). */
@@ -232,11 +285,13 @@ function promptOwnerOf(owner: CreditsNoticeOwner): CreditsPromptOwner {
 }
 
 /**
- * The wallet a purchase pays, or `null` when none is known. A member who
- * can't fund an organization without a pool buys personal credits, as
- * {@link resolveCreditsPrompt}'s rule 4 offers them.
+ * The wallet a notice's purchase pays, from its owner: `null` while it can't
+ * be known. A member who can't fund an organization without a pool buys
+ * personal credits, as {@link resolveCreditsPrompt}'s rule 4 offers them.
+ * Exported so a host's provider-choice credits row pays the same wallet the
+ * notice's own purchase would.
  */
-function paymentOwnerOf(
+export function creditsNoticePaymentOwner(
   owner: CreditsNoticeOwner,
 ): SettingsPaymentOwner | null {
   if (owner.kind === 'personal') return { kind: 'personal' };
@@ -273,7 +328,7 @@ function SharedPurchaseCreditsNotice({
 }: CreditsNoticeProps & {
   readonly purchase: Extract<CreditsNoticePurchase, { kind: 'shared' }>;
 }): JSX.Element {
-  const paymentOwner = paymentOwnerOf(props.owner);
+  const paymentOwner = creditsNoticePaymentOwner(props.owner);
   const action = useCreditsPurchase(paymentOwner);
   const testId = purchase.testId ?? 'credits-notice-purchase';
   const reason =
@@ -345,7 +400,7 @@ function purchaseActionOf(
 }
 
 /**
- * The hand-off's buttons, and a guest's long `Sign in to buy AI Credits`, get
+ * The hand-off's buttons, and a guest's long `Sign in to buy credits`, get
  * their own row, so the copy keeps the full width.
  */
 function defaultActionsPlacement(
@@ -359,6 +414,9 @@ function defaultActionsPlacement(
 
 function CreditsNoticeView({
   condition,
+  outOfCredits = false,
+  canConnectClaude = false,
+  orgPoolUnavailable = false,
   owner,
   placement,
   secondaryAction,
@@ -389,6 +447,8 @@ function CreditsNoticeView({
   purchaseControl,
   checkAgainControl,
   signInControl,
+  providerChoice: requestedChoice,
+  completion,
 }: CreditsNoticeViewProps): JSX.Element {
   if (placement === 'transcript') {
     // The transcript only says why the chat stopped; the composer's notice
@@ -436,29 +496,84 @@ function CreditsNoticeView({
     purchaseOnUnknownOwner,
   });
   const copy = creditsPromptCopy(prompt.reason, prompt.audience);
-  const purchaseAction = purchaseActionOf(prompt, purchaseNeeded);
+  const providerChoice =
+    requestedChoice !== undefined && PROVIDER_CHOICE_CONDITIONS.has(condition)
+      ? requestedChoice
+      : null;
+  const purchaseAction =
+    providerChoice !== null ? null : purchaseActionOf(prompt, purchaseNeeded);
+  // A purchase from the provider list is pending: the notice keeps two
+  // buttons, the provider choice and the host's Check again. The host's
+  // alternative (Connect, Resume at) and Reopen billing step aside; Reopen
+  // billing moves to the list's credits row.
+  const choicePending =
+    providerChoice !== null && pending !== null && completion != null;
+  const choiceVariant = choicePending ? 'secondary' : 'primary';
   const control =
-    purchaseAction === null
-      ? null
-      : {
-          purchase: purchaseControl,
-          'check-again': checkAgainControl,
-          'sign-in': signInControl,
-        }[purchaseAction];
+    providerChoice !== null ? (
+      <>
+        {providerChoice.primary.kind === 'continue-with' ? (
+          <ProviderChoiceContinueMenu
+            continueLabel={providerChoicePrimaryLabel(
+              providerChoice.primary,
+              providerChoice.providerName,
+            )}
+            onContinue={providerChoice.onContinue}
+            onChooseProvider={providerChoice.onSwitchProvider}
+            variant={choiceVariant}
+            busy={providerChoice.busy === true}
+            {...(providerChoice.testId !== undefined
+              ? { testId: providerChoice.testId }
+              : {})}
+          />
+        ) : (
+          <NoticeButton
+            // Mid-purchase Check again leads; switching steps back.
+            variant={choiceVariant}
+            onClick={providerChoice.onSwitchProvider}
+            busy={providerChoice.busy === true}
+            data-testid={providerChoice.testId}
+          >
+            {providerChoicePrimaryLabel(
+              providerChoice.primary,
+              providerChoice.providerName,
+            )}
+          </NoticeButton>
+        )}
+        {/* The single primary sits last: Check again while a purchase from
+            the provider list is pending. */}
+        {pending !== null && completion}
+      </>
+    ) : purchaseAction === null ? null : (
+      {
+        purchase: purchaseControl,
+        'check-again': checkAgainControl,
+        'sign-in': signInControl,
+      }[purchaseAction]
+    );
   // The hand-off's step shows only beside the control that finishes it.
   const step =
-    purchaseAction !== 'sign-in' && control != null && prompt.pending
+    providerChoice !== null
       ? pending
-      : null;
+      : purchaseAction !== 'sign-in' && control != null && prompt.pending
+        ? pending
+        : null;
+  // A failed check is retried with Check again, never Reopen billing, on
+  // either branch (resolveCreditsPrompt's rule).
   const reopen =
-    step !== null && prompt.secondary === 'reopen-billing'
+    step !== null &&
+    !choicePending &&
+    (providerChoice !== null
+      ? step.feedback !== 'check-failed'
+      : prompt.secondary === 'reopen-billing')
       ? (step.reopenBilling ?? null)
       : null;
+  const shownSecondary = choicePending ? null : secondaryAction;
   const hasActions =
-    secondaryAction != null || reopen !== null || control != null;
+    shownSecondary != null || reopen !== null || control != null;
   const actionItems = (
     <>
-      {secondaryAction}
+      {shownSecondary}
       {reopen !== null && (
         <NoticeButton
           variant="secondary"
@@ -550,6 +665,9 @@ function CreditsNoticeView({
   return (
     <CreditsRecoveryNotice
       {...shared}
+      outOfCredits={outOfCredits && providerChoice === null && step === null}
+      canConnectClaude={canConnectClaude}
+      orgPoolUnavailable={orgPoolUnavailable}
       // A detail sentence, so the admin sentence joins it rather than
       // replacing it. Both run on after the message in one paragraph.
       {...(detail !== undefined ? { detailLines: [detail] } : {})}
@@ -559,12 +677,22 @@ function CreditsNoticeView({
         : {})}
       {...(recoveryTitle !== undefined ? { title: recoveryTitle } : {})}
       {...(dismissLabel !== undefined ? { dismissLabel } : {})}
-      contactAdmin={contactAdmin ?? prompt.primary === 'contact-admin'}
+      // With provider choice the admin line is the credits row's.
+      contactAdmin={
+        providerChoice !== null
+          ? false
+          : (contactAdmin ?? prompt.primary === 'contact-admin')
+      }
       {...(contactAdminTestId !== undefined ? { contactAdminTestId } : {})}
       {...actionProps}
     >
       {children ??
-        (condition === 'queued_held' ? copy.message : stepCopy?.message)}
+        (condition === 'queued_held'
+          ? providerChoice !== null
+            ? // Nothing on the notice buys, so the line only says it's saved.
+              retainedMessageCopy('queue', { canBuy: false })
+            : copy.message
+          : stepCopy?.message)}
     </CreditsRecoveryNotice>
   );
 }

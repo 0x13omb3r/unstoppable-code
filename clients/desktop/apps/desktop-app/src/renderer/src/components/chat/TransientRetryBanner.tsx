@@ -1,10 +1,8 @@
 import type { JSX } from 'react';
+import { reportClientAppError } from '@canopy/desktop-instrumentation/client';
 import { Notice, RetryCountdown } from '@canopy/ui-shared';
 import type { ChatBannerTarget } from '@/stores/aiCreditsBannerStore';
-import {
-  useTransientRetryBannerStore,
-  useTransientRetryState,
-} from '@/stores/transientRetryBannerStore';
+import { useTransientRetryState } from '@/stores/transientRetryBannerStore';
 
 interface TransientRetryBannerProps {
   /**
@@ -25,23 +23,22 @@ interface TransientRetryBannerProps {
  * scheduled it counts down once a second to `nextRetryAt`; when the countdown
  * reaches zero the main-process timer is dispatching the retry, so the copy
  * flips to "Retrying now" until the outcome event re-arms or clears the cycle.
- * Once the cycle is exhausted it stays put with the give-up copy and no
- * countdown. Dismissing it stops the backend retry cycle (not just hides it) and
- * clears the local state immediately.
+ * A failed attempt can start another automatic retry. Only the authoritative
+ * exhausted/cleared cycle state hands recovery back to the transcript.
+ * Dismissal waits for the backend inactive event before exposing manual retry.
  */
 export function TransientRetryBanner({
   target,
 }: TransientRetryBannerProps): JSX.Element | null {
   const state = useTransientRetryState(target);
-  const clearForChat = useTransientRetryBannerStore((s) => s.clearForChat);
-
-  if (!target || !state) return null;
+  if (!target || !state || state.exhausted) return null;
 
   const dismiss = (): void => {
-    // Fire-and-forget: dismissing stops the backend retry cycle. Clearing local
-    // state hides the banner immediately without waiting for the round-trip.
-    void window.api.chat.cancelTransientRetry(target);
-    clearForChat(target);
+    // Keep the live cycle visible until main confirms cancellation. Optimistic
+    // clearing could expose manual retry while an automatic retry is pending.
+    void window.api.chat
+      .cancelTransientRetry(target)
+      .catch(reportClientAppError);
   };
 
   return (

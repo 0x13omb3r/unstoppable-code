@@ -17,11 +17,11 @@ import {
   parseWorkflowAgentNodeId,
   type SubagentTranscriptRunSource,
 } from '@canopy/agent-transcript';
-import {
-  APP_ADVISOR_PROJECT_ID,
-  type ChatToolOutputResponse,
-  type ManagedDelegationTreeEntry,
+import type {
+  ChatToolOutputResponse,
+  ManagedDelegationTreeEntry,
 } from '@canopy/desktop-shared/types';
+import { botIdForProjectId } from '@canopy/protocol/chat-targets';
 import type {
   SubagentRecipient,
   AgentSentReceivingContext,
@@ -332,13 +332,12 @@ function DesktopSubagentChatContent({
     () => ({ projectId: scope.projectId, worktreeId: scope.worktreeId }),
     [scope.projectId, scope.worktreeId],
   );
-  const receivingContext = useMemo<AgentSentReceivingContext>(
-    () =>
-      scope.projectId === APP_ADVISOR_PROJECT_ID
-        ? { kind: 'bot', botId: 'app_advisor' }
-        : { kind: 'project', projectId: scope.projectId },
-    [scope.projectId],
-  );
+  const receivingContext = useMemo<AgentSentReceivingContext>(() => {
+    const botId = botIdForProjectId(scope.projectId);
+    return botId === null
+      ? { kind: 'project', projectId: scope.projectId }
+      : { kind: 'bot', botId };
+  }, [scope.projectId]);
   const readToolOutput = useMemo<ToolOutputReader>(
     () =>
       async (identity, offset, signal): Promise<ChatToolOutputResponse> => {

@@ -218,11 +218,47 @@ function chatIdsOf(taskId) {
     .then((read) => read.chats.map((chat) => chat.chatId));
 }
 
+/** How long a direct create may stay in progress while its checkout sets up. */
+const CREATE_POLL = { timeout: 120_000, intervals: [1_000, 2_000] };
+
 /**
- * Starts an empty chat on the computer over a hosted session. Hosted agents
- * have no direct `task_create` or `task_chat_create` (DIRECT_UNSUPPORTED_TOOLS),
- * so the spec sends the `chat.create_tab` the hosted profile allows. Returns
- * the desktop tab ID and the Tasks chat ID the agent reads it under.
+ * Calls `task_create` with one idempotency key until it settles. A direct
+ * code task's first chat waits for its checkout: until Git setup finishes the
+ * call returns `host_in_progress` naming the task, and calling again with the
+ * same key creates the chat and sends the prompt. An answer given before the
+ * host reports the task names none. Returns the settled result and the task
+ * IDs the in-progress answers named.
+ */
+async function createTaskSettled(args) {
+  const input = { host: target.host, idempotencyKey: randomUUID(), ...args };
+  const pendingTaskIds = [];
+  let result = null;
+  try {
+    await expect
+      .poll(async () => {
+        result = await agentA.call('task_create', input);
+        if (result.structuredContent?.code !== 'host_in_progress') return true;
+        const pendingTaskId = result.structuredContent.details?.task_id;
+        if (pendingTaskId !== undefined) pendingTaskIds.push(pendingTaskId);
+        return false;
+      }, CREATE_POLL)
+      .toBe(true);
+  } catch (error) {
+    throw new Error(
+      `task_create did not settle; last=${JSON.stringify(result?.structuredContent)}`,
+      { cause: error },
+    );
+  }
+  expect(result.isError, JSON.stringify(result.structuredContent)).toBe(false);
+  return { created: result.structuredContent, pendingTaskIds };
+}
+
+/**
+ * Starts an empty chat on the computer over a raw hosted session with the
+ * `chat.create_tab` the hosted profile allows, so the spec knows the desktop
+ * tab ID it reads from storage. The agent-facing `task_create` and
+ * `task_chat_create` are covered by their own cases. Returns the desktop tab
+ * ID and the Tasks chat ID the agent reads it under.
  */
 async function startHostedChat({ taskId, projectId, worktreeId }) {
   const before = await chatIdsOf(taskId);
@@ -253,8 +289,8 @@ async function startHostedChat({ taskId, projectId, worktreeId }) {
 }
 
 /**
- * A Work Entry in the cowork project with one chat, made over a hosted
- * session as the earlier direct create did: an empty entry, its chat, and an
+ * A Work Entry in the cowork project with one chat, made over a raw hosted
+ * session so the spec knows the entry ID: an empty entry, its chat, and an
  * opening message (a Work Entry chat is listed once it has one). The desktop
  * reuses an empty entry, so the chat may land in an existing task. Resolves
  * once that opening turn has ended, with it as `opening`. `marker`'s scenario
@@ -667,18 +703,6 @@ test('host_list reports the paired computer online; task_chat_send and task_chat
     expect.arrayContaining([SEEDED_CHAT.title, SECRET_CHAT.title]),
   );
 
-  // A computer connected for agents has no direct create sequence yet: the
-  // web refuses task_create before anything reaches the computer.
-  expectToolError(
-    await agentA.call('task_create', {
-      host: target.host,
-      projectId: target.projectId,
-      idempotencyKey: randomUUID(),
-      chat: { prompt: 'Summarize the README.' },
-    }),
-    'capability_missing',
-  );
-
   // The provider reply waits on a barrier, so the turn is still running
   // while task_chat_wait subscribes, and completes only when released.
   const marker = `Canopy-CHOSTEDWAIT${randomBytes(4).toString('hex')}`;
@@ -776,6 +800,82 @@ test('host_list reports the paired computer online; task_chat_send and task_chat
   } finally {
     await releaseMockBarrier(marker, 'finish');
   }
+});
+
+test('task_create makes a code task over the direct host, retrying the same key through checkout setup until its chat runs the prompt; task_chat_create adds a chat to it', async () => {
+  test.setTimeout(240_000);
+  expect(target.projectId).toBeTruthy();
+  // A title is not available over a direct host yet: refused before effects.
+  expectToolError(
+    await agentA.call('task_create', {
+      host: target.host,
+      projectId: target.projectId,
+      idempotencyKey: randomUUID(),
+      title: 'Not available over direct',
+      chat: { prompt: 'Summarize the README.' },
+    }),
+    'capability_missing',
+  );
+  const marker = `Canopy-CHOSTEDCREATE${randomBytes(4).toString('hex')}`;
+  await registerScenario(DEFAULT_MOCK_BASE_URL, marker, {
+    llm: {
+      steps: [{ text: 'Created task turn complete.', stopReason: 'end_turn' }],
+    },
+  });
+  const { created, pendingTaskIds } = await createTaskSettled({
+    projectId: target.projectId,
+    chat: { prompt: `[${marker}] Summarize the README.` },
+  });
+  // A new worktree task, its first chat, and the prompt handed to the turn.
+  // While the checkout set up, each in-progress answer named the same task.
+  expect(created.host).toBe(target.host);
+  expect(created.taskId).not.toBe(target.taskId);
+  expect(created.chatId, JSON.stringify(created)).toBeTruthy();
+  expect(created.setup).toBe('ready');
+  expect(['started', 'queued']).toContain(created.delivery);
+  expect(created.receipt).toMatchObject({
+    operation: 'task_create',
+    taskId: created.taskId,
+    chatId: created.chatId,
+  });
+  expect(
+    pendingTaskIds.every((id) => id === created.taskId),
+    JSON.stringify(pendingTaskIds),
+  ).toBe(true);
+
+  const listed = await agentA.ok('task_list', {
+    host: target.host,
+    projectId: target.projectId,
+    limit: 50,
+  });
+  expect(
+    listed.items.find((item) => item.taskId === created.taskId),
+    JSON.stringify(listed),
+  ).toMatchObject({ kind: 'worktree' });
+  // A queued first message may not have a turn yet, so wait for the turn
+  // itself to complete rather than for the chat to be idle.
+  await waitForChat(
+    created,
+    (current) => current.lastTurn?.status === 'complete',
+    'the created task turn to complete',
+  );
+
+  // task_chat_create adds an empty chat to the created task.
+  const added = await agentA.ok('task_chat_create', {
+    host: target.host,
+    taskId: created.taskId,
+    idempotencyKey: randomUUID(),
+  });
+  expect(added.taskId).toBe(created.taskId);
+  expect(added.chatId).not.toBe(created.chatId);
+  expect(added.receipt).toMatchObject({
+    operation: 'task_chat_create',
+    taskId: created.taskId,
+    chatId: added.chatId,
+  });
+  await expect
+    .poll(() => chatIdsOf(created.taskId), TOOL_POLL)
+    .toEqual(expect.arrayContaining([created.chatId, added.chatId]));
 });
 
 test('task_chat_cancel stops only the named running turn; an older turn answers turn_not_active', async () => {
@@ -1035,23 +1135,47 @@ test('task_chat_respond answers an ordinary question and the turn continues; sec
 });
 
 test('a Work Entry chat in a cowork project runs the turn an agent sends and reads it as a work_entry task', async () => {
-  test.setTimeout(120_000);
+  test.setTimeout(240_000);
   const projects = await agentA.ok('project_list', {
     host: target.host,
     limit: 50,
   });
   const cowork = projects.items.find((item) => item.name === COWORK.name);
   expect(cowork, JSON.stringify(projects)).toBeTruthy();
-  // No direct no-repository create either.
-  expectToolError(
-    await agentA.call('task_create', {
-      host: target.host,
-      projectId: cowork.projectId,
-      idempotencyKey: randomUUID(),
-      chat: { prompt: 'Draft a note.' },
-    }),
-    'capability_missing',
+  // A direct no-repository create makes a Work Entry, its chat, and sends
+  // the prompt. A Work Entry has no checkout, so its setup is null.
+  const createMarker = `Canopy-CHOSTEDENTRY${randomBytes(4).toString('hex')}`;
+  await registerScenario(DEFAULT_MOCK_BASE_URL, createMarker, {
+    llm: {
+      steps: [{ text: 'Created entry turn complete.', stopReason: 'end_turn' }],
+    },
+  });
+  const { created } = await createTaskSettled({
+    projectId: cowork.projectId,
+    chat: { prompt: `[${createMarker}] Draft a note.` },
+  });
+  expect(created.chatId, JSON.stringify(created)).toBeTruthy();
+  expect(created.setup).toBeNull();
+  expect(['started', 'queued']).toContain(created.delivery);
+  expect(created.receipt).toMatchObject({
+    operation: 'task_create',
+    taskId: created.taskId,
+    chatId: created.chatId,
+  });
+  await waitForChat(
+    created,
+    (current) => current.lastTurn?.status === 'complete',
+    'the created Work Entry turn to complete',
   );
+  const coworkTasks = await agentA.ok('task_list', {
+    host: target.host,
+    projectId: cowork.projectId,
+    limit: 50,
+  });
+  expect(
+    coworkTasks.items.find((item) => item.taskId === created.taskId),
+    JSON.stringify(coworkTasks),
+  ).toMatchObject({ kind: 'work_entry' });
 
   const marker = `Canopy-CHOSTEDSOLO${randomBytes(4).toString('hex')}`;
   await registerScenario(DEFAULT_MOCK_BASE_URL, marker, {

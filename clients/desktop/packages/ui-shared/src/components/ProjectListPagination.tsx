@@ -1,7 +1,7 @@
 'use client';
 
+import { ControlButton } from './Button';
 import { useLayoutEffect, useRef, type JSX } from 'react';
-import { SIDEBAR_ROW_TEXT_INSET_CLASSNAME } from './sidebar-item-classes';
 
 export interface ProjectListPaginationProps {
   readonly remainingCount: number;
@@ -37,12 +37,7 @@ export function ProjectListPagination({
   // A text-only row in the project list, so the first label starts on the
   // title column the project names use. A second button on the same line
   // follows it at the ordinary padding instead of repeating the inset.
-  const buttonClassName = (firstInRow: boolean): string =>
-    `focus-ring flex ${
-      touchTargets ? 'min-h-11' : 'h-7'
-    } min-w-0 items-center gap-1.5 rounded-row ${
-      firstInRow ? `${SIDEBAR_ROW_TEXT_INSET_CLASSNAME} pr-1.5` : 'px-1.5'
-    } text-left text-s font-normal fg-tertiary hover:bg-subtle hover:fg-primary`;
+
   const showMore = remainingCount > 0;
   return (
     <div
@@ -50,10 +45,11 @@ export function ProjectListPagination({
       data-testid="sidebar-projects-pagination"
     >
       {showMore && (
-        <button
+        <ControlButton
           ref={moreRef}
           type="button"
-          className={buttonClassName(true)}
+          presentation="project-list-page"
+          appearance={{ firstInRow: true, touchTargets: !!touchTargets }}
           data-testid="sidebar-projects-show-more"
           aria-label={`Show more projects (${remainingCount} remaining)`}
           onClick={() => {
@@ -68,13 +64,14 @@ export function ProjectListPagination({
               Show more <span className="tabular-nums">({remainingCount})</span>
             </>
           )}
-        </button>
+        </ControlButton>
       )}
       {expanded && (
-        <button
+        <ControlButton
           ref={lessRef}
           type="button"
-          className={buttonClassName(!showMore)}
+          presentation="project-list-page"
+          appearance={{ firstInRow: !showMore, touchTargets: !!touchTargets }}
           data-testid="sidebar-projects-show-less"
           aria-label="Show fewer projects"
           onClick={() => {
@@ -83,7 +80,7 @@ export function ProjectListPagination({
           }}
         >
           {compactLabels ? 'Less' : 'Show less'}
-        </button>
+        </ControlButton>
       )}
     </div>
   );

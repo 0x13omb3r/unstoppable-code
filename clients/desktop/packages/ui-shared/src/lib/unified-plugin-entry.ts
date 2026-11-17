@@ -8,6 +8,13 @@ import type {
   PipelineExecutionScope,
   PipelineTriggerType,
 } from '@canopy/protocol/pipelines';
+import {
+  ITEM_INSTALL_HARNESSES,
+  type HarnessCompatibility,
+  type HarnessCompatibilityHarness,
+  type HarnessInstallItemRef,
+  type PluginStandInCandidate,
+} from '@canopy/protocol/plugins';
 import type { PipelineSourceBadgeKey } from './pipeline-source-badges';
 import type { WorkflowLastRun } from './workflow-last-run';
 
@@ -54,6 +61,8 @@ export interface UnifiedEntryFoldedPlugin {
   readonly name: string;
   readonly skills: number;
   readonly installed: boolean;
+  /** Its one Add for every harness result, joined into the card (CAN-6817). */
+  readonly harnessInstalls?: UnifiedEntryHarnessInstalls;
 }
 
 /** A provider-account connector folded into its integration card. */
@@ -72,6 +81,30 @@ export interface UnifiedEntryIntegration {
   readonly plugin?: UnifiedEntryFoldedPlugin;
   readonly connector?: UnifiedEntryFoldedConnector;
   readonly connections: readonly UnifiedEntryConnection[];
+}
+
+/**
+ * The publisher's MCP server for a plugin's ChatGPT app (CAN-6818): the
+ * candidate every Add hands to main, and the harnesses where it is known to
+ * stand in. `harnesses` may be empty (not confirmed yet); only it is ever
+ * shown.
+ */
+export interface UnifiedEntryStandIn extends PluginStandInCandidate {
+  /** Harnesses where it stands in, in the Works with filter's order. */
+  readonly harnesses: readonly HarnessCompatibilityHarness[];
+}
+
+/** The candidate an install request carries, without the display harnesses. */
+export function pluginStandInCandidate(
+  standIn: UnifiedEntryStandIn,
+): PluginStandInCandidate {
+  return {
+    endpoint: standIn.endpoint,
+    name: standIn.name,
+    ...(standIn.curatedKey !== undefined
+      ? { curatedKey: standIn.curatedKey }
+      : {}),
+  };
 }
 
 /** An integration a multi-connection plugin needs, linking to its card. */
@@ -296,6 +329,82 @@ export interface UnifiedEntryInstalledFrom {
   readonly teamName?: string;
 }
 
+/**
+ * New Customize (CAN-6811): the copies one integration row stands for. Set
+ * only on a row that stands for two or more copies; display only.
+ */
+export interface UnifiedEntryIntegrationCopies {
+  /** Every copy's entry id, the row's own first. */
+  readonly memberIds: readonly string[];
+  /**
+   * Set when the row's copy is installed: the harness its line names, when
+   * it names one, and how many other installed copies the row stands for.
+   */
+  readonly installed?: {
+    readonly harness?: HarnessCompatibilityHarness;
+    readonly moreCount: number;
+  };
+  /**
+   * A hidden installed copy that needs a sign-in or has a failing
+   * connection while the row's own copy does not. The row carries its
+   * recovery state, and Connect signs in to this copy.
+   */
+  readonly attentionCopyId?: string;
+}
+
+/**
+ * One Add's per-harness result for an MCP server (CAN-6815) or a plugin
+ * (CAN-6816).
+ */
+export interface UnifiedEntryHarnessInstalls {
+  readonly installed: readonly HarnessCompatibilityHarness[];
+  readonly failed: readonly UnifiedEntryHarnessInstallFailure[];
+  /**
+   * Each record behind the row, with every harness it has a result for
+   * (installed, skipped or failed), so a harness set up later can be added
+   * to it (CAN-6817). Absent on rows built before it existed.
+   */
+  readonly records?: readonly UnifiedEntryHarnessRecord[];
+}
+
+/** One install record behind a row, and what adds a harness to it. */
+export type UnifiedEntryHarnessRecord = {
+  readonly harnesses: readonly HarnessCompatibilityHarness[];
+} & (
+  | {
+      readonly serverId: string;
+      readonly configId: string;
+      readonly item?: undefined;
+    }
+  | {
+      readonly serverId?: undefined;
+      readonly configId?: undefined;
+      readonly item: HarnessInstallItemRef;
+    }
+);
+
+/** One harness that refused an item, and what Try again checks again. */
+export type UnifiedEntryHarnessInstallFailure = {
+  readonly harness: HarnessCompatibilityHarness;
+  readonly reason: string;
+  /**
+   * The copy this harness reads was changed or removed outside the app
+   * (CAN-6817); Try again repairs it.
+   */
+  readonly outsideChange?: 'changed' | 'removed';
+} & (
+  | {
+      /** The saved server Retry stages again. */
+      readonly serverId: string;
+      readonly item?: undefined;
+    }
+  | {
+      readonly serverId?: undefined;
+      /** The installed plugin Retry checks again (CAN-6816). */
+      readonly item: HarnessInstallItemRef;
+    }
+);
+
 /** Display projection shared by catalog surfaces; contains no host behavior. */
 export interface UnifiedPluginEntry {
   id: string;
@@ -311,6 +420,12 @@ export interface UnifiedPluginEntry {
   /** Human-readable result metadata used by cross-capability search. */
   typeLabel?: string;
   sourceLabel?: string;
+  /**
+   * The display name of the marketplace source a plugin (or a skill inside
+   * one) is listed in: the name the Marketplaces page shows (CAN-6814), so
+   * New Customize's Source filter lists the same sources.
+   */
+  marketplaceSourceName?: string;
   /** The provider a shared plugin was shared from, for its small logo. */
   sharedSourceProvider?: 'Claude' | 'Codex';
   ownershipLabel?: string;
@@ -326,6 +441,12 @@ export interface UnifiedPluginEntry {
     plugins?: number;
   };
   providerSupport: { claude: boolean; codex: boolean };
+  /**
+   * Validated, revision-bound harness compatibility from catalog ingestion or
+   * refresh. Absence means unknown: it never narrows `providerSupport` and
+   * display builders never derive it.
+   */
+  harnessCompatibility?: HarnessCompatibility;
   /** Display grouping for official marketplace listings of the same package. */
   marketplaceGroup?: string;
   marketplaceProvider?: 'Claude' | 'Codex';
@@ -361,6 +482,12 @@ export interface UnifiedPluginEntry {
   pendingSignIns?: number;
   /** Actual installations, independent of provider support. Cursor is unavailable. */
   installedHarnesses?: { claude?: boolean; codex?: boolean };
+  /**
+   * New Customize (CAN-6815): set on an MCP server one Add installed for
+   * every set-up harness. The harnesses it is installed for, and the ones
+   * that refused it with why, in the Works with filter's order.
+   */
+  harnessInstalls?: UnifiedEntryHarnessInstalls;
   builtIn?: boolean;
   custom?: boolean;
   /**
@@ -443,6 +570,23 @@ export interface UnifiedPluginEntry {
   integrationKey?: string;
   /** The integration's preferred MCP endpoint, the same on every copy. */
   integrationEndpoint?: string;
+  /**
+   * A plugin whose ChatGPT app doesn't run on some harnesses, in an
+   * integration with an MCP endpoint (CAN-6818): the publisher's MCP server
+   * Add hands to main, and the harnesses where it is known to stand in.
+   */
+  chatGptAppStandIn?: UnifiedEntryStandIn;
+  /**
+   * New Customize (CAN-6811): set on the row that stands for several copies
+   * of one integration. The other copies stay installed and keep their ids;
+   * they are only not listed.
+   */
+  integrationCopies?: UnifiedEntryIntegrationCopies;
+  /**
+   * When an installed plugin's cache was last written (ISO): its install or
+   * latest update. Breaks ties between installed copies; absent when unknown.
+   */
+  installedAt?: string;
   ref: UnifiedEntryRef;
 }
 
@@ -468,4 +612,41 @@ export function sourceLabelProvider(
   label: string | undefined,
 ): 'Claude' | 'Codex' | undefined {
   return parseProviderSourceLabel(label)?.provider;
+}
+
+/**
+ * Several copies' per-harness results as one row's (CAN-6815, CAN-6817): a
+ * harness is installed when any copy is. A copy changed or removed outside
+ * the app is still the one that harness's sessions load, so it warns
+ * whatever the other copies say (the first such copy per harness wins);
+ * otherwise a harness that refused a copy reads failed only while no copy is
+ * installed for it. Every copy's record stays addressable, so a harness set
+ * up later is added to each one. `undefined` when no copy has a result.
+ */
+export function mergeEntryHarnessInstalls(
+  results: readonly UnifiedEntryHarnessInstalls[],
+): UnifiedEntryHarnessInstalls | undefined {
+  if (results.length === 0) return undefined;
+  const installed = new Set(results.flatMap((result) => result.installed));
+  const failed = new Map<
+    HarnessCompatibilityHarness,
+    UnifiedEntryHarnessInstallFailure
+  >();
+  const failures = results.flatMap((result) => result.failed);
+  for (const failure of failures)
+    if (failure.outsideChange !== undefined && !failed.has(failure.harness))
+      failed.set(failure.harness, failure);
+  for (const failure of failures)
+    if (!installed.has(failure.harness) && !failed.has(failure.harness))
+      failed.set(failure.harness, failure);
+  const records = results.flatMap((result) => result.records ?? []);
+  return {
+    installed: ITEM_INSTALL_HARNESSES.filter((harness) =>
+      installed.has(harness),
+    ),
+    failed: ITEM_INSTALL_HARNESSES.flatMap(
+      (harness) => failed.get(harness) ?? [],
+    ),
+    ...(records.length > 0 ? { records } : {}),
+  };
 }

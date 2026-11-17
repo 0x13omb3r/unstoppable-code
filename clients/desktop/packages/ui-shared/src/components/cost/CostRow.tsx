@@ -1,3 +1,5 @@
+import { costRowClasses } from '../control-button-shared';
+import { ControlButton } from '../Button';
 import { useId, type JSX, type ReactNode } from 'react';
 import { REPLAY_MASK_CLASS } from '../../lib/replay-privacy';
 import { ArchivedStateIcon } from '../../icons/ArchivedStateIcon';
@@ -32,20 +34,6 @@ export interface CostRowProps {
   /** Quieter name ink, for the `Not tied to a chat` row. */
   readonly muted?: boolean;
   readonly testId?: string;
-}
-
-function rowClasses(
-  density: 'card' | 'panel',
-  selected: boolean,
-  interactive: boolean,
-): string {
-  const interaction = interactive
-    ? 'focus-ring transition-colors hover:bg-subtle pointer-coarse:min-h-11'
-    : '';
-  const selection = selected ? 'bg-subtle' : '';
-  const spacing =
-    density === 'card' ? 'gap-1 px-2 py-1.5' : 'gap-1.5 px-2 py-2';
-  return `flex w-full flex-col rounded-md text-left ${interaction} ${selection} ${spacing}`;
 }
 
 function CostRowMarker({
@@ -207,16 +195,17 @@ export function CostRow({
 
   if (onOpen !== undefined) {
     return (
-      <button
+      <ControlButton
         type="button"
         onClick={onOpen}
         {...naming}
         aria-current={selected ? 'true' : undefined}
         data-testid={testId}
-        className={rowClasses(density, selected, true)}
+        presentation="cost-row-open"
+        appearance={{ density, selected }}
       >
         {content}
-      </button>
+      </ControlButton>
     );
   }
 
@@ -224,7 +213,7 @@ export function CostRow({
     <div
       aria-current={selected ? 'true' : undefined}
       data-testid={testId}
-      className={rowClasses(density, selected, false)}
+      className={costRowClasses(density, selected, false)}
     >
       {content}
     </div>

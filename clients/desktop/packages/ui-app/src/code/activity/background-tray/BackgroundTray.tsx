@@ -1,5 +1,6 @@
 'use client';
 
+import { ControlButton } from '@canopy/ui-shared/components';
 import {
   BackgroundTrayGroupLabel,
   BackgroundTrayKindMark,
@@ -666,58 +667,60 @@ export function BackgroundTray({
       />,
     );
   const list = (
-    <OverlayScrollArea
-      // The list's cap (D10), as a variable the inspectors' caps subtract
-      // from (drawer-layout.tsx). A tab sits under the drawer's tab row, so
-      // its list stops lower.
-      className={
-        tab
-          ? '[--background-drawer-list-max:min(16.75rem,35vh)]'
-          : 'mt-1 [--background-drawer-list-max:min(22rem,45vh)]'
-      }
-      viewportClassName="max-h-[var(--background-drawer-list-max)] overflow-x-hidden"
-      viewportRef={setListRef}
-      viewportProps={{
-        id: listId,
-        'data-testid': 'background-tray-rows',
-      }}
-      // In a tab the bottom fade waits 2px and stays short, so the last row
-      // ends on the drawer's edge rather than fading into the composer.
-      edgeFadeSize={tab ? 6 : 16}
-      edgeFadeTopSize={tab ? 16 : undefined}
-      edgeFadeBottomInset={tab ? 2 : undefined}
-      // Rows fade as they pass under the sticky label, not the label.
-      edgeFadeTopInset={topInset}
-    >
-      <div className={tab ? 'flex flex-col gap-2 pb-1' : 'flex flex-col'}>
-        {tab && (viewTree || stopAll || stopAllWork) && (
-          // The tab row has no room for the header's actions; they lead
-          // the list instead.
-          <div className="flex h-9 items-center justify-end pr-1">
-            {viewTree}
-            {stopAll}
-            {stopAllWork}
-          </div>
-        )}
-        {groups.map(({ group, rows }) => (
-          // Each label sticks within its own group, so the next group's
-          // label pushes it out, as the sidebar's section headers do.
-          <section
-            key={group}
-            aria-label={GROUP_LABELS[group]}
-            className="flex flex-col"
-            data-tray-group={group}
-          >
-            {(labelled || group === 'watching') && (
-              <BackgroundTrayGroupLabel>
-                {GROUP_LABELS[group]}
-              </BackgroundTrayGroupLabel>
-            )}
-            <ul className="flex flex-col">{rows}</ul>
-          </section>
-        ))}
-      </div>
-    </OverlayScrollArea>
+    <div className={tab ? 'contents' : 'pt-1'}>
+      <OverlayScrollArea
+        // The list's cap (D10), as a variable the inspectors' caps subtract
+        // from (drawer-layout.tsx). A tab sits under the drawer's tab row, so
+        // its list stops lower.
+        className={
+          tab
+            ? '[--background-drawer-list-max:min(16.75rem,35vh)]'
+            : '[--background-drawer-list-max:min(22rem,45vh)]'
+        }
+        viewportClassName="max-h-[var(--background-drawer-list-max)] overflow-x-hidden"
+        viewportRef={setListRef}
+        viewportProps={{
+          id: listId,
+          'data-testid': 'background-tray-rows',
+        }}
+        // In a tab the bottom fade waits 2px and stays short, so the last row
+        // ends on the drawer's edge rather than fading into the composer.
+        edgeFadeSize={tab ? 6 : 16}
+        edgeFadeTopSize={tab ? 16 : undefined}
+        edgeFadeBottomInset={tab ? 2 : undefined}
+        // Rows fade as they pass under the sticky label, not the label.
+        edgeFadeTopInset={topInset}
+      >
+        <div className={tab ? 'flex flex-col gap-2 pb-1' : 'flex flex-col'}>
+          {tab && (viewTree || stopAll || stopAllWork) && (
+            // The tab row has no room for the header's actions; they lead
+            // the list instead.
+            <div className="flex h-9 items-center justify-end pr-1">
+              {viewTree}
+              {stopAll}
+              {stopAllWork}
+            </div>
+          )}
+          {groups.map(({ group, rows }) => (
+            // Each label sticks within its own group, so the next group's
+            // label pushes it out, as the sidebar's section headers do.
+            <section
+              key={group}
+              aria-label={GROUP_LABELS[group]}
+              className="flex flex-col"
+              data-tray-group={group}
+            >
+              {(labelled || group === 'watching') && (
+                <BackgroundTrayGroupLabel>
+                  {GROUP_LABELS[group]}
+                </BackgroundTrayGroupLabel>
+              )}
+              <ul className="flex flex-col">{rows}</ul>
+            </section>
+          ))}
+        </div>
+      </OverlayScrollArea>
+    </div>
   );
 
   if (tab) {
@@ -750,9 +753,8 @@ export function BackgroundTray({
           onKeyDownCapture={onKeyDownCapture}
         >
           <div className="flex h-7 min-w-0 items-center gap-1">
-            <button
-              type="button"
-              className="focus-ring flex h-7 min-w-0 flex-1 items-center gap-1.5 rounded-xl pl-1 pr-2 text-left hover:bg-fg-primary/[0.04]"
+            <ControlButton
+              presentation="drawer-header-disclosure"
               aria-expanded={expanded}
               aria-controls={expanded ? listId : undefined}
               onClick={toggle}
@@ -779,7 +781,7 @@ export function BackgroundTray({
               >
                 {summary}
               </span>
-            </button>
+            </ControlButton>
             {/* Outside the toggle so each icon can host its own hover. The
               open list names every item, so the icons give way to its
               actions. */}

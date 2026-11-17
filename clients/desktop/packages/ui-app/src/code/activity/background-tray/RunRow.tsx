@@ -1,5 +1,6 @@
 'use client';
 
+import { ControlButton } from '@canopy/ui-shared/components';
 import { useContext, type JSX, type ReactNode, type RefObject } from 'react';
 import type { PipelineRunArtifactReceiptV1 } from '@canopy/protocol/agent-artifacts';
 import {
@@ -479,15 +480,14 @@ export function RunJobRows({
                     )}
                   </span>
                   {onJobClick ? (
-                    <button
-                      type="button"
-                      className="focus-ring flex min-w-0 flex-1 rounded-sm"
+                    <ControlButton
+                      presentation="workflow-step-open"
                       onClick={(): void => onJobClick(run.id, jobId)}
                       data-job-id={jobId}
                       aria-label={accessibleName}
                     >
                       {name}
-                    </button>
+                    </ControlButton>
                   ) : (
                     name
                   )}

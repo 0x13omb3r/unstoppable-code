@@ -1,8 +1,8 @@
 import {
-  APP_ADVISOR_PROJECT_ID,
   CODE_REVIEW_CHAT_PROJECT_ID,
   PLAN_EXPLORE_CHAT_PROJECT_ID,
 } from '@canopy/desktop-shared/types';
+import { isBotProjectId } from '@canopy/protocol/chat-targets';
 import { logMainProcessWarn } from '../../lib/main-process-logging';
 import { readWorkspaceConfigDetailed } from '../../lib/workspace-persistence';
 import { resolveMemoryWorkspaceId } from './workspace-scope';
@@ -23,7 +23,7 @@ export async function resolveLocalMemoryPolicy(options: {
   projectId: string;
   worktreeId: string;
 }): Promise<LocalMemoryPolicy> {
-  if (options.projectId === APP_ADVISOR_PROJECT_ID) {
+  if (isBotProjectId(options.projectId)) {
     return { kind: 'unscoped' };
   }
   let workspaceId: string | null;

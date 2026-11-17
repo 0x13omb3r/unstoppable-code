@@ -147,7 +147,7 @@ function PluginSectionCard({
               {context.plugin.externalSource.url}
             </a>
             {context.plugin.externalSource.sha && (
-              <span className="ml-2 fg-secondary">
+              <span className="pl-2 fg-secondary">
                 @{context.plugin.externalSource.sha.slice(0, 7)}
               </span>
             )}

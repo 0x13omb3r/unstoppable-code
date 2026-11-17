@@ -2,7 +2,7 @@ import type {
   CanopyQueryHandlerMap,
   CanopyQueryResult,
 } from '@canopy/protocol/canopy-core';
-import { APP_ADVISOR_PROJECT_ID } from '@canopy/desktop-shared/types';
+import { isBotProjectId } from '@canopy/protocol/chat-targets';
 import {
   CanopyOperationError,
   canopyCapabilityUnavailableError,
@@ -25,7 +25,7 @@ export interface CoreChatLocateHost {
 export function createDesktopChatLocateHost(): CoreChatLocateHost {
   return {
     workEntryWorkspace: (workspaceId) => {
-      if (workspaceId === APP_ADVISOR_PROJECT_ID) return workspaceId;
+      if (isBotProjectId(workspaceId)) return workspaceId;
       const resolved = resolveCoworkWorkspaceId(workspaceId);
       return isCoworkWorkspace(resolved) ? resolved : null;
     },

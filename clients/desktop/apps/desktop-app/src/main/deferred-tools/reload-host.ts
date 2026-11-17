@@ -4,7 +4,6 @@ import type {
 } from '@canopy/core-runtime/node/agent/deferred-tools';
 import { mergeDeferredToolsReloadAdditions } from '@canopy/desktop-shared/lib/chat-plugin-selections-merge';
 import {
-  APP_ADVISOR_PROJECT_ID,
   CODE_REVIEW_CHAT_PROJECT_ID,
   DEFERRED_TOOLS_ENABLE_FAILURE_MESSAGE,
   DEFERRED_TOOLS_RESUME_FAILURE_MESSAGE,
@@ -22,6 +21,7 @@ import {
   type DeferredToolsReloadScopeKey,
   type PersistedChatMessage,
 } from '@canopy/desktop-shared/types';
+import { isBotProjectId } from '@canopy/protocol/chat-targets';
 import { armTurnLifecycleContinuation } from '../agents/provider-turn-lifecycle';
 import { logMainProcessWarn } from '../lib/main-process-logging';
 import {
@@ -226,7 +226,6 @@ function toDesktopScope(
 
 /** Sentinel chats keep their selections in tabs the catalog resolver does not read. */
 const UNMATERIALIZED_PROJECT_IDS: ReadonlySet<string> = new Set([
-  APP_ADVISOR_PROJECT_ID,
   PIPELINE_EDITOR_PROJECT_ID,
   PLAN_EXPLORE_CHAT_PROJECT_ID,
   CODE_REVIEW_CHAT_PROJECT_ID,
@@ -285,6 +284,7 @@ export function createDesktopDeferredToolReloadHost(
   };
   return {
     materializationScope: (reload) =>
+      isBotProjectId(reload.scope.workspaceId) ||
       UNMATERIALIZED_PROJECT_IDS.has(reload.scope.workspaceId)
         ? null
         : reload.scope,

@@ -1,3 +1,4 @@
+import { ControlButton } from './Button';
 import {
   forwardRef,
   useId,
@@ -44,13 +45,14 @@ export const ActivityActionCardButton = forwardRef<
   const hasDescription =
     description !== undefined && description !== null && description !== '';
   return (
-    <button
+    <ControlButton
       ref={ref}
       {...props}
       type="button"
       aria-label={label}
       {...(hasDescription ? { 'aria-describedby': descriptionId } : {})}
-      className={`electron-no-drag focus-ring flex min-h-11 select-none w-full touch-manipulation items-center gap-3 bg-tertiary p-3 text-left fg-primary ${attached ? 'rounded-t-lg rounded-b-none' : 'rounded-lg shadow-sm'} transition-[background-color,transform,scale] duration-150 enabled:hover:bg-[var(--bg-activity-card-hover)] active:scale-99`}
+      presentation="activity-action-card"
+      appearance={{ attached }}
       data-activity-action-card-button="true"
     >
       <span className="inline-flex h-4 w-4 shrink-0 items-center justify-center fg-secondary [&_svg]:h-4 [&_svg]:w-4">
@@ -65,7 +67,7 @@ export const ActivityActionCardButton = forwardRef<
           {description}
         </span>
       )}
-    </button>
+    </ControlButton>
   );
 });
 

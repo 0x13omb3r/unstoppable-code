@@ -1,6 +1,6 @@
 import { memo, useId, type JSX } from 'react';
 import { DownloadIcon, FileIcon } from '../../icons';
-import { Button } from '../Button';
+import { ControlButton, Button } from '../Button';
 import { REPLAY_BLOCK_CLASS } from '../../lib/replay-privacy';
 
 export interface FileDeliverableCardProps {
@@ -111,17 +111,17 @@ export const FileDeliverableCard = memo(function FileDeliverableCard({
       data-testid="file-deliverable-card"
     >
       {onOpen ? (
-        <button
+        <ControlButton
           type="button"
           onClick={busy ? undefined : onOpen}
           aria-label="Open file"
           aria-describedby={`${nameId} ${descriptionId}`}
           aria-busy={busy}
           aria-disabled={busy}
-          className="focus-ring flex min-w-0 flex-1 items-center gap-3 rounded-md px-3 py-3 text-left hover:bg-secondary"
+          presentation="file-deliverable-open"
         >
           {details}
-        </button>
+        </ControlButton>
       ) : (
         <div className="flex min-w-0 flex-1 items-center gap-3 px-3 py-3">
           {details}

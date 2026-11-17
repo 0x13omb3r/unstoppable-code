@@ -6,7 +6,6 @@ import { describeReviewCommentContext } from '@canopy/desktop-shared/types/code-
 import { randomUUID } from 'node:crypto';
 import {
   IPC_CHANNELS,
-  APP_ADVISOR_PROJECT_ID,
   CODE_REVIEW_CHAT_PROJECT_ID,
   PIPELINE_EDITOR_PROJECT_ID,
   PIPELINE_EDITOR_WORKTREE_ID,
@@ -19,6 +18,7 @@ import {
   type ReviewCommentAnchor,
   type ReviewCommentThread,
 } from '@canopy/desktop-shared/types';
+import { isBotProjectId } from '@canopy/protocol/chat-targets';
 import {
   sendToAllWindows,
   sendToWindow,
@@ -481,7 +481,7 @@ export async function loadWorktreeScriptOutput(options: {
     };
   }
   if (
-    options.projectId === APP_ADVISOR_PROJECT_ID ||
+    isBotProjectId(options.projectId) ||
     (options.projectId === PIPELINE_EDITOR_PROJECT_ID &&
       options.worktreeId === PIPELINE_EDITOR_WORKTREE_ID)
   ) {
@@ -981,7 +981,7 @@ export async function loadWorktreePipelineYaml(
   // via `resolveWorktreeCwd`, and stored/bundled pipeline YAML is directory-
   // safe to read from there.
   if (
-    options.projectId === APP_ADVISOR_PROJECT_ID ||
+    isBotProjectId(options.projectId) ||
     (options.projectId === PIPELINE_EDITOR_PROJECT_ID &&
       options.worktreeId === PIPELINE_EDITOR_WORKTREE_ID)
   ) {

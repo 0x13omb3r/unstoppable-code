@@ -1,11 +1,11 @@
 import { isResourceOwnerInContext } from '@canopy/ui-app/capability';
 import {
-  APP_ADVISOR_PROJECT_ID,
   type AppAdvisorWatcherSummary,
   type AutomationAction,
   type ScheduledActivity,
   type SidebarItem,
 } from '@canopy/desktop-shared/types';
+import { isBotProjectId } from '@canopy/protocol/chat-targets';
 import type { SharedAutomationSummary } from '@canopy/protocol/automations';
 import {
   parseWorkspaceContext,
@@ -47,8 +47,8 @@ export function isWorkspaceInContext(
 }
 
 /**
- * Whether a workspace-targeted item belongs in the selected context. App
- * Advisor shows everywhere, and a target that no longer exists stays visible
+ * Whether a workspace-targeted item belongs in the selected context. Bot
+ * targets show everywhere, and a target that no longer exists stays visible
  * so the user can still reach and delete it.
  */
 function isTargetWorkspaceInContext(
@@ -58,8 +58,7 @@ function isTargetWorkspaceInContext(
   linkedPersonalIds: ReadonlySet<string>,
 ): boolean {
   if (context === undefined) return true;
-  if (workspaceId === undefined || workspaceId === APP_ADVISOR_PROJECT_ID)
-    return true;
+  if (workspaceId === undefined || isBotProjectId(workspaceId)) return true;
   const workspace = projectsById.get(workspaceId);
   if (!workspace) return true;
   return isWorkspaceInContext(workspace, context, linkedPersonalIds);

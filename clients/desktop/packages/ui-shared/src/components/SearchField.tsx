@@ -5,6 +5,7 @@ import {
   forwardRef,
   useCallback,
   useContext,
+  useEffect,
   useRef,
   type ButtonHTMLAttributes,
   type InputHTMLAttributes,
@@ -13,7 +14,11 @@ import {
   type ReactNode,
 } from 'react';
 import { CloseIcon, SearchIcon, SearchXIcon } from '../icons/AppIcons';
-import { Button } from './Button';
+import {
+  DIALOG_INITIAL_FOCUS_TARGET_EVENT,
+  DIALOG_INITIAL_FOCUS_TARGET_SELECTOR,
+} from '../lib/dialog-initial-focus';
+import { Button, ControlButton } from './Button';
 import { FIELD_EDGE_CLASS, FIELD_FOCUS_WITHIN_CLASS } from './Field';
 import { EmptyState } from './StatusBlocks';
 import { Tooltip } from './Tooltip';
@@ -66,11 +71,6 @@ const CLEAR_ICON_SIZE: Record<SearchFieldSize, number> = {
 };
 
 /** Nested buttons: 24px in the 28px and 32px fields, 28px in the header. */
-const BUTTON_SIZE_CLASS: Record<SearchFieldSize, string> = {
-  sm: 'h-6 min-w-6',
-  md: 'h-6 min-w-6',
-  lg: 'h-7 min-w-7',
-};
 
 const SearchFieldSizeContext = createContext<SearchFieldSize>('sm');
 
@@ -107,6 +107,7 @@ export interface SearchFieldProps extends Omit<
   readonly actions?: ReactNode;
   readonly clearLabel?: string;
   readonly clearTestId?: string;
+  readonly 'data-dialog-initial-focus'?: string;
   /**
    * Escape first clears the query; on an empty field it calls
    * `onEscapeEmpty`, or gives up focus without one. Set false where Escape
@@ -149,6 +150,7 @@ export const SearchField = forwardRef<HTMLInputElement, SearchFieldProps>(
       actions,
       clearLabel = 'Clear search',
       clearTestId,
+      'data-dialog-initial-focus': dialogInitialFocus,
       clearOnEscape = true,
       onEscapeEmpty,
       fieldTestId,
@@ -173,6 +175,24 @@ export const SearchField = forwardRef<HTMLInputElement, SearchFieldProps>(
     const hasValue = value !== '';
     const hasCount = hasValue && count !== undefined && count !== null;
     const hasTrailing = trailing !== undefined && trailing !== null;
+
+    useEffect(() => {
+      // Let an already-open surface focus a marked search that mounted later.
+      const input = inputRef.current;
+      const EventConstructor = input?.ownerDocument.defaultView?.Event;
+      if (
+        !input ||
+        !EventConstructor ||
+        dialogInitialFocus === undefined ||
+        !input.matches(DIALOG_INITIAL_FOCUS_TARGET_SELECTOR)
+      )
+        return;
+      input.dispatchEvent(
+        new EventConstructor(DIALOG_INITIAL_FOCUS_TARGET_EVENT, {
+          bubbles: true,
+        }),
+      );
+    }, [dialogInitialFocus]);
 
     const handleKeyDown = (event: KeyboardEvent<HTMLInputElement>): void => {
       onKeyDown?.(event);
@@ -225,6 +245,7 @@ export const SearchField = forwardRef<HTMLInputElement, SearchFieldProps>(
           />
           <input
             {...inputProps}
+            data-dialog-initial-focus={dialogInitialFocus}
             ref={setInput}
             type={inputType}
             value={value}
@@ -289,7 +310,10 @@ export const SearchField = forwardRef<HTMLInputElement, SearchFieldProps>(
 
 SearchField.displayName = 'SearchField';
 
-export interface SearchFieldButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
+export interface SearchFieldButtonProps extends Omit<
+  ButtonHTMLAttributes<HTMLButtonElement>,
+  'className'
+> {
   /** Action-oriented name, also the tooltip: `Filter`, `Sort: Name`. */
   readonly 'aria-label': string;
   /** The 14px app glyph. */
@@ -306,16 +330,6 @@ export interface SearchFieldButtonProps extends ButtonHTMLAttributes<HTMLButtonE
   readonly tone?: 'muted' | 'ghost';
 }
 
-const BUTTON_BASE_CLASS =
-  "canopy-small-icon-stroke focus-ring relative inline-flex shrink-0 select-none items-center justify-center rounded-full px-0 transition-colors before:absolute before:-inset-0.5 before:content-[''] pointer-coarse:before:-inset-2.5 disabled:pointer-events-none disabled:opacity-50";
-
-const BUTTON_TONE_CLASS = {
-  active: 'bg-fg-primary [color:var(--bg-base)]',
-  muted:
-    'bg-muted fg-secondary hover:bg-subtle hover:fg-primary aria-expanded:bg-subtle aria-expanded:fg-primary',
-  ghost: 'bg-transparent fg-tertiary hover:bg-subtle hover:fg-primary',
-} as const;
-
 /**
  * A round button nested in a `SearchField`'s end cap: Clear, Filter, Sort.
  * A button, so it stays round inside the field's end, and its name shows as a
@@ -325,14 +339,7 @@ export const SearchFieldButton = forwardRef<
   HTMLButtonElement,
   SearchFieldButtonProps
 >(function SearchFieldButton(
-  {
-    icon,
-    active = false,
-    tone = 'muted',
-    type = 'button',
-    className = '',
-    ...props
-  },
+  { icon, active = false, tone = 'muted', type = 'button', ...props },
   ref,
 ): JSX.Element {
   const size = useContext(SearchFieldSizeContext);
@@ -340,15 +347,16 @@ export const SearchFieldButton = forwardRef<
     props['aria-expanded'] === true || props['aria-expanded'] === 'true';
   return (
     <Tooltip label={props['aria-label']} suppressed={expanded}>
-      <button
+      <ControlButton
         {...props}
         ref={ref}
         type={type}
         data-active={active ? 'true' : undefined}
-        className={`${BUTTON_BASE_CLASS} ${BUTTON_SIZE_CLASS[size]} ${BUTTON_TONE_CLASS[active ? 'active' : tone]} ${className}`}
+        presentation="search-field-endcap"
+        appearance={{ size, tone: active ? 'active' : tone }}
       >
         {icon}
-      </button>
+      </ControlButton>
     </Tooltip>
   );
 });

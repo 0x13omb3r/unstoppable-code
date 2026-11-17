@@ -3,6 +3,7 @@
 import { Fragment, type JSX, type ReactNode } from 'react';
 import { ORCHESTRATOR_LABEL, REMOTE_CONTROL_LABEL } from '@canopy/protocol';
 import {
+  ListRow,
   Button,
   Disclosure,
   Divider,
@@ -66,6 +67,8 @@ export interface PipelineTriggerScheduleRow {
   readonly key: string;
   /** When it runs, as `Weekdays at 9:00 AM`. */
   readonly summary: string;
+  /** Where it runs when not on this computer, as `Cloud` (CAN-6917). */
+  readonly location?: string;
   readonly enabled: boolean;
   /** The switch is writing. */
   readonly busy?: boolean;
@@ -158,19 +161,14 @@ function RowButton({
   readonly [dataAttribute: `data-${string}`]: string;
 }): JSX.Element {
   return (
-    <button
-      type="button"
+    <ListRow
+      size="lg"
       onClick={onClick}
-      className="focus-ring flex w-full items-center gap-4 px-4 py-3 text-left text-s transition-colors hover:bg-secondary"
+      trailing={<ChevronRightIcon size="sm" aria-hidden="true" />}
       {...data}
     >
-      {children}
-      <ChevronRightIcon
-        size="sm"
-        aria-hidden="true"
-        className="shrink-0 fg-tertiary"
-      />
-    </button>
+      <span className="flex min-w-0 items-center gap-4">{children}</span>
+    </ListRow>
   );
 }
 
@@ -197,6 +195,14 @@ function ScheduleRow({
             <span className="flex min-w-0 items-center gap-3">
               <span className="fg-primary">Schedule</span>
               <span className="truncate">{row.summary}</span>
+              {row.location ? (
+                <span
+                  className="shrink-0 text-xs fg-tertiary"
+                  data-testid="pipeline-trigger-schedule-location"
+                >
+                  {row.location}
+                </span>
+              ) : null}
             </span>
           }
           {...(row.dirty ? { hint: 'Unsaved' } : {})}

@@ -72,6 +72,9 @@ import {
   validateCuratedSetup,
 } from '../pages/McpServersTab';
 import { useMarketplaceOAuth } from '@/hooks/useMarketplaceOAuth';
+import { useSettledSetUpHarnesses } from '@/hooks/useSetUpHarnesses';
+import { toAppError } from '@canopy/protocol/app-errors';
+import { useCustomizeDiscoveryEnabled } from '@canopy/ui-app/customize-discovery';
 import { pointRefsAt } from '@/lib/mcpServerRefs';
 import { stableStringify } from '@canopy/desktop-shared/lib/stable-hash';
 import {
@@ -547,6 +550,44 @@ function AppMcpConnectionDetail({
   const serverRef = useRef(server);
   serverRef.current = server;
   const inFlight = useRef(false);
+  // One Add for every harness (CAN-6815): New Customize only.
+  const discoveryEnabled = useCustomizeDiscoveryEnabled();
+  // Waits for harness discovery before installing; see the hook.
+  const settledHarnesses = useSettledSetUpHarnesses(discoveryEnabled);
+  const installForSetUpHarnesses = useCallback(
+    async (saved: McpServerDataView): Promise<void> => {
+      const config = saved.configs.find((item) => item.enabled);
+      // An empty list still asks: main adds the harnesses it can confirm,
+      // so a probe still pending here does not leave one out.
+      if (
+        !discoveryEnabled ||
+        window.mcpServers.installForHarnesses === undefined ||
+        !config
+      )
+        return;
+      try {
+        const { harnesses, pendingHarnesses } = await settledHarnesses();
+        await window.mcpServers.installForHarnesses({
+          serverId: saved.definition.id,
+          configId: config.id,
+          harnesses,
+          ...(pendingHarnesses.length > 0 ? { pendingHarnesses } : {}),
+        });
+        // The list behind this page shows the record too, so refresh it even
+        // after the page closes.
+        await onServersChanged();
+      } catch (cause) {
+        // The server is saved and every harness can still select it; only
+        // the per-harness record is missing, so Add carries on.
+        const reason = toAppError(cause)?.detail.message.trim();
+        if (mounted.current)
+          setGuidance(
+            `Added. Couldn't install it for every harness${reason ? `: ${reason}` : '.'}`,
+          );
+      }
+    },
+    [discoveryEnabled, onServersChanged, settledHarnesses],
+  );
   const replacedServerIds = useRef(new Set<string>());
   useEffect(() => {
     mounted.current = true;
@@ -932,6 +973,9 @@ function AppMcpConnectionDetail({
         current = (await window.mcpServers.saveServer(stock.server)).server;
         // The device file is the plugin's binding; install its skills now.
         await installFoldedPlugin();
+        // One sign-in below serves every harness this installs for. It runs
+        // beside the sign-in, which never waits for harness discovery.
+        void installForSetUpHarnesses(current);
       }
       if (current.definition.type === 'command') {
         serverRef.current = current;
@@ -1005,6 +1049,7 @@ function AppMcpConnectionDetail({
     desktopOnly,
     entry,
     installFoldedPlugin,
+    installForSetUpHarnesses,
     pageOwnedSignIn,
     installedServerId,
     onServersChanged,
@@ -1531,7 +1576,9 @@ function AppMcpConnectionDetail({
                     }
                   : {}),
               });
-              if (mounted.current) await onServersChanged();
+              // The list behind this page shows the record too, so refresh it even
+              // after the page closes.
+              await onServersChanged();
             })();
           }}
           onClose={(): void => {

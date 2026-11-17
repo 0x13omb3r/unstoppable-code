@@ -29,7 +29,7 @@ export function SkillFilePreview({
   if (state.loading)
     return (
       <DelayedLoadingPlaceholder>
-        <CenteredLoadingSpinner className="my-12" />
+        <CenteredLoadingSpinner spacing="section" />
       </DelayedLoadingPlaceholder>
     );
   if (state.error)

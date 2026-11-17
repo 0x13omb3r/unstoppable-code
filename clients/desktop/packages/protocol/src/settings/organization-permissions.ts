@@ -76,6 +76,14 @@ export function canEditOrgEnforcedSettings(role: OrganizationRole): boolean {
   return canEditOrg(role);
 }
 
+/**
+ * List and remove the organization's external shares of worktrees and Work
+ * Entries owned by other members (CAN-3420). OWNER + ADMIN.
+ */
+export function canManageExternalShares(role: OrganizationRole): boolean {
+  return canEditOrg(role);
+}
+
 /** Edit per-member organization-memory participation. OWNER + ADMIN. */
 export function canEditMemorySettings(role: OrganizationRole): boolean {
   return canEditOrg(role);

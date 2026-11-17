@@ -3,6 +3,7 @@ import type { WorkspaceManifestRepository } from '@canopy/core-runtime/node/w5/w
 import type { WorktreeListRepository } from '@canopy/core-runtime/node/w5/worktree-list-repository';
 import type { W5FileStore } from '@canopy/core-runtime/node/w5/file-store';
 import { isSafeWorkspaceId } from '@canopy/core-runtime/node/identifiers';
+import { isBotProjectId } from '@canopy/protocol/chat-targets';
 import { realpath } from 'node:fs/promises';
 import { basename, dirname, join, resolve } from 'node:path';
 import type { W5CommitLogFileStore } from '@canopy/core-runtime/node/w5/commit-log-file-store';
@@ -422,6 +423,8 @@ export async function allocateWorkspaceIdentity(
     workspaceRecordPaths(candidate);
     if (
       !busy.has(candidate.toLowerCase()) &&
+      // Bot project IDs (`app-advisor`, `bot--<ulid>`) belong to Bots.
+      !isBotProjectId(candidate) &&
       !(await workspacePathExists(join(getWorkspacesRootDir(), candidate)))
     )
       return candidate;

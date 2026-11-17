@@ -12,7 +12,7 @@ import {
   BusyLabel,
   Button,
   CreditLedgerTable as SharedCreditLedgerTable,
-  emptyCreditPoolCopy,
+  EMPTY_CREDIT_POOL_COPY,
   EmptyState,
   ErrorBanner,
 } from '@canopy/ui-shared/components';
@@ -289,7 +289,7 @@ function PaymentMethodSubcard({
             {hasCard && card ? (
               <p
                 className={withPrivacyClass(
-                  'mt-1 text-s fg-primary',
+                  'pt-1 text-s fg-primary',
                   blockClassName,
                 )}
                 data-testid="team-billing-card-summary"
@@ -300,7 +300,7 @@ function PaymentMethodSubcard({
                   : ''}
               </p>
             ) : (
-              <p className="mt-1 text-s fg-secondary">No card on file.</p>
+              <p className="pt-1 text-s fg-secondary">No card on file.</p>
             )}
           </div>
 
@@ -490,23 +490,24 @@ function BillingHistoryCard({
         ) : showTransactions ? (
           <div data-testid="team-billing-transactions">
             <p className="text-s font-medium fg-primary">Transactions</p>
-            <div className="mt-2">
+            <div className="pt-2">
               <SharedBillingHistoryTable
                 charges={charges}
                 formatDate={formatPlanDate}
               />
             </div>
             {nextCursor !== null ? (
-              <Button
-                size="compact"
-                disabled={loadingMore}
-                aria-busy={loadingMore}
-                onClick={() => void loadPage(nextCursor)}
-                data-testid="team-billing-history-load-more"
-                className="mt-3"
-              >
-                <BusyLabel busy={loadingMore}>Load more</BusyLabel>
-              </Button>
+              <div className="pt-3 empty:hidden">
+                <Button
+                  size="compact"
+                  disabled={loadingMore}
+                  aria-busy={loadingMore}
+                  onClick={() => void loadPage(nextCursor)}
+                  data-testid="team-billing-history-load-more"
+                >
+                  <BusyLabel busy={loadingMore}>Load more</BusyLabel>
+                </Button>
+              </div>
             ) : null}
           </div>
         ) : null}
@@ -670,8 +671,8 @@ function AiCreditPoolCard({
             empty={
               neverFunded
                 ? {
-                    title: emptyCreditPoolCopy(brandName).title,
-                    subtitle: emptyCreditPoolCopy(brandName).message,
+                    title: EMPTY_CREDIT_POOL_COPY.title,
+                    subtitle: EMPTY_CREDIT_POOL_COPY.message,
                   }
                 : undefined
             }
@@ -692,7 +693,7 @@ function AiCreditPoolCard({
               />
             }
           >
-            <div className="mt-4" data-testid="team-billing-ai-credits-ledger">
+            <div className="pt-4" data-testid="team-billing-ai-credits-ledger">
               <p className="text-s font-medium fg-primary">Activity</p>
               {entries.length === 0 ? (
                 <EmptyState
@@ -700,7 +701,7 @@ function AiCreditPoolCard({
                   subtitle="Purchases and usage appear here once the pool is active."
                 />
               ) : (
-                <div className="mt-2">
+                <div className="pt-2">
                   <SharedCreditLedgerTable
                     entries={entries}
                     formatDate={formatPlanDate}

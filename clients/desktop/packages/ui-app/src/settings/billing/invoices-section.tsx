@@ -120,29 +120,32 @@ export function InvoicesSection({
   return (
     <div data-testid={testId}>
       <p className="text-s font-medium fg-primary">Invoices</p>
-      <div className="mt-2">
+      <div className="pt-2">
         <InvoicesTable
           invoices={invoices}
           hrefFor={hrefFor}
           renderLink={(props) => <SettingsLink {...props} />}
         />
       </div>
-      <ErrorBanner
-        errorSource="invoices-section"
-        className="mt-2"
-        error={error}
-      />
+      <div className="pt-2 empty:hidden">
+        <ErrorBanner
+          errorSource="invoices-section"
+          className=""
+          error={error}
+        />
+      </div>
       {nextCursor !== null && (
-        <Button
-          size="compact"
-          onClick={() => void handleLoadMore()}
-          disabled={loadingMore}
-          aria-busy={loadingMore}
-          data-testid={`${testId}-load-more`}
-          className="mt-3"
-        >
-          <BusyLabel busy={loadingMore}>Load more</BusyLabel>
-        </Button>
+        <div className="pt-3 empty:hidden">
+          <Button
+            size="compact"
+            onClick={() => void handleLoadMore()}
+            disabled={loadingMore}
+            aria-busy={loadingMore}
+            data-testid={`${testId}-load-more`}
+          >
+            <BusyLabel busy={loadingMore}>Load more</BusyLabel>
+          </Button>
+        </div>
       )}
     </div>
   );

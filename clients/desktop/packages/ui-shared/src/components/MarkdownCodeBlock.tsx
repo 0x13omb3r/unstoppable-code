@@ -1,5 +1,6 @@
 'use client';
 
+import { ControlButton } from './Button';
 import {
   type ComponentPropsWithoutRef,
   type JSX,
@@ -65,11 +66,11 @@ export function MarkdownCodeBlock({
           `relative` and the button keeps its geometry. */}
       <span className="markdown-code-copy-control pointer-events-none absolute -right-2 -top-2 z-30 opacity-0 transition-opacity focus-within:pointer-events-auto focus-within:opacity-100">
         <Tooltip label="Copy">
-          <button
+          <ControlButton
             type="button"
             onClick={handleCopy}
             aria-label="Copy"
-            className="markdown-code-copy-button focus-ring rounded-md bg-popover/80 p-1.5 fg-secondary transition-colors hover:bg-popover hover:fg-primary"
+            presentation="markdown-copy"
           />
         </Tooltip>
       </span>

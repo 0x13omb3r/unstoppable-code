@@ -281,7 +281,7 @@ export function LedgerEntryForm({
         </FormField>
       )}
       <fieldset className="flex flex-col gap-1.5" disabled={saving}>
-        <legend className="mb-1 text-xs fg-secondary">
+        <legend className="pb-1 text-xs fg-secondary">
           Highlights <span className="fg-tertiary">(optional)</span>
         </legend>
         {value.highlights.map((highlight, index) => (
@@ -334,7 +334,7 @@ export function LedgerEntryForm({
       </fieldset>
       {referencesFiles && (
         <fieldset className="flex flex-col gap-1.5" disabled={saving}>
-          <legend className="mb-1 text-xs fg-secondary">
+          <legend className="pb-1 text-xs fg-secondary">
             Files <span className="fg-tertiary">(optional)</span>
           </legend>
           {value.referenceFiles.map((file, index) => (

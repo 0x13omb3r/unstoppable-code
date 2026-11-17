@@ -558,50 +558,51 @@ export const AuthRecoveryCard = memo(function AuthRecoveryCard({
     return null;
   }
   return (
-    <Notice
-      intent="attention"
-      role="alert"
-      icon={null}
-      data-testid="auth-recovery-card"
-      data-blocker-count={rows.length}
-      data-chat-notice=""
-      className="mt-1"
-    >
-      <div className="flex flex-col gap-2">
-        {rows.length > 1 ? (
-          <p
-            data-testid="auth-recovery-checklist-header"
-            className="min-w-0 break-words fg-secondary"
-          >
-            {`${rows.length} connections need attention before this can continue.`}
-          </p>
-        ) : null}
-        {rows.map((row) => (
-          <AuthRecoveryRow
-            key={row.dependencyId}
-            failure={row}
-            onConnectionState={onConnectionState}
-          />
-        ))}
-        {ready && sourceMessageId ? (
-          <Button
-            size="compact"
-            className="self-start"
-            data-testid="auth-recovery-resume"
-            disabled={!recovery.canResume || recovery.resuming}
-            onClick={(): void => {
-              void resume();
-            }}
-          >
-            {recovery.resuming ? 'Resuming…' : 'Resume'}
-          </Button>
-        ) : null}
-        {recovery.error ? (
-          <p role="status" className="fg-secondary">
-            {recovery.error}
-          </p>
-        ) : null}
-      </div>
-    </Notice>
+    <div className="pt-1">
+      <Notice
+        intent="attention"
+        announcement="assertive"
+        icon={null}
+        data-testid="auth-recovery-card"
+        data-blocker-count={rows.length}
+        data-chat-notice=""
+      >
+        <div className="flex flex-col gap-2">
+          {rows.length > 1 ? (
+            <p
+              data-testid="auth-recovery-checklist-header"
+              className="min-w-0 break-words fg-secondary"
+            >
+              {`${rows.length} connections need attention before this can continue.`}
+            </p>
+          ) : null}
+          {rows.map((row) => (
+            <AuthRecoveryRow
+              key={row.dependencyId}
+              failure={row}
+              onConnectionState={onConnectionState}
+            />
+          ))}
+          {ready && sourceMessageId ? (
+            <Button
+              size="compact"
+              className="self-start"
+              data-testid="auth-recovery-resume"
+              disabled={!recovery.canResume || recovery.resuming}
+              onClick={(): void => {
+                void resume();
+              }}
+            >
+              {recovery.resuming ? 'Resuming…' : 'Resume'}
+            </Button>
+          ) : null}
+          {recovery.error ? (
+            <p role="status" className="fg-secondary">
+              {recovery.error}
+            </p>
+          ) : null}
+        </div>
+      </Notice>
+    </div>
   );
 });

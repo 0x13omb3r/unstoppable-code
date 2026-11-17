@@ -40,6 +40,7 @@ import {
   PIPELINE_EDITOR_PROJECT_ID,
   STANDALONE_CHAT_PROJECT_ID,
 } from '@canopy/desktop-shared/types';
+import { isBotProjectId } from '@canopy/protocol/chat-targets';
 import {
   isRetiredPlanChatScope,
   RETIRED_PLAN_CHAT_MESSAGE,
@@ -401,7 +402,7 @@ async function executePortalChatSend(
         !command.payload.chatId ||
         !command.payload.userMessageId ||
         isCoworkWorkspace(command.payload.projectId) ||
-        command.payload.projectId === APP_ADVISOR_PROJECT_ID ||
+        isBotProjectId(command.payload.projectId) ||
         command.payload.projectId === PIPELINE_EDITOR_PROJECT_ID ||
         command.payload.projectId === STANDALONE_CHAT_PROJECT_ID
       ) {
@@ -542,7 +543,7 @@ async function executePortalChatSend(
       // Pipeline Editor — so refuse the attachment rather than write a file
       // into a directory the send cannot read.
       if (
-        command.payload.projectId === APP_ADVISOR_PROJECT_ID ||
+        isBotProjectId(command.payload.projectId) ||
         command.payload.projectId === PIPELINE_EDITOR_PROJECT_ID ||
         command.payload.projectId === STANDALONE_CHAT_PROJECT_ID
       ) {
@@ -1530,7 +1531,7 @@ async function portalSettingsUseCore(
   if (
     !context.chatStatePort ||
     !getActiveDesktopRuntimeIfAccepting() ||
-    command.projectId === APP_ADVISOR_PROJECT_ID ||
+    isBotProjectId(command.projectId) ||
     command.projectId === PIPELINE_EDITOR_PROJECT_ID
   )
     return false;
@@ -1828,8 +1829,8 @@ async function dispatchRevisionedChatCommand(
     );
     return null;
   }
-  const advisorQueueCommand =
-    target.projectId === APP_ADVISOR_PROJECT_ID &&
+  const botQueueCommand =
+    isBotProjectId(target.projectId) &&
     (chatCommand.type === 'chat.cancel_queued_message' ||
       chatCommand.type === 'chat.edit_queued_message' ||
       chatCommand.type === 'chat.force_queued_message' ||
@@ -1837,7 +1838,7 @@ async function dispatchRevisionedChatCommand(
       chatCommand.type === 'chat.set_queued_message_edit_lock' ||
       chatCommand.type === 'chat.input_delivery_action');
   if (
-    (target.projectId === APP_ADVISOR_PROJECT_ID && !advisorQueueCommand) ||
+    (isBotProjectId(target.projectId) && !botQueueCommand) ||
     target.projectId === PIPELINE_EDITOR_PROJECT_ID
   ) {
     context.fail(
@@ -2528,7 +2529,7 @@ async function settlePortalChatQuestion(
 ): Promise<void> {
   if (rejectUntrustedPortalChatInput(command, context)) return;
   if (
-    target.projectId === APP_ADVISOR_PROJECT_ID ||
+    isBotProjectId(target.projectId) ||
     target.projectId === PIPELINE_EDITOR_PROJECT_ID
   ) {
     context.fail(
@@ -2879,6 +2880,10 @@ export async function handlePortalChatSetFastMode(
   });
 }
 
+// Default Bot only: portal.chat.set_plugin_selections reaches the Orchestrator
+// only through the app_advisor Portal scope, which carries no botId until the
+// Portal slice. (Kept outside the handler body so its census span stays
+// unchanged.)
 export async function handlePortalChatSetPluginSelections(
   command: PortalCommandEnvelope<
     PortalCommandPayloadMap['portal.chat.set_plugin_selections']

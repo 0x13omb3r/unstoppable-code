@@ -24,6 +24,19 @@ export interface PipelineRunDetailStep {
    * per step; desktop reads the whole file.
    */
   readonly output_tail?: string;
+  /**
+   * The child run a `run-pipeline` step started (CAN-6868): its id, its
+   * workflow's name and its status, once the host read it.
+   */
+  readonly child?: PipelineRunDetailChild;
+}
+
+/** A step's child run, as the host last read it. */
+export interface PipelineRunDetailChild {
+  readonly execution_id: string;
+  readonly name: string;
+  /** Null until the host read the child. */
+  readonly status: string | null;
 }
 
 /** One physical matrix variant of a logical job. */

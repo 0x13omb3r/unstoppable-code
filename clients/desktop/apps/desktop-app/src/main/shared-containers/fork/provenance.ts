@@ -47,9 +47,17 @@ export async function readSharedContainerForkProvenance(
     throw error;
   }
   if (!isSharedContainerForkProvenance(value)) {
-    throw new Error('Invalid shared-container fork provenance');
+    throw new SharedContainerForkProvenanceInvalidError();
   }
   return value;
+}
+
+/** A provenance file that was read but does not hold valid provenance. */
+export class SharedContainerForkProvenanceInvalidError extends Error {
+  constructor() {
+    super('Invalid shared-container fork provenance');
+    this.name = 'SharedContainerForkProvenanceInvalidError';
+  }
 }
 
 export function writeForkProvenanceForDestination(

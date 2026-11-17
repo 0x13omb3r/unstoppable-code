@@ -1,6 +1,8 @@
+import { ControlButton } from './Button';
 import type { ComponentType, JSX, MouseEvent, ReactNode } from 'react';
 import {
   sourceLabelProvider,
+  type UnifiedEntryHarnessInstalls,
   type UnifiedEntryPlacement,
 } from '../lib/unified-plugin-entry';
 import { mcpPlacementLabel, mcpRowHealthModel } from '../lib/mcp-row-health';
@@ -8,7 +10,14 @@ import { formatDateOrEmpty } from '../lib/format-date';
 import { ClaudeLogo, CodexLogo } from '../icons';
 import { PersonIcon, RefreshIcon, SkillIcon } from '../icons/AppIcons';
 import { curatedLogoKey } from '../lib/curated-logo-key';
-import type { CustomizeSkillMatch } from '../lib/customize-discovery';
+import {
+  customizeHarnessInstallWarning,
+  customizeHarnessRetryLabel,
+  customizeIntegrationInstalledLabel,
+  customizeWorksWithHarnesses,
+  type CustomizeSkillMatch,
+} from '../lib/customize-discovery';
+import { MCP_BRAND_LOGOS } from '../lib/mcp-brand-logos';
 import { createdByViewer, pendingSignInLabel } from '../lib/customize-row-copy';
 import { displayVersion } from '../lib/display-version';
 import { INSTALLED_SHARE_UPDATE_AVAILABLE_LABEL } from '../lib/installed-share-copy';
@@ -28,6 +37,37 @@ import {
 import { Tooltip } from './Tooltip';
 import { MarketplaceTypeLabel } from './MarketplaceTypeLabel';
 import { Badge } from './Badge';
+import {
+  CustomizeRowSplitButton,
+  type CustomizeRowSplitAction,
+} from './CustomizeRowSplitButton';
+import { CustomizeWorksWithChips } from './CustomizeWorksWithChips';
+
+/** Corporate suffixes a publisher name drops before matching a brand key. */
+const PUBLISHER_SUFFIX = /-(inc|llc|ltd|corp|corporation|co|hq)$/;
+
+/**
+ * The bundled brand mark of an entry's publisher (CAN-6813), for a row whose
+ * catalog supplies no logo: "Sentry" and "Sentry, Inc." both resolve the
+ * `sentry` mark. Only the publisher is matched, never the item's own name,
+ * so an unrelated item named after a brand keeps its letter.
+ */
+export function customizePublisherLogoKey(
+  entry: Pick<UnifiedPluginEntry, 'authorName'>,
+): string | undefined {
+  const slug = entry.authorName
+    ?.trim()
+    .toLowerCase()
+    .replace(/^@/, '')
+    .replace(/[\s_./]+/g, '-')
+    .replace(/[^a-z0-9-]/g, '')
+    .replace(/-+/g, '-')
+    .replace(/^-|-$/g, '');
+  if (!slug) return undefined;
+  return [slug, slug.replace(PUBLISHER_SUFFIX, '')].find((key) =>
+    Object.prototype.hasOwnProperty.call(MCP_BRAND_LOGOS, key),
+  );
+}
 
 function compactMetadata(entry: UnifiedPluginEntry): {
   source: string | undefined;
@@ -135,20 +175,31 @@ function CompactMetadata({
   health,
   attentionLabel,
   updateBadge = false,
+  worksWith = false,
+  harnessWarning,
 }: {
   entry: UnifiedPluginEntry;
   metadata: ReturnType<typeof compactMetadata>;
   health?: ReactNode;
   attentionLabel?: string;
   updateBadge?: boolean;
+  /** New Customize (CAN-6813): harness chips replace the installed marks. */
+  worksWith?: boolean;
+  /** New Customize (CAN-6815): harnesses one Add could not install for. */
+  harnessWarning?: { readonly label: string; readonly instruction: string };
 }): JSX.Element | null {
   const { version, tooltip, visibleCounts, triggerSummary } = metadata;
   const source = metadata.source
     ? entrySourceTextWithoutProvider(entry, metadata.source)
     : metadata.source;
+  // An integration row's installed line names the harness instead (CAN-6811).
+  const hasWorksWith =
+    worksWith && customizeWorksWithHarnesses(entry).length > 0;
   const hasHarnessIcons =
-    entry.installedHarnesses?.claude === true ||
-    entry.installedHarnesses?.codex === true;
+    !worksWith &&
+    entry.integrationCopies?.installed === undefined &&
+    (entry.installedHarnesses?.claude === true ||
+      entry.installedHarnesses?.codex === true);
   const hasSourceMark =
     !entry.marketplaceProviders &&
     entry.kind === 'plugin' &&
@@ -166,6 +217,7 @@ function CompactMetadata({
       : undefined;
   const hasSubtitle = Boolean(
     hasHarnessIcons ||
+    hasWorksWith ||
     source ||
     version ||
     visibleCounts.length > 0 ||
@@ -189,12 +241,18 @@ function CompactMetadata({
     attentionLabel === undefined
       ? `plugins-connection-status-${entry.id}`
       : `customize-row-sign-in-${entry.id}`;
-  if (!hasSubtitle && !health && !fallbackHealth && warning === undefined)
+  if (
+    !hasSubtitle &&
+    !health &&
+    !fallbackHealth &&
+    warning === undefined &&
+    harnessWarning === undefined
+  )
     return null;
   return (
     <span
       data-testid={`customize-row-subtitle-${entry.id}`}
-      className={`pointer-events-none relative z-10 mt-0.5 flex min-h-4 min-w-0 items-center gap-2 overflow-hidden whitespace-nowrap text-xs fg-tertiary ${entry.origin === 'shared' || entry.installedFrom || entry.sharedSource || entry.collectionProvenanceUnknown ? REPLAY_BLOCK_CLASS : entry.workflow?.sourceIsPerson ? REPLAY_MASK_CLASS : ''}`}
+      className={`pointer-events-none relative z-10 mt-0.5 flex min-h-4 min-w-0 items-center gap-2 overflow-hidden whitespace-nowrap text-xs fg-tertiary ${worksWith ? '@container/customize-row-subtitle ' : ''}${entry.origin === 'shared' || entry.installedFrom || entry.sharedSource || entry.collectionProvenanceUnknown ? REPLAY_BLOCK_CLASS : entry.workflow?.sourceIsPerson ? REPLAY_MASK_CLASS : ''}`}
     >
       {health}
       {fallbackHealth && (
@@ -222,6 +280,15 @@ function CompactMetadata({
           label={warning}
           action={(entry.pendingSignIns ?? 0) > 0 ? 'connect' : null}
           testId={warningTestId}
+        />
+      )}
+      {harnessWarning !== undefined && (
+        <McpRowAttention
+          name={entry.name}
+          label={harnessWarning.label}
+          instruction={harnessWarning.instruction}
+          action={null}
+          testId={`customize-row-harness-install-failed-${entry.id}`}
         />
       )}
       {entry.marketplaceProviders?.map((provider) => (
@@ -333,6 +400,13 @@ function CompactMetadata({
           </span>
         </Tooltip>
       )}
+      {hasWorksWith &&
+        (source ||
+          version ||
+          entry.bundledBy ||
+          visibleCounts.length > 0 ||
+          triggerSummary) && <span>·</span>}
+      {hasWorksWith && <CustomizeWorksWithChips entry={entry} />}
     </span>
   );
 }
@@ -429,6 +503,24 @@ export interface CustomizeInstalledRowProps {
    * its skills names them on an "Includes" line.
    */
   readonly skillMatch?: CustomizeSkillMatch;
+  /**
+   * New Customize row polish (CAN-6813): Works with harness chips, and the
+   * publisher's bundled mark for a row whose catalog supplies no logo.
+   */
+  readonly discovery?: boolean;
+  /**
+   * New Customize (CAN-6813): one split control replaces the status,
+   * actions and ⋯ menu. Its caret lists the row's menu items.
+   */
+  readonly splitAction?: CustomizeRowSplitAction;
+  /**
+   * New Customize (CAN-6815): stages one harness that refused the server
+   * again. Omit where the host cannot, and the row only says why.
+   */
+  readonly onRetryHarnessInstall?: (
+    entry: UnifiedPluginEntry,
+    failure: UnifiedEntryHarnessInstalls['failed'][number],
+  ) => void;
   readonly McpServerLogoComponent?: ComponentType<McpServerLogoProps>;
 }
 
@@ -461,6 +553,28 @@ function SkillMatchLine({
       ))}
       {match.moreCount > 0 &&
         ` +${match.moreCount} more ${match.moreCount === 1 ? 'skill' : 'skills'}`}
+    </span>
+  );
+}
+
+/**
+ * An integration row's installed state (CAN-6811): the harness its copy is
+ * installed for, and how many other installed copies it stands for.
+ */
+function IntegrationInstalledLine({
+  entry,
+}: {
+  entry: UnifiedPluginEntry;
+}): JSX.Element | null {
+  const installed = customizeIntegrationInstalledLabel(entry);
+  if (installed === undefined) return null;
+  return (
+    <span
+      data-testid={`customize-row-installed-copies-${entry.id}`}
+      className="pointer-events-none relative z-10 block min-w-0 truncate text-xs leading-5 fg-tertiary"
+    >
+      {installed.label}
+      {installed.moreLabel !== undefined && ` · ${installed.moreLabel}`}
     </span>
   );
 }
@@ -528,6 +642,9 @@ export function CustomizeInstalledRow({
   dimmed = false,
   updateBadge = false,
   skillMatch,
+  discovery = false,
+  splitAction,
+  onRetryHarnessInstall,
   McpServerLogoComponent = McpServerLogo,
 }: CustomizeInstalledRowProps): JSX.Element {
   const domId = customizeRowDomId(sectionId, entry.id);
@@ -544,7 +661,7 @@ export function CustomizeInstalledRow({
       : entry.state === 'needs-auth'
         ? 'Needs attention'
         : undefined;
-  const rowMenuItems =
+  const connectMenuItems =
     health === undefined &&
     attentionLabel !== undefined &&
     onConnect &&
@@ -561,14 +678,33 @@ export function CustomizeInstalledRow({
           },
         ]
       : menuItems;
+  // One Add for every harness (CAN-6815): New Customize only.
+  const harnessFailures = discovery
+    ? (entry.harnessInstalls?.failed ?? [])
+    : [];
+  const harnessWarning = customizeHarnessInstallWarning(
+    harnessFailures,
+    onRetryHarnessInstall !== undefined,
+  );
+  const rowMenuItems: readonly CustomizeRowMenuItem[] =
+    onRetryHarnessInstall && harnessFailures.length > 0
+      ? [
+          ...connectMenuItems,
+          ...harnessFailures.map(
+            (failure): CustomizeRowMenuItem => ({
+              id: `retry-harness-install-${failure.harness}`,
+              label: customizeHarnessRetryLabel(failure.harness),
+              onSelect: (): void => onRetryHarnessInstall(entry, failure),
+            }),
+          ),
+        ]
+      : connectMenuItems;
   const primaryProps = {
     id: domId,
     'aria-describedby': `${domId}-description`,
     'data-marketplace-entry': 'true',
     'data-testid': primaryTestId ?? `customize-row-${entry.id}`,
     'data-selected': selected ? 'true' : 'false',
-    className:
-      'block min-w-0 text-left outline-none after:absolute after:inset-0',
   };
   const onLinkClick = (event: MouseEvent<HTMLAnchorElement>): void => {
     if (
@@ -667,8 +803,18 @@ export function CustomizeInstalledRow({
       health={health}
       attentionLabel={attentionLabel}
       updateBadge={updateBadge}
+      worksWith={discovery}
+      harnessWarning={harnessWarning}
     />
   );
+  const logoKey =
+    curatedLogoKey(entry) ??
+    (discovery &&
+    !entry.logoUrl &&
+    entry.bundledLogo === undefined &&
+    entry.brandMark !== true
+      ? customizePublisherLogoKey(entry)
+      : undefined);
   // Opacity on the control itself would dim its focus ring, so the content
   // wrapper carries it.
   const content = (
@@ -682,7 +828,7 @@ export function CustomizeInstalledRow({
         className={`pointer-events-none relative inline-flex shrink-0 overflow-visible${dimmed ? ' opacity-60' : ''}`}
       >
         <McpServerLogoComponent
-          curatedKey={curatedLogoKey(entry)}
+          curatedKey={logoKey}
           logoUrl={entry.logoUrl}
           bundledLogo={entry.bundledLogo}
           brandMark={entry.brandMark}
@@ -698,22 +844,31 @@ export function CustomizeInstalledRow({
       </span>
       <span className={`min-w-0 flex-1${dimmed ? ' opacity-60' : ''}`}>
         {href !== undefined ? (
-          <a {...primaryProps} href={href} onClick={onLinkClick}>
+          <a
+            {...primaryProps}
+            className="block min-w-0 text-left outline-none after:absolute after:inset-0"
+            href={href}
+            onClick={onLinkClick}
+          >
             {title}
           </a>
         ) : (
-          <button
+          <ControlButton
+            presentation="customize-installed-primary"
             {...primaryProps}
             type="button"
             onClick={() => onSelect(entry)}
           >
             {title}
-          </button>
+          </ControlButton>
         )}
-        {skillMatch ? (
+        {skillMatch || entry.integrationCopies?.installed ? (
           <span className="flex min-w-0 flex-col gap-1">
             {metadataLine}
-            <SkillMatchLine entryId={entry.id} match={skillMatch} />
+            {skillMatch && (
+              <SkillMatchLine entryId={entry.id} match={skillMatch} />
+            )}
+            <IntegrationInstalledLine entry={entry} />
           </span>
         ) : (
           metadataLine
@@ -744,13 +899,24 @@ export function CustomizeInstalledRow({
           required is not repeated beside it. */}
         {inlineAction}
         {values}
-        {status}
-        {actions && (
+        {splitAction !== undefined && (
+          <CustomizeRowSplitButton
+            entryName={entry.name}
+            idPrefix={domId}
+            action={splitAction}
+            items={rowMenuItems.filter(
+              (item) => !splitAction.omitItemIds?.includes(item.id),
+            )}
+            testId={menuTestId ?? `customize-row-menu-${entry.id}`}
+          />
+        )}
+        {splitAction === undefined && status}
+        {splitAction === undefined && actions && (
           <span className="flex shrink-0 items-center justify-end">
             {actions}
           </span>
         )}
-        {rowMenuItems.length > 0 && (
+        {splitAction === undefined && rowMenuItems.length > 0 && (
           <span className="flex w-7 shrink-0 justify-end pointer-coarse:w-11">
             <CustomizeRowMenu
               entryName={entry.name}

@@ -92,7 +92,7 @@ export function useCompactQueue(): boolean {
  *   composer box (`bg-tertiary`), so the composer reads as the raised surface
  *   on top of it, with the shared hairline edge.
  * - It is inset from the composer by the composer's own 20px corner radius on
- *   each side (`mx-5`), so its sides rise from the composer's straight top
+ *   each side (the host inset), so its sides rise from the composer's straight top
  *   edge, clear of the composer's corner curve, and its top corners take the
  *   same 20px (`rounded-t-2xl`).
  * - Every corner button sits 12px from the edges: `pt-2` plus a row's 4px
@@ -102,7 +102,7 @@ export function useCompactQueue(): boolean {
  *   lands it directly on the composer box, below every notice above it.
  */
 export const QUEUED_MESSAGE_TRAY_CLASS =
-  'bg-secondary ring-[length:var(--border-hairline)] ring-line-secondary mx-5 rounded-t-2xl pt-2 pb-6 -mb-4';
+  'bg-secondary ring-[length:var(--border-hairline)] ring-line-secondary rounded-t-2xl pt-2 pb-6 -mb-4';
 
 /** How far the card runs under the composer's top edge, in px. */
 export const QUEUED_MESSAGE_TRAY_TUCK_PX = 16;

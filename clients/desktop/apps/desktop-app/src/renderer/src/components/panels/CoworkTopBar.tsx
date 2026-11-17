@@ -1,3 +1,4 @@
+import { ControlButton } from '@canopy/ui-shared/components';
 /**
  * The Cowork page's top bar — the git-free sibling of {@link WorktreeTopBar},
  * mounted by StandaloneChatPage above the panel grid. Mirrors the worktree
@@ -135,7 +136,7 @@ export const CoworkTopBar = memo(function CoworkTopBar({
         {/* Clickable breadcrumb pill (worktree-header parity: same 28px
             frame, typography, 9px icon→name gap, hover surface); opens the
             cowork workspace settings modal. */}
-        <button
+        <ControlButton
           type="button"
           data-testid="cowork-top-workspace-button"
           onClick={(): void => setSettingsOpen(true)}
@@ -143,7 +144,7 @@ export const CoworkTopBar = memo(function CoworkTopBar({
           // cloud project's are in its sidebar row's menu.
           disabled={workspace === undefined && chatProject === null}
           aria-label="Project settings"
-          className="electron-no-drag focus-ring flex h-7 min-w-0 items-center gap-2.25 rounded-md pl-1 pr-2 text-s font-normal fg-primary transition-colors hover:bg-subtle"
+          presentation="project-settings-titlebar"
         >
           <span className="inline-flex h-5 w-5 shrink-0 items-center justify-center">
             <ProjectIcon kind="cowork" color={workspaceColor} />
@@ -155,7 +156,7 @@ export const CoworkTopBar = memo(function CoworkTopBar({
           >
             {workspaceName}
           </span>
-        </button>
+        </ControlButton>
       </div>
       <div className="electron-drag flex shrink-0 items-center gap-2 pr-2.25">
         {/* Scoped, never primary: only the worktree header's instance owns

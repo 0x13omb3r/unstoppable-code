@@ -37,6 +37,7 @@ import {
   type AutomationMutationResponse,
   type ScheduledActivity,
 } from '@canopy/desktop-shared/types';
+import { isBotProjectId } from '@canopy/protocol/chat-targets';
 import { LOCAL_DESKTOP_AUTHORITY_ID } from '../canopy-runtime/desktop-runtime-identity';
 import { resolveCoworkWorkspaceId } from '../lib/cowork-migration-map';
 import { logMainProcessWarn } from '../lib/main-process-logging';
@@ -117,7 +118,7 @@ function impliedTargetContext(action: ChatAutomationAction): TargetContext {
     case 'app_advisor_prompt':
       return 'app_advisor';
     case 'worktree_session_prompt':
-      return action.workspaceId === APP_ADVISOR_PROJECT_ID
+      return isBotProjectId(action.workspaceId)
         ? 'app_advisor'
         : isCoworkWorkspace(action.workspaceId)
           ? 'cowork'

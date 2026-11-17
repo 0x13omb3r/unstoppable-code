@@ -34,7 +34,7 @@ import {
   ActionMenuItems,
   ActionMenuRowStyle,
 } from '../ActionMenuItems';
-import { Button } from '../Button';
+import { ControlButton, Button } from '../Button';
 import {
   DropdownMenuDivider,
   DropdownMenuItem,
@@ -254,13 +254,13 @@ function ApprovalFileTarget({
         allowShrink
         delay="long"
       >
-        <button
+        <ControlButton
           type="button"
           data-testid="tool-approval-file-target"
           aria-expanded={open}
           aria-controls={open ? fullPathId : undefined}
           onClick={(): void => setOpen((value) => !value)}
-          className="flex min-w-0 max-w-full items-center gap-1 rounded bg-fg-primary/[0.06] px-1.5 py-0.5 text-left font-mono text-2xs fg-primary/80 transition-colors hover:bg-fg-primary/[0.1]"
+          presentation="approval-path"
         >
           <span
             data-testid="tool-approval-file-target-label"
@@ -274,7 +274,7 @@ function ApprovalFileTarget({
           >
             <AppCatalogChevronDownMediumIcon size={14} />
           </span>
-        </button>
+        </ControlButton>
       </Tooltip>
       {open && (
         <div
@@ -867,28 +867,29 @@ export const ToolApprovalCard = memo(function ToolApprovalCard({
           <div className="flex flex-wrap items-center gap-2">
             <div ref={actionsRef} className="flex flex-wrap items-center gap-2">
               <div className="relative flex">
-                <button
+                <ControlButton
                   ref={primaryActionRef}
                   type="button"
                   onClick={allowOnce}
                   data-testid="tool-approval-allow"
-                  className={`${ruleScopes ? 'rounded-l' : 'rounded'} bg-accent-subtle px-3 py-1.5 text-xs font-medium fg-accent-strong transition-colors hover:bg-accent-subtle/80`}
+                  presentation="approval-allow"
+                  appearance={{ ruleScopes: !!ruleScopes }}
                 >
                   Allow once
-                </button>
+                </ControlButton>
                 {ruleScopes && (
                   <>
-                    <button
+                    <ControlButton
                       ref={allowTriggerRef}
                       type="button"
                       aria-haspopup="menu"
                       aria-expanded={allowMenuOpen}
                       aria-label="More allow options"
                       onClick={toggleAllowMenu}
-                      className="rounded-r border-l border-line-accent/20 bg-accent-subtle px-1.5 py-1.5 fg-accent-strong transition-colors hover:bg-accent-subtle/80"
+                      presentation="approval-allow-menu"
                     >
                       <AppCatalogChevronDownMediumIcon size={14} />
-                    </button>
+                    </ControlButton>
                     {/* Portaled and collision-clamped: the card sits at the bottom of
               the window, so an in-card popover opening downward ran behind
               the composer and off the viewport (CAN-3001). */}
@@ -934,27 +935,28 @@ export const ToolApprovalCard = memo(function ToolApprovalCard({
               </div>
 
               <div className="relative flex">
-                <button
+                <ControlButton
                   type="button"
                   onClick={denyOnce}
                   data-testid="tool-approval-deny"
-                  className={`${denyMenuItems.length > 0 ? 'rounded-l' : 'rounded'} px-3 py-1.5 text-xs fg-secondary transition-colors hover:bg-fg-primary/[0.06] hover:fg-primary/80`}
+                  presentation="approval-deny"
+                  appearance={{ split: denyMenuItems.length > 0 }}
                 >
                   Deny
-                </button>
+                </ControlButton>
                 {denyMenuItems.length > 0 && (
                   <>
-                    <button
+                    <ControlButton
                       ref={denyTriggerRef}
                       type="button"
                       aria-haspopup="menu"
                       aria-expanded={denyMenuOpen}
                       aria-label="More deny options"
                       onClick={toggleDenyMenu}
-                      className="rounded-r px-1.5 py-1.5 fg-secondary transition-colors hover:bg-fg-primary/[0.06] hover:fg-primary/80"
+                      presentation="approval-deny-menu"
                     >
                       <AppCatalogChevronDownMediumIcon size={14} />
-                    </button>
+                    </ControlButton>
                     <FloatingMenu
                       open={denyMenuOpen}
                       onOpenChange={setDenyMenuOpen}

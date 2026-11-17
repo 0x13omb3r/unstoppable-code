@@ -1418,6 +1418,10 @@ function getBrandedAppToolKey(toolName: string): CanopyInjectedToolKey | null {
  *   background helpers, and a pipeline agent action's own Ledger route. Only a
  *   pipeline agent's session carries Ledger tools; helper roles are excluded
  *   by purpose, not by transport label, so a helper's route never lists them.
+ * - `managed-delegate-cowork` — managed Cowork children. Exposes the shared
+ *   directory/chat tools, memory, pipeline YAML, and non-Git watcher tools.
+ * - `managed-delegate-app-advisor` — managed App Advisor children. Exposes
+ *   only profile-safe chat, watcher, and file-comment tools.
  *
  * The Agent Ledger tools (`LEDGER_INJECTED_TOOL_KEYS`) are allowlisted on the
  * interactive chat surfaces (`native-sdk`, `native-sdk-standalone`,
@@ -1440,7 +1444,9 @@ export type CanopyInjectedToolSurface =
   | 'opencode-acp-standalone'
   | 'copilot-sdk-standalone'
   | 'cursor-acp-standalone'
-  | 'managed-delegate';
+  | 'managed-delegate'
+  | 'managed-delegate-cowork'
+  | 'managed-delegate-app-advisor';
 
 const ACP_STANDALONE_INJECTED_TOOL_KEYS: readonly CanopyInjectedToolKey[] = [
   'get_script_output',
@@ -1756,6 +1762,33 @@ export const CANOPY_INJECTED_TOOL_SURFACE_ALLOWLISTS: Readonly<
     'detect_changed_symbols',
     'compare_change_impact',
     'get_review_context',
+    'search_deferred_tools',
+    'load_deferred_tools',
+  ],
+  'managed-delegate-cowork': [
+    'get_script_output',
+    'save_memory',
+    'search_memory',
+    'read_memory',
+    'read_pipeline_yaml',
+    'get_file_comments',
+    'search_watchers',
+    'setup_watchers',
+    'watch_command',
+    'schedule_wakeup',
+    'delete_watchers',
+    'search_deferred_tools',
+    'load_deferred_tools',
+  ],
+  'managed-delegate-app-advisor': [
+    'get_script_output',
+    'get_file_comments',
+    'search_watchers',
+    'setup_watchers',
+    'watch_github_items',
+    'watch_command',
+    'schedule_wakeup',
+    'delete_watchers',
     'search_deferred_tools',
     'load_deferred_tools',
   ],

@@ -1,6 +1,6 @@
+import { isBotProjectId } from '@canopy/protocol/chat-targets';
 import {
   canReceiveWorktreeChatActivity,
-  isAppAdvisorChatTarget,
   isAppAdvisorWindowFocused,
 } from '../surface';
 import {
@@ -383,11 +383,8 @@ export const createQuestionsSlice: StateCreator<
         let nextWorktreeChats = state.worktreeChats;
         let nextUnread = state.unreadWorktreeKeys;
         const visibleKey = getVisibleWorktreeKey(state.selectedWorktree);
-        const isAppAdvisorTarget = isAppAdvisorChatTarget(
-          event.projectId,
-          event.worktreeId,
-        );
-        const shouldMarkUnread = isAppAdvisorTarget
+        const isBotTarget = isBotProjectId(event.projectId);
+        const shouldMarkUnread = isBotTarget
           ? !isAppAdvisorWindowFocused()
           : currentWc === undefined ||
             currentWc.activeTabId !== event.chatId ||

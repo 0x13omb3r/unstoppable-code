@@ -1,5 +1,3 @@
-import { ORCHESTRATOR_LABEL } from '@canopy/protocol';
-
 /**
  * Shared copy for worktree removal: action labels, confirmation titles, and
  * retention outcomes for Archive and Delete, plus the branch-choice hint.
@@ -90,18 +88,4 @@ export function getWorktreeDeleteLabels(
       `changes, chats, and eligible workflow history are kept for ` +
       `${retentionWindow}. Otherwise, deletion is permanent.`,
   };
-}
-
-/**
- * The removal confirmation's note under its Keep the local branch switch. An
- * App Advisor request presets the switch and names what it asked for; the
- * user still makes the final choice. Without a request there is no note.
- */
-export function getWorktreeBranchChoiceHint(
-  requestedDeleteBranch?: boolean,
-): string | null {
-  if (requestedDeleteBranch === undefined) return null;
-  return requestedDeleteBranch
-    ? `${ORCHESTRATOR_LABEL} suggested deleting it.`
-    : `${ORCHESTRATOR_LABEL} suggested keeping it.`;
 }

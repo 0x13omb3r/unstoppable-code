@@ -1,6 +1,5 @@
 import { join } from 'node:path';
 import {
-  APP_ADVISOR_PROJECT_ID,
   SHARED_CONTAINER_VIEWER_PROJECT_ID,
   type WorkspaceNoteItem,
   type WorkspaceNoteReadResponse,
@@ -8,6 +7,7 @@ import {
   type WorkspacePromptReadResponse,
   type WorkspaceAttachmentItem,
 } from '@canopy/desktop-shared/types';
+import { isBotProjectId } from '@canopy/protocol/chat-targets';
 import { getCoworkManagedSubdir } from '@canopy/desktop-shared/node/lib/cowork-managed-dir';
 import { getAppAdvisorHomeDir, getCoworkWorkspaceRootDir } from '../lib/paths';
 import { resolveCoworkWorkspaceId } from '../lib/cowork-migration-map';
@@ -87,7 +87,7 @@ async function listAllViewerItems(
 }
 
 function workEntryHomeDir(projectId: string): string {
-  if (projectId === APP_ADVISOR_PROJECT_ID) {
+  if (isBotProjectId(projectId)) {
     return getAppAdvisorHomeDir();
   }
   return getCoworkWorkspaceRootDir(resolveCoworkWorkspaceId(projectId));

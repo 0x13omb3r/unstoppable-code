@@ -4,7 +4,7 @@ import { SummaryIcon, UnarchiveIcon } from '../icons/AppIcons';
 import { OPERATIONAL_STATUS_COLORS } from '../lib/operational-status-colors';
 import { REPLAY_MASK_CLASS } from '../lib/replay-privacy';
 import { Dot } from './Badge';
-import { Button } from './Button';
+import { ControlButton, Button } from './Button';
 import {
   DropdownMenuItem,
   DropdownMenuLabel,
@@ -74,10 +74,10 @@ function ArchivedChatsCardRow({
       data-archived-chat-id={item.id}
       className="flex w-full items-center gap-2 rounded-md pr-2 transition-colors hover:bg-subtle has-[>button:first-child:focus-visible]:bg-subtle"
     >
-      <button
+      <ControlButton
         type="button"
         onClick={onOpen}
-        className="flex min-w-0 flex-1 items-center gap-2 self-stretch rounded-md py-2 pl-2 text-left focus:outline-none"
+        presentation="archived-chat-row"
       >
         <span
           aria-hidden="true"
@@ -100,7 +100,7 @@ function ArchivedChatsCardRow({
             <span className="truncate text-2xs fg-tertiary">{item.meta}</span>
           ) : null}
         </span>
-      </button>
+      </ControlButton>
       <span className="flex shrink-0 items-center">
         {item.restorable ? (
           <Tooltip label={restoreLabel}>
@@ -188,7 +188,7 @@ export function ArchivedChatsCard({
         </div>
         {overflowCount > 0 ? (
           <DropdownMenuItem
-            role="button"
+            asButton
             onClick={onShowAll}
             data-testid="chat-tab-archive-more"
           >

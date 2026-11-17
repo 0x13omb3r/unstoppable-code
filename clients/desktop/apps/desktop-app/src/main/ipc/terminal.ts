@@ -1,6 +1,5 @@
 import type { BrowserWindow, IpcMainInvokeEvent } from 'electron';
 import {
-  APP_ADVISOR_PROJECT_ID,
   ClaudeTerminalLaunchError,
   IPC_CHANNELS,
   PLAN_EXPLORE_CHAT_PROJECT_ID,
@@ -28,6 +27,7 @@ import {
   type ClaudeTerminalSyncTranscriptRequest,
   type ClaudeTerminalSyncTranscriptResponse,
 } from '@canopy/desktop-shared/types';
+import { isBotProjectId } from '@canopy/protocol/chat-targets';
 import type { WindowAccessors } from './index';
 import { sendToWindow } from '../lib/window-send';
 import { addRendererDeliveryBarrier } from '../lib/web-contents-send';
@@ -78,14 +78,6 @@ function sendToMainAndAppAdvisor(
   sendToWindow(accessors.getAppAdvisorWindow(), channel, payload);
 }
 
-function isAppAdvisorTarget(projectId: string, worktreeId: string): boolean {
-  // Every App Advisor Work Entry uses its entry id as `worktreeId`. Recognition
-  // must therefore be project-based; a foreign project's coincidental
-  // `worktreeId === 'global'` is not an App Advisor target.
-  void worktreeId;
-  return projectId === APP_ADVISOR_PROJECT_ID;
-}
-
 function readEventTarget(
   payload: unknown,
 ): { projectId: string; worktreeId: string } | null {
@@ -122,7 +114,7 @@ export function registerTerminalHandlers(
     channel: string,
     payload: WorkerTerminalEvent['payload'],
   ): void => {
-    if (isAppAdvisorTarget(payload.projectId, payload.worktreeId)) {
+    if (isBotProjectId(payload.projectId)) {
       sendToMainAndAppAdvisor(accessors, channel, payload);
       return;
     }
@@ -168,7 +160,7 @@ export function registerTerminalHandlers(
       sendToWindow(accessors.getMainWindow(), channel, payload);
       return;
     }
-    if (!isAppAdvisorTarget(target.projectId, target.worktreeId)) {
+    if (!isBotProjectId(target.projectId)) {
       sendToWindow(accessors.getMainWindow(), channel, payload);
       return;
     }
@@ -179,7 +171,7 @@ export function registerTerminalHandlers(
   // the chat's first user message.
   getClaudeTerminalSessionService().setChatSummaryScheduler((request): void => {
     if (
-      request.projectId === APP_ADVISOR_PROJECT_ID ||
+      isBotProjectId(request.projectId) ||
       request.projectId === PLAN_EXPLORE_CHAT_PROJECT_ID
     ) {
       return;
@@ -440,7 +432,7 @@ export function registerTerminalHandlers(
     }
     if (
       request.assistantMode === 'app-advisor' &&
-      !isAppAdvisorTarget(request.projectId, request.worktreeId)
+      !isBotProjectId(request.projectId)
     ) {
       throw new Error(
         'Claude Code App Advisor terminal mode requires App Advisor sentinel ids.',
@@ -454,13 +446,13 @@ export function registerTerminalHandlers(
     // advisor tools fail with "App Advisor runtime unavailable".
     const isAppAdvisorLaunch =
       request.assistantMode === 'app-advisor' ||
-      isAppAdvisorTarget(request.projectId, request.worktreeId);
+      isBotProjectId(request.projectId);
     const appAdvisorRuntime =
       isAppAdvisorLaunch && typeof windowAccessors !== 'function'
         ? (await import('../app-advisor/runtime')).createAppAdvisorToolRuntime(
             windowAccessors,
             {
-              projectId: APP_ADVISOR_PROJECT_ID,
+              projectId: request.projectId,
               worktreeId: request.worktreeId,
               chatId: request.chatId,
             },

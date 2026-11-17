@@ -6,6 +6,7 @@ import {
 } from '@canopy/protocol/memory-sync';
 import {
   inspectMemoryLinks,
+  mergeUnresolvedMemoryLinks,
   repairMemoryLinks,
   type MemoryLinkHealth,
 } from './link-health';
@@ -158,26 +159,6 @@ type Settle = (outcome: MemoryConsolidationOutcome, reason?: string) => void;
 
 const NO_STRUCTURED_OUTPUT =
   'Local memory consolidation returned no structured output';
-
-/** Keep queued unlinked targets without counting still-visible references twice. */
-function mergedUnresolved(
-  ...lists: MemoryLinkHealth['unresolvedLinks'][]
-): MemoryLinkHealth['unresolvedLinks'] {
-  const merged = new Map<string, MemoryLinkHealth['unresolvedLinks']>();
-  for (const links of lists) {
-    const occurrences = new Map<string, MemoryLinkHealth['unresolvedLinks']>();
-    for (const link of links) {
-      const key = JSON.stringify([link.source, link.target]);
-      const group = occurrences.get(key) ?? [];
-      group.push(link);
-      occurrences.set(key, group);
-    }
-    for (const [key, group] of occurrences) {
-      if (group.length > (merged.get(key)?.length ?? 0)) merged.set(key, group);
-    }
-  }
-  return Array.from(merged.values()).flat();
-}
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
@@ -599,7 +580,7 @@ export async function runMemoryConsolidation(
         partial || !presentedPairs.has(JSON.stringify([source, target])),
     );
     const plannedHealth = inspectMemoryLinks(repaired.tree);
-    const pendingLinks = mergedUnresolved(
+    const pendingLinks = mergeUnresolvedMemoryLinks(
       carriedLinks,
       repaired.health.unresolvedLinks,
       plannedHealth.unresolvedLinks,
@@ -635,7 +616,7 @@ export async function runMemoryConsolidation(
       applied === true ? plannedHealth : inspectMemoryLinks(appliedTree);
     linkHealth = {
       ...appliedHealth,
-      unresolvedLinks: mergedUnresolved(
+      unresolvedLinks: mergeUnresolvedMemoryLinks(
         carriedLinks,
         repaired.health.unresolvedLinks,
         appliedHealth.unresolvedLinks,

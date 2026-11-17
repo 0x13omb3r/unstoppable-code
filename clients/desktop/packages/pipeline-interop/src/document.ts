@@ -157,6 +157,11 @@ export interface Job {
   max_iterations?: PipelineIntegerOrExpression;
   continue_on_error?: boolean | string;
   strategy?: JobStrategy;
+  /**
+   * `read_only` runs each variant of the job in a sandbox of its own in a
+   * cloud run (CAN-6892); desktop ignores it. See `job-isolation.ts`.
+   */
+  isolation?: 'shared' | 'read_only';
   steps: Step[];
 }
 
@@ -190,6 +195,8 @@ export interface NormalizedJob {
   continue_on_error: boolean;
   continue_on_error_expression?: string;
   strategy?: NormalizedMatrixStrategy;
+  /** Present only for a `read_only` job; a shared job omits it. */
+  isolation?: 'read_only';
   steps: NormalizedStep[];
 }
 

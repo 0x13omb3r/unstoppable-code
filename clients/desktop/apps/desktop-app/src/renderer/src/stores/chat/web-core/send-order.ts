@@ -100,6 +100,27 @@ export function releaseUnclaimedCloudSend(press: CloudSendPress): void {
   if (placeOf(press)?.holder === 'press') settleCloudSend(press);
 }
 
+const commandsByMessage = new Map<string, string>();
+
+/**
+ * Names the web core command the message `messageId` posts as, minted by
+ * the caller so it can ask the web core later whether the message was taken
+ * (CAN-6798). A send without one gets a fresh id.
+ */
+export function attachCloudSendCommand(
+  messageId: string,
+  commandId: string,
+): void {
+  commandsByMessage.set(messageId, commandId);
+}
+
+/** Takes the command id handed to the message `messageId`'s dispatch, if any. */
+export function claimCloudSendCommand(messageId: string): string | undefined {
+  const commandId = commandsByMessage.get(messageId);
+  commandsByMessage.delete(messageId);
+  return commandId;
+}
+
 /** Hands the place to the dispatch of the message `messageId`. */
 export function attachCloudSendPress(
   messageId: string,

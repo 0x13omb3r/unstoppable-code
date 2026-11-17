@@ -49,10 +49,10 @@ import {
   authRequestDialogAnswer,
 } from '@canopy/desktop-shared/lib/browser-pending-surfaces';
 import {
-  APP_ADVISOR_PROJECT_ID,
   IPC_CHANNELS,
   STANDALONE_CHAT_PROJECT_ID,
 } from '@canopy/desktop-shared/types';
+import { isBotProjectId } from '@canopy/protocol/chat-targets';
 import type {
   AppLinkBrowserEvent,
   AppAdvisorAction,
@@ -647,7 +647,7 @@ export function initiatorForWorktreeRuntime(
     worktreeId: runtime.worktreeId,
     chatId: runtime.chatId,
   };
-  return runtime.projectId === APP_ADVISOR_PROJECT_ID
+  return isBotProjectId(runtime.projectId)
     ? { kind: 'app_advisor', chat }
     : { kind: 'agent', chat };
 }

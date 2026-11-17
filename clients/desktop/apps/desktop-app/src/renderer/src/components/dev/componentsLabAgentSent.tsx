@@ -7,6 +7,7 @@ import {
   type AgentSentReceivingContext,
   type AgentSentSenderOpener,
 } from '@canopy/ui-shared';
+import { APP_ADVISOR_BOT_ID } from '@canopy/protocol/chat-targets';
 import {
   SpecimenCell,
   SpecimenGrid,
@@ -18,7 +19,7 @@ const noop = (): void => undefined;
 const AGENT_SENT: ComponentProps<typeof AgentSentTitle>['agentSent'] = {
   sender: {
     kind: 'bot',
-    botId: 'app_advisor',
+    botId: APP_ADVISOR_BOT_ID,
     taskId: 'lab-task',
     chatId: 'lab-chat',
   },

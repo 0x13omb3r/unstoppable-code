@@ -27,6 +27,9 @@ import type { MarketplaceInfo, PluginInfo } from './catalog';
 // ---------------------------------------------------------------------------
 
 export * from './catalog';
+export * from './harness-compatibility';
+export * from './harness-installs';
+export * from './stand-ins';
 
 /**
  * The public GitHub package for a manifest-relative path inside an official

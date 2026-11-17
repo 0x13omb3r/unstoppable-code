@@ -38,6 +38,8 @@ import {
   type AppAdvisorWindowCommand,
   type AppAdvisorWindowOpenRequest,
   type RemoteControlForgetDeviceRequest,
+  type RemoteControlHostUpdateAction,
+  type RemoteControlUpdateHostRequest,
   type RemoteControlGetStateRequest,
   type RemoteControlInstallIdResult,
   type RemoteControlPairingEvent,
@@ -127,6 +129,9 @@ import { listRemoteDirectory } from './host/list-directory';
 import { createMainWindowPushSource } from './host/main-window-pushes';
 import { RemoteUploadStore } from './host/uploads';
 import { currentRemoteVersion } from './protocol-version';
+import type { LocalRelease } from './client/host-update';
+import { getCanopyReleaseFlavor } from '../lib/app-identity';
+import { getInternalReleaseIndicatorForDisplay } from '../lib/internal-release-version';
 import { RemoteAccessStore } from './remote-access-store';
 import {
   RemoteControlService,
@@ -361,6 +366,7 @@ export function initializeRemoteControl(options: {
       process.env,
       __CANOPY_E2E__,
     ),
+    release: localRelease(app.getVersion()),
     createBridge: (
       controllerDeviceId,
       _surface,
@@ -564,6 +570,45 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null;
 }
 
+const HOST_UPDATE_ACTIONS: readonly RemoteControlHostUpdateAction[] = [
+  'update',
+  'restart-now',
+  'cancel',
+];
+
+function isHostUpdateAction(
+  value: unknown,
+): value is RemoteControlHostUpdateAction {
+  return HOST_UPDATE_ACTIONS.some((action) => action === value);
+}
+
+function parseUpdateHostRequest(
+  request: unknown,
+): RemoteControlUpdateHostRequest {
+  if (!isRecord(request) || !isHostUpdateAction(request.action)) {
+    throw classifyError(
+      new Error('Invalid update request.'),
+      'input.not_accepted',
+    );
+  }
+  return {
+    deviceId: parseDeviceId(request.deviceId),
+    action: request.action,
+  };
+}
+
+/** This computer's release, as the update notice names it. */
+function localRelease(version: string): LocalRelease {
+  const flavor = getCanopyReleaseFlavor();
+  return {
+    flavor,
+    displayVersion:
+      flavor === 'internal'
+        ? getInternalReleaseIndicatorForDisplay(version)
+        : version,
+  };
+}
+
 function registerRemoteControlIpc(
   service: RemoteControlService,
   windows: RemoteMachineWindows,
@@ -605,6 +650,11 @@ function registerRemoteControlIpc(
   );
   registerIpcHandler(IPC_CHANNELS.remoteControlCancelPairing, () =>
     service.cancelPairing(),
+  );
+  registerIpcHandler(
+    IPC_CHANNELS.remoteControlUpdateHost,
+    (_event, request: unknown) =>
+      service.updateHost(parseUpdateHostRequest(request)),
   );
   registerIpcHandler(
     IPC_CHANNELS.remoteControlSetAllowRemoteUpdates,

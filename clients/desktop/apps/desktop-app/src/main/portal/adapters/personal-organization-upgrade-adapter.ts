@@ -4,6 +4,7 @@ import {
   PersonalProjectStatusRequestSchema,
 } from '@canopy/protocol/organizations';
 import type { PortalAdapterContext } from './types';
+import { InvalidCanopyJsonError } from '../../lib/canopy-json';
 
 export async function handlePortalPersonalOrganizationProjects(
   command: PortalCommandEnvelope<unknown>,
@@ -22,7 +23,7 @@ export async function handlePortalPersonalOrganizationProjects(
   const service = getPersonalOrganizationUpgradeService();
   try {
     if (command.type === 'portal.personal_organization.projects.list') {
-      context.complete(command, await service.list());
+      context.complete(command, await service.list(undefined, false));
     } else if (
       command.type === 'portal.personal_organization.projects.status'
     ) {
@@ -39,7 +40,9 @@ export async function handlePortalPersonalOrganizationProjects(
       }
       context.complete(
         command,
-        await service.status(request.data.operationId, context.sessionId),
+        await (request.data.acknowledgeTerminal
+          ? service.status(request.data.operationId, context.sessionId, true)
+          : service.status(request.data.operationId, context.sessionId)),
       );
     } else {
       const request = PersonalProjectConversionRequestSchema.safeParse(
@@ -86,6 +89,10 @@ function failExecution(
   context.fail(
     command,
     'execution_failed',
-    error instanceof Error ? error.message : 'Operation unavailable',
+    error instanceof InvalidCanopyJsonError
+      ? 'invalid-canopy-json'
+      : error instanceof Error
+        ? error.message
+        : 'Operation unavailable',
   );
 }

@@ -1,3 +1,4 @@
+import { handlePortalChatRetryFailure } from './adapters/chat-retry-failure-adapter';
 import { handlePortalWorktreeRecovery } from './adapters/worktree-recovery-adapter';
 import { handlePortalWatcherDelete } from './adapters/watchers-adapter';
 import {
@@ -543,6 +544,7 @@ const FEATURE_ADAPTERS: Partial<
   'portal.chat.visual.read': handlePortalChatVisualRead,
   'portal.chat.cancel': handlePortalChatCancel as PortalCommandAdapter<unknown>,
   'portal.chat.cancel_turn': handlePortalChatCancelTurn,
+  'portal.chat.retry_failure': handlePortalChatRetryFailure,
   'portal.chat.queue.cancel':
     handlePortalChatQueueCancel as PortalCommandAdapter<unknown>,
   'portal.chat.queue.edit':

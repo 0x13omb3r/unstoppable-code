@@ -36,6 +36,16 @@ import {
 } from '@canopy/ui-rich/editor';
 import { beginCloudTask } from '@/cloud-chats/useCloudCoworkSidebar';
 import { setFilesNotAttached } from '@/cloud-chats/cloud-task-deletion';
+import { openCoworkWorkEntryFromSidebar } from '@/lib/openCoworkWorkEntryFromSidebar';
+import { readWebCoreSendReceipt } from '@/stores/chat/web-core';
+import {
+  clearHomeSend,
+  keepHomeSendPending,
+  showHomeSendPending,
+  noteHomeSendDispatched,
+  returnHomeDraft,
+  stillMissingBeforeSendAgain,
+} from './homeDraftPersistence';
 import {
   INSERT_CHAT_TEXT_EVENT,
   type InsertChatTextDetail,
@@ -109,6 +119,7 @@ import {
   sourceNoCommitsSendFailure,
   useHomeComposerStore,
   type HomeBranchTarget,
+  type HomeCloudFile,
   type HomeNewWorktreeBaseTarget,
 } from '@/stores/homeComposerStore';
 import type { TaskReadyPipelineLaunchTarget } from '@/components/worktree/useTaskReadyPipelineLauncher';
@@ -187,6 +198,127 @@ function isSubmittedHomeDraftCurrent(
     current.cloudFiles === draft.cloudFiles &&
     scheduleEqual(current.scheduledSendDraft, draft.scheduledSendDraft)
   );
+}
+
+/**
+ * Whether New task still holds, untouched, the draft it held when this was
+ * taken: read from its change events and its `draftGeneration`, never by
+ * comparing text, so a newer draft that happens to match is never mistaken
+ * for it (CAN-6798).
+ */
+interface HomeDraftWatch {
+  /** No content change and no replacement since. */
+  readonly untouched: () => boolean;
+  /** Still in the project and mode it was taken in. */
+  readonly sameContext: () => boolean;
+  /** Stops watching. */
+  readonly release: () => void;
+}
+
+function watchHomeDraft(): HomeDraftWatch {
+  let generation = useHomeComposerStore.getState().draftGeneration;
+  let touched = false;
+  let moved = false;
+  // An empty list swapped for another empty one is no edit.
+  const listChanged = (
+    next: readonly unknown[],
+    previous: readonly unknown[],
+  ): boolean => next !== previous && (next.length > 0 || previous.length > 0);
+  const stop = useHomeComposerStore.subscribe((state, previous) => {
+    const contextChanged =
+      state.workspaceId !== previous.workspaceId ||
+      state.mode !== previous.mode ||
+      state.branchTarget !== previous.branchTarget ||
+      state.newWorktreeBaseTarget !== previous.newWorktreeBaseTarget;
+    if (contextChanged) moved = true;
+    // A project, mode, branch or base change can bump the generation, drop
+    // files staged for the old project, or drop a schedule the new mode
+    // can't take: none is an edit, and the text and mentions are still the
+    // submitted ones (CAN-3933, CAN-6798).
+    if (
+      contextChanged &&
+      state.text === previous.text &&
+      state.fileReferences === previous.fileReferences
+    ) {
+      generation = state.draftGeneration;
+      return;
+    }
+    if (
+      state.draftGeneration !== generation ||
+      state.text !== previous.text ||
+      listChanged(state.fileReferences, previous.fileReferences) ||
+      listChanged(state.attachments, previous.attachments) ||
+      listChanged(state.cloudFiles, previous.cloudFiles) ||
+      state.scheduledSendDraft !== previous.scheduledSendDraft
+    ) {
+      touched = true;
+      stop();
+    }
+  });
+  return {
+    untouched: (): boolean =>
+      !touched &&
+      useHomeComposerStore.getState().draftGeneration === generation,
+    sameContext: (): boolean => !moved,
+    release: stop,
+  };
+}
+
+/** Each submission's watch on New task's draft, from its press. */
+const submittedDraftWatches = new Map<string, HomeDraftWatch>();
+
+/**
+ * Submissions whose first send is held failed in its chat with Try again:
+ * resumed from there, they still decide what leaves New task, so their
+ * watch keeps watching until that settles (CAN-6798).
+ */
+const heldSubmissions = new Set<string>();
+
+/** The submission is over: New task's draft is no longer its to watch. */
+function releaseSubmittedDraftWatch(submissionId: string): void {
+  if (heldSubmissions.has(submissionId)) return;
+  submittedDraftWatches.get(submissionId)?.release();
+  submittedDraftWatches.delete(submissionId);
+}
+
+/** Its first send is held failed in its chat, which can still resume it. */
+function holdSubmission(submissionId: string): void {
+  heldSubmissions.add(submissionId);
+}
+
+/** A held first send resumed from its chat: released once that settles. */
+async function resumeHeldSubmission(
+  submissionId: string,
+  resume: () => Promise<boolean>,
+): Promise<boolean> {
+  heldSubmissions.delete(submissionId);
+  try {
+    return await resume();
+  } finally {
+    releaseSubmittedDraftWatch(submissionId);
+  }
+}
+
+/** Test-only: the life of a submission's watch on New task (CAN-6798). */
+export const submissionWatchForTest = {
+  watch: (submissionId: string): void => {
+    submittedDraftWatches.set(submissionId, watchHomeDraft());
+  },
+  hold: holdSubmission,
+  release: releaseSubmittedDraftWatch,
+  resume: resumeHeldSubmission,
+  untouched: (submissionId: string): boolean | undefined =>
+    submittedDraftWatches.get(submissionId)?.untouched(),
+};
+
+/**
+ * Whether New task holds, untouched, the local first message on its way
+ * now: it leaves New task as it is dispatched, so it is never a draft to
+ * keep apart meanwhile (CAN-6798).
+ */
+export function homeDraftIsBeingSent(): boolean {
+  const id = activeHomeSubmissionId;
+  return id !== null && submittedDraftWatches.get(id)?.untouched() === true;
 }
 
 const PIPELINE_TASK_TEXT_INSTRUCTION_HEADER =
@@ -570,10 +702,10 @@ function withMentionedPlugins(
  * an attachment import still pending for the current draft.
  * A blank prompt creates a work area with an unsent attachment/settings draft.
  * On success the composer draft is reset (`useHomeComposerStore.getState().reset()`)
- * when the whole draft is still the submitted one; otherwise, when the store
- * still holds the submitted text/references, only that content is purged
- * (`clearSubmittedDraft()`) and the newer workspace, attachments, schedule, or
- * mode are kept. A different draft typed during the send is never cleared.
+ * when the whole draft is still the submitted one; otherwise, when New task
+ * only moved to another project, mode, branch or base since the press, what
+ * was submitted is purged (`clearSubmittedDraft()`) and where it moved to is
+ * kept. A different draft typed during the send is never cleared.
  * On failure `sendError` is set, `isSending` is cleared, and the rest of the
  * draft (text, attachments, config) is preserved so the user can retry.
  *
@@ -665,6 +797,8 @@ const CLOUD_PROJECT_GONE_SEND_ERROR =
   "That cloud project isn't available any more. Choose another project.";
 const CLOUD_ATTACHMENTS_SEND_ERROR =
   "Files staged for a local project can't go to a cloud project. Remove them, then attach them again.";
+const CLOUD_SEND_AGAIN_UNCHECKED_ERROR =
+  "Couldn't check whether your earlier message arrived. Try again in a moment.";
 const CLOUD_SCHEDULE_SEND_ERROR =
   "A cloud project can't take a scheduled message. Remove the schedule, then send.";
 
@@ -723,163 +857,346 @@ async function dispatchHomeCloudSend(
   if (draft.scheduledSendDraft) return refuse(CLOUD_SCHEDULE_SEND_ERROR);
   const submittedAccountEpoch =
     useWorkspaceContextStore.getState().accountEpoch;
+  const handedOff = await sendHomeCloudMessage(
+    {
+      projectId,
+      text: draft.text,
+      files: draft.cloudFiles,
+      fileReferences: draft.fileReferences,
+      // Nothing has awaited since the press: New task holds exactly this
+      // message, which leaves it whole as it moves into the outbox.
+      leaveNewTask: (): void => {
+        if (
+          useHomeComposerStore.getState().draftGeneration ===
+          draft.draftGeneration
+        )
+          useHomeComposerStore.getState().reset();
+      },
+    },
+    submittedAccountEpoch,
+  );
+  if (handedOff === null) return refuse(CLOUD_OFFLINE_SEND_ERROR);
+  return true;
+}
+
+/** A cloud message from New task, or one it sends again (CAN-6798). */
+interface HomeCloudMessage {
+  readonly projectId: string;
+  readonly text: string;
+  /** Picked files, uploaded to the message's chat before it posts. */
+  readonly files: readonly HomeCloudFile[];
+  readonly fileReferences: readonly FileReference[];
+  /** Takes the message out of New task as it moves into the outbox. */
+  readonly leaveNewTask?: () => void;
+  /** The task to send to; a new one starts without it. */
+  readonly task?: string;
+  /** The outbox entry this message sends again. */
+  readonly replaces?: string;
+}
+
+/**
+ * Sends a cloud message to its task, starting a new one unless it names
+ * one. Resolves whether the message was handed off (sent, or held by its
+ * chat's composer), or null when no task could start.
+ */
+async function sendHomeCloudMessage(
+  message: HomeCloudMessage,
+  submittedAccountEpoch: number,
+): Promise<boolean | null> {
+  const { projectId } = message;
   // The account this send is pressed under, when the web core can refuse it
   // under another (CAN-6828).
   const webCorePrincipalId = pressedWebCorePrincipal();
   let worktreeId: string;
   let created: Promise<unknown>;
   try {
-    ({ worktreeId, created } = beginCloudTask(projectId));
+    if (message.task !== undefined) {
+      worktreeId = message.task;
+      created = Promise.resolve();
+      openCoworkWorkEntryFromSidebar(projectId, worktreeId);
+    } else {
+      ({ worktreeId, created } = beginCloudTask(projectId));
+    }
   } catch (error) {
     reportClientAppError(error);
-    return refuse(CLOUD_OFFLINE_SEND_ERROR);
+    return null;
   }
-  const text = draft.text;
-  const files = draft.cloudFiles;
-  if (text.trim().length > 0 || files.length > 0) {
-    const target = { projectId, worktreeId, chatId: worktreeId };
-    // Its place in the new chat's order is taken now, on the click, so a
-    // message typed in that chat while this one waits posts after it
-    // (CAN-6828).
-    const press = pressCloudSend(target);
-    // Each picked file uploads to the new chat, on its own, once the task's
-    // create settles (CAN-6763). An upload opens only while this send is
-    // still the account's and its chat may still take it: none goes up
-    // under an account it wasn't pressed in, or to a chat that never opened.
-    let abandoned = false;
-    const uploadsCurrent = (): boolean =>
-      !abandoned && isHomeSendAccountCurrent(submittedAccountEpoch);
-    const uploads: Promise<(AttachmentMeta | null)[]> =
-      files.length === 0
-        ? Promise.resolve([])
-        : Promise.allSettled([created]).then(() =>
-            Promise.all(
-              files.map(async ({ file }): Promise<AttachmentMeta | null> => {
-                if (!uploadsCurrent()) return null;
-                try {
-                  const { attachments } = await importWebCoreChatFiles(
-                    target,
-                    [file],
-                    uploadsCurrent,
-                  );
-                  return attachments[0] ?? null;
-                } catch (error) {
-                  reportClientAppError(error);
-                  return null;
-                }
-              }),
-            ),
-          );
-    let uploaded: AttachmentMeta[] = [];
-    // A refused message goes back to the new chat's composer: into the
-    // editor when it is open, so its own draft save keeps it, else as the
-    // draft it opens with, and its uploaded files join that composer's
-    // attachments. `true` tells the send the composer holds it, so it drops
-    // the refused message from the transcript and says why.
-    const keepAsDraft = (): boolean => {
-      // Another account's composer never takes this one's prompt.
-      if (!isHomeSendAccountCurrent(submittedAccountEpoch)) return true;
-      if (uploaded.length > 0)
-        useChatStore.getState().addPendingAttachments(uploaded, target);
-      if (text.trim().length === 0) return true;
-      let handled = false;
-      const detail: InsertChatTextDetail = {
-        text,
-        targetTabId: worktreeId,
-        markHandled: (): void => {
-          handled = true;
-        },
-      };
-      document.dispatchEvent(
-        new CustomEvent(INSERT_CHAT_TEXT_EVENT, { detail }),
-      );
-      if (!handled) {
-        // A draft typed in the new chat meanwhile stays, after the message.
-        const chat = useChatStore.getState();
-        const typed = chat.getTabDraft(worktreeId);
-        const typedText =
-          typed === undefined ? '' : serializeEditorValue(typed).text.trim();
-        const refused = buildEditorValueFromMessage(text, []);
-        chat.saveTabDraft(
-          worktreeId,
-          typed !== undefined && typedText !== '' && typedText !== text.trim()
-            ? [...refused, ...typed]
-            : refused,
+  const { text, files } = message;
+  if (text.trim().length === 0 && files.length === 0) {
+    // A task with no first message: nothing moves into the outbox.
+    message.leaveNewTask?.();
+    return true;
+  }
+  const target = { projectId, worktreeId, chatId: worktreeId };
+  // Its place in the new chat's order is taken now, on the click, so a
+  // message typed in that chat while this one waits posts after it
+  // (CAN-6828).
+  const press = pressCloudSend(target);
+  const userMessageId = nextMsgId();
+  const commandId = crypto.randomUUID();
+  // Dispatched from here, in one step: the message moves into the outbox
+  // under the command id it posts as and leaves New task, so whatever New
+  // task holds from now on is a new draft (CAN-6798).
+  noteHomeSendDispatched({
+    userMessageId,
+    destination: target,
+    message: {
+      workspaceId: projectId,
+      text,
+      fileReferences: message.fileReferences,
+      cloudFileNames: files.map(({ file }) => file.name),
+    },
+    commandId,
+    accountEpoch: submittedAccountEpoch,
+    ...(message.replaces === undefined ? {} : { replaces: message.replaces }),
+    ...(message.leaveNewTask === undefined
+      ? {}
+      : { leaveNewTask: message.leaveNewTask }),
+  });
+  // Each picked file uploads to the new chat, on its own, once the task's
+  // create settles (CAN-6763). An upload opens only while this send is
+  // still the account's and its chat may still take it: none goes up
+  // under an account it wasn't pressed in, or to a chat that never opened.
+  let abandoned = false;
+  const uploadsCurrent = (): boolean =>
+    !abandoned && isHomeSendAccountCurrent(submittedAccountEpoch);
+  const uploads: Promise<(AttachmentMeta | null)[]> =
+    files.length === 0
+      ? Promise.resolve([])
+      : Promise.allSettled([created]).then(() =>
+          Promise.all(
+            files.map(async ({ file }): Promise<AttachmentMeta | null> => {
+              if (!uploadsCurrent()) return null;
+              try {
+                const { attachments } = await importWebCoreChatFiles(
+                  target,
+                  [file],
+                  uploadsCurrent,
+                );
+                return attachments[0] ?? null;
+              } catch (error) {
+                reportClientAppError(error);
+                return null;
+              }
+            }),
+          ),
         );
-      }
-      return true;
-    };
-    // The task's chat joins the chat store once its page opens, and the
-    // message waits for it. Home keeps the draft until the message is sent
-    // or handed to that chat's composer, and an account change meanwhile
-    // sends and restores nothing. Bound to its account, the message goes to
-    // the chat as soon as it opens, so it shows at once, and posts once the
-    // task exists: the web core refuses it if the account changes before it
-    // posts. Unbound, as against a web core that can't refuse it, it also
-    // waits for the task's create before it goes to the chat, as a local
-    // send waits for its worktree, so the account is checked last.
-    useHomeComposerStore.setState({ isSending: true });
-    let handedOff = true;
-    const opened = await whenCloudChatOpens(
-      `${projectId}/${worktreeId}`,
-      worktreeId,
-    );
-    // A refused create is the send's to report, as for a send typed there.
-    if (webCorePrincipalId === undefined) await Promise.allSettled([created]);
-    // The message goes with every file or not at all: one that didn't
-    // upload leaves the message and the files that did in the new chat's
-    // composer, and names the rest there, for the person to send without it
-    // or attach it again. A chat that never opened waits for none of them.
-    if (!opened) abandoned = true;
-    const settled = opened ? await uploads : [];
-    uploaded = settled.filter(
-      (attachment): attachment is AttachmentMeta => attachment !== null,
-    );
-    if (!isHomeSendAccountCurrent(submittedAccountEpoch)) {
-      releaseUnclaimedCloudSend(press);
-      return true;
-    }
-    const notAttached = files
-      .filter((_, index) => (settled[index] ?? null) === null)
-      .map(({ file }) => file.name);
-    if (opened && notAttached.length === 0) {
-      try {
-        await useChatStore
-          .getState()
-          .sendMessage(text, undefined, target, undefined, {
-            onPreDispatchRejected: keepAsDraft,
-            webCoreSendPress: press,
-            ...(uploaded.length > 0
-              ? {
-                  attachmentPaths: uploaded.map(
-                    (attachment) => attachment.absolutePath,
-                  ),
-                  // Files attached in the new chat meanwhile stay there.
-                  composerAttachmentsReserved: true,
-                }
-              : {}),
-            ...(webCorePrincipalId === undefined ? {} : { webCorePrincipalId }),
-          });
-      } catch (error: unknown) {
-        reportClientAppError(error);
-        handedOff = false;
-      }
-    } else {
-      keepAsDraft();
-      // A chat that never opened takes no files: each one is named.
-      setFilesNotAttached(worktreeId, notAttached);
-    }
-    releaseUnclaimedCloudSend(press);
+  let uploaded: AttachmentMeta[] = [];
+  // A refused message goes back to the new chat's composer: into the
+  // editor when it is open, so its own draft save keeps it, else as the
+  // draft it opens with, and its uploaded files join that composer's
+  // attachments. `true` tells the send the composer holds it, so it drops
+  // the refused message from the transcript and says why.
+  const keepAsDraft = (): boolean => {
+    // Another account's composer never takes this one's prompt.
     if (!isHomeSendAccountCurrent(submittedAccountEpoch)) return true;
-    useHomeComposerStore.setState({ isSending: false });
-    if (!handedOff) return true;
+    if (uploaded.length > 0)
+      useChatStore.getState().addPendingAttachments(uploaded, target);
+    if (text.trim().length === 0) return true;
+    let handled = false;
+    const detail: InsertChatTextDetail = {
+      text,
+      targetTabId: worktreeId,
+      markHandled: (): void => {
+        handled = true;
+      },
+    };
+    document.dispatchEvent(new CustomEvent(INSERT_CHAT_TEXT_EVENT, { detail }));
+    if (!handled) {
+      // A draft typed in the new chat meanwhile stays, after the message.
+      const chat = useChatStore.getState();
+      const typed = chat.getTabDraft(worktreeId);
+      const typedText =
+        typed === undefined ? '' : serializeEditorValue(typed).text.trim();
+      const refused = buildEditorValueFromMessage(text, []);
+      // A draft typed there with the same text already holds the message:
+      // it stays as typed, mentions included, rather than being replaced.
+      if (typed !== undefined && typedText !== '' && typedText === text.trim())
+        return true;
+      chat.saveTabDraft(
+        worktreeId,
+        typed !== undefined && typedText !== ''
+          ? [...refused, ...typed]
+          : refused,
+      );
+    }
+    return true;
+  };
+  // The task's chat joins the chat store once its page opens, and the
+  // message waits for it. Home keeps the draft until the message is sent
+  // or handed to that chat's composer, and an account change meanwhile
+  // sends and restores nothing. Bound to its account, the message goes to
+  // the chat as soon as it opens, so it shows at once, and posts once the
+  // task exists: the web core refuses it if the account changes before it
+  // posts. Unbound, as against a web core that can't refuse it, it also
+  // waits for the task's create before it goes to the chat, as a local
+  // send waits for its worktree, so the account is checked last.
+  useHomeComposerStore.setState({ isSending: true });
+  let handedOff = true;
+  const opened = await whenCloudChatOpens(
+    `${projectId}/${worktreeId}`,
+    worktreeId,
+  );
+  // A refused create is the send's to report, as for a send typed there.
+  if (webCorePrincipalId === undefined) await Promise.allSettled([created]);
+  // The message goes with every file or not at all: one that didn't
+  // upload leaves the message and the files that did in the new chat's
+  // composer, and names the rest there, for the person to send without it
+  // or attach it again. A chat that never opened waits for none of them.
+  if (!opened) abandoned = true;
+  const settled = opened ? await uploads : [];
+  uploaded = settled.filter(
+    (attachment): attachment is AttachmentMeta => attachment !== null,
+  );
+  if (!isHomeSendAccountCurrent(submittedAccountEpoch)) {
+    releaseUnclaimedCloudSend(press);
+    return true;
   }
-  if (isSubmittedHomeDraftCurrent(draft))
-    useHomeComposerStore.getState().reset();
-  return true;
+  const notAttached = files
+    .filter((_, index) => (settled[index] ?? null) === null)
+    .map(({ file }) => file.name);
+  // Whether the message's fate is known: its chat took it, or that chat's
+  // composer holds it. A send that ended any other way, as when the web
+  // core didn't answer, may have landed, so its outbox entry stays for the
+  // next start to settle by its receipt (CAN-6798).
+  let settledOutcome = false;
+  // Parked in a queue to post later under the same command: not shown as
+  // pending, as it is still on its way from here.
+  let queued = false;
+  let dispatchRejected = false;
+  let ended = false;
+  if (opened && notAttached.length === 0) {
+    try {
+      await useChatStore
+        .getState()
+        .sendMessage(text, undefined, target, undefined, {
+          onPreDispatchRejected: (): boolean => {
+            settledOutcome = true;
+            return keepAsDraft();
+          },
+          onDispatchAccepted: (): void => {
+            settledOutcome = true;
+          },
+          // A running task's queue can refuse it after the send has ended.
+          onDispatchRejected: (): void => {
+            dispatchRejected = true;
+            if (
+              ended &&
+              !settledOutcome &&
+              isHomeSendAccountCurrent(submittedAccountEpoch)
+            )
+              showHomeSendPending(commandId);
+          },
+          onQueuedWithoutDispatch: (): void => {
+            queued = true;
+          },
+          webCoreSendPress: press,
+          webCoreCommandId: commandId,
+          userMessageId,
+          ...(uploaded.length > 0
+            ? {
+                attachmentPaths: uploaded.map(
+                  (attachment) => attachment.absolutePath,
+                ),
+                // Files attached in the new chat meanwhile stay there.
+                composerAttachmentsReserved: true,
+              }
+            : {}),
+          ...(webCorePrincipalId === undefined ? {} : { webCorePrincipalId }),
+        });
+    } catch (error: unknown) {
+      reportClientAppError(error);
+      handedOff = false;
+    }
+    // Not every path says it was taken: the web core's receipt for its
+    // command does. Only a taken one is settled; any other stays.
+    if (!settledOutcome && !queued)
+      settledOutcome =
+        (await readWebCoreSendReceipt(target, commandId)) === 'taken';
+  } else {
+    keepAsDraft();
+    settledOutcome = true;
+    // A chat that never opened takes no files: each one is named.
+    setFilesNotAttached(worktreeId, notAttached);
+  }
+  releaseUnclaimedCloudSend(press);
+  // Taken by its chat, or held by that chat's composer: either way, no
+  // longer New task's to bring back. One that ended without word stays,
+  // asked about quietly until taken; one that failed outright shows as
+  // pending now.
+  if (dispatchRejected) handedOff = false;
+  if (settledOutcome) clearHomeSend(userMessageId);
+  else keepHomeSendPending(userMessageId, { show: !handedOff });
+  ended = true;
+  if (!isHomeSendAccountCurrent(submittedAccountEpoch)) return true;
+  useHomeComposerStore.setState({ isSending: false });
+  return handedOff;
 }
 
+/**
+ * Sends a message an earlier run left, which hasn't arrived and may still,
+ * again under a new command (CAN-6798): the person chose to, knowing it may
+ * arrive twice. It goes to its own task while that is listed, or else as a
+ * new task. A message with files never goes again: their bytes weren't kept.
+ */
+export async function sendHomeOutboxEntryAgain(id: string): Promise<boolean> {
+  const state = useHomeComposerStore.getState();
+  const card = state.outboxCards.find(
+    (each) => each.entry.id === id && each.state === 'missing',
+  );
+  if (card === undefined || state.isSending) return false;
+  const { entry } = card;
+  const { projectId } = entry.destination;
+  const refuse = (error: string): boolean => {
+    useHomeComposerStore.getState().setSendError(error);
+    return false;
+  };
+  if (!getHomeCloudSource().online) return refuse(CLOUD_OFFLINE_SEND_ERROR);
+  if (!getHomeScope().cloudProjects.some((project) => project.id === projectId))
+    return refuse(CLOUD_PROJECT_GONE_SEND_ERROR);
+  const submittedAccountEpoch =
+    useWorkspaceContextStore.getState().accountEpoch;
+  // Asked once more first: one that arrived or was refused meanwhile is
+  // settled instead, never sent a second time.
+  useHomeComposerStore.setState({ isSending: true });
+  const standing = await stillMissingBeforeSendAgain(entry);
+  if (!isHomeSendAccountCurrent(submittedAccountEpoch)) return false;
+  useHomeComposerStore.setState({ isSending: false });
+  if (standing === 'settled') return false;
+  if (standing === 'unknown') return refuse(CLOUD_SEND_AGAIN_UNCHECKED_ERROR);
+  // Its files' bytes weren't kept: sent again without them, it would be a
+  // different message.
+  if (entry.cloudFileNames.length > 0) return false;
+  const listed = standing === 'missing';
+  const handedOff = await sendHomeCloudMessage(
+    {
+      projectId,
+      text: entry.text,
+      files: [],
+      fileReferences: entry.fileReferences,
+      replaces: entry.id,
+      ...(listed ? { task: entry.destination.worktreeId } : {}),
+    },
+    submittedAccountEpoch,
+  );
+  if (handedOff === null) return refuse(CLOUD_OFFLINE_SEND_ERROR);
+  return handedOff;
+}
 export async function dispatchHomeSend(): Promise<boolean> {
+  // Whatever way the send ends, even before it is dispatched, New task's
+  // draft is no longer the send's (CAN-6798).
+  const press: { submissionId: string | null } = { submissionId: null };
+  try {
+    return await dispatchHomeSendFromPress(press);
+  } finally {
+    if (press.submissionId !== null)
+      releaseSubmittedDraftWatch(press.submissionId);
+  }
+}
+
+async function dispatchHomeSendFromPress(press: {
+  submissionId: string | null;
+}): Promise<boolean> {
   const submittedAccountEpoch =
     useWorkspaceContextStore.getState().accountEpoch;
   // A resend after connecting GitHub gets no second offer (CAN-4466). Taken
@@ -903,6 +1220,9 @@ export async function dispatchHomeSend(): Promise<boolean> {
     userMessageId: nextMsgId(),
     submittedAt: Date.now(),
   };
+  // Taken on the press, before any wait (CAN-6798).
+  submittedDraftWatches.set(submissionIdentity.userMessageId, watchHomeDraft());
+  press.submissionId = submissionIdentity.userMessageId;
 
   activeHomeSubmissionId = submissionIdentity.userMessageId;
 
@@ -1244,7 +1564,9 @@ export async function retryFailedFirstSend(
   )
     return false;
   failedFirstSends.delete(key);
-  return retry.resume(attemptId, selection);
+  return resumeHeldSubmission(retry.userMessageId, () =>
+    retry.resume(attemptId, selection),
+  );
 }
 
 /** True when the submitted draft, its model, and its destination are unchanged. */
@@ -1379,6 +1701,10 @@ async function prepareHomeModelSubmission(
   return settings;
 }
 
+/**
+ * A local New task send. Its first message is kept across a reload or quit
+ * from just before it is dispatched until the send ends (CAN-6798).
+ */
 async function dispatchHomeSendTo(
   draft: ReturnType<typeof useHomeComposerStore.getState>,
   destination: HomeSendDestination | null,
@@ -1389,9 +1715,54 @@ async function dispatchHomeSendTo(
     modelSettings: ReturnType<typeof resolveHomeEffectiveModelSettings>;
   },
 ): Promise<boolean> {
-  let clearedSubmittedDraft: ReturnType<
-    typeof useHomeComposerStore.getState
-  > | null = null;
+  try {
+    return await dispatchHomeSendToTarget(
+      draft,
+      destination,
+      submittedAccountEpoch,
+      submissionIdentity,
+    );
+  } finally {
+    releaseSubmittedDraftWatch(submissionIdentity.userMessageId);
+  }
+}
+
+async function dispatchHomeSendToTarget(
+  draft: ReturnType<typeof useHomeComposerStore.getState>,
+  destination: HomeSendDestination | null,
+  submittedAccountEpoch: number,
+  submissionIdentity: {
+    userMessageId: string;
+    submittedAt: number;
+    modelSettings: ReturnType<typeof resolveHomeEffectiveModelSettings>;
+  },
+): Promise<boolean> {
+  // The submitted draft, from the press, and New task once it let it go:
+  // both keyed to the submission and its draftGeneration (CAN-6798).
+  const submittedDraft =
+    submittedDraftWatches.get(submissionIdentity.userMessageId) ??
+    watchHomeDraft();
+  let clearedSubmission: HomeDraftWatch | null = null;
+  // New task lets the submitted draft go once per submission: a later call
+  // never touches what New task holds by then, a newer draft included.
+  let leftNewTask = false;
+  // A first message that left New task and then failed is never lost (no
+  // worse than before CAN-6798, when it stayed in the editor): its chat keeps
+  // it failed with Try again, or it comes back to New task as a draft.
+  let heldByItsChat = false;
+  let backInNewTask = false;
+  function returnUndeliveredFirstMessage(): void {
+    if (!leftNewTask || heldByItsChat || backInNewTask || !firstSend) return;
+    if (!isHomeSendAccountCurrent(submittedAccountEpoch)) return;
+    backInNewTask = true;
+    returnHomeDraft({
+      workspaceId: sendProjectId,
+      mode: draft.mode,
+      text: firstSend.text,
+      fileReferences: firstSend.fileReferences,
+      attachments: draft.attachments,
+    });
+  }
   function ownsHomeSubmission(): boolean {
     return activeHomeSubmissionId === submissionIdentity.userMessageId;
   }
@@ -1402,23 +1773,24 @@ async function dispatchHomeSendTo(
     )
       return;
     const store = useHomeComposerStore.getState();
-    if (isSubmittedHomeDraftCurrent(draft)) {
-      store.reset();
-      clearedSubmittedDraft = useHomeComposerStore.getState();
-      return;
+    if (!leftNewTask) {
+      leftNewTask = true;
+      // Untouched since the press, it is the submitted draft: it leaves
+      // whole, or only its content when New task moved to another project
+      // or mode meanwhile (CAN-3933). A draft edited since is the person's.
+      if (submittedDraft.untouched()) {
+        if (submittedDraft.sameContext()) {
+          store.reset();
+          clearedSubmission = watchHomeDraft();
+          return;
+        }
+        store.clearSubmittedDraft();
+        clearedSubmission = watchHomeDraft();
+      }
     }
     // A retry from the failed chat never owns Home's sending state.
     if (!resumedByRetry && ownsHomeSubmission())
       useHomeComposerStore.setState({ isSending: false });
-    const submittedContentNonEmpty =
-      draft.text !== '' || draft.fileReferences.length > 0;
-    if (
-      submittedContentNonEmpty &&
-      composerDraftContentEquals(useHomeComposerStore.getState(), draft)
-    ) {
-      store.clearSubmittedDraft();
-      clearedSubmittedDraft = useHomeComposerStore.getState();
-    }
   }
   const workspaceId = destination?.workspaceId ?? draft.workspaceId;
   if (!workspaceId) return false;
@@ -1575,6 +1947,9 @@ async function dispatchHomeSendTo(
     };
     if (!firstSend || !target) return { onDispatchAccepted };
     const { userMessageId } = firstSend;
+    // The message may reach its chat from here on: it leaves New task,
+    // whatever New task holds after this is a new draft (CAN-6798).
+    completeSubmittedDraft();
     const rejected = (): void => {
       firstSendRejected = true;
       fail(
@@ -1729,13 +2104,13 @@ async function dispatchHomeSendTo(
     if (!isHomeSendAccountCurrent(submittedAccountEpoch)) return false;
     const currentDraft = useHomeComposerStore.getState();
     if (
+      !heldByItsChat &&
       ownsHomeSubmission() &&
-      clearedSubmittedDraft &&
-      currentDraft.draftGeneration === clearedSubmittedDraft.draftGeneration &&
-      isSubmittedHomeDraftCurrent(clearedSubmittedDraft)
+      clearedSubmission?.untouched() === true
     ) {
       // A host-queue rejection can arrive after Home unmounted and reset.
       // Recover only the cleared submission, never a newer draft or account.
+      backInNewTask = true;
       useHomeComposerStore.setState({
         workspaceId: draft.workspaceId,
         branchTarget: draft.branchTarget,
@@ -1760,6 +2135,7 @@ async function dispatchHomeSendTo(
         draftGeneration: currentDraft.draftGeneration + 1,
       });
     }
+    returnUndeliveredFirstMessage();
     // Keep the failure with its Home draft; returning to Home reveals it.
     if (!ownsHomeSubmission() || !isSubmittedHomeDraftCurrent(draft)) {
       if (!resumedByRetry && ownsHomeSubmission())
@@ -1892,8 +2268,11 @@ async function dispatchHomeSendTo(
         refusedBeforeDispatch: firstSendRejected,
       })
     ) {
-      // The failed prompt stays; nothing withdraws it from here on.
+      // The failed prompt stays; nothing withdraws it from here on. Its chat
+      // holds it, with Try again (CAN-6798).
       firstSendPresentation.target = null;
+      heldByItsChat = true;
+      holdSubmission(submissionIdentity.userMessageId);
       failedFirstSends.set(chatTargetKey(target), {
         userMessageId: firstSend.userMessageId,
         failureId,
@@ -1929,6 +2308,9 @@ async function dispatchHomeSendTo(
       resumedByRetry = true;
       firstSendAttemptId = attemptId;
       firstSendRejected = false;
+      // A new attempt: its chat holds it again only if this one fails there.
+      heldByItsChat = false;
+      backInNewTask = false;
       firstSendPresentation.target = target;
       try {
         if (!isAttemptCurrent(target)) return false;
@@ -2095,6 +2477,9 @@ async function dispatchHomeSendTo(
       await useStandaloneChatStore.getState().createStandaloneChatWithMessage({
         chatProjectId: workspaceId,
         message: coworkRewrite.prompt,
+        // The message leaves New task once its chat exists, before it is
+        // sent to it (CAN-6798).
+        ...(firstSend ? { onChatCreated: completeSubmittedDraft } : {}),
         config: {
           model,
           modelExplicitlyChosen,
@@ -2971,6 +3356,7 @@ async function dispatchHomeSendTo(
       withdrawFirstSend();
       useHomeComposerStore.setState({ isSending: false });
     }
+    returnUndeliveredFirstMessage();
     return false;
   } finally {
     destination?.signal?.removeEventListener('abort', withdrawFirstSend);

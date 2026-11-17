@@ -1,3 +1,5 @@
+import { isBotProjectId } from '@canopy/protocol/chat-targets';
+
 /** A caller-supplied identifier failed {@link validateId}. */
 export class IdentifierValidationError extends Error {
   public constructor(message: string) {
@@ -59,6 +61,10 @@ function safeWorkspaceIdCandidate(base: string, suffix: number): string {
   return `${base.slice(0, SAFE_WORKSPACE_ID_MAX - ending.length)}${ending}`;
 }
 
+/**
+ * A new project's ID: the name's slug, suffixed past every taken ID and past
+ * every Bot project ID (`app-advisor`, `bot--<ulid>`), which belong to Bots.
+ */
 export function allocateSafeWorkspaceId(
   name: string,
   existingIds: ReadonlySet<string>,
@@ -67,7 +73,7 @@ export function allocateSafeWorkspaceId(
   const base = safeWorkspaceIdBase(name);
   let suffix = 1;
   let candidate = base;
-  while (taken.has(candidate.toLowerCase())) {
+  while (taken.has(candidate.toLowerCase()) || isBotProjectId(candidate)) {
     candidate = safeWorkspaceIdCandidate(base, ++suffix);
   }
   return candidate;

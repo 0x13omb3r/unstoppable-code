@@ -880,7 +880,7 @@ async function resolveCodexAiCreditsRouting(
       await emit({
         type: 'error',
         error_code: NO_BILLING_SOURCE_ERROR_CODE,
-        error: buildNoBillingSourceError('Codex', BRAND.displayName),
+        error: buildNoBillingSourceError('Codex'),
       });
       return AI_CREDITS_BACKSTOP_ABORT;
     }

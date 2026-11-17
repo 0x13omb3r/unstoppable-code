@@ -1,5 +1,6 @@
 'use client';
 
+import { ControlButton } from '@canopy/ui-shared/components';
 import { SummaryHighlightMark } from '@canopy/ui-shared/components';
 import { useState, type JSX } from 'react';
 import { WORKTREE_UNIT_LABEL } from '@canopy/protocol';
@@ -49,24 +50,25 @@ export function SummarySectionBody({
 
   return (
     <>
-      <button
-        type="button"
+      <ControlButton
         onClick={(): void => setDetailOpen(true)}
-        className="focus-ring w-full cursor-pointer text-left"
+        presentation="summary-preview-open"
       >
-        <div className="text-s font-semibold fg-primary">{summary.title}</div>
-        <p
-          className={`${REPLAY_BLOCK_CLASS} mt-1 line-clamp-6 text-xs leading-5 fg-primary/70`}
-        >
-          {summary.description}
-        </p>
+        <div className="flex min-w-0 flex-col gap-1 wrap-anywhere">
+          <div className="text-s font-semibold fg-primary">{summary.title}</div>
+          <p
+            className={`${REPLAY_BLOCK_CLASS} line-clamp-6 text-xs leading-5 fg-primary/70`}
+          >
+            {summary.description}
+          </p>
+        </div>
         <span
-          className="mt-2 inline-block text-xs fg-accent transition-colors hover:fg-accent/80"
+          className="self-start text-xs fg-accent transition-colors hover:fg-accent/80"
           data-testid="summary-details-link"
         >
           View more details
         </span>
-      </button>
+      </ControlButton>
 
       {detailOpen ? (
         <DialogModal
@@ -141,12 +143,17 @@ export function SummarySectionBody({
                 </Heading>
                 <Stack gap="inline">
                   {summary.repos.map((repo) => (
-                    <Surface key={repo.name} variant="group" padding="compact">
+                    <Surface
+                      key={repo.name}
+                      variant="group"
+                      padding="compact"
+                      gap="tight"
+                    >
                       <Heading level={5} variant="title">
                         {repo.name}
                       </Heading>
                       <p
-                        className={`${REPLAY_BLOCK_CLASS} mt-1 text-s leading-6 fg-primary/80`}
+                        className={`${REPLAY_BLOCK_CLASS} text-s leading-6 fg-primary/80`}
                       >
                         {repo.description}
                       </p>

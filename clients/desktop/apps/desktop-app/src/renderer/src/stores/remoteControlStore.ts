@@ -7,6 +7,7 @@ import type {
   RemoteControlForgetDeviceRequest,
   RemoteControlOpenPairingWindowResult,
   RemoteControlRespondToPairingRequest,
+  RemoteControlUpdateHostRequest,
   RemoteControlState,
 } from '@canopy/desktop-shared/types';
 
@@ -110,6 +111,8 @@ interface RemoteControlStoreState {
   ) => Promise<void>;
   forgetDevice: (request: RemoteControlForgetDeviceRequest) => Promise<void>;
   disconnectController: (deviceId: string) => Promise<void>;
+  /** Runs an update step on a paired computer on an older protocol. */
+  updateHost: (request: RemoteControlUpdateHostRequest) => Promise<void>;
 }
 
 export const useRemoteControlStore = create<RemoteControlStoreState>((set) => {
@@ -165,6 +168,9 @@ export const useRemoteControlStore = create<RemoteControlStoreState>((set) => {
       apply((api) => api.forgetDevice(request)),
     disconnectController: (deviceId): Promise<void> =>
       apply((api) => api.disconnectController(deviceId)),
+    updateHost: async (request): Promise<void> => {
+      await requireRemoteControlApi().updateHost(request);
+    },
   };
 });
 

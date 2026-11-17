@@ -8,32 +8,15 @@ import {
   RaisedHandIcon,
   type AppIcon,
 } from '../../icons/AppIcons';
-import {
-  LEDGER_STATUS_LABELS,
-  ledgerStatusTone,
-  type LedgerStatusTone,
-} from '../../lib/ledger-display';
-import {
-  statusBadgeClassName,
-  type StatusBadgeTone,
-} from '../../lib/row-chips';
-
-const PILL_TONES: Readonly<Record<LedgerStatusTone, StatusBadgeTone>> = {
-  quiet: 'neutral',
-  active: 'active',
-  success: 'success',
-  failed: 'failed',
-  paused: 'paused',
-  attention: 'warning',
-};
+import { LEDGER_STATUS_LABELS } from '../../lib/ledger-display';
+import { ledgerStatusPillClassName } from '../control-button-shared';
+export { ledgerStatusPillClassName } from '../control-button-shared';
+import { StatusGlyph } from '../StatusGlyph';
 
 /**
  * The shared status-badge geometry and the tint a status takes, for the pill
  * and for the control that changes a status in its place.
  */
-export function ledgerStatusPillClassName(status: LedgerStatus): string {
-  return `shrink-0 ${statusBadgeClassName(PILL_TONES[ledgerStatusTone(status)])}`;
-}
 
 const STATUS_ICONS: Readonly<
   Record<Exclude<LedgerStatus, 'TODO' | 'IN_PROGRESS'>, AppIcon>
@@ -50,8 +33,8 @@ export interface LedgerStatusGlyphProps {
 }
 
 /**
- * One shape per status, so color is never the only signal: an empty ring for
- * To do, a ring with a core for In progress, then a check, a cross, a pause,
+ * One shape per status, so color is never the only signal: a queued ring for
+ * To do, a shared spinner for In progress, then a check, a cross, a pause,
  * a raised hand and the info mark. It takes the surrounding ink. Decorative:
  * the status is always named beside it.
  */
@@ -61,14 +44,14 @@ export function LedgerStatusGlyph({
   if (status === 'TODO' || status === 'IN_PROGRESS') {
     return (
       <span
-        aria-hidden="true"
         data-testid="ledger-status-glyph"
         data-status={status}
-        className="inline-flex h-2.5 w-2.5 shrink-0 items-center justify-center rounded-full border border-current"
+        className="inline-flex"
       >
-        {status === 'IN_PROGRESS' && (
-          <span className="h-1 w-1 rounded-full bg-current" />
-        )}
+        <StatusGlyph
+          state={status === 'TODO' ? 'queued' : 'running'}
+          size={12}
+        />
       </span>
     );
   }

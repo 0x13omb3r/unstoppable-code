@@ -1,11 +1,11 @@
 import { ORCHESTRATOR_LABEL } from '@canopy/protocol';
+import { isBotProjectId } from '@canopy/protocol/chat-targets';
 import {
   isLedgerTaskViewScope,
   type LedgerViewScope,
 } from '@canopy/protocol/ledger-view';
 import type { WorkspaceContextOrganization } from '@canopy/protocol/workspace-context';
 import {
-  APP_ADVISOR_PROJECT_ID,
   type CoworkWorkEntryMeta,
   type SidebarItem,
   type WorktreeData,
@@ -71,7 +71,7 @@ export function describeLedgerScope(
         : undefined;
     return ledgerGlobalContextLabel(owner, organizationName);
   }
-  if (scope.projectId === APP_ADVISOR_PROJECT_ID) return ORCHESTRATOR_LABEL;
+  if (isBotProjectId(scope.projectId)) return ORCHESTRATOR_LABEL;
   const project = sources.projects.find((item) => item.id === scope.projectId);
   if (project === undefined) return null;
   const projectName = getWorkspaceDisplayName(project);

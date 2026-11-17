@@ -1,3 +1,4 @@
+import { ControlButton } from '@canopy/ui-shared/components';
 import { WorkspaceIconSlot } from '@canopy/ui-shared/components';
 import {
   memo,
@@ -210,9 +211,9 @@ export const ProjectHeader = memo(function ProjectHeader({
       </WorkspaceIconDisclosureSwap>
     </WorkspaceIconSlot>
   ) : (
-    <button
+    <ControlButton
       type="button"
-      className="focus-ring inline-flex h-5 w-5 shrink-0 cursor-default items-center justify-center rounded-full"
+      presentation="project-header-drag-handle"
       aria-label={`Reorder ${displayName}`}
       data-workspace-drag-activator="icon"
       {...dragHandleAttributes}
@@ -224,7 +225,7 @@ export const ProjectHeader = memo(function ProjectHeader({
       >
         {projectIcon}
       </WorkspaceIconDisclosureSwap>
-    </button>
+    </ControlButton>
   );
 
   return (

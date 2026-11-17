@@ -1,5 +1,6 @@
 'use client';
 
+import { ControlButton } from '@canopy/ui-shared/components';
 import { SidebarSectionHeaderFrame } from '@canopy/ui-shared/components';
 import {
   type ButtonHTMLAttributes,
@@ -135,16 +136,15 @@ export function SidebarSection({
       variant={headerVariant}
     >
       {collapsible ? (
-        <button
-          type="button"
+        <ControlButton
           {...headerButtonProps}
-          className="flex min-w-0 flex-1 items-center gap-2 text-left"
+          presentation="sidebar-section-disclosure"
           aria-expanded={!isCollapsed}
           aria-controls={contentId}
           onClick={toggle}
         >
           {headerContent}
-        </button>
+        </ControlButton>
       ) : (
         <div className="flex min-w-0 flex-1 items-center gap-2">
           {headerContent}

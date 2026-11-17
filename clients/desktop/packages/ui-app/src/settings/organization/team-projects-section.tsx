@@ -1359,7 +1359,7 @@ function ProjectList({
 
 /** A filter segment's count, set apart from its label. */
 function FilterCount({ count }: { count: number }): JSX.Element {
-  return <span className="ml-1.5 tabular-nums fg-tertiary">{count}</span>;
+  return <span className="pl-1.5 tabular-nums fg-tertiary">{count}</span>;
 }
 
 interface LocalProjectControlsProps {

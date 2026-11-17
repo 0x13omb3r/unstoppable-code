@@ -281,6 +281,20 @@ export function insertTextAtCursor(editor: ChatEditor, text: string): void {
 }
 
 /**
+ * Append text at the end of the draft, after a blank line when the draft has
+ * content, wherever the caret or selection is: an inserted request never
+ * replaces or splits what the user typed (CAN-6801). Desktop's composer
+ * appends the same way.
+ */
+export function appendTextAtEnd(editor: ChatEditor, text: string): void {
+  if (!text) return;
+  Transforms.select(editor, Editor.end(editor, []));
+  const hasContent =
+    serializeEditorValue(editor.children).text.trim().length > 0;
+  Transforms.insertText(editor, `${hasContent ? '\n\n' : ''}${text}`);
+}
+
+/**
  * Insert a `FileReferenceElement` pill at the end of the editor and follow it
  * with a trailing space. Used by hosts to inject pills from external surfaces
  * (e.g. drag-drop, contextual menus).

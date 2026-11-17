@@ -1,5 +1,6 @@
 import type { JSX, ReactNode } from 'react';
 import { XBrandIcon } from './XBrandIcon';
+import { ICON_SIZE_PX, isIconSize, type IconSize } from './icon-size';
 
 /**
  * Social-platform glyphs for public profile links. The outline marks keep
@@ -9,7 +10,7 @@ import { XBrandIcon } from './XBrandIcon';
 
 /** Platform glyph props: a size and an optional decorative flag. */
 export interface PlatformIconProps {
-  size?: number;
+  size?: IconSize | number;
   'aria-hidden'?: boolean | 'true';
 }
 
@@ -21,11 +22,12 @@ function OutlineGlyph({
   'aria-hidden': ariaHidden,
   children,
 }: PlatformIconProps & { children: ReactNode }): JSX.Element {
+  const dimension = isIconSize(size) ? ICON_SIZE_PX[size] : size;
   return (
     <svg
       xmlns="http://www.w3.org/2000/svg"
-      width={size}
-      height={size}
+      width={dimension}
+      height={dimension}
       viewBox="0 0 24 24"
       fill="none"
       stroke="currentColor"

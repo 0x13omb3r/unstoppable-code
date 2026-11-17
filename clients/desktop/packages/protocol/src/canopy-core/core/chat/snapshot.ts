@@ -8,6 +8,7 @@ import {
   CanopyQueryRetryDirectiveSchema,
   CanopyJsonValueSchema,
 } from '../shared';
+import { canopyJsonValueSchemaWithin } from '../../errors';
 
 const id = z.string().min(1).max(512);
 const revision = z.number().int().nonnegative();
@@ -22,10 +23,31 @@ const scopedWorktree = CanopyWorkspaceScopeSchema.extend({
  */
 export const CORE_CHAT_SNAPSHOT_GET_SCHEMA_REVISION = 2;
 
+/**
+ * Revision 3 adds the opened v2 chat's conversation snapshot, when asked for
+ * with `conversation: true` (CAN-6863), so an open chat's first read is the
+ * thread's own; the desktop core refuses it.
+ */
+export const CORE_CHAT_SNAPSHOT_GET_CONVERSATION_REVISION = 3;
+
+/**
+ * The largest conversation snapshot a revision 3 read carries, as UTF-8
+ * JSON. A larger one is left out (`conversationOmitted: 'too_large'`), and
+ * the client reads it over REST instead.
+ */
+export const CORE_CHAT_SNAPSHOT_CONVERSATION_MAX_BYTES = 4 * 1024 * 1024;
+
 export const CoreChatSnapshotGetParamsSchema = z.strictObject({
   scope: scopedWorktree,
   chatId: id.optional(),
-  revision: z.literal(CORE_CHAT_SNAPSHOT_GET_SCHEMA_REVISION).optional(),
+  revision: z
+    .union([
+      z.literal(CORE_CHAT_SNAPSHOT_GET_SCHEMA_REVISION),
+      z.literal(CORE_CHAT_SNAPSHOT_GET_CONVERSATION_REVISION),
+    ])
+    .optional(),
+  /** Revision 3: include the opened v2 chat's conversation snapshot. */
+  conversation: z.literal(true).optional(),
 });
 
 /** One TODO item of a chat's current turn (CAN-4110). */
@@ -254,6 +276,20 @@ export const CoreChatSnapshotGetResultSchema = z.object({
    * has no cloud sandbox. Absent from a host that doesn't serve it.
    */
   sandbox: CoreChatSandboxSchema.nullable().optional(),
+  /**
+   * Revision 3, asked for with `conversation: true`: the opened v2 chat's
+   * conversation snapshot, the body `GET /api/cloud/chats/:chatId/conversation`
+   * answers with the same page size (CAN-6863). Absent for a v1 chat, or
+   * when `conversationOmitted` says why.
+   */
+  conversation: canopyJsonValueSchemaWithin(
+    CORE_CHAT_SNAPSHOT_CONVERSATION_MAX_BYTES,
+  ).optional(),
+  /**
+   * Revision 3: why an asked-for conversation is absent, over the cap or
+   * past what `conversation` admits (such as its nesting); read it over REST.
+   */
+  conversationOmitted: z.enum(['too_large', 'unreadable']).optional(),
 });
 
 export const CoreChatSnapshotGetErrorSchema = CanopyErrorPayloadSchema.extend({

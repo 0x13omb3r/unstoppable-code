@@ -28,7 +28,6 @@ import {
 } from '../defaults';
 import { getPersistedClaudeChatInterfaceMode } from '@/lib/claude-tui-chats';
 import {
-  APP_ADVISOR_PROJECT_ID,
   DEFAULT_APP_ADVISOR_MODEL,
   type ChatTabPluginSelections,
   clampThinkingLevelForModel,
@@ -37,6 +36,7 @@ import {
   normalizeThinkingForProvider,
   resolveProviderModelConfig,
 } from '@canopy/desktop-shared/types';
+import { isBotProjectId } from '@canopy/protocol/chat-targets';
 import { codexSpeedFields, tabRequestedCodexSpeed } from '../codex-speed';
 import { type ChatTab } from '../types';
 import { getWorktreeChatContext, updateCapturedChatTab } from '../context';
@@ -406,10 +406,9 @@ export const createDiscoverySlice: StateCreator<
     // Only the shipped Advisor default may follow settled lane facts under
     // an early draft. This also covers late native credentials and sign-in;
     // explicit picks/preferences and all other surfaces keep the draft pin.
-    const advisorLane =
-      sel.projectId === APP_ADVISOR_PROJECT_ID
-        ? resolveLaneForTarget(sel.projectId, modelDefaults)
-        : undefined;
+    const advisorLane = isBotProjectId(sel.projectId)
+      ? resolveLaneForTarget(sel.projectId, modelDefaults)
+      : undefined;
     const draftPinsTab =
       get().composerTextPresent[activeTab.id] === true &&
       !(

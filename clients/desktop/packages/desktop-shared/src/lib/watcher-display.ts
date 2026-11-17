@@ -5,8 +5,8 @@
 // watcher row without re-deriving display strings.
 
 import { CHAT_LABEL, ORCHESTRATOR_LABEL } from '@canopy/protocol';
+import { isBotProjectId } from '@canopy/protocol/chat-targets';
 import {
-  APP_ADVISOR_PROJECT_ID,
   GITHUB_WORKFLOW_JOB_CONCLUSIONS,
   GITHUB_WORKFLOW_RUN_CONCLUSIONS,
   GITHUB_WORKFLOW_RUN_INTERMEDIATE_STATUSES,
@@ -673,5 +673,5 @@ export function watcherOwnerDelegateDisplay(
 export function isAppAdvisorDestination(
   destination: AppAdvisorWatcherDestination,
 ): boolean {
-  return destination.projectId === APP_ADVISOR_PROJECT_ID;
+  return isBotProjectId(destination.projectId);
 }

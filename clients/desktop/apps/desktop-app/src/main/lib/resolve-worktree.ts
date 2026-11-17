@@ -1,7 +1,6 @@
 import { basename, dirname, isAbsolute, join, relative, sep } from 'node:path';
 import { isDefaultWorktreeBranchName } from '@canopy/desktop-shared/lib/default-worktree-branch';
 import {
-  APP_ADVISOR_PROJECT_ID,
   CODE_REVIEW_CHAT_PROJECT_ID,
   COWORK_HOME_WORKTREE_ID,
   PLAN_EXPLORE_CHAT_PROJECT_ID,
@@ -11,6 +10,7 @@ import {
   type WorktreeData,
 } from '@canopy/desktop-shared/types';
 import type { CanopyCallerDescriptor } from '@canopy/protocol/canopy-core';
+import { isBotProjectId } from '@canopy/protocol/chat-targets';
 import { getDesktopCanopyRuntime } from '../canopy-runtime/desktop-runtime-access';
 import { LOCAL_DESKTOP_AUTHORITY_ID } from '../canopy-runtime/desktop-runtime-identity';
 import { getCodeReviewTargetSync } from './code-review-registry';
@@ -148,7 +148,7 @@ export function resolveWorktreeCwd(
   if (projectId === STANDALONE_CHAT_PROJECT_ID) {
     return getCoworkWorkspaceRootDir(resolveCoworkWorkspaceId(worktreeId));
   }
-  if (projectId === APP_ADVISOR_PROJECT_ID) {
+  if (isBotProjectId(projectId)) {
     return getAppAdvisorHomeDir();
   }
   if (isCoworkWorkspace(projectId)) {

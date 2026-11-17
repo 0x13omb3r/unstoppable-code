@@ -1,5 +1,10 @@
 'use client';
 
+import {
+  AGENT_SENT_INLINE_TITLE_CLASS,
+  AGENT_SENT_TITLE_CLASS,
+} from '../control-button-shared';
+import { ControlButton } from '../Button';
 import { memo, type JSX } from 'react';
 import type { ChatAgentSentInfo } from '@canopy/protocol/portal';
 import type { AgentSentInfo } from '@canopy/protocol/portal/external-agent-sender';
@@ -27,11 +32,6 @@ export interface AgentSentTitleProps {
    */
   layout?: 'block' | 'inline';
 }
-
-const TITLE_CLASS =
-  'mb-1 flex min-w-0 items-center gap-1.5 whitespace-nowrap text-3xs font-medium fg-secondary';
-const INLINE_TITLE_CLASS =
-  'flex min-w-0 items-center gap-1.5 whitespace-nowrap fg-tertiary';
 
 /**
  * The title row above a user message another agent sent, in the watcher
@@ -82,7 +82,9 @@ function PipelineAgentSentTitle({
     <span
       data-testid="agent-sent-title"
       data-sender="pipeline"
-      className={inline ? INLINE_TITLE_CLASS : TITLE_CLASS}
+      className={
+        inline ? AGENT_SENT_INLINE_TITLE_CLASS : AGENT_SENT_TITLE_CLASS
+      }
     >
       <WorkflowIcon size="sm" className="shrink-0" aria-hidden="true" />
       <span className={`min-w-0 truncate ${REPLAY_MASK_CLASS}`}>{name}</span>
@@ -106,7 +108,9 @@ function ChatAgentSentTitle({
   layout: 'block' | 'inline';
 }): JSX.Element {
   const inline = layout === 'inline';
-  const titleClass = inline ? INLINE_TITLE_CLASS : TITLE_CLASS;
+  const titleClass = inline
+    ? AGENT_SENT_INLINE_TITLE_CLASS
+    : AGENT_SENT_TITLE_CLASS;
   const opener = useAgentSentSenderOpener();
   const sameContext =
     sender.kind === 'bot'
@@ -138,10 +142,11 @@ function ChatAgentSentTitle({
     );
   }
   return (
-    <button
+    <ControlButton
       type="button"
       data-testid="agent-sent-title"
-      className={`${titleClass} w-fit max-w-full cursor-pointer rounded-sm text-left hover:fg-primary hover:underline focus-ring`}
+      presentation="agent-sent-title"
+      appearance={{ inline: !!inline }}
       onClick={(event) => {
         // The bubble around the title has its own click behavior.
         event.stopPropagation();
@@ -149,6 +154,6 @@ function ChatAgentSentTitle({
       }}
     >
       {content}
-    </button>
+    </ControlButton>
   );
 }

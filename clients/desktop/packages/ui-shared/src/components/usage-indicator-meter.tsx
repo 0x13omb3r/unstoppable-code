@@ -12,8 +12,7 @@ function getMeterTone(percentage: number): ProgressTone {
 }
 
 /** 44px tap floor on touch hardware (DESIGN.md), untouched on a mouse. */
-export const USAGE_TOUCH_FLOOR_CLASS =
-  'pointer-coarse:min-h-11 pointer-coarse:min-w-11';
+export { USAGE_TOUCH_FLOOR_CLASS } from './control-button-shared';
 
 /** Whole percents read at a glance; a nonzero sliver never rounds to 0%. */
 export function formatUsagePercent(percentage: number): string {

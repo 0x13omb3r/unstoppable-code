@@ -22,6 +22,7 @@ import type {
 } from './WatcherRecipientPicker';
 import type { ChatTab, WorktreeChatState } from '@/stores/chatStore';
 
+// Default Bot only: this recipient group belongs to the Orchestrator.
 const APP_ADVISOR_KEY_PREFIX = `${APP_ADVISOR_PROJECT_ID}/`;
 
 export interface UseWatcherRecipientGroupsOptions {

@@ -1670,6 +1670,13 @@ describe('hosted delegation', () => {
         tabId: 'chat-3',
         approvalMode: 'bypassPermissions',
       }),
+      envelope({ type: 'chat.create_tab', tabId: 'chat-3', planMode: 'true' }),
+      envelope({
+        type: 'chat.create_tab',
+        tabId: 'chat-3',
+        model: 'model-a',
+        plugins: [],
+      }),
       envelope({ ...send, planReviewApproval: { approved: true } }),
       envelope({ ...send, attachmentPaths: ['/etc/hosts'] }),
       envelope({

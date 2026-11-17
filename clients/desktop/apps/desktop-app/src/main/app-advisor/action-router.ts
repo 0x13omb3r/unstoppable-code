@@ -14,7 +14,7 @@ import { getActiveDesktopRuntimeIfAccepting } from '../canopy-runtime/desktop-ru
 import type { CanopyInjectedToolTextResult } from '../canopy-tools/core';
 import { getAppAdvisorHomeDir } from '../lib/paths';
 import type { BrowserWindow } from 'electron';
-import { APP_ADVISOR_PROJECT_ID } from '@canopy/desktop-shared/types';
+import { isBotProjectId } from '@canopy/protocol/chat-targets';
 import type {
   AgentResourceAction,
   AgentResourceActionRuntime,
@@ -164,7 +164,7 @@ async function resourceDispatch(
   if (
     target.projectId &&
     target.worktreeId &&
-    target.projectId !== APP_ADVISOR_PROJECT_ID
+    !isBotProjectId(target.projectId)
   ) {
     validateId(target.projectId, 'projectId');
     validateId(target.worktreeId, 'worktreeId');

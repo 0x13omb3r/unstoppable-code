@@ -46,13 +46,15 @@ export function ComposerDrawer({
   return (
     <>
       {edge === 'top' ? <ComposerTraySlot /> : null}
-      <Element
-        {...props}
-        data-composer-drawer={edge}
-        className={`relative mx-4 bg-depth p-1 shadow-2xs [&:not(:has([data-composer-drawer-section]))]:contents ${EDGE_CLASS_NAMES[edge]} ${className}`}
-      >
-        {children}
-      </Element>
+      <div className="px-4 [&:not(:has([data-composer-drawer-section]))]:contents">
+        <Element
+          {...props}
+          data-composer-drawer={edge}
+          className={`relative bg-depth p-1 shadow-2xs [&:not(:has([data-composer-drawer-section]))]:contents ${EDGE_CLASS_NAMES[edge]} ${className}`}
+        >
+          {children}
+        </Element>
+      </div>
     </>
   );
 }
@@ -72,7 +74,7 @@ export function ComposerDrawerSection({
     <div
       {...props}
       data-composer-drawer-section=""
-      className={`[[data-composer-drawer-section]~&]:mt-1 [[data-composer-drawer-section]~&]:border-t [[data-composer-drawer-section]~&]:pt-1 ${className}`}
+      className={`[[data-composer-drawer-section]~&]:pt-2 [[data-composer-drawer-section]~&]:before:pointer-events-none [[data-composer-drawer-section]~&]:before:absolute [[data-composer-drawer-section]~&]:before:inset-x-0 [[data-composer-drawer-section]~&]:before:top-1 [[data-composer-drawer-section]~&]:before:h-[var(--border-hairline)] [[data-composer-drawer-section]~&]:before:bg-line-base relative ${className}`}
     >
       {children}
     </div>

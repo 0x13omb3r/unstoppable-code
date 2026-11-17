@@ -329,7 +329,7 @@ export { MarkdownImage, MarkdownImageUnavailable } from './MarkdownImage';
  * corners and centring on the surrounding cap height.
  */
 export const TRANSCRIPT_PROSE_CLASS =
-  'prose prose-sm [--tw-prose-body:var(--fg-primary)] dark:prose-invert max-w-none break-words prose-p:my-0.5 prose-pre:my-1.5 prose-pre:overflow-x-auto prose-pre:bg-fg-primary/[0.06] prose-pre:fg-primary/80 prose-code:before:content-none prose-code:after:content-none [&_:not(pre)>code]:inline-block [&_:not(pre)>code]:max-w-full [&_:not(pre)>code]:rounded-sm [&_:not(pre)>code]:bg-muted [&_:not(pre)>code]:pt-[0.125em] [&_:not(pre)>code]:pb-[0.042em] [&_:not(pre)>code]:px-[0.417em] [&_:not(pre)>code]:align-[0.0625em] [&_:not(pre)>code]:leading-[1.5] [&_:not(pre)>code]:font-normal [&_:not(pre)>code]:fg-primary prose-headings:fg-primary prose-a:fg-accent prose-strong:fg-primary prose-li:my-0.5';
+  'prose prose-sm [--tw-prose-body:var(--fg-primary)] dark:prose-invert max-w-none break-words prose-p:my-0.5 canopy-compact-prose prose-pre:overflow-x-auto prose-pre:bg-fg-primary/[0.06] prose-pre:fg-primary/80 prose-code:before:content-none prose-code:after:content-none [&_:not(pre)>code]:inline-block [&_:not(pre)>code]:max-w-full [&_:not(pre)>code]:rounded-sm [&_:not(pre)>code]:bg-muted [&_:not(pre)>code]:pt-[0.125em] [&_:not(pre)>code]:pb-[0.042em] [&_:not(pre)>code]:px-[0.417em] [&_:not(pre)>code]:align-[0.0625em] [&_:not(pre)>code]:leading-[1.5] [&_:not(pre)>code]:font-normal [&_:not(pre)>code]:fg-primary prose-headings:fg-primary prose-a:fg-accent prose-strong:fg-primary prose-li:my-0.5';
 
 export const DEFAULT_MARKDOWN_OVERRIDES: MarkdownToJSX.Overrides = {
   a: sanitizedAnchorOverride(),

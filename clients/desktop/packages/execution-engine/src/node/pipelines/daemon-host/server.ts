@@ -15,6 +15,7 @@ import type {
   WorkerPipelineLaunchEvent,
 } from '@canopy/protocol/canopy-core';
 import { parsePipelineText } from '@canopy/execution-engine/pipelines/parse-pipeline';
+import { getTriggerTypes } from '@canopy/execution-engine/types/pipeline';
 import type {
   ExecutionState,
   Pipeline,
@@ -29,7 +30,10 @@ import { normalizeAgentModelConfig } from '@canopy/execution-engine/execution-ty
 import {
   classifyDaemonPipeline,
   resolveDaemonPipelineInputs,
+  type DaemonPipelineClassifierOptions,
 } from '../daemon-eligibility';
+import { createChildCapabilityStore } from './child-capabilities';
+import { CHILD_REFUSED_MESSAGE, childAdmissionFor } from './child-pipelines';
 import { normalizeExecutionModelAliasPreferences } from '../executor/model-alias-preferences';
 import { normalizePipelinePluginCollectionPreferences } from '../plugin-collection-store';
 import { parseLaunchPluginCollections } from './plugin-collections';
@@ -63,11 +67,14 @@ import {
   type PipelineOwnerInspector,
 } from '@canopy/execution-engine/node/pipelines/executor/owner-fence';
 import type {
+  ChildPipelineAdmissionRequest,
+  DelegatedChildPipelineRequest,
   ExecutionHandle,
   ExecutionOptions,
   ExecutionResourceMonitor,
   ExecutionResourceRegistrationHandle,
   ExecutionRuntime,
+  PipelineHostActionResult,
 } from '../executor/types';
 import {
   createDaemonHostStepPort,
@@ -82,6 +89,11 @@ import {
   createPipelineOwnerClient,
   type PipelineOwnerClientHost,
 } from './owner-client';
+import {
+  createDaemonIsolatedJobPort,
+  createDaemonIsolatedJobVariantSource,
+  isolatedJobVariantPipeline,
+} from './isolated-jobs';
 import {
   createDaemonPipelineOwnerPorts,
   createDaemonPipelinePlanPorts,
@@ -178,6 +190,24 @@ function launchEventOptions(
         eventName: 'task_ready',
         eventData: { task_ready: { task_text: event.taskText } },
       };
+}
+
+/**
+ * The trigger event a launch runs from: the one it carries, or `workflow`
+ * for a definition that declares `workflow` and not `dispatch` (CAN-6868),
+ * so its inputs and defaults resolve from `on.workflow.inputs`, as the
+ * executor runs such a child in process. A cloud run's delegated child
+ * workflow is launched so.
+ */
+function launchTriggerOptions(
+  event: WorkerPipelineLaunchEvent | undefined,
+  pipeline: Pipeline,
+): Pick<ExecutionOptions, 'eventName' | 'eventData'> {
+  if (event !== undefined) return launchEventOptions(event);
+  const triggers = getTriggerTypes(pipeline.on);
+  return !triggers.includes('dispatch') && triggers.includes('workflow')
+    ? { eventName: 'workflow' }
+    : {};
 }
 
 function parsePreferenceLocator(
@@ -557,9 +587,30 @@ export function servePipelineHost(options: ServePipelineHostOptions): void {
         : { scope: 'directory', path: launch.cwd };
     lastBundledActionsDir = launch.bundledActionsDir;
     const isOwnerBound = launch.ownerBound === true;
+    // A remote owner (a cloud runner's web core) arrives with a lease fence
+    // or an owner deadline (CAN-6422).
+    const remoteOwner =
+      leaseFence !== null || ownerRequestDeadlineMs !== undefined;
+    // Same-target child workflows run here only for a cloud runner's owner,
+    // which records them; each is checked as it starts (CAN-6868).
+    const runsChildren = isOwnerBound && remoteOwner;
+    let childAdmission:
+      | ((request: ChildPipelineAdmissionRequest) => Promise<void>)
+      | null = null;
     const launcher = codexMcpLauncher;
     const configuredRoot = dataRoot ?? path.dirname(dir);
     const runOwnerRequests = isOwnerBound ? new AbortController() : undefined;
+    // A same-target child's own collections and aliases, resolved by the
+    // run's core as the child starts (CAN-6868 follow-up 3).
+    const childCapabilities =
+      runsChildren && ownerRequests !== null
+        ? createChildCapabilityStore({
+            client: ownerRequests,
+            executionId: params.executionId,
+            owner: params.owner,
+            ...(runOwnerRequests && { signal: runOwnerRequests.signal }),
+          })
+        : undefined;
     // The run's collections as its core resolved them (CAN-5832); a snapshot
     // that does not parse refuses the launch.
     const pluginCollections =
@@ -572,6 +623,7 @@ export function servePipelineHost(options: ServePipelineHostOptions): void {
       bundledActionsDir: launch.bundledActionsDir,
       processEnvironment,
       ...(pluginCollections && { pluginCollections }),
+      ...(childCapabilities && { childCapabilities }),
       onStepNotifications: (stepId, notifications): void => {
         for (const { title, body } of notifications)
           post({
@@ -585,7 +637,68 @@ export function servePipelineHost(options: ServePipelineHostOptions): void {
       ...(launch.nodeProcess && { nodeProcess: launch.nodeProcess }),
       ...(launch.tsxRuntime && { tsxCli: launch.tsxRuntime }),
       resourceMonitor,
+      ...(runsChildren &&
+        hostSteps && {
+          delegateChildPipeline: (
+            request: DelegatedChildPipelineRequest,
+          ): Promise<PipelineHostActionResult> => {
+            const port = hostSteps;
+            if (port === null)
+              return Promise.reject(
+                new Error(CHILD_REFUSED_MESSAGE(request.pipelineId)),
+              );
+            return port.delegateChild(
+              {
+                action: 'run-pipeline',
+                childExecutionId: request.childExecutionId,
+                pipelineId: request.pipelineId,
+                document: request.document,
+                inputs: { ...request.inputs },
+                target: request.target,
+              },
+              request.caller,
+              AbortSignal.any([
+                request.signal,
+                AbortSignal.timeout(request.timeoutMs),
+              ]),
+              {
+                deadlineAt: Date.now() + request.timeoutMs,
+                artifactsDir: request.artifactsDir,
+                registerTimeoutFinalizer: () => undefined,
+              },
+            );
+          },
+        }),
+      ...(runsChildren && {
+        admitChildPipeline: async (
+          request: ChildPipelineAdmissionRequest,
+        ): Promise<void> => {
+          // Set once the launch is classified, before anything runs.
+          if (childAdmission === null)
+            throw new Error(CHILD_REFUSED_MESSAGE(request.pipelineId));
+          await childAdmission(request);
+        },
+      }),
       ...(worktree && { worktree }),
+      // A read-only job's variants run as child runs its owner places, each
+      // in a sandbox of its own; a variant's own run runs the request its
+      // owner holds (CAN-6892 part 2). Only a cloud runner's owner asks.
+      ...(runsChildren &&
+        ownerRequests &&
+        launch.isolatedJobs === 'owner' && {
+          isolatedJobs: createDaemonIsolatedJobPort(ownerRequests, {
+            executionId: params.executionId,
+            owner: params.owner,
+          }),
+        }),
+      ...(runsChildren &&
+        ownerRequests &&
+        launch.isolatedJobs === 'variant' && {
+          isolatedVariant: createDaemonIsolatedJobVariantSource(ownerRequests, {
+            executionId: params.executionId,
+            owner: params.owner,
+          }),
+        }),
       ...(isOwnerBound && hostSteps && { pipelineHostActions: hostSteps }),
       // A brokered run's pre-commit failures go to its owner (CAN-6739).
       ...(isOwnerBound &&
@@ -622,10 +735,7 @@ export function servePipelineHost(options: ServePipelineHostOptions): void {
             // A remote owner (a cloud runner's web core, CAN-6422) arrives
             // with a lease fence or an owner deadline: its Feed tools run
             // here, over owner.ledger.operation.
-            ...((leaseFence !== null ||
-              ownerRequestDeadlineMs !== undefined) && {
-              remoteLedgerTools: true,
-            }),
+            ...(remoteOwner && { remoteLedgerTools: true }),
             ...(launch.codexEnvironment && {
               codexEnvironment: launch.codexEnvironment,
             }),
@@ -653,6 +763,28 @@ export function servePipelineHost(options: ServePipelineHostOptions): void {
       !applyModelRegistrySnapshot(launch.modelCatalog)
     )
       return fail(id, 'start_failed');
+    const classifierOptions: DaemonPipelineClassifierOptions = {
+      hostSteps: isOwnerBound ? 'owner' : 'refuse',
+      modelSteps: isOwnerBound ? 'claude_codex' : 'refuse',
+      commitHooks:
+        isOwnerBound && launch.precommitHooks === 'owner' ? 'owner' : 'refuse',
+      // A cloud runner's sandbox holds the run's GitHub credentials, and
+      // this host reports pre-commit failures itself (CAN-6739).
+      repositoryActions:
+        isOwnerBound && launch.repositoryActions === 'brokered'
+          ? 'brokered'
+          : 'refuse',
+      // The executor resolves a composite's inputs as the classifier does;
+      // which runs reach the host is the dispatching core's choice (CAN-6316 G4).
+      compositeModels: isOwnerBound ? 'resolve' : 'refuse',
+      // A remote owner gets a copy of each file a message attaches
+      // (CAN-6857), so a cloud runner takes `attachments`.
+      hostAttachments: isOwnerBound && remoteOwner ? 'copy' : 'refuse',
+      childPipelines: runsChildren ? 'host' : 'refuse',
+      // Its owner runs a child on another target in a sandbox of its own
+      // (CAN-6868 part 3).
+      delegatedChildren: runsChildren && hostSteps ? 'owner' : 'refuse',
+    };
     const classification = classifyDaemonPipeline(
       pipeline,
       {
@@ -675,23 +807,7 @@ export function servePipelineHost(options: ServePipelineHostOptions): void {
         }),
         ...(isOwnerBound && { env: launch.env }),
       },
-      {
-        hostSteps: isOwnerBound ? 'owner' : 'refuse',
-        modelSteps: isOwnerBound ? 'claude_codex' : 'refuse',
-        commitHooks:
-          isOwnerBound && launch.precommitHooks === 'owner'
-            ? 'owner'
-            : 'refuse',
-        // A cloud runner's sandbox holds the run's GitHub credentials, and
-        // this host reports pre-commit failures itself (CAN-6739).
-        repositoryActions:
-          isOwnerBound && launch.repositoryActions === 'brokered'
-            ? 'brokered'
-            : 'refuse',
-        // The executor resolves a composite's inputs as the classifier does;
-        // which runs reach the host is the dispatching core's choice (CAN-6316 G4).
-        compositeModels: isOwnerBound ? 'resolve' : 'refuse',
-      },
+      classifierOptions,
     );
     if (!classification.eligible)
       return fail(
@@ -718,7 +834,47 @@ export function servePipelineHost(options: ServePipelineHostOptions): void {
       )
         return fail(id, 'start_failed');
     }
+    // A read-only job variant's own run (CAN-6892) was checked as its
+    // parent's whole workflow, and runs only the variant's job.
+    let executed = pipeline;
+    if (launch.isolatedJobs === 'variant') {
+      const variant =
+        runsChildren && launch.isolatedVariantJob !== undefined
+          ? isolatedJobVariantPipeline(pipeline, launch.isolatedVariantJob)
+          : null;
+      if (variant === null) return fail(id, 'start_failed');
+      executed = variant;
+    }
+    // A run with children may start model steps only they hold: the
+    // launch's CLIs are taken when it brings them, and its resources, where
+    // a bundled child resolves from, whenever it names them (CAN-6868).
+    const children = (classification.childPipelines ?? 0) > 0;
+    if (
+      children &&
+      launch.bundledResourcesDir !== undefined &&
+      !useBundledResources(launch.bundledResourcesDir)
+    )
+      return fail(id, 'start_failed');
+    const childModels =
+      children &&
+      launch.modelCatalog !== undefined &&
+      launch.bundledResourcesDir !== undefined &&
+      launch.providerBinaries !== undefined &&
+      useProviderBinaries(launch.providerBinaries);
+    const modelsReady = classification.modelSteps > 0 || childModels;
+    if (children)
+      childAdmission = childAdmissionFor({
+        runtime,
+        repoPath: launch.repoPath ?? launch.cwd,
+        env: launch.env,
+        options: classifierOptions,
+        modelsReady,
+        codexReady: launch.codexEnvironment !== undefined && launcher !== null,
+        ...(childCapabilities && { capabilities: childCapabilities }),
+      });
     const { executionId } = params;
+    /** The children this run started here, at any depth (CAN-6868). */
+    const childIds = new Set<string>();
     let handle: ExecutionHandle | null = null;
     const executionOptions: ExecutionOptions = {
       cwd: launch.cwd,
@@ -731,7 +887,7 @@ export function servePipelineHost(options: ServePipelineHostOptions): void {
         ? { ...launch.secretEnv }
         : undefined,
       inputs: launch.inputs,
-      ...(launch.event && launchEventOptions(launch.event)),
+      ...launchTriggerOptions(launch.event, pipeline),
       pipelineFileDir: launch.pipelineFileDir,
       pipelineDataDir: launch.pipelineDataDir,
       assetsDir: launch.assetsDir,
@@ -741,7 +897,7 @@ export function servePipelineHost(options: ServePipelineHostOptions): void {
       }),
       repoPath: launch.repoPath,
       runtime,
-      ...(classification.modelSteps > 0 && {
+      ...(modelsReady && {
         modelConfig: normalizeAgentModelConfig(launch.modelConfig),
         agentTerminalMode: false,
       }),
@@ -780,7 +936,25 @@ export function servePipelineHost(options: ServePipelineHostOptions): void {
       initiator: normalizeExecutionInitiator(launch.initiator),
       agentOrigin: normalizeAgentChatAddress(launch.agentOrigin),
       onEvent: (event): void => {
-        if (event.executionId !== executionId) return;
+        if (event.executionId !== executionId) {
+          // A child this run started here, at any depth (CAN-6868): its
+          // owner records it as the run's child.
+          const parent = event.state.parent_execution_id;
+          if (
+            runsChildren &&
+            parent !== undefined &&
+            (parent === executionId || childIds.has(parent))
+          ) {
+            childIds.add(event.executionId);
+            post({
+              kind: 'child',
+              executionId,
+              event: event.type,
+              execution: projectPipelineExecution(event.state),
+            });
+          }
+          return;
+        }
         post({
           kind: 'execution',
           executionId,
@@ -813,7 +987,7 @@ export function servePipelineHost(options: ServePipelineHostOptions): void {
     )
       return fail(id, 'start_failed');
     try {
-      handle = await run.begin(pipeline, executionOptions);
+      handle = await run.begin(executed, executionOptions);
     } catch (error) {
       warn('The pipeline host could not start a workflow run.');
       return fail(
@@ -1344,8 +1518,14 @@ export function servePipelineHost(options: ServePipelineHostOptions): void {
         withdraw: (executionId: string, requestId: string): void =>
           post({ kind: 'hostRequestWithdrawn', executionId, requestId }),
       };
-      hostSteps ??= createDaemonHostStepPort(hostChannel);
       ownerRequestDeadlineMs = positiveDeadline(request.ownerRequestDeadlineMs);
+      // A remote owner (a cloud runner's web core) arrives with a lease
+      // fence or an owner deadline. It can't read this host's paths, so a
+      // message's attachments cross to it as copies (CAN-6857).
+      hostSteps ??= createDaemonHostStepPort(hostChannel, {
+        carryAttachments:
+          leaseFence !== null || ownerRequestDeadlineMs !== undefined,
+      });
       ownerRequests ??= createPipelineOwnerClient(hostChannel, {
         minimumDeadlineMs: () => ownerRequestDeadlineMs,
       });

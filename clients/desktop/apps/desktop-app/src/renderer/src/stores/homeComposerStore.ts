@@ -778,6 +778,72 @@ export interface HomeCloudFile {
   readonly file: File;
 }
 
+/** A cloud task, as New task names where a restored message goes. */
+export interface HomeCloudDestination {
+  readonly projectId: string;
+  readonly worktreeId: string;
+  readonly chatId: string;
+}
+
+/**
+ * A New task cloud message that may have reached its task (CAN-6798):
+ * written as it is dispatched, never edited, and removed once its send is
+ * over or a later run settles it. Local sends keep no entry.
+ */
+export interface HomeOutboxEntry {
+  /** The web core command id it posts as. */
+  readonly id: string;
+  readonly userMessageId: string;
+  /** The project New task sent it from. */
+  readonly workspaceId: string;
+  readonly destination: HomeCloudDestination;
+  readonly text: string;
+  readonly fileReferences: readonly FileReference[];
+  /** Its files, by name: their bytes aren't kept. */
+  readonly cloudFileNames: readonly string[];
+}
+
+/**
+ * What New task knows about a message an earlier run sent (CAN-6798):
+ * still being checked, not arrived and possibly still on its way, never
+ * applied and waiting to come back into the draft, back in the draft, or
+ * taken by its chat.
+ */
+export type HomeOutboxCardState =
+  | 'sending'
+  | 'checking'
+  | 'missing'
+  | 'returned'
+  | 'restored'
+  | 'sent';
+
+export interface HomeOutboxCard {
+  readonly entry: HomeOutboxEntry;
+  readonly state: HomeOutboxCardState;
+  /** Its task is gone: sent again, it starts a new one. */
+  readonly taskGone?: boolean;
+}
+
+/**
+ * A draft an earlier run left for another project than the one New task
+ * holds a draft for now (CAN-6798): kept apart, never merged into it, until
+ * the person moves it back.
+ */
+export interface HomeKeptDraft {
+  readonly id: string;
+  readonly workspaceId: string | null;
+  readonly mode: HomeComposerMode;
+  readonly text: string;
+  readonly fileReferences: readonly FileReference[];
+  readonly attachments: readonly AttachmentMeta[];
+  readonly cloudFileNames: readonly string[];
+}
+
+/** Files a restored draft held for a cloud project, to attach again. */
+export interface HomeRestoreNotice {
+  readonly fileNames: readonly string[];
+}
+
 interface HomeComposerData {
   workspaceId: string | null;
   branchTarget: HomeBranchTarget;
@@ -868,6 +934,12 @@ interface HomeComposerData {
   attachments: AttachmentMeta[];
   /** Files for a cloud project's first message, in the order picked. */
   cloudFiles: HomeCloudFile[];
+  /** A restored draft's files to attach again (CAN-6798). */
+  restoreNotice: HomeRestoreNotice | null;
+  /** Messages an earlier run sent, as New task shows them (CAN-6798). */
+  outboxCards: readonly HomeOutboxCard[];
+  /** Drafts an earlier run left for another project (CAN-6798). */
+  keptDrafts: readonly HomeKeptDraft[];
   /**
    * The New Task draft of record (CAN-3794). It outlives every `HomeSurface`
    * editor: a newly mounted editor is seeded from it, and a hidden,
@@ -875,7 +947,7 @@ interface HomeComposerData {
    * back restores the draft exactly and Send never reads invisible text.
    * Only a successful chat-mode send (`reset()` when the whole draft is still
    * the submitted one, otherwise `clearSubmittedDraft()` when only its
-   * text/references are), an account change, a Personal/organization
+   * project, mode, branch or base moved since), an account change, a Personal/organization
    * context rebind,
    * an explicit replacement (command insert, suggested or staged starter
    * prompt), or the user clearing the editor empties or replaces it.
@@ -1091,6 +1163,9 @@ function createInitialData(): HomeComposerData {
     pluginSelectionsEdited: false,
     attachments: [],
     cloudFiles: [],
+    restoreNotice: null,
+    outboxCards: [],
+    keptDrafts: [],
     text: '',
     fileReferences: [],
     pendingAttachmentImportIds: [],
@@ -1311,9 +1386,10 @@ export interface HomeComposerState extends HomeComposerData {
     fileReferences: readonly FileReference[];
   }) => void;
   /**
-   * Empties the submitted text and references after a successful send
-   * (CAN-3933) while leaving the rest of the draft (workspace, attachments,
-   * branch target, schedule, settings, send state) alone. Bumps
+   * Empties what was submitted (its text, references, attachments, files
+   * and schedule) after a successful send that New task moved to another
+   * project, mode, branch or base meanwhile (CAN-3933, CAN-6798), while
+   * keeping where it moved to, its settings and send state. Bumps
    * `draftGeneration` so every mounted editor re-syncs.
    */
   clearSubmittedDraft: () => void;
@@ -1405,6 +1481,22 @@ export interface HomeComposerState extends HomeComposerData {
    */
   loadFileIndex: (force?: boolean) => Promise<void>;
   reset: () => void;
+  /**
+   * Brings a draft back after a reload or quit (CAN-6798), replacing what
+   * the editor shows.
+   */
+  restoreDraft: (restored: {
+    workspaceId: string | null;
+    mode: HomeComposerMode;
+    text: string;
+    fileReferences: readonly FileReference[];
+    attachments: readonly AttachmentMeta[];
+    notice: HomeRestoreNotice | null;
+  }) => void;
+  setRestoreNotice: (notice: HomeRestoreNotice | null) => void;
+  /** Shows a card for an outbox entry, replacing its earlier one. */
+  setOutboxCard: (card: HomeOutboxCard) => void;
+  removeOutboxCard: (entryId: string) => void;
 }
 
 let nextHomeAttachmentImportId = 1;
@@ -1815,10 +1907,51 @@ export const useHomeComposerStore = create<HomeComposerState>((set, get) => ({
     }));
   },
 
+  restoreDraft: (restored): void => {
+    if (restored.workspaceId !== get().workspaceId)
+      get().selectWorkspace(restored.workspaceId, { explicit: true });
+    set((state) => ({
+      mode: restored.mode,
+      text: restored.text,
+      fileReferences: restored.fileReferences.map((reference) => ({
+        ...reference,
+      })),
+      attachments: [...restored.attachments],
+      restoreNotice: restored.notice,
+      // A mounted editor takes the restored draft as an owner's reset.
+      draftGeneration: state.draftGeneration + 1,
+      linkDraftRevision: state.linkDraftRevision + 1,
+    }));
+  },
+
+  setRestoreNotice: (notice): void => {
+    set({ restoreNotice: notice });
+  },
+
+  setOutboxCard: (card): void => {
+    set((state) => ({
+      outboxCards: [
+        ...state.outboxCards.filter((each) => each.entry.id !== card.entry.id),
+        card,
+      ],
+    }));
+  },
+
+  removeOutboxCard: (entryId): void => {
+    set((state) => ({
+      outboxCards: state.outboxCards.filter(
+        (each) => each.entry.id !== entryId,
+      ),
+    }));
+  },
+
   clearSubmittedDraft: (): void => {
     set((state) => ({
       text: '',
       fileReferences: [],
+      attachments: [],
+      cloudFiles: [],
+      scheduledSendDraft: null,
       draftGeneration: state.draftGeneration + 1,
       linkDraftRevision: state.linkDraftRevision + (state.text !== '' ? 1 : 0),
     }));
@@ -2100,6 +2233,10 @@ export const useHomeComposerStore = create<HomeComposerState>((set, get) => ({
   reset: (): void => {
     set((state) => ({
       ...createInitialData(),
+      // Cards for earlier sends, and drafts kept for another project,
+      // outlive the draft: a new send doesn't settle them (CAN-6798).
+      outboxCards: state.outboxCards,
+      keptDrafts: state.keptDrafts,
       draftGeneration: state.draftGeneration + 1,
       workspaceSelectionGeneration: state.workspaceSelectionGeneration + 1,
     }));
@@ -2107,9 +2244,11 @@ export const useHomeComposerStore = create<HomeComposerState>((set, get) => ({
 }));
 
 // The renderer store can outlive every composer view. Clear its draft even
-// when no Home surface is mounted when the authenticated account changes.
+// when no Home surface is mounted when the authenticated account changes,
+// and with it every card for the account's earlier sends.
 useWorkspaceContextStore.subscribe((current, previous): void => {
   if (current.accountEpoch !== previous.accountEpoch) {
     useHomeComposerStore.getState().reset();
+    useHomeComposerStore.setState({ outboxCards: [], keptDrafts: [] });
   }
 });

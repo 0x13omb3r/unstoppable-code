@@ -1171,15 +1171,13 @@ const PortalPluginsPickerContent = memo(function PortalPluginsPickerContent({
         >
           <div className="flex min-h-96 flex-1 flex-col">
             {notice && (
-              <Notice
-                role="none"
-                className="mb-4"
-                data-testid="portal-plugins-notice"
-              >
-                {notice.split('\n').map((line, index) => (
-                  <p key={index}>{line}</p>
-                ))}
-              </Notice>
+              <div className="pb-4">
+                <Notice role="none" data-testid="portal-plugins-notice">
+                  {notice.split('\n').map((line, index) => (
+                    <p key={index}>{line}</p>
+                  ))}
+                </Notice>
+              </div>
             )}
             <UnifiedTable
               rows={tableRows}
@@ -1191,6 +1189,7 @@ const PortalPluginsPickerContent = memo(function PortalPluginsPickerContent({
               }}
               showCollectionKind={(catalog?.collections.length ?? 0) > 0}
               loading={loading && !catalog}
+              autoFocusSearch
               providerIconScope={
                 providerType === 'claude' || providerType === 'codex'
                   ? providerType
@@ -1244,18 +1243,19 @@ const PortalPluginsPickerContent = memo(function PortalPluginsPickerContent({
               </div>
             )}
             {marketplaceAdded && (
-              <Notice
-                errorSource="portal-plugins-marketplace-added"
-                role="status"
-                intent={marketplaceAdded.intent}
-                className="mt-3"
-                data-testid="portal-plugins-marketplace-added"
-              >
-                {marketplaceAdded.message}
-              </Notice>
+              <div className="pt-3">
+                <Notice
+                  errorSource="portal-plugins-marketplace-added"
+                  role="status"
+                  intent={marketplaceAdded.intent}
+                  data-testid="portal-plugins-marketplace-added"
+                >
+                  {marketplaceAdded.message}
+                </Notice>
+              </div>
             )}
             {cloudScope && marketplacesEnabled && addMarketplace && (
-              <div className="mt-3">
+              <div className="pt-3">
                 <Divider />
                 <div className="flex justify-start pt-3">
                   <Button
@@ -1272,7 +1272,7 @@ const PortalPluginsPickerContent = memo(function PortalPluginsPickerContent({
               </div>
             )}
             {deferredTools && (
-              <div className="mt-3">
+              <div className="pt-3">
                 <Divider />
                 <div className="flex flex-col gap-2 pt-3">
                   <DeferredPluginsControl
@@ -1312,7 +1312,7 @@ const PortalPluginsPickerContent = memo(function PortalPluginsPickerContent({
               isGitHubTreeUrl(detailEntry.sourceUrl) ||
               detailSecurityAudit !== null) && (
               <p
-                className="mb-4 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs fg-secondary"
+                className="pb-4 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs fg-secondary"
                 data-testid="portal-plugin-details-provenance"
               >
                 {provenanceLicense(detailEntry.license) !== undefined && (

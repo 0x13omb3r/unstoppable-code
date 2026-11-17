@@ -193,11 +193,16 @@ export function createDaemonPipelineOwnerPorts(
   const step = (
     deadlineMs: number,
     at?: Partial<
-      Pick<PipelineOwnerStep, 'jobId' | 'stepId' | 'attempt' | 'iteration'>
+      Pick<
+        PipelineOwnerStep,
+        'jobId' | 'stepId' | 'attempt' | 'iteration' | 'childExecutionId'
+      >
     >,
   ): PipelineOwnerStep => ({
     executionId: run.executionId,
-    childExecutionId: null,
+    // A child workflow's request names the child (CAN-6868): its owner
+    // answers its routes and Ledger attempts under the child's own id.
+    childExecutionId: at?.childExecutionId ?? null,
     jobId: at?.jobId ?? '_run',
     stepId: at?.stepId ?? '_run',
     attempt: at?.attempt ?? 0,
@@ -205,6 +210,22 @@ export function createDaemonPipelineOwnerPorts(
     owner: run.owner,
     deadlineMs,
   });
+  /** The child a route session names (`pipeline:<child>:...`), if not the run. */
+  const sessionChild = (
+    routeSessionId: string | undefined,
+  ): { readonly childExecutionId: string } | undefined => {
+    const named = /^pipeline:([^:]+):/.exec(routeSessionId ?? '')?.[1];
+    return named === undefined || named === run.executionId
+      ? undefined
+      : { childExecutionId: named };
+  };
+  /** The child an execution id names, if not the run. */
+  const executionChild = (
+    executionId: string | undefined,
+  ): { readonly childExecutionId: string } | undefined =>
+    executionId === undefined || executionId === run.executionId
+      ? undefined
+      : { childExecutionId: executionId };
   const ask = (
     body: WorkerPipelineOwnerRequest,
     deadlineMs: number,
@@ -295,7 +316,7 @@ export function createDaemonPipelineOwnerPorts(
     void client
       .request(
         { action: 'owner.model.release', routeSessionId },
-        step(PIPELINE_OWNER_DEADLINE_MS.short),
+        step(PIPELINE_OWNER_DEADLINE_MS.short, sessionChild(routeSessionId)),
         NEVER,
       )
       .catch(() => undefined);
@@ -328,6 +349,7 @@ export function createDaemonPipelineOwnerPorts(
       },
       PIPELINE_OWNER_DEADLINE_MS.long,
       context?.signal,
+      sessionChild(context?.routeSessionId),
     );
     const { override } = expectKind(settlement, 'model.routing');
     if (override === null) return null;
@@ -367,7 +389,10 @@ export function createDaemonPipelineOwnerPorts(
     (
       attemptKey: string,
       at: Partial<
-        Pick<PipelineOwnerStep, 'jobId' | 'stepId' | 'attempt' | 'iteration'>
+        Pick<
+          PipelineOwnerStep,
+          'jobId' | 'stepId' | 'attempt' | 'iteration' | 'childExecutionId'
+        >
       >,
     ): RemoteLedgerOperate =>
     async (operation, params, signal) => {
@@ -402,6 +427,7 @@ export function createDaemonPipelineOwnerPorts(
         stepId: request.stepId,
         attempt: request.attempt,
         iteration: request.iteration,
+        ...executionChild(request.executionId),
       };
       const opened = expectKind(
         await ask(
@@ -493,7 +519,10 @@ export function createDaemonPipelineOwnerPorts(
     request: Parameters<PipelineLedgerPort['openAttempt']>[0],
     opened: { readonly attemptKey: string; readonly agentSessionId: string },
     at: Partial<
-      Pick<PipelineOwnerStep, 'jobId' | 'stepId' | 'attempt' | 'iteration'>
+      Pick<
+        PipelineOwnerStep,
+        'jobId' | 'stepId' | 'attempt' | 'iteration' | 'childExecutionId'
+      >
     >,
   ): PipelineLedgerAttempt | null {
     if (hostedOwner === null) return null;
@@ -694,6 +723,7 @@ export function createDaemonPipelineOwnerPorts(
         },
         PIPELINE_OWNER_DEADLINE_MS.long,
         options?.signal,
+        sessionChild(options?.routeSessionId),
       );
       const value = expectKind(settlement, 'model.invocation');
       if (!isModelHarnessSource(value.source) || !isModelHarness(value.harness))

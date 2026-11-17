@@ -153,6 +153,12 @@ function hostVerdict(pipeline: Pipeline): string {
       hostSteps: 'owner',
       compositeModels: 'resolve',
       repositoryActions: 'brokered',
+      // The web core gets a copy of each file a message attaches (CAN-6857).
+      hostAttachments: 'copy',
+      // A cloud runner's host runs same-target children, and hands children
+      // on another worktree or the global scope to its owner (CAN-6868).
+      childPipelines: 'host',
+      delegatedChildren: 'owner',
     },
   );
   return result.eligible ? 'portable' : result.reason;
@@ -194,6 +200,37 @@ it('carries the host verdict for every bundled action and nothing else', () => {
     ]),
   );
   expect(CLOUD_RUN_BUNDLED_ACTIONS).toEqual(host);
+});
+
+// CAN-6868: a child workflow runs in its run's host on the run's own target;
+// one on another target is still refused (G2), by both.
+it('admits a child workflow on the run’s own target only, as the host does', () => {
+  const child: Step = { uses: 'builtin/run-pipeline' };
+  for (const pipeline of [
+    oneStep(child),
+    oneStep({ ...child, target: { scope: 'inherit' } }),
+  ]) {
+    expect(preflightVerdict(pipeline)).toBe('portable');
+    expect(hostVerdict(pipeline)).toBe('portable');
+  }
+  // Another worktree or the global scope: a run of its own (part 3b).
+  for (const target of [
+    { scope: 'worktree', workspace_id: 'w', worktree: { id: 't' } },
+    { scope: 'global' },
+  ] as const) {
+    const pipeline = oneStep({ ...child, target });
+    expect(preflightVerdict(pipeline)).toBe('portable');
+    expect(hostVerdict(pipeline)).toBe('portable');
+  }
+  // A folder of the run isn't served yet.
+  for (const target of [
+    { scope: 'directory', path: 'sub' },
+    { scope: 'directory' },
+  ] as const) {
+    const pipeline = oneStep({ ...child, target });
+    expect(preflightVerdict(pipeline)).toBe('child_pipeline');
+    expect(hostVerdict(pipeline)).toBe('child_pipeline');
+  }
 });
 
 it('refuses the bundled actions whose scope leaves out global runs', () => {
@@ -500,10 +537,14 @@ it('refuses a bundled name in another case for the reason the host does', () => 
 // why and what to do instead, as the parity matrix's gap decisions say.
 it.each<[string, Pipeline, string, string]>([
   [
-    'a child workflow',
-    oneStep({ uses: 'builtin/run-pipeline', with: { pipeline: 'p' } }),
+    'a child workflow in a folder of the run',
+    oneStep({
+      uses: 'builtin/run-pipeline',
+      with: { pipeline: 'p' },
+      target: { scope: 'directory', path: 'sub' },
+    }),
     'G2',
-    'Copy its jobs into this workflow',
+    "Remove the step's target",
   ],
   [
     'an agent-hinted run step',
@@ -526,14 +567,16 @@ it.each<[string, Pipeline, string, string]>([
     'G4',
     'Name the model in this step',
   ],
+  // A step's own attachments run since CAN-6857 (G6 lifted); a desktop
+  // task's files never leave it.
   [
-    'message attachments',
+    "a desktop task's files",
     oneStep({
       uses: 'builtin/send-agent-message',
-      with: { project_id: 'p', text: 'x', attachments: 'a.txt' },
+      with: { project_id: 'p', text: 'x', attachment_paths: '/a/b.txt' },
     }),
-    'G6',
-    'Put the text in text or text_file',
+    'R11',
+    'attach files from the run folder with attachments',
   ],
   [
     'a plugin collection on a model action the host takes none on',

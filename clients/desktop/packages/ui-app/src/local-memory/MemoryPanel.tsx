@@ -226,13 +226,11 @@ function MemoryDaySection({
 }): JSX.Element {
   return (
     <section aria-label={group}>
-      <Heading
-        level={3}
-        variant="label"
-        className="mx-2.5 mb-0.5 mt-3 first:mt-1"
-      >
-        {group}
-      </Heading>
+      <div className="px-2.5 pb-0.5 pt-1">
+        <Heading level={3} variant="label">
+          {group}
+        </Heading>
+      </div>
       <ul>{children}</ul>
     </section>
   );
@@ -248,7 +246,7 @@ function MemoryBody({
 }): JSX.Element {
   return (
     <div
-      className={`mb-4 min-w-0 text-xs fg-primary wrap-anywhere ${REPLAY_BLOCK_CLASS} [&_li]:my-0 [&_ol]:my-0 [&_ol]:list-decimal [&_ol]:pl-4 [&_p]:my-0 [&_p+p]:mt-2 [&_pre]:my-1 [&_pre]:overflow-auto [&_ul]:my-0 [&_ul]:list-disc [&_ul]:pl-4`}
+      className={`canopy-memory-prose min-w-0 pb-4 text-xs fg-primary wrap-anywhere ${REPLAY_BLOCK_CLASS} [&_li]:my-0 [&_ol]:my-0 [&_ol]:list-decimal [&_ol]:pl-4 [&_p]:my-0 [&_pre]:overflow-auto [&_ul]:my-0 [&_ul]:list-disc [&_ul]:pl-4`}
       data-testid={testId}
     >
       {children}
@@ -1255,27 +1253,25 @@ export function MemoryPanel({
     const onKeyDown = (event: Parameters<typeof editorKeyDown>[0]): void =>
       editorKeyDown(event, () => void save(), cancel);
     return (
-      <div className="flex flex-col" data-testid="memory-item-editor">
+      <div className="flex flex-col gap-3.5" data-testid="memory-item-editor">
         {titled && (
-          <div className="mb-3.5">
-            <FormField
-              id="memory-edit-title"
-              label="Title"
-              error={titleMissing ? 'Add a title.' : undefined}
-            >
-              {(control) => (
-                <TextInput
-                  {...control}
-                  autoFocus
-                  value={draftTitle}
-                  disabled={saving}
-                  onChange={(event) => setDraftTitle(event.target.value)}
-                  onKeyDown={onKeyDown}
-                  data-testid="memory-item-title"
-                />
-              )}
-            </FormField>
-          </div>
+          <FormField
+            id="memory-edit-title"
+            label="Title"
+            error={titleMissing ? 'Add a title.' : undefined}
+          >
+            {(control) => (
+              <TextInput
+                {...control}
+                autoFocus
+                value={draftTitle}
+                disabled={saving}
+                onChange={(event) => setDraftTitle(event.target.value)}
+                onKeyDown={onKeyDown}
+                data-testid="memory-item-title"
+              />
+            )}
+          </FormField>
         )}
         <Stack gap="inline">
           <FormField id="memory-edit-body" label="Memory">
@@ -1311,7 +1307,7 @@ export function MemoryPanel({
             />
           )}
         </Stack>
-        <div className="mt-3.5 flex justify-end gap-2">
+        <div className="flex justify-end gap-2">
           <Button
             variant="secondary"
             size="sm"
@@ -1331,7 +1327,7 @@ export function MemoryPanel({
             data-testid="memory-item-save"
           >
             {saving ? 'Saving…' : 'Save'}
-            <span aria-hidden="true" className="ml-1.5 opacity-70">
+            <span aria-hidden="true" className="pl-1.5 opacity-70">
               {isMac() ? '⌘↵' : 'Ctrl+↵'}
             </span>
           </Button>

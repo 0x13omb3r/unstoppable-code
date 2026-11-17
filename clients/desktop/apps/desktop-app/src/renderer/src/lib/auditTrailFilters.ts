@@ -1,11 +1,11 @@
 import {
-  APP_ADVISOR_PROJECT_ID,
   CODE_REVIEW_CHAT_PROJECT_ID,
   PIPELINE_EDITOR_PROJECT_ID,
   PLAN_EXPLORE_CHAT_PROJECT_ID,
   type AgentAuditEntry,
   type AgentAuditHistoryRequest,
 } from '@canopy/desktop-shared/types';
+import { isBotProjectId } from '@canopy/protocol/chat-targets';
 import { findCodeReviewTarget } from '@/stores/chat/code-review-registry';
 import { findPlanExploreTarget } from '@/stores/chat/plan-explore-registry';
 
@@ -32,7 +32,7 @@ export function auditEntryWorkspaceId(
   }
   if (
     entry.projectId === PIPELINE_EDITOR_PROJECT_ID ||
-    entry.projectId === APP_ADVISOR_PROJECT_ID
+    (entry.projectId !== undefined && isBotProjectId(entry.projectId))
   ) {
     return undefined;
   }

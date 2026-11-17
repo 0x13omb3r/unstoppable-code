@@ -9,6 +9,7 @@ import {
 } from '@canopy/ui-shared/components';
 import {
   useCallback,
+  useEffect,
   useMemo,
   useRef,
   useState,
@@ -39,10 +40,16 @@ import {
 import { ThinkingIcon } from '@canopy/ui-shared/icons/AppIcons';
 import {
   SlateEditor,
+  appendDraftText,
   createChatEditor,
   createEmptyValue,
+  focusEditor,
   serializeEditorValue,
 } from '@canopy/ui-rich';
+import {
+  INSERT_CHAT_TEXT_EVENT,
+  isInsertChatTextDetail,
+} from '@canopy/app-core';
 
 /** The Slate editor value shape (avoids a direct `slate` import). */
 type EditorValue = ReturnType<typeof createEmptyValue>;
@@ -102,6 +109,12 @@ export interface ChatComposerProps {
    * since, so a refused send never loses the person's text.
    */
   readonly restoreDraftOnReject?: boolean;
+  /**
+   * The chat whose insert requests this composer takes (CAN-6801): text
+   * another part of the chat hands it, such as an unsaved queued edit's
+   * Restore, is appended to the draft. Omit to take none.
+   */
+  readonly insertChatId?: string;
 }
 
 // The editable owns the composer's min/max height, overflow, and padding, so
@@ -164,6 +177,7 @@ function ChatComposerContent({
   sendBlocked = false,
   chrome = 'divider',
   restoreDraftOnReject = false,
+  insertChatId,
 }: ChatComposerProps): JSX.Element {
   // Remounting the editor (bumping the key + recreating the instance) is the
   // reliable way to clear an uncontrolled Slate editor after a send.
@@ -190,6 +204,38 @@ function ChatComposerContent({
     valueRef.current = next;
     setValue(next);
   }, []);
+
+  // Text handed to this chat's composer joins the draft after a blank line,
+  // as on every other composer, and the composer takes focus to show it.
+  const focusAfterInsert = useRef(false);
+  useEffect(() => {
+    if (insertChatId === undefined || disabled) return;
+    const handler = (event: Event): void => {
+      if (
+        !(event instanceof CustomEvent) ||
+        !isInsertChatTextDetail(event.detail)
+      )
+        return;
+      const detail = event.detail;
+      if (detail.targetChatId !== insertChatId || detail.text.length === 0)
+        return;
+      const next = appendDraftText(valueRef.current, detail.text);
+      valueRef.current = next;
+      setValue(next);
+      focusAfterInsert.current = true;
+      setEditorKey((key) => key + 1);
+      detail.markHandled?.();
+    };
+    document.addEventListener(INSERT_CHAT_TEXT_EVENT, handler);
+    return (): void => {
+      document.removeEventListener(INSERT_CHAT_TEXT_EVENT, handler);
+    };
+  }, [insertChatId, disabled]);
+  useEffect(() => {
+    if (!focusAfterInsert.current) return;
+    focusAfterInsert.current = false;
+    focusEditor(editor);
+  }, [editor]);
 
   const send = useCallback((): void => {
     const trimmed = serializeEditorValue(valueRef.current).text.trim();

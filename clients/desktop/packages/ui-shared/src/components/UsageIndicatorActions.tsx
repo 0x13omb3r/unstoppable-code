@@ -1,3 +1,4 @@
+import { ControlButton } from './Button';
 import type { JSX, ReactNode } from 'react';
 import { ChevronRightMediumIcon } from '../icons/AppIcons';
 import { DisclosureChevron, DisclosureToggle } from './Disclosure';
@@ -57,8 +58,6 @@ export function UsageExpandableRow({
  * The popover's quiet actions ("See detailed breakdown", Manage): one style,
  * so they always read alike.
  */
-const USAGE_QUIET_ACTION_CLASS =
-  'text-xs fg-secondary transition-colors hover:fg-primary';
 
 /**
  * The popover's action rows ("See detailed breakdown", a host's Manage row):
@@ -79,15 +78,12 @@ export function UsageActionRow({
   band?: boolean;
 }): JSX.Element {
   return (
-    <button
+    <ControlButton
       type="button"
       onClick={onClick}
       data-testid={testId}
-      className={`flex w-full items-center justify-between gap-2 text-left ${USAGE_QUIET_ACTION_CLASS} ${USAGE_TOUCH_FLOOR_CLASS} ${
-        band
-          ? 'bg-quaternary px-3 py-3 outline-none focus-visible:bg-subtle focus-visible:fg-primary'
-          : 'focus-ring rounded-sm'
-      }`}
+      presentation="usage-indicator-action"
+      appearance={{ band: !!band }}
     >
       {label}
       <ChevronRightMediumIcon
@@ -95,7 +91,7 @@ export function UsageActionRow({
         aria-hidden="true"
         className="shrink-0"
       />
-    </button>
+    </ControlButton>
   );
 }
 
@@ -115,15 +111,15 @@ export function UsageTextAction({
   testId?: string;
 }): JSX.Element {
   return (
-    <button
+    <ControlButton
       type="button"
       onClick={onClick}
       aria-label={ariaLabel}
       data-testid={testId}
-      className={`focus-ring relative shrink-0 rounded-sm ${USAGE_QUIET_ACTION_CLASS} ${USAGE_TOUCH_FLOOR_CLASS}`}
+      presentation="usage-indicator-text-action"
     >
       {label}
-    </button>
+    </ControlButton>
   );
 }
 
@@ -149,7 +145,7 @@ export function UsageSectionHeader({
   return (
     // The action and chevron sit 4px apart, as the Context and Cost rows'
     // value and chevron do, so their right edges and chevrons line up.
-    <div className="relative flex items-center text-xs">
+    <div className="relative flex items-center gap-1 text-xs">
       <DisclosureToggle
         variant="usage-section"
         open={expanded}
@@ -160,10 +156,10 @@ export function UsageSectionHeader({
       >
         <span className="whitespace-nowrap fg-primary">{label}</span>
       </DisclosureToggle>
-      {action && <span className="ml-3 flex">{action}</span>}
+      {action && <span className="flex pl-2">{action}</span>}
       <span
         aria-hidden="true"
-        className="pointer-events-none ml-1 flex fg-secondary transition-colors peer-hover:fg-primary"
+        className="pointer-events-none flex fg-secondary transition-colors peer-hover:fg-primary"
       >
         <DisclosureChevron direction={expanded ? 'up' : 'down'} animated />
       </span>

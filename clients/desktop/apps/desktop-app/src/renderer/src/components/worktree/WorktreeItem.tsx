@@ -1,3 +1,4 @@
+import { ControlButton } from '@canopy/ui-shared/components';
 import {
   useCallback,
   useEffect,
@@ -72,7 +73,6 @@ import { NEW_WORKTREE_DISPLAY_NAME } from '@canopy/desktop-shared/lib/default-wo
 import { getTerminalListStateLabel } from '@/lib/terminal-session-state';
 import { getScheduledMessagesForWorktree } from '@/lib/worktreeSessionPromptAutomations';
 import { type WorktreeUiStatus } from '@/lib/worktree-status';
-import { subscribeToWorktreeArchiveConfirmationRequests } from '@/lib/worktreeArchiveConfirmationEvents';
 import { RunSpinner } from '../shared/loading/spinners/RunSpinner';
 import { ProjectIcon } from '../shared/ProjectIcon';
 import type { DotTone, WorkspaceKind } from '@canopy/ui-shared/components';
@@ -683,11 +683,6 @@ function WorktreeItemContent({
   );
   const isPendingGitSetup = worktree.setupPhase === 'git-pending';
   const [showConfirm, setShowConfirm] = useState(false);
-  // The branch handling an App Advisor request asked for; a row gesture
-  // leaves it unset.
-  const [requestedDeleteBranch, setRequestedDeleteBranch] = useState<
-    boolean | undefined
-  >(undefined);
   const [archiveConfirmationTarget, setArchiveConfirmationTarget] =
     useState<WorktreeArchiveConfirmationTarget | null>(null);
   // Which retained state the pending removal confirmation lands in: Delete
@@ -1470,27 +1465,6 @@ function WorktreeItemContent({
       currentArchiveTarget.worktreeCreatedAt &&
     archiveConfirmationTarget.branchName === currentArchiveTarget.branchName;
 
-  useEffect(
-    () =>
-      subscribeToWorktreeArchiveConfirmationRequests((request) => {
-        if (
-          pinnedCopy ||
-          request.projectId !== projectId ||
-          request.worktreeId !== worktree.id
-        ) {
-          return false;
-        }
-        setArchiveConfirmationTarget(currentArchiveTarget);
-        setRemovalMode(
-          request.lockAfterArchive === true ? 'archive' : 'delete',
-        );
-        setRequestedDeleteBranch(request.requestedDeleteBranch);
-        setShowConfirm(true);
-        return true;
-      }),
-    [currentArchiveTarget, pinnedCopy, projectId, worktree.id],
-  );
-
   // PR badge data — read directly from github store
   const isCreatingPr = useGitHubStore((state) =>
     state.creatingPr.has(`${projectId}/${worktree.id}`),
@@ -1633,7 +1607,6 @@ function WorktreeItemContent({
       }
       setArchiveConfirmationTarget(currentArchiveTarget);
       setRemovalMode(mode);
-      setRequestedDeleteBranch(undefined);
       setShowConfirm(true);
     },
     [
@@ -1973,19 +1946,16 @@ function WorktreeItemContent({
   const runStatusSlot = showInlineLaunchStop ? undefined : isRunningRun &&
     launchScriptKey ? (
     <Tooltip label={stopLaunchLabel}>
-      <button
+      <ControlButton
         type="button"
         onClick={handleStopLaunch}
         disabled={isLaunchStopping}
         aria-label={stopLaunchLabel}
-        className={`group/stop focus-ring flex h-3 w-3 items-center justify-center rounded transition-colors ${
-          isLaunchStopping
-            ? 'cursor-not-allowed fg-destructive'
-            : 'fg-info hover:bg-destructive-subtle hover:fg-destructive'
-        }`}
+        presentation="worktree-stop-launch"
+        appearance={isLaunchStopping}
       >
         <StopLaunchFaces isLaunchStopping={isLaunchStopping} />
-      </button>
+      </ControlButton>
     </Tooltip>
   ) : isRunningRun ? (
     <WorktreeIdRunSpinner className="fg-info" />
@@ -2168,7 +2138,7 @@ function WorktreeItemContent({
                 worktree.pinned !== true,
               );
             }}
-            className="pointer-coarse:hidden"
+            visibility="fine-pointer"
             data-testid={automationId('worktree-pin-button')}
             aria-label={worktree.pinned === true ? 'Unpin' : 'Pin'}
             aria-pressed={worktree.pinned === true}
@@ -2184,7 +2154,7 @@ function WorktreeItemContent({
               e.stopPropagation();
               performRemoval('archive');
             }}
-            className="pointer-coarse:hidden"
+            visibility="fine-pointer"
             data-testid={automationId('worktree-archive-row-button')}
             aria-label="Archive"
           />
@@ -2198,7 +2168,7 @@ function WorktreeItemContent({
             tone="neutral"
             revealOnItemHover={isHoverRevealed}
             disabled
-            className="pointer-coarse:hidden"
+            visibility="fine-pointer"
             data-testid={automationId('worktree-archive-row-button')}
             aria-label={`Archive: ${archiveUnavailableReason}`}
           />
@@ -2214,7 +2184,7 @@ function WorktreeItemContent({
               tone="neutral"
               revealOnItemHover={isHoverRevealed}
               onClick={handleDeleteClick}
-              className="pointer-coarse:hidden"
+              visibility="fine-pointer"
               data-testid={automationId('worktree-archive-button')}
               aria-label={archiveButtonLabel}
             />
@@ -2225,9 +2195,7 @@ function WorktreeItemContent({
           iconSize={12}
           revealOnItemHover={isHoverRevealed}
           coarsePointerTarget
-          className={
-            focusedRowStatus && isListMode ? 'pointer-fine:hidden' : undefined
-          }
+          visibility={focusedRowStatus && isListMode ? 'coarse-pointer' : 'all'}
           onClick={(e) => {
             e.stopPropagation();
             setActionsMenuAnchorPoint(null);
@@ -2508,7 +2476,6 @@ function WorktreeItemContent({
             splitLocked ||
             !archiveTargetMatchesCurrentIdentity
           }
-          requestedDeleteBranch={requestedDeleteBranch}
           testIdSuffix={pinnedSurface ? `-${pinnedSurface}` : undefined}
           onCancel={() => {
             setShowConfirm(false);

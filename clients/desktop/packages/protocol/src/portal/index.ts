@@ -1,3 +1,5 @@
+import type { HarnessCompatibility } from '../plugins/harness-compatibility';
+import type { ItemHarnessInstalls } from '../plugins/harness-installs';
 import type { ProjectDeletionPendingRecovery } from './project-deletion-discard';
 import type {
   WorktreeRecoveryListParams,
@@ -93,7 +95,10 @@ export {
 } from './repository-clone';
 import type { AgentArtifactReceiptV1 } from '../agent-artifacts';
 import type { TryItCapability } from '../try-it';
-import type { PersonalProjectConversionRequest } from '../organizations';
+import type {
+  PersonalProjectConversionRequest,
+  PersonalProjectStatusRequest,
+} from '../organizations';
 import type {
   AgentSentInfo,
   ExternalAgentSender,
@@ -288,6 +293,7 @@ export type PortalCommandType =
   | 'portal.chat.send'
   | 'portal.chat.cancel'
   | 'portal.chat.cancel_turn'
+  | 'portal.chat.retry_failure'
   | 'portal.watcher.delete'
   | 'portal.chat.mark_read'
   | 'portal.chat.set_unread'
@@ -480,6 +486,7 @@ export const PORTAL_COMMAND_TYPES = [
   'portal.chat.send',
   'portal.chat.cancel',
   'portal.chat.cancel_turn',
+  'portal.chat.retry_failure',
   'portal.watcher.delete',
   'portal.chat.mark_read',
   'portal.chat.set_unread',
@@ -726,6 +733,7 @@ export const PORTAL_DESTRUCTIVE_COMMAND_TYPES: ReadonlySet<PortalCommandType> =
  */
 export const PORTAL_SMALL_RPC_COMMAND_TYPES: ReadonlySet<PortalCommandType> =
   new Set<PortalCommandType>([
+    'portal.chat.retry_failure',
     'portal.worktree.branches.list',
     'portal.watcher.delete',
     'portal.lifecycle_journal.inspect',
@@ -1968,6 +1976,10 @@ export const PORTAL_CAPABILITY_COMMAND_ORIGIN = 'command_origin' as const;
 /** Desktop handles `portal.chat.cancel_turn` (exact-turn cancel). */
 export const PORTAL_CAPABILITY_CHAT_CANCEL_TURN = 'chat_cancel_turn' as const;
 
+/** Host-authorized, idempotent recovery of the current terminal failure. */
+export const PORTAL_CAPABILITY_CHAT_RETRY_FAILURE =
+  'chat_retry_failure_v1' as const;
+
 export const PORTAL_ASSET_CHUNK_BYTES = 192 * 1024;
 export const PORTAL_ASSET_MAX_BYTES = 100 * 1024 * 1024;
 
@@ -2808,6 +2820,17 @@ export interface PortalChatCancelTurnResult {
   outcome: 'stop_requested' | 'turn_not_active';
 }
 
+/** No prompt or host paths cross this boundary; the host reads its transcript. */
+export type PortalChatRetryFailurePayload = PortalChatCancelPayload & {
+  turnId: string;
+  failedMessageId: string;
+} & ({ action: 'check' } | { action: 'retry'; idempotencyKey: string });
+
+/** Availability is advisory; the host repeats every guard at acceptance. */
+export type PortalChatRetryFailureResult =
+  | { available: boolean }
+  | { outcome: 'applied' | 'already_applied'; userMessageId: string };
+
 /** Address one host-owned queued message for a worktree chat. */
 export interface PortalChatQueueEntryPayload extends PortalChatCancelPayload {
   entryId: string;
@@ -3280,6 +3303,7 @@ export interface PortalPluginCatalogCollection {
  * {@link PortalChatTabPluginSelections.skillRefs}.
  */
 export interface PortalPluginCatalogSkill {
+  harnessCompatibility?: HarnessCompatibility;
   sourceId: string;
   skillName: string;
   name: string;
@@ -3296,6 +3320,7 @@ export interface PortalPluginCatalogSkill {
  * let the portal disable rows the active provider cannot run.
  */
 export interface PortalPluginCatalogPlugin {
+  harnessCompatibility?: HarnessCompatibility;
   marketplaceId: string;
   pluginName: string;
   name: string;
@@ -3347,6 +3372,7 @@ export interface PortalMcpConnectionMetadata {
 }
 
 export interface PortalPluginCatalogMcpServer extends PortalMcpConnectionMetadata {
+  harnessCompatibility?: HarnessCompatibility;
   serverId: string;
   configId: string;
   serverName: string;
@@ -3457,6 +3483,7 @@ export interface PortalPluginCatalogCloudCapabilities {
 
 /** Additive unified catalog row used by the shared desktop/cloud picker. */
 export interface PortalPluginCatalogUnifiedEntry extends PortalMcpConnectionMetadata {
+  harnessCompatibility?: HarnessCompatibility;
   id: string;
   kind: UnifiedEntryKind;
   origin: UnifiedEntryOrigin;
@@ -3896,6 +3923,7 @@ export interface PortalMarketplacePluginRow extends Pick<
   | 'recommended'
   | 'providerSupport'
 > {
+  harnessCompatibility?: HarnessCompatibility;
   /** True when the plugin has a populated local cache (or is bundled). */
   installed: boolean;
   /**
@@ -4026,6 +4054,12 @@ export interface PortalPluginDetailResult {
    * `plugin.installed`.
    */
   harnessInstallation?: { claude: boolean; codex: boolean };
+  /**
+   * What one Add for every harness recorded per harness (CAN-6816): which
+   * harnesses it installed for, what each left out, and which it skipped or
+   * failed, with why. Absent without a record and from older desktops.
+   */
+  harnessInstalls?: ItemHarnessInstalls;
   /** The Claude plugin's Codex compatibility setting is off. */
   codexCompatDisabled?: boolean;
   /**
@@ -4041,6 +4075,7 @@ export interface PortalPluginDetailResult {
  */
 export type PortalSkillRow = Pick<
   InstalledSkillInfo,
+  | 'harnessCompatibility'
   | 'name'
   | 'sourceId'
   | 'description'
@@ -6074,7 +6109,7 @@ export interface PortalWorkspaceScriptsSavePayload {
 export interface PortalCommandPayloadMap {
   'portal.personal_organization.projects.list': Record<string, never>;
   'portal.personal_organization.projects.convert': PersonalProjectConversionRequest;
-  'portal.personal_organization.projects.status': { operationId: string };
+  'portal.personal_organization.projects.status': PersonalProjectStatusRequest;
   'portal.org_projects.shared_multi_repo': PortalSharedMultiRepoCommand;
   'portal.org_projects.find_repository_owner': PortalOrgProjectsFindRepositoryOwnerPayload;
   'portal.sidebar.item_groups.list': { scope: SidebarItemGroupScope };
@@ -6093,6 +6128,7 @@ export interface PortalCommandPayloadMap {
   'portal.chat.send': PortalChatSendPayload;
   'portal.chat.cancel': PortalChatCancelPayload;
   'portal.chat.cancel_turn': PortalChatCancelTurnPayload;
+  'portal.chat.retry_failure': PortalChatRetryFailurePayload;
   'portal.watcher.delete': PortalWatcherDeletePayload;
   'portal.chat.mark_read': PortalChatMarkReadPayload;
   'portal.chat.set_unread': PortalChatSetUnreadPayload;

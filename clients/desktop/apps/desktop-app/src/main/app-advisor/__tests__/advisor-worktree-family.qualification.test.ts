@@ -209,9 +209,6 @@ describe('App Advisor worktree family in main (CAN-5997)', () => {
         grants: ['core.worktree.write'],
         revision: 'none',
       });
-    expect(appAdvisorActionDisposition('worktree.archive')).toEqual({
-      kind: 'presentation',
-    });
     expect(
       appAdvisorActionDisposition('worktree.resolve_branch_from_confirmation'),
     ).toEqual({ kind: 'presentation' });
@@ -447,16 +444,8 @@ describe('App Advisor worktree family in main (CAN-5997)', () => {
     });
   });
 
-  it('archive and the branch-from answer reach only the presentation lease', async () => {
+  it('the branch-from answer reaches only the presentation lease', async () => {
     const h = setup();
-    await h.route(
-      action({
-        type: 'worktree.archive',
-        projectId: 'proj',
-        worktreeId: 'wt',
-        deleteBranch: false,
-      }),
-    );
     await h.route(
       action({
         type: 'worktree.resolve_branch_from_confirmation',
@@ -468,7 +457,6 @@ describe('App Advisor worktree family in main (CAN-5997)', () => {
     );
 
     expect(mockPresent.mock.calls.map(([input]) => input.action.type)).toEqual([
-      'worktree.archive',
       'worktree.resolve_branch_from_confirmation',
     ]);
     expect(mockRequestRendererTool).not.toHaveBeenCalled();

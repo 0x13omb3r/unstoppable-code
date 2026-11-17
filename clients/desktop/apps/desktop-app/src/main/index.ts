@@ -15,6 +15,7 @@ import type {
   AppAdvisorBrowserAction,
   AppAdvisorWatcherDestination,
 } from '@canopy/desktop-shared/types';
+import { isBotProjectId } from '@canopy/protocol/chat-targets';
 import { electronApp, is } from '@electron-toolkit/utils';
 import {
   BrowserWindow,
@@ -1634,6 +1635,7 @@ function installE2eChatEventIngestor(): void {
           mode,
           sessionRules: [],
           getWindow: () =>
+            // Default Bot only: E2E App Advisor fixtures attach to its window.
             input.projectId === APP_ADVISOR_PROJECT_ID
               ? (getAppAdvisorWindow() ?? mainWindow)
               : mainWindow,
@@ -1674,10 +1676,9 @@ function installE2eChatEventIngestor(): void {
           {
             ...input.destination,
             cwd: app.getPath('userData'),
-            getWindow:
-              input.destination.projectId === APP_ADVISOR_PROJECT_ID
-                ? getAppAdvisorWindow
-                : (): BrowserWindow | null => mainWindow,
+            getWindow: isBotProjectId(input.destination.projectId)
+              ? getAppAdvisorWindow
+              : (): BrowserWindow | null => mainWindow,
           },
         );
       },

@@ -1,7 +1,5 @@
-import {
-  APP_ADVISOR_PROJECT_ID,
-  type HomeDiscoveryTarget,
-} from '@canopy/desktop-shared/types';
+import { type HomeDiscoveryTarget } from '@canopy/desktop-shared/types';
+import { isBotProjectId } from '@canopy/protocol/chat-targets';
 
 /** Discovery identity only. Host paths are resolved by the existing Home APIs. */
 export type ConfigurationComposerContext =
@@ -44,7 +42,7 @@ export function resolveAutomationComposerContext(args: {
     const target = args.sessionTarget;
     // App Advisor chats share the advisor's discovery context whichever Work
     // Entry they live in.
-    if (target?.workspaceId === APP_ADVISOR_PROJECT_ID) {
+    if (target !== undefined && isBotProjectId(target.workspaceId)) {
       return { kind: 'advisor' };
     }
     if (!target?.chatId || !target.worktreeId || !args.sessionReady) {

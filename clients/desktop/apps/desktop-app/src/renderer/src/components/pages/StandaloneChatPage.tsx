@@ -28,7 +28,7 @@ import {
   type JSX,
 } from 'react';
 import { subscribeToChatEvents } from '@/lib/chatEventFanout';
-import { APP_ADVISOR_PROJECT_ID } from '@canopy/desktop-shared/types';
+import { isBotProjectId } from '@canopy/protocol/chat-targets';
 import { useChatStore, useWorktreeChatRenderState } from '@/stores/chatStore';
 import { useStandaloneChatStore } from '@/stores/standaloneChatStore';
 import {
@@ -110,7 +110,7 @@ export function StandaloneChatPage(): JSX.Element {
   const containerViewerOpen = useArchivedContainersStore(
     (s) =>
       s.viewer !== null &&
-      s.viewer.workspaceId !== APP_ADVISOR_PROJECT_ID &&
+      !isBotProjectId(s.viewer.workspaceId) &&
       isCoworkChatTarget(s.viewer.workspaceId),
   );
   const refreshWorkEntries = useStandaloneChatStore(

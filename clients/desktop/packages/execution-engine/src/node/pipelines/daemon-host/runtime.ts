@@ -7,6 +7,7 @@ import {
   getProjectPipelinesDirCandidates,
 } from '@canopy/execution-engine/node/pipelines/config-paths';
 import type {
+  ChildPipelineAdmissionRequest,
   ExecutionResourceMonitor,
   ExecutionRunPlanPersistence,
   ExecutionRuntime,
@@ -18,7 +19,10 @@ import type {
 import type { CodexRuntimeService } from '../../codex-runtime';
 import { runCodexPipelinePromptWith } from '../codex-pipeline-prompt';
 import type { DaemonPipelineOwnerPorts } from './owner-ports';
-import { launchPluginCollectionResolver } from './plugin-collections';
+import {
+  childAwarePluginCollectionResolver,
+  type ChildCapabilityStore,
+} from './child-capabilities';
 import { PIPELINE_HOST_RUN_TEMP_DIR } from './run-temp';
 import type { ResolvedPipelinePluginCollectionSnapshot } from '@canopy/execution-engine/types/pipeline';
 
@@ -51,6 +55,11 @@ export interface DaemonPipelineRuntimeOptions {
   readonly pluginCollections?: Readonly<
     Record<string, ResolvedPipelinePluginCollectionSnapshot>
   >;
+  /**
+   * The children that resolved their own collections through the run's
+   * core (CAN-6868): each resolves its own from these, not the launch's.
+   */
+  readonly childCapabilities?: Pick<ChildCapabilityStore, 'of'>;
   /** Hands a step's desktop notifications to Electron main (CAN-5868). */
   /**
    * Reports a brokered launch's `git-commit-push` pre-commit failures to its
@@ -62,6 +71,21 @@ export interface DaemonPipelineRuntimeOptions {
   readonly onStepNotifications?: (
     stepId: string,
     notifications: readonly PipelineStepNotification[],
+  ) => void;
+  /** Runs a child on another target as a run of its own (CAN-6868 part 3). */
+  readonly delegateChildPipeline?: ExecutionRuntime['delegateChildPipeline'];
+  /**
+   * A cloud runner's port for its read-only job variants, and a variant's
+   * own request and outcome (CAN-6892 part 2): both through its owner.
+   */
+  readonly isolatedJobs?: ExecutionRuntime['isolatedJobs'];
+  readonly isolatedVariant?: ExecutionRuntime['isolatedVariant'];
+  /**
+   * A cloud runner's launch admits same-target child workflows and checks
+   * each as it starts (CAN-6868); absent, the launch admitted none.
+   */
+  readonly admitChildPipeline?: (
+    request: ChildPipelineAdmissionRequest,
   ) => void;
 }
 
@@ -138,9 +162,21 @@ export function createDaemonPipelineRuntime(
     }),
     resolvePipelineTarget: (request) =>
       resolveVerifiedWorktree(options.worktree, request),
-    ...(options.pluginCollections && {
-      resolvePipelinePluginCollections: launchPluginCollectionResolver(
-        options.pluginCollections,
+    ...(options.isolatedJobs && { isolatedJobs: options.isolatedJobs }),
+    ...(options.isolatedVariant && {
+      isolatedVariant: options.isolatedVariant,
+    }),
+    ...(options.delegateChildPipeline && {
+      delegateChildPipeline: options.delegateChildPipeline,
+    }),
+    ...(options.admitChildPipeline && {
+      admitChildPipeline: options.admitChildPipeline,
+    }),
+    ...((options.pluginCollections !== undefined ||
+      options.childCapabilities !== undefined) && {
+      resolvePipelinePluginCollections: childAwarePluginCollectionResolver(
+        options.pluginCollections ?? {},
+        options.childCapabilities ?? null,
       ),
     }),
     // Every model is refused unless the launch's core answers for it (D7).

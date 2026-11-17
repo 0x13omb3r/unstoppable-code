@@ -1,3 +1,4 @@
+import { ControlButton } from '@canopy/ui-shared/components';
 import { Badge } from '@canopy/ui-shared/components/Badge';
 import Editor from '@monaco-editor/react';
 import {
@@ -699,17 +700,17 @@ export function MonacoFileEditor({
           <Tooltip
             label={`Open ${captureConfirmation.target.title} to see the staged selection`}
           >
-            <button
+            <ControlButton
               type="button"
               data-testid="editor-selection-added-confirmation"
               onMouseDown={preserveEditorSelection}
               onClick={handleConfirmationClick}
-              className="flex items-center gap-1.5 rounded-md bg-card/95 px-2 py-1 text-2xs font-medium fg-success shadow-md backdrop-blur transition-colors hover:bg-accent-subtle"
+              presentation="editor-selection-confirmation"
             >
               <CheckIcon size="sm" />
               <span>Added to chat</span>
               <Badge>View</Badge>
-            </button>
+            </ControlButton>
           </Tooltip>
         </span>
       )}

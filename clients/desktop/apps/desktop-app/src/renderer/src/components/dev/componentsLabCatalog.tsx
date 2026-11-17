@@ -46,6 +46,7 @@ import { SharedCSpecimen } from './componentsLabSharedC';
 import { CustomizePartsSpecimen } from './componentsLabCustomize';
 import { CuratedWorkflowsSpecimen } from './componentsLabCurated';
 import { CreditsNoticesSpecimen } from './componentsLabCredits';
+import { ProviderRowsSpecimen } from './componentsLabProviderRows';
 import { TurnNoticesSpecimen } from './componentsLabTurnNotices';
 import { CopyMcpServerSpecimen } from './componentsLabCopyMcpServer';
 import {
@@ -362,9 +363,9 @@ export const COMPONENTS_LAB_ENTRIES: readonly ComponentsLabEntry[] = [
     id: 'customize-parts',
     name: 'Customize page parts',
     group: 'Unified',
-    note: 'The Customize breadcrumb trail, Installed availability, MCP health and inline action states, and a row menu with its disabled and destructive items.',
+    note: 'The Customize breadcrumb trail, Installed availability, MCP health and inline action states, a row menu with its disabled and destructive items, and the new-harness catch-up offer in each state.',
     source:
-      'packages/ui-shared/src/components/{CustomizeBreadcrumbs,CustomizeInstalledUnavailable,CustomizeRowMenu,McpRowHealth}.tsx',
+      'packages/ui-shared/src/components/{CustomizeBreadcrumbs,CustomizeInstalledUnavailable,CustomizeRowMenu,HarnessCatchUpNotice,McpRowHealth}.tsx',
     prs: [],
     View: CustomizePartsSpecimen,
   },
@@ -386,6 +387,15 @@ export const COMPONENTS_LAB_ENTRIES: readonly ComponentsLabEntry[] = [
     source: 'packages/ui-shared/src/components/CreditsRecoveryNotice.tsx',
     prs: [],
     View: CreditsNoticesSpecimen,
+  },
+  {
+    id: 'provider-choice-rows',
+    name: 'Provider choice rows',
+    group: 'Unified',
+    note: "The Switch provider dialog's rows in each recovery state, resolved through the shared decision, with the notice button each state yields.",
+    source: 'packages/ui-app/src/providers/ProviderChoiceList.tsx',
+    prs: [9519],
+    View: ProviderRowsSpecimen,
   },
   {
     id: 'cloud-turn-notices',

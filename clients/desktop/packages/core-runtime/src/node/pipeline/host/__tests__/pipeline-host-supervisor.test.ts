@@ -471,6 +471,62 @@ describe('PipelineHostSupervisor', () => {
     expect(ends).toEqual(['completed']);
   });
 
+  // CAN-6868: a child workflow's changes reach the run's stream.
+  it("an events stream carries each change of the run's child workflows", async () => {
+    const h = harness();
+    const { host, result } = await started(h);
+    host.reply(host.last('start').id, projection('running'));
+    await result;
+    const handlers = createWorkerPipelineHandlers(h.supervisor, {
+      secrets: refusingExecutionSecretSource,
+    });
+    const items: WorkerPipelineExecutionEventsItem[] = [];
+    const opened = handlers.streams['worker.pipeline.execution.events'](
+      { executionId: 'run' },
+      {
+        requestId: 'events',
+        caller: {
+          principalId: 'client',
+          clientInstanceId: 'child',
+          authorityId: 'authority',
+          interfaceKind: 'daemon',
+          grants: ['worker.pipeline.read'],
+        },
+        metadata: {},
+        signal: new AbortController().signal,
+      },
+      {
+        emit: (item) => {
+          items.push(item);
+          return { daemonEpoch: 'e', sequence: items.length };
+        },
+        end: () => undefined,
+      },
+    );
+    await settle();
+    host.reply(host.last('get').id, projection('running'));
+    await settle();
+    host.reply(host.last('get').id, projection('running'));
+    await opened;
+    const child: WorkerPipelineExecution = {
+      ...projection('success'),
+      executionId: 'child',
+      parentExecutionId: 'run',
+    };
+    host.send({
+      kind: 'child',
+      executionId: 'run',
+      event: 'execution.completed',
+      execution: child,
+    });
+    await settle();
+    expect(items.at(-1)).toEqual({
+      kind: 'child',
+      event: 'execution.completed',
+      execution: child,
+    });
+  });
+
   // Coordinator ruling: a host lost during a start answers hostLost.
   it('serves the detail and list reads over the host channel and checks each answer (CAN-6117)', async () => {
     const h = harness();

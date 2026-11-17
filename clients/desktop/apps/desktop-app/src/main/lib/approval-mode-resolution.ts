@@ -1,7 +1,6 @@
 import {
   DEFAULT_APPROVAL_DEFAULTS,
   FAIL_CLOSED_APPROVAL_MODE,
-  APP_ADVISOR_PROJECT_ID,
   CODE_REVIEW_CHAT_PROJECT_ID,
   PIPELINE_EDITOR_PROJECT_ID,
   PLAN_EXPLORE_CHAT_PROJECT_ID,
@@ -10,6 +9,7 @@ import {
   type ApprovalMode,
   type PreferencesData,
 } from '@canopy/desktop-shared/types';
+import { isBotProjectId } from '@canopy/protocol/chat-targets';
 import { readWorkspaceApprovals } from './approvals-persistence';
 import { readPreferencesFileDetailed } from './preferences-store';
 import { isCoworkWorkspace } from './workspace-registry';
@@ -407,10 +407,7 @@ export function isEphemeralApprovalSurface(projectId: string): boolean {
  * projectId, so they fall through to `'worktree'` with no special casing.
  */
 export function surfaceForChat(projectId: string): ApprovalSurface {
-  if (
-    projectId === APP_ADVISOR_PROJECT_ID ||
-    projectId === PIPELINE_EDITOR_PROJECT_ID
-  ) {
+  if (isBotProjectId(projectId) || projectId === PIPELINE_EDITOR_PROJECT_ID) {
     return 'app-advisor';
   }
   if (isCoworkWorkspace(projectId)) {

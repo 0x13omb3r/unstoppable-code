@@ -11,7 +11,7 @@
  */
 import { readFile, realpath, stat } from 'node:fs/promises';
 import { extname, resolve } from 'node:path';
-import { APP_ADVISOR_PROJECT_ID } from '@canopy/desktop-shared/types';
+import { isBotProjectId } from '@canopy/protocol/chat-targets';
 import {
   expandPromptMentionsWithReader,
   type ExpandedPromptMentions,
@@ -33,10 +33,9 @@ function promptsDirForProject(projectId: string): string {
   if (!isWorkEntryWorkspace(projectId)) {
     return getWorkspacePromptsDir(projectId);
   }
-  const workspaceRoot =
-    projectId === APP_ADVISOR_PROJECT_ID
-      ? getAppAdvisorHomeDir()
-      : getCoworkWorkspaceRootDir(resolveCoworkWorkspaceId(projectId));
+  const workspaceRoot = isBotProjectId(projectId)
+    ? getAppAdvisorHomeDir()
+    : getCoworkWorkspaceRootDir(resolveCoworkWorkspaceId(projectId));
   return getCoworkManagedSubdir(workspaceRoot, 'prompts');
 }
 
@@ -51,7 +50,7 @@ export async function readWorkspacePromptBodyByPath(
   requestedPath: string,
 ): Promise<string> {
   const coworkRoot = isWorkEntryWorkspace(projectId)
-    ? projectId === APP_ADVISOR_PROJECT_ID
+    ? isBotProjectId(projectId)
       ? getAppAdvisorHomeDir()
       : getCoworkWorkspaceRootDir(resolveCoworkWorkspaceId(projectId))
     : null;

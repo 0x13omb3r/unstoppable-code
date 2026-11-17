@@ -308,7 +308,7 @@ export function GitHubReferencePreviewCard({
         // title instead of squeezing it.
         <div className="min-w-0 break-words">
           <span
-            className={`${REPLAY_BLOCK_CLASS} mr-1.5 font-mono text-2xs fg-secondary`}
+            className={`${REPLAY_BLOCK_CLASS} pr-1.5 font-mono text-2xs fg-secondary`}
           >
             {label}
           </span>

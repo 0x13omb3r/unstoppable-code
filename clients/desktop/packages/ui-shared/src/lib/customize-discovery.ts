@@ -73,6 +73,95 @@ export const CUSTOMIZE_DISCOVERY_HARNESS_OPTIONS: readonly {
   { value: 'opencode', label: 'OpenCode' },
 ];
 
+/**
+ * The harness new chats use by default (CAN-6811): an integration row's
+ * install targets its copy for this harness. Hosts that cannot read the
+ * preference use Claude Code.
+ */
+export type CustomizeDefaultHarness = 'claude' | 'codex';
+
+export const DEFAULT_CUSTOMIZE_HARNESS: CustomizeDefaultHarness = 'claude';
+
+/**
+ * An integration row's installed line (CAN-6811): `Installed for Codex`,
+ * then ` · +N more` when the row stands for other installed copies.
+ * `undefined` when the row stands for one copy or is not installed.
+ */
+export function customizeIntegrationInstalledLabel(
+  entry: Pick<UnifiedPluginEntry, 'integrationCopies'>,
+): { readonly label: string; readonly moreLabel?: string } | undefined {
+  const installed = entry.integrationCopies?.installed;
+  if (installed === undefined) return undefined;
+  const harness = CUSTOMIZE_DISCOVERY_HARNESS_OPTIONS.find(
+    (option) => option.value === installed.harness,
+  )?.label;
+  return {
+    label: harness ? `Installed for ${harness}` : 'Installed',
+    ...(installed.moreCount > 0
+      ? { moreLabel: `+${installed.moreCount} more` }
+      : {}),
+  };
+}
+
+/** A harness's name as Customize shows it. */
+export function customizeHarnessLabel(harness: string): string {
+  return (
+    CUSTOMIZE_DISCOVERY_HARNESS_OPTIONS.find(
+      (option) => option.value === harness,
+    )?.label ?? harness
+  );
+}
+
+/** The row menu item that stages one refused harness again (CAN-6815). */
+export function customizeHarnessRetryLabel(harness: string): string {
+  return `Try again for ${customizeHarnessLabel(harness)}`;
+}
+
+/**
+ * The warning a row shows when one Add could not install an MCP server for
+ * some harnesses (CAN-6815): which ones and why. `canRetry` adds where to
+ * try again; the other harnesses keep the server either way.
+ */
+export function customizeHarnessInstallWarning(
+  failures: readonly {
+    readonly harness: string;
+    readonly reason: string;
+    /** Changed or removed outside the app (CAN-6817). */
+    readonly outsideChange?: 'changed' | 'removed';
+  }[],
+  canRetry: boolean,
+): { readonly label: string; readonly instruction: string } | undefined {
+  if (failures.length === 0) return undefined;
+  const names = failures.map((failure) =>
+    customizeHarnessLabel(failure.harness),
+  );
+  const list =
+    names.length === 1
+      ? names[0]
+      : `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}`;
+  const reasons = failures
+    .map((failure) =>
+      failures.length === 1
+        ? failure.reason
+        : `${customizeHarnessLabel(failure.harness)}: ${failure.reason}`,
+    )
+    .map((reason) => (/[.!?]$/.test(reason) ? reason : `${reason}.`))
+    .join(' ');
+  // Every copy installed, then changed outside the app (CAN-6817): Try again
+  // repairs it, so the label says what happened rather than a failed Add.
+  const outside = failures.every(
+    (failure) => failure.outsideChange !== undefined,
+  );
+  return {
+    label: outside
+      ? `Changed outside the app for ${list}`
+      : `Couldn't install for ${list}`,
+    instruction: canRetry
+      ? `${reasons} Select ${failures.length === 1 ? customizeHarnessRetryLabel(failures[0].harness) : 'Try again'} in the row menu.`
+      : reasons,
+  };
+}
+
 export interface CustomizeDiscoveryFilters {
   readonly status: CustomizeDiscoveryStatus;
   /** Also show: off by default, so All lists the five kinds the tabs name. */
@@ -159,25 +248,108 @@ export function customizeDiscoveryNeedsAttention(
   );
 }
 
+/** The compatibility levels that count as "works with" (CAN-6813). */
+const WORKS_WITH_LEVELS: ReadonlySet<string> = new Set([
+  'native',
+  'full',
+  'partial',
+]);
+
+/** The harnesses an item was published for: the fallback without CAN-6807 data. */
+function publishedHarnesses(
+  entry: Pick<UnifiedPluginEntry, 'providerSupport'>,
+): ReadonlySet<CustomizeDiscoveryHarness> {
+  const harnesses = new Set<CustomizeDiscoveryHarness>();
+  if (entry.providerSupport.claude) harnesses.add('claude');
+  if (entry.providerSupport.codex) harnesses.add('codex');
+  return harnesses;
+}
+
 /**
- * The item's published harness, until CAN-6807 reports real compatibility:
- * only Claude Code and Codex are published today, so Cursor, Copilot and
- * OpenCode match nothing yet.
+ * The harnesses one listing works with (CAN-6813): every harness its
+ * CAN-6807 compatibility rates Native, Full or Partial. A listing without
+ * compatibility data falls back to the harnesses it was published for, so it
+ * is never hidden.
  */
+function listingWorksWith(
+  entry: Pick<UnifiedPluginEntry, 'providerSupport' | 'harnessCompatibility'>,
+): ReadonlySet<CustomizeDiscoveryHarness> {
+  const compatibility = entry.harnessCompatibility?.harnesses;
+  if (compatibility === undefined) return publishedHarnesses(entry);
+  const harnesses = new Set<CustomizeDiscoveryHarness>();
+  for (const { value } of CUSTOMIZE_DISCOVERY_HARNESS_OPTIONS) {
+    const result = compatibility[value];
+    if (result !== undefined && WORKS_WITH_LEVELS.has(result.level))
+      harnesses.add(value);
+  }
+  return harnesses;
+}
+
+/** The entry fields the Works with filter and chips read. */
+type WorksWithEntry = Pick<
+  UnifiedPluginEntry,
+  | 'providerSupport'
+  | 'harnessCompatibility'
+  | 'marketplaceListings'
+  | 'chatGptAppStandIn'
+>;
+
+/**
+ * The harnesses an entry works with, in the Works with filter's order. A
+ * grouped row works with what any of its listings works with, and a plugin
+ * works with the harnesses where the publisher's MCP server stands in for
+ * its ChatGPT app (CAN-6818).
+ */
+export function customizeWorksWithHarnesses(
+  entry: WorksWithEntry,
+): CustomizeDiscoveryHarness[] {
+  const harnesses = new Set<CustomizeDiscoveryHarness>();
+  for (const listing of [entry, ...(entry.marketplaceListings ?? [])])
+    for (const harness of listingWorksWith(listing)) harnesses.add(harness);
+  for (const harness of entry.chatGptAppStandIn?.harnesses ?? [])
+    harnesses.add(harness);
+  return CUSTOMIZE_DISCOVERY_HARNESS_OPTIONS.map(({ value }) => value).filter(
+    (harness) => harnesses.has(harness),
+  );
+}
+
+/** Harness chips a row shows before "+N more" (CAN-6813). */
+export const CUSTOMIZE_WORKS_WITH_CHIP_LIMIT = 3;
+
+/** A row's Works with chips: the first harnesses, and how many more. */
+export function customizeWorksWithChips(entry: WorksWithEntry): {
+  readonly shown: readonly CustomizeDiscoveryHarness[];
+  readonly more: readonly CustomizeDiscoveryHarness[];
+} {
+  const harnesses = customizeWorksWithHarnesses(entry);
+  return {
+    shown: harnesses.slice(0, CUSTOMIZE_WORKS_WITH_CHIP_LIMIT),
+    more: harnesses.slice(CUSTOMIZE_WORKS_WITH_CHIP_LIMIT),
+  };
+}
+
+/**
+ * A Works with chip's tooltip: "Works with Cursor", or, where the publisher's
+ * MCP server stands in for the plugin's ChatGPT app, "Uses the Canva MCP
+ * server in Cursor" (CAN-6818).
+ */
+export function customizeWorksWithChipLabel(
+  entry: Pick<UnifiedPluginEntry, 'chatGptAppStandIn'>,
+  harness: CustomizeDiscoveryHarness,
+  harnessName: string,
+): string {
+  const standIn = entry.chatGptAppStandIn;
+  return standIn !== undefined && standIn.harnesses.includes(harness)
+    ? `Uses the ${standIn.name} MCP server in ${harnessName}`
+    : `Works with ${harnessName}`;
+}
+
+/** Whether an entry works with a harness, as the Works with filter reads it. */
 export function customizeDiscoveryWorksWith(
   entry: UnifiedPluginEntry,
   harness: CustomizeDiscoveryHarness,
 ): boolean {
-  switch (harness) {
-    case 'claude':
-      return entry.providerSupport.claude;
-    case 'codex':
-      return entry.providerSupport.codex;
-    case 'cursor':
-    case 'copilot':
-    case 'opencode':
-      return false;
-  }
+  return customizeWorksWithHarnesses(entry).includes(harness);
 }
 
 /**
@@ -211,7 +383,10 @@ export function customizeDiscoveryEntryMatches(
     case 'any':
       break;
   }
-  if (filters.source !== null && entry.sourceLabel?.trim() !== filters.source)
+  if (
+    filters.source !== null &&
+    !customizeEntryMarketplaceSources(entry).includes(filters.source)
+  )
     return false;
   if (
     filters.harnesses.length > 0 &&
@@ -223,15 +398,38 @@ export function customizeDiscoveryEntryMatches(
   return true;
 }
 
-/** The marketplaces Source offers: every source label the entries carry, sorted. */
+/**
+ * The marketplace sources an entry is listed in (CAN-6814): its own, and a
+ * grouped row's listings. Entries outside any marketplace (local, shared,
+ * curated) are in none.
+ */
+export function customizeEntryMarketplaceSources(
+  entry: Pick<UnifiedPluginEntry, 'marketplaceSourceName'> & {
+    readonly marketplaceListings?: readonly Pick<
+      UnifiedPluginEntry,
+      'marketplaceSourceName'
+    >[];
+  },
+): string[] {
+  const names = new Set<string>();
+  for (const listing of [entry, ...(entry.marketplaceListings ?? [])]) {
+    const name = listing.marketplaceSourceName?.trim();
+    if (name) names.add(name);
+  }
+  return [...names];
+}
+
+/**
+ * The marketplaces Source offers: the marketplace sources the entries are
+ * listed in, by the names the Marketplaces page shows (CAN-6814), sorted.
+ */
 export function customizeDiscoverySourceOptions(
   entries: readonly UnifiedPluginEntry[],
 ): string[] {
   const labels = new Set<string>();
-  for (const entry of entries) {
-    const label = entry.sourceLabel?.trim();
-    if (label) labels.add(label);
-  }
+  for (const entry of entries)
+    for (const name of customizeEntryMarketplaceSources(entry))
+      labels.add(name);
   return [...labels].sort((left, right) =>
     left.localeCompare(right, undefined, { sensitivity: 'base' }),
   );

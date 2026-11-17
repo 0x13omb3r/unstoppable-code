@@ -9,6 +9,7 @@ import { seedDemoWorkspaces } from './demoWorkspaces.mjs';
 import {
   clearScenario,
   DEFAULT_MOCK_BASE_URL,
+  getScenarioActivity,
   registerScenario,
   seedWorktreeChat,
 } from './seeders/index.mjs';
@@ -16,14 +17,21 @@ import { withBundledBinaryOverridesScrubbed } from './seeders/bundledBinaryOverr
 import { closeCanopy, launchCanopy } from './launchCanopy.mjs';
 
 // The shared AI Credits notice (`CreditsNotice`, Card A) in the desktop
-// composer: who it offers a purchase to, and the purchase's steps.
+// composer offers provider choice (CAN-6860): one Choose provider button
+// that opens the provider list, where each provider connects from its row,
+// credits are one row and the only place a purchase is offered.
 //
-//   1. A buyer buys: the browser hand-off opens once, the notice waits on it
-//      with Check again and Reopen billing, and Check again finds the
-//      credits, which the composer confirms.
-//   2. A guest's purchase action signs in first; nothing opens billing.
+//   1. A buyer buys from the credits row: the browser hand-off opens once,
+//      the dialog closes, the notice waits on it with two buttons (Choose
+//      provider and Check again) while the credits row offers Reopen
+//      billing, and Check again finds the credits, which the composer
+//      confirms.
+//   2. A guest's credits row signs in first; nothing opens billing.
 //   3. A member of an organization whose pool needs its admin gets the admin
-//      line and no purchase action.
+//      line on the credits row and no purchase action.
+//   4. On a usage limit, an AI gateway with a key is a provider row like the
+//      others: Use continues the chat on the gateway's model, and the next
+//      turn reaches the gateway under that model's gateway id.
 //
 // Deviation from the plan: it named the mock `usage-limit-reached` scenario
 // and `seedUsageLimitedChats.mjs`, but those model a Claude/Codex provider
@@ -178,36 +186,64 @@ test.describe('Credits notice', () => {
       await signIn(window, cloudKey);
       const panel = await showWorktree(window, app);
       const notice = panel.getByTestId('chat-input-no-billing-source-banner');
-      const buy = notice.getByTestId(
-        'chat-input-no-billing-source-get-credits',
+      const choose = notice.getByTestId(
+        'chat-input-no-billing-source-provider-choice',
       );
+      const dialog = window.getByTestId('switch-provider-dialog');
+      const buy = dialog.getByTestId('provider-choice-action-credits');
       const checkAgain = notice.getByTestId(
         'chat-input-no-billing-source-get-credits-check-again',
       );
       const reopen = notice.getByTestId(
         'chat-input-no-billing-source-reopen-billing',
       );
+      const connect = notice.getByTestId(
+        'chat-input-no-billing-source-sign-in',
+      );
 
-      // Nothing can pay: the attention notice offers the purchase.
+      // Nothing can pay: the attention notice offers provider choice and
+      // sells nothing itself.
       await expect(notice).toBeVisible({ timeout: 30_000 });
       await expect(notice).toHaveAttribute('data-notice-intent', 'attention');
-      await expect(buy).toHaveText('Buy AI Credits');
-      await expect(buy).toBeEnabled({ timeout: 15_000 });
+      // Nothing bills this chat, so there is nothing to switch from: one
+      // Choose provider button, and connecting lives in the list's rows.
+      await expect(choose).toHaveText('Choose provider');
+      await expect(connect).toHaveCount(0);
+      await expect(notice.getByRole('button')).toHaveCount(1);
+      await expect(notice).not.toContainText('Buy credits');
       await expect(notice).not.toContainText('Finish checkout in your browser');
 
-      // Buy hands off to the browser once, and the notice waits on it.
+      // The provider list's credits row is the purchase.
+      await choose.click();
+      await expect(dialog).toBeVisible();
+      await expect(buy).toHaveText('Buy credits');
+      await expect(buy).toBeEnabled({ timeout: 15_000 });
+      await expect(
+        dialog.getByTestId('provider-choice-row-claude-badge'),
+      ).toHaveCount(0);
+
+      // Buy hands off to the browser once, the dialog closes, and the notice
+      // waits on it.
       await buy.click();
       await expect.poll(() => externalOpen.opened.length).toBe(1);
+      await expect(dialog).toHaveCount(0, { timeout: 15_000 });
       await expect(notice).toContainText('Finish checkout in your browser', {
         timeout: 15_000,
       });
       await expect(notice).toHaveAttribute('data-notice-intent', 'neutral');
       await expect(checkAgain).toBeVisible();
-      await expect(reopen).toBeVisible();
-      await expect(reopen).toHaveText('Reopen billing');
       await expect(
         notice.locator('[data-notice-actions="below"]'),
       ).toBeVisible();
+      // Two buttons mid-checkout: Choose provider and Check again. Reopen
+      // billing moves to the list's credits row.
+      await expect(notice.getByRole('button')).toHaveCount(2);
+      await expect(reopen).toHaveCount(0);
+      await choose.click();
+      await expect(dialog).toBeVisible();
+      await expect(buy).toHaveText('Reopen billing');
+      await window.keyboard.press('Escape');
+      await expect(dialog).toHaveCount(0);
 
       // The credits land; Check again finds them.
       await registerScenario(DEFAULT_MOCK_BASE_URL, cloudKey, {
@@ -264,13 +300,16 @@ test.describe('Credits notice', () => {
         .toBe('guest');
       const panel = await showWorktree(window, app);
       const notice = panel.getByTestId('chat-input-no-billing-source-banner');
-      const buy = notice.getByTestId(
-        'chat-input-no-billing-source-get-credits',
-      );
       await expect(notice).toBeVisible({ timeout: 30_000 });
+      await notice
+        .getByTestId('chat-input-no-billing-source-provider-choice')
+        .click();
+      const buy = window
+        .getByTestId('switch-provider-dialog')
+        .getByTestId('provider-choice-action-credits');
       await expect(buy).toBeEnabled({ timeout: 15_000 });
       // A guest's purchase action names the sign-in, never the bare purchase.
-      await expect(buy).toHaveText('Sign in to buy AI Credits');
+      await expect(buy).toHaveText('Sign in to buy credits');
 
       // The guest's purchase action is the sign-in: it opens the account
       // sign-in, never a billing page.
@@ -306,16 +345,164 @@ test.describe('Credits notice', () => {
       const panel = await showWorktree(window, app);
       const notice = panel.getByTestId('chat-input-no-billing-source-banner');
       await expect(notice).toBeVisible({ timeout: 30_000 });
+      await expect(notice).not.toContainText('Buy credits');
+      await notice
+        .getByTestId('chat-input-no-billing-source-provider-choice')
+        .click();
+      const dialog = window.getByTestId('switch-provider-dialog');
+      // The admin line moved to the credits row, which offers no purchase.
       await expect(
-        notice.getByTestId('chat-input-no-billing-source-contact-admin'),
-      ).toBeVisible({ timeout: 15_000 });
+        dialog.getByTestId('provider-choice-detail-credits'),
+      ).toHaveText('Contact your org admin to increase your spend quota.', {
+        timeout: 15_000,
+      });
       await expect(
-        notice.getByTestId('chat-input-no-billing-source-get-credits'),
+        dialog.getByTestId('provider-choice-action-credits'),
       ).toHaveCount(0);
-      await expect(notice).not.toContainText('Buy AI Credits');
+      await expect(dialog).not.toContainText('Buy credits');
       expect(externalOpen.opened).toEqual([]);
     } finally {
       await fixture.close();
+    }
+  });
+  test('an AI gateway with a key is a Use row that continues the chat on its model', async () => {
+    test.setTimeout(180_000);
+    const userDataDir = mkdtempSync(
+      path.join(os.tmpdir(), 'canopy-credits-notice-gateway-'),
+    );
+    seedDemoWorkspaces({ userDataDir, apps: ['ts-pnpm-vite'] });
+    seedWorktreeChat({
+      userDataDir,
+      workspaceId: WORKSPACE_ID,
+      worktreeId: WORKTREE_ID,
+      providerType: 'claude',
+      tabs: [
+        {
+          id: 'credits-notice-gateway-chat',
+          title: 'Credits notice',
+          model: 'opus[1m]',
+          llmProviderUsageLimitBanner: {
+            provider: 'claude',
+            message: "You've hit your usage limit.",
+            detectedAt: Date.now() - 60_000,
+            dismissKey: `credits-notice-gateway-${randomUUID()}`,
+            resetsAt: Date.now() + 2 * 60 * 60 * 1000,
+          },
+        },
+      ],
+    });
+    const authKey = `csk_credits_notice_gateway_${randomUUID()}`;
+    await registerScenario(DEFAULT_MOCK_BASE_URL, authKey, {
+      authUsage: { scenario: 'authed-low-usage' },
+    });
+    const { electronApp } = await withBundledBinaryOverridesScrubbed(() =>
+      launchCanopy({
+        userDataDir,
+        env: {
+          CANOPY_MOCK_API_KEY: authKey,
+          CANOPY_E2E_CLOUD_BASE_URL: DEFAULT_MOCK_BASE_URL,
+          CANOPY_E2E_CLIENT_FEATURE_FLAGS: JSON.stringify({
+            'canopy-ai-gateway-settings-enabled': true,
+            'canopy-desktop-hosted-settings': false,
+          }),
+        },
+      }),
+    );
+    try {
+      const window = await electronApp.firstWindow();
+      const app = new CanopyAppDriver(window);
+      await app.waitForShell({ timeout: 30_000 });
+      // Signed out of the cloud, the gateway is this device's: save one with
+      // a key through the real preload, as its setup dialog does.
+      const saved = await window.evaluate(async () => {
+        const { organizationId } = await window.api.localModelGateway.read();
+        const update = await window.api.localModelGateway.update({
+          expectedOrganizationId: organizationId,
+          expectedRevision: 'absent',
+          baseUrl: 'https://openrouter.ai/api',
+          enabled: true,
+          models: [
+            {
+              id: 'gateway-sonnet-5-5',
+              gatewayId: 'anthropic/claude-sonnet-5.5',
+              label: 'Gateway Sonnet 5.5',
+              harness: 'claude',
+              contextWindow: 200_000,
+              supportedThinkingLevels: [],
+              toolSchemaProfile: 'standard',
+            },
+          ],
+        });
+        const connect = await window.api.localModelGateway.connect({
+          expectedOrganizationId: organizationId,
+          baseUrl: 'https://openrouter.ai/api',
+          apiKey: 'sk-or-e2e-credits-notice',
+        });
+        return { update, connect };
+      });
+      expect(saved.update.ok).toBe(true);
+      expect(saved.connect.value?.status).toBe('connected');
+
+      const panel = await showWorktree(window, app);
+      const notice = panel.getByTestId('chat-input-usage-limit-banner');
+      const choose = notice.getByTestId(
+        'chat-input-usage-limit-provider-choice',
+      );
+      // Codex and the gateway are both usable now, so the notice opens the
+      // list rather than naming one.
+      await expect(choose).toHaveText('Switch provider', { timeout: 30_000 });
+      await choose.click();
+      const dialog = window.getByTestId('switch-provider-dialog');
+      const use = dialog.getByTestId('provider-choice-action-gateway');
+      await expect(use).toHaveText('Use', { timeout: 15_000 });
+      await expect(
+        dialog.getByTestId('provider-choice-detail-gateway'),
+      ).toHaveText('Continues on Gateway Sonnet 5.5');
+      // Connected rows lead; the gateway ranks ahead of credits.
+      const rowIds = await dialog
+        .locator('[data-testid^="provider-choice-row-"]')
+        .evaluateAll((rows) =>
+          rows
+            .map((row) => row.getAttribute('data-testid'))
+            .filter((id) => id !== null && !id.endsWith('-badge')),
+        );
+      expect(rowIds.indexOf('provider-choice-row-gateway')).toBeLessThan(
+        rowIds.indexOf('provider-choice-row-credits'),
+      );
+
+      await use.click();
+      await expect(dialog).toHaveCount(0);
+      await expect(panel.getByTestId('chat-model-picker')).toContainText(
+        'Gateway Sonnet 5.5',
+        { timeout: 30_000 },
+      );
+
+      const marker = `Canopy-Ccredits-gateway-${randomUUID()}`;
+      const reply = 'Continued on the gateway.';
+      await registerScenario(DEFAULT_MOCK_BASE_URL, marker, {
+        llm: { steps: [{ text: reply, stopReason: 'end_turn' }] },
+      });
+      const composer = panel.getByRole('textbox').first();
+      await composer.click();
+      await composer.fill(`[${marker}] Keep going.`);
+      await window.getByRole('button', { name: 'Send message' }).click();
+      // The gateway pays: the turn reached it under the model's gateway id.
+      await expect
+        .poll(
+          async () =>
+            (await getScenarioActivity(DEFAULT_MOCK_BASE_URL, marker)).activity[
+              'llmModel:anthropic/claude-sonnet-5.5'
+            ] ?? 0,
+          { timeout: 60_000 },
+        )
+        .toBeGreaterThan(0);
+      await expect(panel.getByText(reply).first()).toBeVisible({
+        timeout: 30_000,
+      });
+      await clearScenario(DEFAULT_MOCK_BASE_URL, marker);
+    } finally {
+      await closeCanopy(electronApp, userDataDir);
+      await clearScenario(DEFAULT_MOCK_BASE_URL, authKey);
     }
   });
 });

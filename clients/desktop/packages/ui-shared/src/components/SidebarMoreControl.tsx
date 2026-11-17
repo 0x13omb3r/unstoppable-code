@@ -1,5 +1,6 @@
 'use client';
 
+import { ControlButton } from './Button';
 import {
   useId,
   type ButtonHTMLAttributes,
@@ -11,10 +12,7 @@ import { MoreHorizontalIcon } from '../icons/AppIcons';
 import { ActionMenuRowStyle } from './ActionMenuItems';
 import { FloatingMenu } from './FloatingMenu';
 import { SidebarNavRow } from './SidebarNavRow';
-import {
-  SIDEBAR_LIST_ICON_CLASSNAME,
-  sidebarNavIconItemClassName,
-} from './sidebar-item-classes';
+import { SIDEBAR_LIST_ICON_CLASSNAME } from './sidebar-item-classes';
 import { Tooltip } from './Tooltip';
 
 export interface SidebarMoreControlProps {
@@ -64,16 +62,16 @@ export function SidebarMoreControl({
     <>
       {compact ? (
         <Tooltip label="More">
-          <button
+          <ControlButton
             {...triggerProps}
             type="button"
             aria-label="More"
-            className={sidebarNavIconItemClassName(false)}
+            presentation="sidebar-more-compact"
           >
             <span className={`${SIDEBAR_LIST_ICON_CLASSNAME} fg-secondary`}>
               <MoreHorizontalIcon size={16} />
             </span>
-          </button>
+          </ControlButton>
         </Tooltip>
       ) : (
         <SidebarNavRow

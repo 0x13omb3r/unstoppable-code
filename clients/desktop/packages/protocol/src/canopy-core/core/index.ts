@@ -87,3 +87,5 @@ export * from './pullRequest/merge-queue';
 
 export * from './workspace/cowork-folder';
 export * from './workspaceRecovery/registry';
+
+export * from './memory/cloud-consent';

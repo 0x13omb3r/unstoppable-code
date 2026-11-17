@@ -1,3 +1,4 @@
+import { ControlButton } from '../Button';
 import {
   THINKING_LEVEL_LABELS,
   isThinkingLevel,
@@ -278,7 +279,7 @@ export function AgentBlockCard({
       onToggle={(): void => setIsExpanded((prev) => !prev)}
       ariaLabel={isExpanded ? collapseLabel : expandLabel}
       trailing={headerTrailing}
-      className={headerAction != null ? 'flex-1' : undefined}
+      extent={headerAction != null ? 'remaining' : undefined}
     />
   );
   return (
@@ -339,13 +340,13 @@ export function AgentBlockCard({
 
             {result && (
               <>
-                <button
+                <ControlButton
                   type="button"
                   onClick={(): void => setShowResult((prev) => !prev)}
-                  className="w-full border-t px-2.5 py-1 text-left text-3xs font-medium fg-secondary hover:fg-secondary"
+                  presentation="agent-block-output"
                 >
                   {showResult ? 'Hide result' : 'Show result'}
-                </button>
+                </ControlButton>
                 {showResult && (
                   <pre
                     className={`${REPLAY_BLOCK_CLASS} max-h-75 overflow-auto whitespace-pre-wrap break-all border-t px-2.5 py-2 text-xs ${
@@ -360,13 +361,13 @@ export function AgentBlockCard({
 
             {prompt && (
               <>
-                <button
+                <ControlButton
                   type="button"
                   onClick={(): void => setShowPrompt((prev) => !prev)}
-                  className="w-full border-t px-2.5 py-1 text-left text-3xs font-medium fg-secondary hover:fg-secondary"
+                  presentation="agent-block-output"
                 >
                   {showPrompt ? 'Hide prompt' : 'Show prompt'}
-                </button>
+                </ControlButton>
                 {showPrompt && (
                   <pre
                     className={`${REPLAY_BLOCK_CLASS} max-h-50 overflow-auto whitespace-pre-wrap break-all border-t px-2.5 py-2 text-xs fg-secondary`}

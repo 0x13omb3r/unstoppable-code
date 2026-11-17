@@ -1,3 +1,4 @@
+import { ControlButton } from './Button';
 import type { JSX } from 'react';
 
 /**
@@ -19,7 +20,11 @@ export function ClickableName({
   onClick: () => void;
 }): JSX.Element {
   return (
-    <button type="button" onClick={onClick} className="text-left group">
+    <ControlButton
+      type="button"
+      onClick={onClick}
+      presentation="clickable-name"
+    >
       <span
         className={`fg-primary font-medium group-hover:fg-accent transition-colors${
           mono ? ' font-mono text-xs' : ''
@@ -32,6 +37,6 @@ export function ClickableName({
           {description}
         </p>
       )}
-    </button>
+    </ControlButton>
   );
 }

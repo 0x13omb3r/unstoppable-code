@@ -147,15 +147,9 @@ export function mainAdvisorCatalogActionHost(options: {
       }
     },
     refreshDirect: async (sourceId) => {
-      const [{ updateMarketplace }, { refreshAfterSuccess }] =
-        await Promise.all([
-          import('../plugins/plugin-service'),
-          import('../plugins/plugin-handlers'),
-        ]);
-      const result = await refreshAfterSuccess(
-        'plugins:updateMarketplace',
-        () => updateMarketplace(sourceId),
-      );
+      const { updateMarketplaceForCaller } =
+        await import('../plugins/plugin-handlers');
+      const result = await updateMarketplaceForCaller(sourceId);
       if (!result.success || !result.data)
         throw new Error(
           (result.success ? undefined : result.error) ??

@@ -49,9 +49,9 @@ export function DelayedLoadingPlaceholder({
     >
       {children}
       {slowNote === undefined ? null : (
-        <SlowLoadNote show={slow} className="mt-3">
-          {slowNote}
-        </SlowLoadNote>
+        <div className="pt-3 empty:hidden">
+          <SlowLoadNote show={slow}>{slowNote}</SlowLoadNote>
+        </div>
       )}
     </div>
   );

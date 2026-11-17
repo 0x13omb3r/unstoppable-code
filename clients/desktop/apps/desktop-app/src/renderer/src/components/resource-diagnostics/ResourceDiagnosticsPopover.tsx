@@ -552,7 +552,7 @@ function deriveRowDetails(
 }
 
 /**
- * The Resources panel's contents. `ResourceDiagnosticsPill` hosts it in the
+ * The Resources panel's contents. `ResourceDiagnosticsControl` hosts it in the
  * shared `Popover`, which owns the surface, placement and dismissal.
  */
 export function ResourceDiagnosticsPopover({
@@ -654,7 +654,7 @@ export function ResourceDiagnosticsPopover({
           data-testid="resource-diagnostics-popover-settings"
           onClick={handleOpenPerformanceSettings}
           // The glyph, not the button, meets the 12px content inset.
-          className="-my-1 -mr-1"
+          inset="tight-end"
         />
       </div>
 

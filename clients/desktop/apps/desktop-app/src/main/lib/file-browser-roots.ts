@@ -12,13 +12,13 @@ import {
   type FilesystemRootCatalog,
 } from '@canopy/core-runtime/node';
 import {
-  APP_ADVISOR_PROJECT_ID,
   COWORK_WORKSPACE_FILE_ROOT_ID,
   SHARED_CONTAINER_VIEWER_PROJECT_ID,
   WORKSPACE_ROOT_REPO_ID,
   WORKSPACE_ROOT_REPO_NAME,
   type FileTreeRoot,
 } from '@canopy/desktop-shared/types';
+import { isBotProjectId } from '@canopy/protocol/chat-targets';
 import {
   w5RecordReadPaths,
   getWorktreeAttachmentsDir,
@@ -57,7 +57,7 @@ export function getFileBrowserSupplementalWatchPaths(
   worktreeId: string,
 ): string[] {
   if (
-    projectId === APP_ADVISOR_PROJECT_ID ||
+    isBotProjectId(projectId) ||
     projectId === SHARED_CONTAINER_VIEWER_PROJECT_ID
   )
     return [];
@@ -129,9 +129,9 @@ export async function getFileBrowserRoots(
       })),
     );
   }
-  if (projectId === APP_ADVISOR_PROJECT_ID) {
-    // App Advisor's per-entry attachment store is private app metadata. Its
-    // file explorer exposes only the shared agent cwd, including the
+  if (isBotProjectId(projectId)) {
+    // Bot per-entry attachments are private app metadata. The file explorer
+    // exposes only the shared agent cwd, including the
     // user-facing .{brand} folders nested inside it.
     const home = resolveWorktreeCwd(projectId, worktreeId);
     return finalizeRoots([createStandaloneRoot(projectId, projectId, home)]);

@@ -252,31 +252,35 @@ function FeedNotice({
 }): JSX.Element | null {
   if (notice === 'remote_unavailable') {
     return (
-      <Notice
-        data-testid="ledger-feed-notice"
-        data-notice={notice}
-        className="mt-3"
-        actions={<NoticeButton onClick={onRetry}>Try again</NoticeButton>}
-      >
-        Can&apos;t reach the cloud. Showing this device&apos;s entries.
-      </Notice>
+      <div className="pt-3">
+        <Notice
+          data-testid="ledger-feed-notice"
+          data-notice={notice}
+          actions={<NoticeButton onClick={onRetry}>Try again</NoticeButton>}
+        >
+          Can&apos;t reach the cloud. Showing this device&apos;s entries.
+        </Notice>
+      </div>
     );
   }
   if (notice === 'signed_out') {
     return (
-      <Notice
-        data-testid="ledger-feed-notice"
-        data-notice={notice}
-        className="mt-3"
-        {...(onSignIn === undefined
-          ? {}
-          : {
-              actions: <NoticeButton onClick={onSignIn}>Sign in</NoticeButton>,
-            })}
-      >
-        Sign in to see your other devices and teammates. Showing work this
-        device did while signed out.
-      </Notice>
+      <div className="pt-3">
+        <Notice
+          data-testid="ledger-feed-notice"
+          data-notice={notice}
+          {...(onSignIn === undefined
+            ? {}
+            : {
+                actions: (
+                  <NoticeButton onClick={onSignIn}>Sign in</NoticeButton>
+                ),
+              })}
+        >
+          Sign in to see your other devices and teammates. Showing work this
+          device did while signed out.
+        </Notice>
+      </div>
     );
   }
   return null;

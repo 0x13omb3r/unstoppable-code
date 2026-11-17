@@ -197,7 +197,7 @@ export function DigestReport({
             </Heading>
             <div
               className={joinClassNames(
-                `mt-2 ${DIGEST_PROSE_CLASS}`,
+                `pt-2 ${DIGEST_PROSE_CLASS}`,
                 blockClassName,
               )}
             >

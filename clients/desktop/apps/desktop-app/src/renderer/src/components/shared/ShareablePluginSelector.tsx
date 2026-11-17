@@ -315,6 +315,7 @@ export function ShareablePluginSelector({
             }}
             showCollectionKind={false}
             loading={loading}
+            autoFocusSearch
           />
         </div>
       )}

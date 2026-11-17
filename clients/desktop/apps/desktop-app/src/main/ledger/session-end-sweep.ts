@@ -313,6 +313,7 @@ function targetContainers(
       entryId: target.worktreeId,
     },
   ];
+  // Default Bot only: the Ledger container contract pins advisor_entry.
   if (target.projectId === APP_ADVISOR_PROJECT_ID) {
     containers.push({
       kind: 'advisor_entry',

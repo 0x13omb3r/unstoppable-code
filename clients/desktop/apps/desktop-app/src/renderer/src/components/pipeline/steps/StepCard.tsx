@@ -1,3 +1,4 @@
+import { ControlButton } from '@canopy/ui-shared/components';
 import type { JSX } from 'react';
 import { useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
@@ -56,14 +57,14 @@ export function StepCard({
       actions={
         readonly ? undefined : (
           <>
-            <button
+            <ControlButton
               {...attributes}
               {...listeners}
               aria-label="Reorder step"
-              className="focus-ring flex size-7 items-center justify-center rounded-full cursor-grab active:cursor-grabbing fg-secondary hover:fg-primary touch-none"
+              presentation="workflow-step-handle"
             >
               <DragHandleIcon size="sm" />
-            </button>
+            </ControlButton>
             <Button
               variant="ghost-quiet"
               size="compact"

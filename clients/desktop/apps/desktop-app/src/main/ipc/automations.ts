@@ -26,6 +26,8 @@ import {
   type AutomationDeleteRequest,
   type AutomationMutationResponse,
   type AutomationRunNowRequest,
+  type AutomationScheduleMoveRequest,
+  type AutomationScheduleMoveResponse,
   type AutomationRunHistoryRequest,
   type AutomationRunHistoryResponse,
   type AutomationRunStatus,
@@ -82,6 +84,19 @@ import {
 } from '../automations/chat-automation-save';
 import { projectOwnedChatAutomations } from '../automations/owned-chat-projection';
 import { createWebCoreCloudScheduleRemote } from '../automations/cloud-schedule-remote';
+import { DESKTOP_CLOUD_SCHEDULE_HOST } from '../automations/cloud-schedule-host';
+import {
+  CloudModelChoicesSchema,
+  PipelineScheduleDestinationSchema,
+} from '@canopy/protocol/canopy-core';
+import { z } from 'zod';
+
+/** A move's confirmed models, with the preflight they were chosen for. */
+const MoveModelsSchema = z.strictObject({
+  definitionHash: z.string().length(64),
+  policyFingerprint: z.string().length(64),
+  choices: CloudModelChoicesSchema,
+});
 import { desktopWebCoreBindingOptions, signedInAccountId } from './cloud-chats';
 import { getAutomationsService } from '../automations/service';
 import { logMainProcessError } from '../lib/main-process-logging';
@@ -432,11 +447,14 @@ export function registerAutomationsHandlers(
   // CAN-6183: cloud schedules are stored through main's web core connection.
   service.setCloudScheduleRemote(
     createWebCoreCloudScheduleRemote(
-      desktopWebCoreBindingOptions(),
+      // Not behind the cloud chats flag (CAN-6917): the web core serves
+      // schedules behind its own rollout flag, as it does cloud runs.
+      { ...desktopWebCoreBindingOptions(), isEnabled: () => true },
       app.getVersion(),
       signedInAccountId,
     ),
   );
+  service.setCloudScheduleHost(DESKTOP_CLOUD_SCHEDULE_HOST);
   service.configure({
     getMainWindow: accessors.getMainWindow,
     getAppAdvisorWindow: accessors.getAppAdvisorWindow,
@@ -552,6 +570,40 @@ export function registerAutomationsHandlers(
       }
     },
   );
+
+  // The Run in control (CAN-6917): a workflow schedule moves to the cloud or
+  // back; a move to the cloud may ask for a destination or models first.
+  registerIpcHandler<
+    [AutomationScheduleMoveRequest],
+    AutomationScheduleMoveResponse
+  >(IPC_CHANNELS.automationsMoveSchedule, async (_event, request) => {
+    try {
+      const validationError = validateIdRequest(request);
+      if (validationError) return { ok: false, error: validationError };
+      if (request.to !== 'cloud' && request.to !== 'local')
+        return { ok: false, error: 'Choose where the schedule runs.' };
+      const destination =
+        request.destination === undefined
+          ? undefined
+          : PipelineScheduleDestinationSchema.safeParse(request.destination);
+      if (destination !== undefined && !destination.success)
+        return { ok: false, error: 'Choose a cloud project or task.' };
+      const models =
+        request.models === undefined
+          ? undefined
+          : MoveModelsSchema.safeParse(request.models);
+      if (models !== undefined && !models.success)
+        return { ok: false, error: 'Choose a cloud model for each step.' };
+      return await service.moveSchedule({
+        id: request.id,
+        to: request.to,
+        ...(destination === undefined ? {} : { destination: destination.data }),
+        ...(models === undefined ? {} : { models: models.data }),
+      });
+    } catch (error) {
+      return { ok: false, error: errorMessage(error) };
+    }
+  });
 
   registerIpcHandler<[AutomationCancelRunRequest], AutomationMutationResponse>(
     IPC_CHANNELS.automationsCancelRun,

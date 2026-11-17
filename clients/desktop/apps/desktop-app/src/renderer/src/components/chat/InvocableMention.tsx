@@ -1,7 +1,7 @@
+import { ControlButton } from '@canopy/ui-shared/components';
 import { memo, useRef, useState, type JSX, type ReactNode } from 'react';
 import { getDocument } from '@canopy/ui-shared/panels';
 import {
-  INLINE_CHIP_CLASS,
   INLINE_CHIP_ICON_CLASS,
   PREVIEW_CARD_SURFACE,
   ReferenceHoverCard,
@@ -69,10 +69,10 @@ export const InvocableMention = memo(function InvocableMention({
         triggerDisplay="contents"
         getPlacementAnchor={chipInsideTrigger}
       >
-        <button
+        <ControlButton
           ref={triggerRef}
           type="button"
-          className={INLINE_CHIP_CLASS}
+          presentation="prose-mention"
           aria-label={`Open ${target.label} details`}
           onClick={(event) => {
             event.preventDefault();
@@ -86,7 +86,7 @@ export const InvocableMention = memo(function InvocableMention({
             exactSize
           />
           {children}
-        </button>
+        </ControlButton>
       </RichHoverTooltip>
 
       {detailsOpen && typeof document !== 'undefined' ? (

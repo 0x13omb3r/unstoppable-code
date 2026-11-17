@@ -1,15 +1,17 @@
 import type { JSX } from 'react';
+import { ICON_SIZE_PX, isIconSize, type IconSize } from './icon-size';
 
 interface XBrandIconProps {
-  size?: number;
+  size?: IconSize | number;
 }
 
 /** Monochrome X (formerly Twitter) wordmark glyph, per the official brand mark. */
-export function XBrandIcon({ size = 18 }: XBrandIconProps): JSX.Element {
+export function XBrandIcon({ size = 'lg' }: XBrandIconProps): JSX.Element {
+  const dimension = isIconSize(size) ? ICON_SIZE_PX[size] : size;
   return (
     <svg
-      width={size}
-      height={size}
+      width={dimension}
+      height={dimension}
       viewBox="0 0 1200 1227"
       fill="currentColor"
       aria-hidden="true"

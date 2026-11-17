@@ -1,3 +1,4 @@
+import { ControlButton } from '../Button';
 import {
   memo,
   useId,
@@ -51,26 +52,26 @@ export const FileAttachmentChip = memo(function FileAttachmentChip({
       {onOpen === undefined ? (
         <span className="inline-flex min-w-0 items-center gap-1">{label}</span>
       ) : (
-        <button
+        <ControlButton
           type="button"
           onClick={onOpen}
           aria-label="Open attached file"
           aria-describedby={nameId}
-          className="focus-ring inline-flex min-w-0 items-center gap-1 rounded-sm hover:fg-primary"
+          presentation="attachment-open"
         >
           {label}
-        </button>
+        </ControlButton>
       )}
       {onDownload !== undefined && (
-        <button
+        <ControlButton
           type="button"
           onClick={onDownload}
           aria-label="Download attached file"
           aria-describedby={nameId}
-          className="focus-ring ml-0.5 inline-flex shrink-0 items-center rounded-sm hover:fg-primary"
+          presentation="attachment-download"
         >
           <DownloadIcon size="sm" aria-hidden="true" />
-        </button>
+        </ControlButton>
       )}
     </span>
   );

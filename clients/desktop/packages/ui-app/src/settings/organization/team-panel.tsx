@@ -1,5 +1,6 @@
 'use client';
 
+import { ControlButton } from '@canopy/ui-shared/components';
 import { StatusIllustration } from '@canopy/ui-shared/components';
 import { useCallback, useEffect, useState, type JSX } from 'react';
 import { Check, Mail, Plus, Users, X } from '@canopy/ui-shared/icons/AppIcons';
@@ -300,11 +301,12 @@ export function TeamPanel({
                         Decline
                       </Button>
                     </div>
-                    <OrgEnforcedConsentList
-                      className="mt-2 w-full basis-full"
-                      settings={invite.enforcedSettings}
-                      heading="Required organization settings:"
-                    />
+                    <div className="w-full basis-full pt-2 empty:hidden">
+                      <OrgEnforcedConsentList
+                        settings={invite.enforcedSettings}
+                        heading="Required organization settings:"
+                      />
+                    </div>
                   </div>
                 </Surface>
               );
@@ -389,12 +391,11 @@ function OrganizationRow({
   onOpen: () => void;
 }): JSX.Element {
   return (
-    <button
-      type="button"
+    <ControlButton
       data-settings-control="row"
       onClick={onOpen}
       data-testid="team-panel-org"
-      className="flex w-full cursor-pointer flex-wrap items-center justify-between gap-3 rounded-md border px-4 py-3 text-left transition-colors hover:bg-secondary"
+      presentation="team-open"
     >
       <div className="flex min-w-0 items-center gap-3">
         <OrganizationLogo name={org.name} logoUrl={org.logoUrl} size="xl" />
@@ -412,7 +413,7 @@ function OrganizationRow({
         </Stack>
       </div>
       <span className="text-s font-medium fg-accent">Open</span>
-    </button>
+    </ControlButton>
   );
 }
 

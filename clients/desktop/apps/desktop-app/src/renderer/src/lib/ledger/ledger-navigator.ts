@@ -7,7 +7,7 @@ import {
   type LedgerViewScope,
   type LedgerViewSourceTarget,
 } from '@canopy/protocol/ledger-view';
-import { APP_ADVISOR_PROJECT_ID } from '@canopy/desktop-shared/types';
+import { isBotProjectId } from '@canopy/protocol/chat-targets';
 import {
   openAutomationRunDestination,
   type AutomationRunDestination,
@@ -129,7 +129,7 @@ async function openArchivedWorktreeChat(
 function chatDestination(
   target: Extract<LedgerViewSourceTarget, { kind: 'chat' }>,
 ): AutomationRunDestination {
-  if (target.projectId === APP_ADVISOR_PROJECT_ID) {
+  if (isBotProjectId(target.projectId)) {
     return {
       kind: 'app-advisor-chat',
       chatId: target.chatId,

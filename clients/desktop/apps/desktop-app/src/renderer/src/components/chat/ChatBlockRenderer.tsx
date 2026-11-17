@@ -11,7 +11,10 @@ import {
   renderDelegationChildRows,
   renderDelegationChildBlock,
 } from './delegation-child-row-renderer';
-import { isClaudeAiCreditsFallbackErrorCode } from '@canopy/protocol/llm-gateway';
+import {
+  isClaudeAiCreditsFallbackErrorCode,
+  isCanopyProxyErrorBody,
+} from '@canopy/protocol/llm-gateway';
 import { ClaudeAiCreditsFallbackError } from './ClaudeAiCreditsFallbackError';
 import { codexAgentState } from './agent-block-state';
 import {
@@ -135,6 +138,7 @@ import {
 import { isSafeCodexInlineImage } from '@canopy/agent-transcript/lib/codex-tool-images';
 import { AuthRecoveryCard } from './AuthRecoveryCard';
 import { CanopyProxyErrorNotice } from './CanopyProxyErrorNotice';
+import { CanopyProxyErrorSummary } from '@canopy/ui-shared/components';
 import {
   CreditsNotice,
   type CreditsNoticeOwner,
@@ -1174,6 +1178,7 @@ export const ChatBlockRenderer = memo(function ChatBlockRenderer({
   isCodeReviewChat,
   stripAgentCitations = false,
   isSystemMessage = false,
+  isAssistantMessage = false,
   preserveLineBreaks = false,
   progressiveMarkdown = false,
   settled = !streaming,
@@ -1198,6 +1203,7 @@ export const ChatBlockRenderer = memo(function ChatBlockRenderer({
   stripAgentCitations?: boolean;
   /** Enables narrowly classified recovery UI for host-generated errors. */
   isSystemMessage?: boolean;
+  isAssistantMessage?: boolean;
   /**
    * Render single newlines in text blocks as line breaks (CAN-2811). Set for
    * user-authored bubbles, where a typed newline is deliberate; agent prose
@@ -1262,6 +1268,7 @@ export const ChatBlockRenderer = memo(function ChatBlockRenderer({
       isCodeReviewChat={isCodeReviewChat}
       stripAgentCitations={stripAgentCitations}
       isSystemMessage={subBlock.isSystemMessage ?? isSystemMessage}
+      isAssistantMessage={isAssistantMessage}
     />
   );
 
@@ -1381,10 +1388,10 @@ export const ChatBlockRenderer = memo(function ChatBlockRenderer({
       if (isSystemMessage && isAccountProxySettingsFailure(text)) {
         return <AccountProxyFailureNoticeAction text={text} />;
       }
-      const proxyError = isSystemMessage ? parseCanopyProxyError(text) : null;
-      // Nothing could pay for the message (CAN-5160). The composer's No
-      // billing source banner is where the user chooses how to pay, so the
-      // transcript only says why the chat stopped.
+      const proxyError =
+        isSystemMessage || (isAssistantMessage && isCanopyProxyErrorBody(text))
+          ? parseCanopyProxyError(text)
+          : null;
       if (proxyError?.code === 'no_billing_source') {
         return (
           <CreditsNotice
@@ -1395,14 +1402,14 @@ export const ChatBlockRenderer = memo(function ChatBlockRenderer({
           />
         );
       }
+      if (proxyError && !isSystemMessage) {
+        return <CanopyProxyErrorSummary error={proxyError} />;
+      }
       if (proxyError) {
         return (
           <CanopyProxyErrorNotice
             error={proxyError}
             originChatTabId={originChatTabId}
-            // Raw block text, NOT the citation-stripped `text` above: this is
-            // the notice's identity in the transcript, and it must compare
-            // equal to the persisted message block it was rendered from.
             sourceText={block.text}
           />
         );

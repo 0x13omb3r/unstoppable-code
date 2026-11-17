@@ -18,6 +18,7 @@ import {
   Stack,
   CustomizeInstalledList,
   CustomizeInstalledRow,
+  type CustomizeInstalledRowProps,
   CustomizeInstalledUnavailable,
   CustomizeSection,
   Tooltip,
@@ -38,6 +39,7 @@ import {
   SearchEmptyState,
   UninstallConfirmDialog,
   type CustomizeRowMenuItem,
+  type CustomizeRowSplitAction,
   type PluginsEntryStatusBinding,
   type McpServerLogoProps,
   EmptyStateRow,
@@ -77,6 +79,7 @@ import {
   type InstalledEntryStatusState,
   customizeDiscoveryFilterCount,
   customizeDiscoverySourceOptions,
+  type CustomizeDefaultHarness,
   DEFAULT_CUSTOMIZE_DISCOVERY_FILTERS,
 } from '@canopy/ui-shared/lib';
 import {
@@ -108,6 +111,7 @@ import {
   type CustomizeWorkflowActions,
 } from './customizeWorkflowActions';
 import { CustomizeWorkflowRowControls } from './CustomizeWorkflowRowControls';
+import { customizeRowAction } from './customizeRowAction';
 import { bundledServerStandsBehindPlugin } from './unifiedPluginEntries';
 import { useCustomizeResultsTelemetry } from './customizeTelemetry';
 
@@ -151,6 +155,14 @@ interface McpRowPresentation {
   readonly connectReason?: string;
   readonly node: ReactNode;
   readonly inlineAction?: ReactNode;
+  /**
+   * The attention sign-in the inline button runs, for New Customize's split
+   * control (CAN-6813). Absent while a sign-in waits in the browser.
+   */
+  readonly signIn?: {
+    readonly busy: boolean;
+    readonly run: () => void;
+  };
   readonly connectRun?: () => void;
   readonly cancelSignIn?: () => void;
 }
@@ -175,12 +187,22 @@ export interface CustomizeTabSectionsProps {
   readonly projectTemplatesAvailable?: boolean;
   /** Changes when the surrounding context (project, organization) does. */
   readonly contextKey?: string;
+  /**
+   * New Customize (CAN-6811): the harness whose copy an integration row
+   * shows and installs. Claude Code when the host cannot read it.
+   */
+  readonly defaultHarness?: CustomizeDefaultHarness;
 
   readonly selectedEntryId?: string | null;
   readonly onSelectEntry: (entry: UnifiedPluginEntry) => void;
   readonly hrefForEntry?: (entry: UnifiedPluginEntry) => string | undefined;
   readonly onAddEntry?: (entry: UnifiedPluginEntry) => void;
   readonly onConnectEntry?: (entry: UnifiedPluginEntry) => void;
+  /**
+   * New Customize (CAN-6815): stage one harness that refused an MCP server
+   * again. Hosts that cannot leave it out, and rows only say why.
+   */
+  readonly onRetryHarnessInstall?: CustomizeInstalledRowProps['onRetryHarnessInstall'];
   readonly onOpenEntryId?: (entryId: string) => void;
   readonly entryShareStates?: MarketplaceEntryShareStates;
   /** Plugin shares eligible for Shared by me on the MCP servers tab. */
@@ -372,11 +394,13 @@ export function CustomizeTabSections(
     agentsAvailable,
     projectTemplatesAvailable,
     contextKey = '',
+    defaultHarness,
     selectedEntryId = null,
     onSelectEntry,
     hrefForEntry,
     onAddEntry,
     onConnectEntry,
+    onRetryHarnessInstall,
     onOpenEntryId,
     entryShareStates,
     mcpSharedEntryIds,
@@ -585,8 +609,10 @@ export function CustomizeTabSections(
         mcpSharedEntryIds,
         ...(discoveryFilters ? { discoveryFilters } : {}),
         ...(sharedWithMeOnly ? { sharedWithMeOnly } : {}),
+        ...(defaultHarness ? { defaultHarness } : {}),
       }),
     [
+      defaultHarness,
       discoveryFilters,
       sharedWithMeOnly,
       tab,
@@ -830,6 +856,18 @@ export function CustomizeTabSections(
     function signInTarget(
       entry: UnifiedPluginEntry,
     ): UnifiedPluginEntry | undefined {
+      // An integration row signs in to the hidden copy that needs it
+      // (CAN-6811), never to its own healthy copy.
+      const attentionId = entry.integrationCopies?.attentionCopyId;
+      if (attentionId !== undefined) {
+        const copy = entries.find((candidate) => candidate.id === attentionId);
+        if (
+          copy !== undefined &&
+          (copy.state === 'needs-auth' || (copy.pendingSignIns ?? 0) > 0)
+        )
+          return signInTarget(copy);
+        return undefined;
+      }
       if (entry.state === 'needs-auth') return entry;
       if ((entry.pendingSignIns ?? 0) === 0) return undefined;
       for (const row of entry.bundledServerRows ?? []) {
@@ -1203,42 +1241,48 @@ export function CustomizeTabSections(
     ],
   );
 
-  const renderWorkflowControls = useCallback(
-    function renderWorkflowControls(entry: UnifiedPluginEntry): ReactNode {
-      if (!workflowActions || !entry.workflow) return null;
+  const workflowControls = useCallback(
+    function workflowControls(entry: UnifiedPluginEntry) {
+      if (!workflowActions || !entry.workflow) return undefined;
       const availability = customizeWorkflowAvailability(
         entry,
         workflowActions,
       );
       const enabled = entry.workflow.enabled;
-      return (
-        <CustomizeWorkflowRowControls
-          entry={entry}
-          availability={availability}
-          busy={workflowBusyIds.has(entry.id)}
-          onRun={() => {
-            const onRun = workflowActions.onRun;
-            if (!onRun || !availability.run.available) return;
-            void runWorkflowAction(
-              entry,
-              () => onRun(entry),
-              `Couldn't start ${entry.name}`,
-            );
-          }}
-          onToggle={() => {
-            const onSetEnabled = workflowActions.onSetEnabled;
-            if (!onSetEnabled || enabled === undefined) return;
-            // The switch never flips locally; it re-renders from `entries`.
-            void runWorkflowAction(
-              entry,
-              () => onSetEnabled(entry, !enabled),
-              `Couldn't turn ${enabled ? 'off' : 'on'} ${entry.name}`,
-            );
-          }}
-        />
-      );
+      return {
+        availability,
+        busy: workflowBusyIds.has(entry.id),
+        onRun: (): void => {
+          const onRun = workflowActions.onRun;
+          if (!onRun || !availability.run.available) return;
+          void runWorkflowAction(
+            entry,
+            () => onRun(entry),
+            `Couldn't start ${entry.name}`,
+          );
+        },
+        onToggle: (): void => {
+          const onSetEnabled = workflowActions.onSetEnabled;
+          if (!onSetEnabled || enabled === undefined) return;
+          // The switch never flips locally; it re-renders from `entries`.
+          void runWorkflowAction(
+            entry,
+            () => onSetEnabled(entry, !enabled),
+            `Couldn't turn ${enabled ? 'off' : 'on'} ${entry.name}`,
+          );
+        },
+      };
     },
     [workflowActions, workflowBusyIds, runWorkflowAction],
+  );
+
+  const renderWorkflowControls = useCallback(
+    function renderWorkflowControls(entry: UnifiedPluginEntry): ReactNode {
+      const controls = workflowControls(entry);
+      if (!controls) return null;
+      return <CustomizeWorkflowRowControls entry={entry} {...controls} />;
+    },
+    [workflowControls],
   );
 
   // Only a ready, removable status with a target offers removal (CAN-4840).
@@ -1405,6 +1449,9 @@ export function CustomizeTabSections(
                   : undefined;
               return {
                 connectLabel,
+                ...(inline && !pending?.authorizationUrl
+                  ? { signIn: { busy: inline.busy, run: inline.onClick } }
+                  : {}),
                 cancelSignIn: pending?.onCancel,
                 connectRun:
                   signsIn && inline === undefined && connectAction.available
@@ -1444,6 +1491,8 @@ export function CustomizeTabSections(
                     dataTestId={`customize-row-sign-in-${entry.id}`}
                   />
                 ) : (
+                  // New Customize's split control runs it (CAN-6813).
+                  !discoveryEnabled &&
                   inline && (
                     <Button
                       type="button"
@@ -1528,6 +1577,91 @@ export function CustomizeTabSections(
       const missingProvider =
         mcpEntryPluginLink(entry) !== undefined && providerPlugin === undefined;
       const mcpMenu = mcpConnection ? (mcpHealth ?? {}) : undefined;
+      // New Customize (CAN-6813): one split control for the row's state, its
+      // caret holding the row's existing actions.
+      const splitAction = ((): CustomizeRowSplitAction | undefined => {
+        if (!discoveryEnabled) return undefined;
+        const updateTarget =
+          section.id === 'browse'
+            ? installed &&
+              (updateEntry ??
+                (entry.kind === 'collection' && entry.updateAvailable
+                  ? entry
+                  : undefined))
+            : section.id === 'installed' && updateIds.has(entry.id)
+              ? entry
+              : undefined;
+        const mcpSignIn = mcpHealth?.signIn;
+        const signInName = signIn?.name ?? entry.name;
+        return customizeRowAction({
+          entry,
+          workflow: workflowControls(entry),
+          bundledSkill: isBundledSkill(entry)
+            ? {
+                state:
+                  dimmingState?.kind === 'loading' ||
+                  (dimmingState?.kind === 'ready' &&
+                    dimmingState.item.status !== null)
+                    ? dimmingState
+                    : undefined,
+                reason: bundledSkillStatusReason(entry.bundledBy.name),
+              }
+            : undefined,
+          installedVia:
+            section.id === 'browse' && entry.installedVia
+              ? {
+                  pluginName: entry.installedVia.name,
+                  open: providerPlugin
+                    ? (): void => openPlugin(providerPlugin)
+                    : undefined,
+                }
+              : undefined,
+          add: onAddEntry ? (addTrackedEntry ?? onAddEntry) : undefined,
+          installed: installed || section.id !== 'browse',
+          signIn: mcpSignIn
+            ? {
+                accessibleName: `Sign in to ${entry.name}`,
+                busy: mcpSignIn.busy,
+                run: mcpSignIn.run,
+              }
+            : !mcpHealth && connect
+              ? {
+                  accessibleName: `Sign in to ${signInName}`,
+                  busy: false,
+                  run: connect,
+                }
+              : undefined,
+          update:
+            updateTarget &&
+            onUpdateEntry &&
+            updateDisabledReason?.(updateTarget) === undefined
+              ? {
+                  busy: batchRunning || busyIds.has(updateTarget.id),
+                  run: (): void => void updateOne(updateTarget),
+                }
+              : undefined,
+          statuses: entryStatus
+            ? statusListings.flatMap((listing) => {
+                const state =
+                  entryStatus.states[listing.installedEntryId ?? listing.id];
+                return state
+                  ? [
+                      {
+                        listing,
+                        state,
+                        ...(providerListings && listing.marketplaceProvider
+                          ? { provider: listing.marketplaceProvider }
+                          : {}),
+                      },
+                    ]
+                  : [];
+              })
+            : [],
+          pendingKeys: entryStatus?.pendingKeys ?? new Set(),
+          onSetStatus: entryStatus?.onSetStatus,
+          onError: entryStatus?.onError,
+        });
+      })();
       const row = (unshareItem?: CustomizeRowMenuItem): ReactNode => (
         <CustomizeInstalledRow
           entry={entry}
@@ -1636,6 +1770,9 @@ export function CustomizeTabSections(
             dimmingState.item.status === 'disabled'
           }
           skillMatch={model.skillMatches.get(entry.id)}
+          discovery={discoveryEnabled}
+          onRetryHarnessInstall={onRetryHarnessInstall}
+          splitAction={splitAction}
           // New Customize has no Updates section (CAN-6810).
           updateBadge={
             discoveryEnabled &&
@@ -1664,6 +1801,7 @@ export function CustomizeTabSections(
     },
     [
       onConnectEntry,
+      onRetryHarnessInstall,
       trackPick,
       addTrackedEntry,
       signInTarget,
@@ -1683,6 +1821,10 @@ export function CustomizeTabSections(
       onAddEntry,
       renderStatus,
       renderWorkflowControls,
+      workflowControls,
+      batchRunning,
+      busyIds,
+      updateOne,
       McpServerLogoComponent,
       onUpdateEntry,
       renderUpdateAction,
@@ -1704,7 +1846,7 @@ export function CustomizeTabSections(
           (section.entries.length > 0 || statusFilter !== undefined) && (
             <p
               data-testid="customize-installed-status-description"
-              className="mt-3 text-xs fg-tertiary"
+              className="pt-3 text-xs fg-tertiary"
             >
               {INSTALLED_ITEM_STATUS_DESCRIPTION_LINE}
               {tab === 'app' && section.footnote ? ` ${section.footnote}` : ''}
@@ -1743,7 +1885,7 @@ export function CustomizeTabSections(
         {section.installedFootnote !== undefined && (
           <p
             data-testid="customize-installed-footnote"
-            className="mt-2 text-xs fg-tertiary"
+            className="pt-2 text-xs fg-tertiary"
           >
             {section.installedFootnote}
           </p>
@@ -1755,7 +1897,7 @@ export function CustomizeTabSections(
           section.entries.length > 0 && (
             <p
               data-testid="customize-installed-footnote"
-              className="mt-3 text-xs fg-tertiary"
+              className="pt-3 text-xs fg-tertiary"
             >
               {section.footnote}
             </p>
@@ -1764,27 +1906,28 @@ export function CustomizeTabSections(
           <p
             role="status"
             data-testid="customize-installed-loading"
-            className="mt-3 px-0 py-3 text-s fg-secondary"
+            className="px-0 pb-3 pt-6 text-s fg-secondary"
           >
             Loading installed items…
           </p>
         )}
         {state === 'error' && (
-          <Notice
-            errorSource="customize-installed-error"
-            intent="destructive"
-            className="mt-3"
-            data-testid="customize-installed-error"
-            actions={
-              onRetryInventory ? (
-                <NoticeButton onClick={onRetryInventory}>
-                  Try again
-                </NoticeButton>
-              ) : undefined
-            }
-          >
-            Couldn’t load installed items.
-          </Notice>
+          <div className="pt-3">
+            <Notice
+              errorSource="customize-installed-error"
+              intent="destructive"
+              data-testid="customize-installed-error"
+              actions={
+                onRetryInventory ? (
+                  <NoticeButton onClick={onRetryInventory}>
+                    Try again
+                  </NoticeButton>
+                ) : undefined
+              }
+            >
+              Couldn’t load installed items.
+            </Notice>
+          </div>
         )}
         {state === 'unavailable' && (
           <CustomizeInstalledUnavailable

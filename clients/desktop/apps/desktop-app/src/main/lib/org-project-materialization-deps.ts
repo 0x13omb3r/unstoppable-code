@@ -224,6 +224,34 @@ export function createProductionDeps(): OrgProjectMaterializationDeps {
           variant: { kind: 'bound-multi-repo', ...input },
         });
       },
+      // A new organization copy (CAN-4856) runs inside the fork's own W5
+      // boundary, so it takes the fork's commit and no key of its own: a
+      // keyed create would nest a second reservation, as the Personal fork's
+      // unkeyed create avoids.
+      createBoundCopyWorkspace: async (input, commit): Promise<void> => {
+        await createWorkspace(
+          {
+            source: 'shared_container_fork',
+            variant: { kind: 'bound-multi-repo', ...input },
+          },
+          commit,
+        );
+      },
+      removeBoundCopyWorkspace: async (
+        localWorkspaceId,
+        instanceId,
+      ): Promise<boolean> => {
+        const current = await readWorkspaceOwnership(localWorkspaceId);
+        if (current.authority === 'absent') return true;
+        if (
+          current.authority !== 'ok' ||
+          current.owner?.instanceId !== instanceId
+        )
+          return false;
+        const { deleteWorkspaceById } = await import('./workspace-deletion');
+        await deleteWorkspaceById(localWorkspaceId, 'shared_container_fork');
+        return true;
+      },
       buildLocalWorkspaceId: buildWorkspaceId,
       applyManagedPrivateMemory: async (input): Promise<void> => {
         await recordOrganizationPrivateMemory(input);

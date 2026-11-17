@@ -1,3 +1,4 @@
+import type { HarnessCompatibility } from '../plugins/harness-compatibility';
 // ---------------------------------------------------------------------------
 // Curated MCP server catalog — wire contracts (protocol layer).
 //
@@ -117,6 +118,7 @@ export interface CuratedMcpOAuthHints {
  * separate desktop-only concern and is not part of this wire shape.
  */
 export interface CuratedMcpServerEntry {
+  harnessCompatibility?: HarnessCompatibility;
   /** Stable catalog key; the join key desktop uses to reconcile local copies. */
   key: string;
   /** Display name. */

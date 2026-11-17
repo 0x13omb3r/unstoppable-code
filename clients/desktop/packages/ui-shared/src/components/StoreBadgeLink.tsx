@@ -1,3 +1,5 @@
+import { STORE_BADGE_CONTROL_CLASS } from './control-button-shared';
+import { ControlButton } from './Button';
 import type { JSX } from 'react';
 
 /** The two mobile app stores Canopy brands can publish a listing to. */
@@ -58,8 +60,6 @@ export function StoreBadgeLink({
       draggable={false}
     />
   );
-  const sharedClassName =
-    'inline-flex shrink-0 rounded-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-line-accent';
 
   if (activation.kind === 'anchor') {
     return (
@@ -69,7 +69,7 @@ export function StoreBadgeLink({
         href={link.url}
         target="_blank"
         rel="noreferrer noopener"
-        className={sharedClassName}
+        className={STORE_BADGE_CONTROL_CLASS}
       >
         {image}
       </a>
@@ -78,15 +78,15 @@ export function StoreBadgeLink({
 
   const { onActivate } = activation;
   return (
-    <button
+    <ControlButton
       data-testid={`store-badge-${link.store}`}
       data-dd-action-name={alt}
       type="button"
       aria-label={alt}
       onClick={() => onActivate(link.store, link.url)}
-      className={sharedClassName}
+      presentation="vendor-store-badge"
     >
       {image}
-    </button>
+    </ControlButton>
   );
 }

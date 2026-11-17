@@ -1,6 +1,6 @@
 'use client';
 
-import { Button } from './Button';
+import { ControlButton, Button } from './Button';
 import { OverlayScrollArea } from './OverlayScrollArea';
 import {
   useId,
@@ -277,7 +277,7 @@ export function ComposerActionList({
                 className={blockRowsFromReplay ? REPLAY_BLOCK_CLASS : undefined}
               >
                 {groupRows.map((row) => (
-                  <button
+                  <ControlButton
                     key={row.id}
                     id={`${listId}-${encodeURIComponent(row.id)}`}
                     type="button"
@@ -303,7 +303,17 @@ export function ComposerActionList({
                       )
                     }
                     onPointerLeave={() => onHoveredIdChange?.(null)}
-                    className={`focus-ring flex min-h-8 w-full items-center gap-2 rounded-xl px-2 py-1 text-left text-xs fg-primary disabled:opacity-50 ${highlightedId ? (highlightedId === `${listId}-${encodeURIComponent(row.id)}` ? 'bg-subtle' : '') : row.selected ? 'bg-subtle' : 'hover:bg-subtle'}`}
+                    presentation="composer-action-option"
+                    appearance={{
+                      highlight: highlightedId
+                        ? highlightedId ===
+                          `${listId}-${encodeURIComponent(row.id)}`
+                          ? 'selected'
+                          : 'quiet'
+                        : row.selected
+                          ? 'selected'
+                          : 'hover',
+                    }}
                   >
                     <span className="flex h-4 w-4 shrink-0 items-center justify-center fg-tertiary [&>svg]:!h-4 [&>svg]:!w-4">
                       {row.icon}
@@ -371,14 +381,14 @@ export function ComposerActionList({
                         )}
                       </span>
                     )}
-                  </button>
+                  </ControlButton>
                 ))}
               </div>
             </div>
           );
         })}
         {showAll && rows.length > 0 && (
-          <button
+          <ControlButton
             id={showAllId}
             type="button"
             data-action-row
@@ -390,10 +400,18 @@ export function ComposerActionList({
               onHoveredIdChange?.(event.currentTarget.id)
             }
             onPointerLeave={() => onHoveredIdChange?.(null)}
-            className={`focus-ring flex min-h-8 w-full items-center rounded-xl px-2 py-1 text-left text-xs fg-secondary ${highlightedId === showAllId ? 'bg-subtle' : highlightedId ? '' : 'hover:bg-subtle'}`}
+            presentation="composer-action-all"
+            appearance={{
+              highlight:
+                highlightedId === showAllId
+                  ? 'selected'
+                  : highlightedId
+                    ? 'quiet'
+                    : 'hover',
+            }}
           >
             {showAll.label}
-          </button>
+          </ControlButton>
         )}
         {rows.length === 0 && (
           // The shared empty-list line owns its height and type; the wrapper

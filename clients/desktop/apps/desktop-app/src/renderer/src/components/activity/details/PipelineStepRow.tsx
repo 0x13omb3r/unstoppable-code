@@ -1,3 +1,4 @@
+import { ControlButton } from '@canopy/ui-shared/components';
 import { memo, useEffect, useRef, useState, type JSX } from 'react';
 import type {
   NormalizedStep,
@@ -101,7 +102,7 @@ function PipelineStepRowComponent({
           : `pipeline-step-${stepDef.id}`
       }
     >
-      <button
+      <ControlButton
         type="button"
         aria-expanded={expanded}
         onClick={(): void => {
@@ -113,7 +114,7 @@ function PipelineStepRowComponent({
             stepExpanded: { ...previous.stepExpanded, [sessionKey]: next },
           }));
         }}
-        className="focus-ring flex w-full items-center justify-between gap-3 px-3 py-2 text-left transition-colors hover:bg-fg-primary/[0.04]"
+        presentation="workflow-step-detail"
       >
         <div className="flex min-w-0 items-center gap-2">
           <ChevronIcon open={expanded} />
@@ -150,7 +151,7 @@ function PipelineStepRowComponent({
           ) : null}
           <Badge {...pipelineStatusBadge(status)}>{status}</Badge>
         </div>
-      </button>
+      </ControlButton>
       {expanded && (
         <Surface variant="pane" boundary="top">
           <PipelineStepDetail

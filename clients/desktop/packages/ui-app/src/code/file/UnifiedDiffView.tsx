@@ -46,7 +46,7 @@ function CodeText({ row }: { readonly row: PatchRow }): JSX.Element {
       </span>
       {row.text}
       {row.noNewline ? (
-        <span className="ml-2 select-none fg-tertiary">
+        <span className="pl-2 select-none fg-tertiary">
           No newline at end of file
         </span>
       ) : null}
@@ -186,7 +186,7 @@ function FileSection({
           <DiffFileHeaderCell colSpan={columns}>
             {file.path ?? 'Unknown file'}
             {file.notes.length > 0 ? (
-              <span className="ml-3 fg-secondary">
+              <span className="pl-3 fg-secondary">
                 {file.notes.join(' · ')}
               </span>
             ) : null}

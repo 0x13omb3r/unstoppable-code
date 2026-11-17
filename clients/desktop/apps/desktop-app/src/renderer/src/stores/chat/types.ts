@@ -278,6 +278,12 @@ export interface SendMessageDispatchOptions {
    * (CAN-6828). Never copied into a queued copy: a flush presses anew.
    */
   webCoreSendPress?: CloudSendPress;
+  /**
+   * The web core command id this cloud send posts as, minted by its caller
+   * (CAN-6798). Copied into queued copies: a flush is the same message, so
+   * the web core takes it at most once.
+   */
+  webCoreCommandId?: string;
   /** Renderer submission time, retained through first-send adoption. */
   submittedAt?: number;
   watcherFired?: ChatSendMessageRequest['watcherFired'];

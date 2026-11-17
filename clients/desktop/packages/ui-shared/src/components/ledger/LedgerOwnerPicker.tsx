@@ -127,7 +127,7 @@ export function LedgerOwnerPicker({
           data-testid={triggerTestId}
           // The trigger's -mx-1 makes its wrapper 0.5rem narrower than it;
           // `max-w-full` alone would cut a short name such as You.
-          className="min-w-0 max-w-[calc(100%+0.5rem)]"
+          extent="flush-owner"
           onClick={onTriggerClick}
         >
           <span className="flex min-w-0 items-center gap-1 text-2xs">

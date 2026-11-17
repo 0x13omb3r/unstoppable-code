@@ -24,6 +24,8 @@ import { connectMockCloudAccount } from './seeders/connectMockCloudAccount.mjs';
 //     and a status change arrive without a reload.
 //   - Answering a pause, Cancel and Start over go to the web core with the
 //     run's own id, and nothing runs on this computer.
+//   - A step's child run (CAN-6868) shows under its step with its workflow
+//     and status, and opens as a run of its own.
 //   - Signing out drops the account's cloud runs from the feed.
 
 const CLOUD_WORKFLOW = 'Anywhere review';
@@ -102,6 +104,18 @@ test('Cloud runs list, open and answer their controls over the web core', async 
       },
     ],
     logs: { 'review-1:approve': log },
+    // What the run was charged so far (CAN-6881).
+    cost: {
+      usd: 1.25,
+      steps: [
+        {
+          jobId: 'review-1',
+          stepId: 'approve',
+          label: 'Approve the change',
+          usd: 1,
+        },
+      ],
+    },
   });
   // Paused when its owner went away; a schedule started it.
   const ownerLost = runs.addRun({
@@ -129,6 +143,32 @@ test('Cloud runs list, open and answer their controls over the web core', async 
     ],
   });
   // Failed, with a report.
+  // CAN-6868: a run whose run-pipeline step started a child run.
+  const childId = '7c1f4b2a-1111-4111-8111-0000000000e1';
+  const parent = runs.addRun({
+    name: 'Ship the change',
+    status: 'running',
+    startedAt: at(1),
+    jobs: [
+      cloudJob('ship', 'Ship', 'running', [
+        cloudStep('review', 'Review the change', 'running', {
+          childExecutionId: childId,
+        }),
+      ]),
+    ],
+  });
+  runs.addRun({
+    executionId: childId,
+    parentExecutionId: parent,
+    name: 'Code review',
+    status: 'running',
+    startedAt: at(1),
+    jobs: [
+      cloudJob('review', 'Review', 'running', [
+        cloudStep('scan', 'Scan the diff', 'running'),
+      ]),
+    ],
+  });
   const failed = runs.addRun({
     name: 'Cloud lint',
     status: 'failure',
@@ -225,6 +265,12 @@ test('Cloud runs list, open and answer their controls over the web core', async 
     await expect(dialog.getByTestId('cloud-run-location')).toContainText(
       'Cloud',
     );
+    // CAN-6881: what the run was charged, in all and by step, read from the
+    // web core through the relay.
+    await expect(dialog.getByTestId('cloud-run-cost')).toContainText('$1.25');
+    await expect(
+      dialog.getByTestId('cloud-run-step-cost-approve'),
+    ).toContainText('$1.00');
     // The pause form asks for the input; its reason doesn't repeat it.
     await expect(dialog.getByTestId('pipeline-run-pause-form')).toBeVisible();
     await expect(
@@ -369,6 +415,19 @@ test('Cloud runs list, open and answer their controls over the web core', async 
     ).toHaveText('success', { timeout: 30_000 });
     await closeRun(window);
     await expect(runRow(window, rerun)).toBeVisible();
+
+    // A step's child run shows under it with its workflow and status, and
+    // opens as a run of its own; it has no feed row of its own.
+    await expect(runRow(window, childId)).toHaveCount(0);
+    const parentDialog = await openRun(window, parent);
+    const childRow = parentDialog.getByTestId('pipeline-step-child-review');
+    await expect(childRow).toContainText('Code review');
+    await expect(childRow).toContainText('running');
+    await parentDialog.getByTestId('pipeline-step-drill-review').click();
+    await expect(parentDialog).toContainText('Scan the diff', {
+      timeout: 30_000,
+    });
+    await closeRun(window);
 
     // Signing out forgets the account's cloud runs; this computer's stays.
     await window.evaluate(() => window.api.clearCanopyCloudApiKey());

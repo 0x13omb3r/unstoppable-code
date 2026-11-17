@@ -31,7 +31,7 @@ import {
 import { REPLAY_BLOCK_CLASS } from '../../lib/replay-privacy';
 import { DownloadIcon, ExternalIcon } from '../../icons/AppIcons';
 import { BUBBLE_ACTION_GLYPH_PX } from '../bubble-badge';
-import { Button } from '../Button';
+import { ControlButton, Button } from '../Button';
 import { Tooltip } from '../Tooltip';
 import {
   AGENT_VISUAL_MODIFIER_KEYS,
@@ -730,16 +730,15 @@ export function AgentVisualFrame(
               // Over the visual at rest: it sees the pointer arrive, and it is
               // the control a keyboard, a tap, or a visual that needs a click
               // opens the visual with.
-              <button
+              <ControlButton
                 type="button"
                 data-testid={props.testIds.interactButton}
                 aria-label={`Interact with ${props.title}`}
                 onPointerMove={letPointerIn}
                 onWheel={letRestingPointerIn}
                 onClick={activate}
-                className={`focus-ring focus-ring-inset absolute inset-0 bg-transparent ${
-                  needsClick ? 'cursor-pointer' : 'cursor-default'
-                }`}
+                presentation="agent-frame-activate"
+                appearance={{ needsClick }}
               />
             ) : null}
           </>

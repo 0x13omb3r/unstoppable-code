@@ -228,7 +228,7 @@ export function PublishedArtifactsManager(): JSX.Element {
                   <p className="mt-0.5 text-xs fg-secondary">
                     Featured {formatDate(item.publishedAt)}
                     {item.publishedStale && (
-                      <span className="ml-2 fg-warning">
+                      <span className="pl-2 fg-warning">
                         Source changed since — update the snapshot
                       </span>
                     )}

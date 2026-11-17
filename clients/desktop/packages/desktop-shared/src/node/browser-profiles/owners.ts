@@ -1,6 +1,10 @@
 import { BrowserProfileError } from '@canopy/desktop-shared/browser-profile-error';
 import { join } from 'node:path';
 import {
+  APP_ADVISOR_PROJECT_ID,
+  isBotProjectId,
+} from '@canopy/protocol/chat-targets';
+import {
   isProfileId,
   isProfileRecord,
   type BrowserTaskScope,
@@ -51,12 +55,14 @@ async function ownersInWorkspace(
   type: string,
   allowMissing = false,
 ): Promise<BrowserTaskOwner[]> {
-  const advisor = projectId === 'app-advisor';
-  const entries = advisor || type === 'cowork';
+  const botProject = isBotProjectId(projectId);
+  // Default Bot only: its task scope has no Bot ID field.
+  const advisor = projectId === APP_ADVISOR_PROJECT_ID;
+  const entries = botProject || type === 'cowork';
   const value = await readProfileJson(
     join(
       dataRoot,
-      advisor ? 'app-workspaces' : 'workspaces',
+      botProject ? 'app-workspaces' : 'workspaces',
       projectId,
       entries ? 'work-entries.json' : 'worktrees.json',
     ),
@@ -100,11 +106,9 @@ export async function resolveBrowserTaskOwner(
       'invalid_request',
       'Invalid browser task identity.',
     );
-  const type =
-    projectId === 'app-advisor'
-      ? 'cowork'
-      : (await workspaceRows(dataRoot)).find((row) => row.id === projectId)
-          ?.type;
+  const type = isBotProjectId(projectId)
+    ? 'cowork'
+    : (await workspaceRows(dataRoot)).find((row) => row.id === projectId)?.type;
   if (!type) return null;
   return (
     (await ownersInWorkspace(dataRoot, projectId, type)).find(
@@ -123,11 +127,9 @@ export async function listBrowserTaskOwners(
       'invalid_request',
       'Invalid browser project identity.',
     );
-  const type =
-    projectId === 'app-advisor'
-      ? 'cowork'
-      : (await workspaceRows(dataRoot)).find((row) => row.id === projectId)
-          ?.type;
+  const type = isBotProjectId(projectId)
+    ? 'cowork'
+    : (await workspaceRows(dataRoot)).find((row) => row.id === projectId)?.type;
   return type
     ? ownersInWorkspace(dataRoot, projectId, type, allowMissingRegistry)
     : [];
@@ -186,7 +188,8 @@ export function browserTaskScopesForOwnerIds(
       workEntryId: worktreeId,
     },
   ];
-  if (projectId === 'app-advisor')
+  // Default Bot only: this legacy task scope has no Bot ID field.
+  if (projectId === APP_ADVISOR_PROJECT_ID)
     scopes.push({ kind: 'app_advisor_work_entry', workEntryId: worktreeId });
   return scopes;
 }

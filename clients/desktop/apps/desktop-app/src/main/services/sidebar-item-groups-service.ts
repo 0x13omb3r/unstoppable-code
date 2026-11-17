@@ -29,6 +29,7 @@ import type {
   CoworkWorkEntryData,
   WorktreeData,
 } from '@canopy/desktop-shared/types';
+import { isBotProjectId } from '@canopy/protocol/chat-targets';
 import {
   readSidebarItemGroups,
   readSidebarItemGroupsEnvelope,
@@ -955,10 +956,9 @@ async function reconcileRegistry<T extends SidebarGroupRegistryItem>(
     if (previousCount !== undefined)
       group.collapsed = resolveSidebarItemGroupCollapsed(group, previousCount);
   }
-  const config =
-    workspaceId === 'app-advisor'
-      ? undefined
-      : await readWorkspaceConfigDetailed(workspaceId);
+  const config = isBotProjectId(workspaceId)
+    ? undefined
+    : await readWorkspaceConfigDetailed(workspaceId);
   const manual = !(
     config?.authority === 'ok' && config.config.itemSortMode === 'last-updated'
   );

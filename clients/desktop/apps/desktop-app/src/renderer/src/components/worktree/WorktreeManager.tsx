@@ -17,7 +17,6 @@ import {
   type JSX,
 } from 'react';
 import {
-  APP_ADVISOR_PROJECT_ID,
   WORKSPACE_ROOT_REPO_ID,
   WORKSPACE_ROOT_REPO_NAME,
   type AgentModelConfig,
@@ -25,6 +24,7 @@ import {
   type MultiRepoSidebarItem,
   type SingleRepoSidebarItem,
 } from '@canopy/desktop-shared/types';
+import { isBotProjectId } from '@canopy/protocol/chat-targets';
 import { hasVisibleWorkspaceContent } from '@canopy/desktop-shared/lib/workspace-visibility';
 import type { PipelineRepoChoice } from '@/components/activity/PipelineTriggerModal';
 import { AddRepoToWorktreeModal } from './AddRepoToWorktreeModal';
@@ -366,7 +366,7 @@ export function WorktreeManager(): JSX.Element {
       const viewer = state.viewer;
       if (
         viewer === null ||
-        viewer.workspaceId === APP_ADVISOR_PROJECT_ID ||
+        isBotProjectId(viewer.workspaceId) ||
         isCoworkChatTarget(viewer.workspaceId)
       ) {
         return null;
@@ -393,7 +393,7 @@ export function WorktreeManager(): JSX.Element {
     const overview = state.overview;
     if (
       overview === null ||
-      overview.workspaceId === APP_ADVISOR_PROJECT_ID ||
+      isBotProjectId(overview.workspaceId) ||
       isCoworkChatTarget(overview.workspaceId)
     ) {
       return null;

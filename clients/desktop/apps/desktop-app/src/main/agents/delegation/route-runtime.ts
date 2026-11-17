@@ -35,7 +35,9 @@ import type { BrowserWindow } from 'electron';
 import type {
   AgentDelegationResult,
   AgentDelegationSpawnRequest,
+  ManagedDelegationSurface,
 } from '@canopy/protocol/delegation';
+import { getManagedDelegationSurfacePolicy } from '@canopy/protocol/delegation';
 import type {
   DelegationParentContext,
   ResolvedAgentRouteSnapshot,
@@ -151,7 +153,7 @@ import {
   type PreparedDelegationCapabilities,
 } from './capability-grant';
 import { DelegationNativePolicy } from './native-policy';
-import { resolveDelegationGitAccess } from './git-access';
+import { NO_GIT_ACCESS, resolveDelegationGitAccess } from './git-access';
 import { BRAND } from '@canopy/brand/current';
 import { resolveIsolatedDelegationSetupHint } from './setup-hint';
 import {
@@ -226,6 +228,7 @@ interface CapturedInvocation {
 interface DelegationRunSession {
   readonly context: LocalDelegationContext;
   readonly owner: AgentSessionOptions;
+  readonly surface: ManagedDelegationSurface;
   captured: CapturedInvocation;
   readonly cwd: string;
   readonly isolated: boolean;
@@ -1460,6 +1463,10 @@ export class DelegationRouteRuntime {
     context: LocalDelegationContext,
   ): Promise<DelegationRunSession> {
     const { parent, route, delegationId } = context.request;
+    // The broker supplies no surface until a non-Code surface is enabled;
+    // omission is the Code surface.
+    const surface = context.request.surface ?? 'worktree-chat';
+    const surfacePolicy = getManagedDelegationSurfacePolicy(surface);
     const cwd = await fs.realpath(context.request.cwd);
     const owner = this.options.owner(parent);
     const captured = route.routeId
@@ -1571,7 +1578,11 @@ export class DelegationRouteRuntime {
     const tools = new DelegationNativePolicy({
       cwd,
       ...(route.harnessId === 'codex'
-        ? { gitAccess: await resolveDelegationGitAccess(cwd, context.signal) }
+        ? {
+            gitAccess: surfacePolicy.allowGitObservation
+              ? await resolveDelegationGitAccess(cwd, context.signal)
+              : NO_GIT_ACCESS,
+          }
         : {}),
       approval,
       delegationId,
@@ -1614,6 +1625,7 @@ export class DelegationRouteRuntime {
     return {
       context,
       owner,
+      surface,
       captured,
       cwd,
       isolated,
@@ -1642,6 +1654,7 @@ export class DelegationRouteRuntime {
   ): Promise<PreparedDelegationCapabilityRuntime> {
     const { context } = session;
     const { parent, route, delegationId } = context.request;
+    const surfacePolicy = getManagedDelegationSurfacePolicy(session.surface);
     const index = session.preparations;
     session.preparations += 1;
     const readRoots: string[] = [];
@@ -1784,9 +1797,12 @@ export class DelegationRouteRuntime {
                   ? 'codex'
                   : 'claude',
         isolated: session.isolated,
+        surface: session.surface,
         parentCwd: session.owner.cwd,
         executionCwd: session.cwd,
-        codeGraphAvailable: isCodeGraphAvailableForWorkspace(parent.projectId),
+        codeGraphAvailable:
+          surfacePolicy.allowWorktree &&
+          isCodeGraphAvailableForWorkspace(parent.projectId),
         getWindow: this.options.getWindow,
         // A WatchCommand probe is approved like the child's own commands.
         authorizeCommand: (command, callId, signal) =>

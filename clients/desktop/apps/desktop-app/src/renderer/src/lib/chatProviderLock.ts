@@ -5,12 +5,12 @@ import type {
   ModelHarness,
 } from '@canopy/desktop-shared/types';
 import {
-  APP_ADVISOR_PROJECT_ID,
   canSwitchProviderInPlace,
   getProviderForModel,
   inferLegacyExecutionHarness,
   isTerminalBackedInterfaceMode,
 } from '@canopy/desktop-shared/types';
+import { isBotProjectId } from '@canopy/protocol/chat-targets';
 import { getProviderLabel } from '@/lib/providerLabels';
 import type { ChatTab } from '@/stores/chat/types';
 
@@ -216,7 +216,7 @@ function checkProviderChange(
   }
   if (
     !pairAllowed(sourceProvider, targetProvider) ||
-    projectId === APP_ADVISOR_PROJECT_ID ||
+    (projectId !== undefined && isBotProjectId(projectId)) ||
     isTerminalBackedInterfaceMode(tab.interfaceMode)
   ) {
     return {

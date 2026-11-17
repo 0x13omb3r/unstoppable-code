@@ -7,10 +7,8 @@ import type {
   RepoBranchInfo,
   SidebarItem,
 } from '@canopy/desktop-shared/types';
-import {
-  APP_ADVISOR_PROJECT_ID,
-  SINGLE_REPO_USAGE_REPO_ID,
-} from '@canopy/desktop-shared/types';
+import { SINGLE_REPO_USAGE_REPO_ID } from '@canopy/desktop-shared/types';
+import { isBotProjectId } from '@canopy/protocol/chat-targets';
 import type {
   CancelGitActionResponse,
   CommitAndPushResponse,
@@ -4066,9 +4064,9 @@ export const useGitHubStore = create<GitHubState>((set, get) => ({
 
   hydratePersistedPrStatuses: (items): void => {
     const prStatuses: Record<string, WorktreePrStatus | null> = {};
-    // Cowork and App Advisor list no work entries here, so their failures
-    // are kept per project: a chat's git failure shows on its own page.
-    const coworkPrefixes: string[] = [`${APP_ADVISOR_PROJECT_ID}/`];
+    // Cowork and Bot chats list no work entries here, so their failures are
+    // kept per project: a chat's git failure shows on its own page.
+    const coworkPrefixes: string[] = [];
     for (const item of items) {
       if (item.type === 'cowork') {
         coworkPrefixes.push(`${item.id}/`);
@@ -4086,9 +4084,15 @@ export const useGitHubStore = create<GitHubState>((set, get) => ({
     // confirmed set so a `null` written here is not mistaken for a
     // live-confirmed "no PR" until a fresh event actually arrives (CAN-3053
     // finding 8).
-    const live = (key: string): boolean =>
-      key in prStatuses ||
-      coworkPrefixes.some((prefix) => key.startsWith(prefix));
+    // Any Bot: retain project-scoped failures outside the workspace index.
+    const live = (key: string): boolean => {
+      const separator = key.indexOf('/');
+      return (
+        key in prStatuses ||
+        (separator > 0 && isBotProjectId(key.slice(0, separator))) ||
+        coworkPrefixes.some((prefix) => key.startsWith(prefix))
+      );
+    };
     for (const key of gitFailureAttempts.keys()) {
       if (!live(key)) {
         gitFailureAttempts.delete(key);

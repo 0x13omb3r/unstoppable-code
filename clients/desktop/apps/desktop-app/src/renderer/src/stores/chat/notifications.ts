@@ -1,6 +1,7 @@
 // Unread-chat toasts, OS notifications, and delayed Claude unread
 // notification scheduling. Owns the delayed-notification timer registry.
 import { CHAT_LABEL, ORCHESTRATOR_LABEL, chatTabLabel } from '@canopy/protocol';
+import { isBotProjectId } from '@canopy/protocol/chat-targets';
 import {
   getUnreadChatFallbackMessage,
   getUnreadChatLabel,
@@ -41,7 +42,6 @@ import {
 import { worktreeKey } from './utils';
 import {
   canReceiveWorktreeChatActivity,
-  isAppAdvisorChatTarget,
   isAppAdvisorWindowFocused,
 } from './surface';
 import { isChatAgentResponseEvent } from './unread-previews';
@@ -88,14 +88,13 @@ export interface UnreadChatToastOptions {
 /**
  * The originating space and typed meaning of a chat notification (CAN-3615).
  * Questions and plans awaiting review need the user; a finished turn is
- * routine unless it failed. App Advisor chats belong to no space.
+ * routine unless it failed. Bot chats belong to no space.
  * Plan-explore and code-review chats count toward their real worktree.
  */
 export function chatNotificationScope(
   options: UnreadChatToastOptions,
 ): ScopedNotificationDescriptor | undefined {
-  if (isAppAdvisorChatTarget(options.projectId, options.worktreeId))
-    return undefined;
+  if (isBotProjectId(options.projectId)) return undefined;
   const target =
     options.projectId === PLAN_EXPLORE_CHAT_PROJECT_ID
       ? findPlanExploreTarget(options.worktreeId)
@@ -342,7 +341,7 @@ export function getUnreadChatToastContext(
   // Name the chat as its tab does: a rename, then the generated description,
   // then the raw title callers pass.
   const chatTitle = tab ? chatTabLabel(tab) : options.chatTitle;
-  if (isAppAdvisorChatTarget(options.projectId, options.worktreeId)) {
+  if (isBotProjectId(options.projectId)) {
     const chatLabel = getUnreadChatLabel(chatTitle);
     const message = options.agentResponsePreview
       ? `${ORCHESTRATOR_LABEL}${chatLabel}: ${options.agentResponsePreview}`
@@ -535,7 +534,7 @@ export async function navigateToWorktreeChat(
 export async function navigateToUnreadChat(
   options: WorktreeChatNavigationTarget,
 ): Promise<void> {
-  if (isAppAdvisorChatTarget(options.projectId, options.worktreeId)) {
+  if (isBotProjectId(options.projectId)) {
     await window.api.appAdvisor.openWindow({
       chatId: options.chatId,
       focus: true,
@@ -707,13 +706,10 @@ function deliverUnreadChatToast(options: UnreadChatToastOptions): void {
 /**
  * A finished turn (successful or failed) in a worktree, Cowork, automation,
  * plan-explore, or code-review chat. Plans and questions wait on the user, and
- * App Advisor is excluded from the notification offer (CAN-4005).
+ * Bot chats are excluded from the notification offer (CAN-4005).
  */
 function isChatTurnCompletion(options: UnreadChatToastOptions): boolean {
-  return (
-    options.reason === 'activity' &&
-    !isAppAdvisorChatTarget(options.projectId, options.worktreeId)
-  );
+  return options.reason === 'activity' && !isBotProjectId(options.projectId);
 }
 
 /**
@@ -729,7 +725,7 @@ export function getChatToastAttribution(target: WorktreeChatNavigationTarget): {
   const onClick = (): void => {
     void navigateToUnreadChat(target);
   };
-  if (isAppAdvisorChatTarget(target.projectId, target.worktreeId)) {
+  if (isBotProjectId(target.projectId)) {
     // No projectId: githubStore titles the OS notification "Orchestrator" only
     // for chat toasts without one.
     return { meta: { workspaceName: ORCHESTRATOR_LABEL }, onClick };
@@ -818,17 +814,14 @@ function deliverChatActivityNotification(
   if (notificationScope && !isScopedNotificationDeliverable(notificationScope))
     return;
 
-  const isAppAdvisorToast = isAppAdvisorChatTarget(
-    options.projectId,
-    options.worktreeId,
-  );
+  const isBotToast = isBotProjectId(options.projectId);
   const { message: body } = getUnreadChatToastContext(options);
 
   maybeFireOsNotification({
-    title: isAppAdvisorToast ? ORCHESTRATOR_LABEL : CHAT_LABEL,
+    title: isBotToast ? ORCHESTRATOR_LABEL : CHAT_LABEL,
     body,
     category: 'Chat',
-    ...(isAppAdvisorToast
+    ...(isBotToast
       ? { visible: isAppAdvisorWindowFocused() }
       : {
           projectId: options.projectId,

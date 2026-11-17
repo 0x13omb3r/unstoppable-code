@@ -141,7 +141,7 @@ export function DiffViewer({
     return (
       <div className="flex min-h-0 flex-1 items-center justify-center">
         <DelayedLoadingPlaceholder>
-          <CenteredLoadingSpinner className="my-12" />
+          <CenteredLoadingSpinner spacing="section" />
         </DelayedLoadingPlaceholder>
       </div>
     );
@@ -224,7 +224,9 @@ export function DiffViewer({
             </Button>
           </Surface>
           {filesTruncated ? (
-            <DiffBoundNotice kind="truncated" className="m-2 shrink-0" />
+            <div className="p-2">
+              <DiffBoundNotice kind="truncated" className="shrink-0" />
+            </div>
           ) : null}
           <div className="min-h-0 flex-1 overflow-auto">
             <DiffFileTree
@@ -257,10 +259,14 @@ export function DiffViewer({
         )}
         {filesTruncated && filesCollapsed ? (
           // The list's own notice folds away with it; keep it in view.
-          <DiffBoundNotice kind="truncated" className="m-2 shrink-0" />
+          <div className="p-2">
+            <DiffBoundNotice kind="truncated" className="shrink-0" />
+          </div>
         ) : null}
         {patchOversized ? (
-          <DiffBoundNotice kind="oversized" className="m-2 shrink-0" />
+          <div className="p-2">
+            <DiffBoundNotice kind="oversized" className="shrink-0" />
+          </div>
         ) : null}
         {patchBinary ? (
           <DiffBinaryState />

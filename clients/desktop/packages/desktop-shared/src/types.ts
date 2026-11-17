@@ -18,7 +18,10 @@ import type {
   CoworkFolderStatus,
   CoworkFolderMissing,
   CoworkUnstartedSend,
+  CloudModelChoice,
+  CloudModelPreflightResult,
   PipelineSchedule,
+  PipelineScheduleDestination,
 } from '@canopy/protocol/canopy-core';
 import type {
   FeedbackReportContext,
@@ -498,6 +501,7 @@ import type {
   PersonalOrganizationPromotionOutcome,
   PersonalProject,
   PersonalProjectConversionRequest,
+  PersonalProjectStatusRequest,
   PersonalProjectOperation,
   SendOrganizationInviteRequest,
   UpgradePersonalOrganizationRequest,
@@ -1796,9 +1800,9 @@ export interface PersonalOrganizationUpgradeApi {
   convert(
     request: PersonalProjectConversionRequest,
   ): Promise<PersonalProjectOperation>;
-  status(request: {
-    operationId: string;
-  }): Promise<PersonalProjectOperation | null>;
+  status(
+    request: PersonalProjectStatusRequest,
+  ): Promise<PersonalProjectOperation | null>;
 }
 
 /** Result envelope for hosted settings IPC; errors cross as plain data. */
@@ -17517,17 +17521,20 @@ export const NO_BILLING_SOURCE_ERROR_CODE = 'no_billing_source' as const;
  * `resolveAiCreditsCoverage` / `openBillingPage` were extracted.
  *
  * `NoBillingSourceBanner` states the same thing but cannot share this string: it
- * renders the "Connect {provider}" and "Buy AI Credits" remedies as interactive
- * elements rather than prose. `no-billing-source-copy.test.ts` asserts the two stay in step.
+ * renders the "Connect {provider}" and provider-choice remedies as interactive
+ * elements rather than prose. Keep the two in step by hand; no test pins them.
+ *
+ * Recovery copy offers provider choice and never sells: credits are one
+ * provider among peers (docs/ux-writing/labels.md#ai-credits-purchases).
+ * Nothing matches this sentence by text — the abort is recognized by
+ * {@link NO_BILLING_SOURCE_ERROR_CODE} — so transcripts persisted with the
+ * earlier wording ("…or buy AI Credits to start chatting.") still render and
+ * classify the same way.
  *
  * @param providerLabel User-facing provider name, e.g. `'Claude'` / `'Codex'`.
- * @param brandName Injected brand display name; never hard-code a product name.
  */
-export function buildNoBillingSourceError(
-  providerLabel: string,
-  brandName: string,
-): string {
-  return `You're not connected to ${providerLabel} and have no ${brandName} AI Credits. Connect ${providerLabel} or buy AI Credits to start chatting.`;
+export function buildNoBillingSourceError(providerLabel: string): string {
+  return `You're not connected to ${providerLabel} and have no credits. Connect ${providerLabel} or choose another provider to start chatting.`;
 }
 
 /**
@@ -18481,7 +18488,79 @@ export interface AutomationCloudScheduleStub {
    * retry replays the server's answer instead of finding the record gone.
    */
   moveBackKey?: string;
+  /**
+   * The destination the record had here, when the move re-pointed it at a
+   * cloud project or task (CAN-6917): a move back restores it, since a
+   * cloud project's id names nothing on this computer.
+   */
+  localDestination?: AutomationCloudScheduleLocalDestination;
+  /**
+   * Set while the server record exists but is held off until the move
+   * finishes its model check (CAN-6917); moving again resumes it.
+   */
+  enabling?: true;
 }
+
+/** A `worktree_pipeline` action's destination fields, as stored here. */
+export interface AutomationCloudScheduleLocalDestination {
+  target?: Extract<AutomationAction, { type: 'worktree_pipeline' }>['target'];
+  workspaceId?: string;
+  baseWorktreeId?: string;
+  repoId?: string;
+}
+
+/** Where a schedule may run: this computer, or the cloud (CAN-6917). */
+export type AutomationScheduleLocation = 'local' | 'cloud';
+
+/** A cloud place a schedule's destination may be re-pointed at. */
+export interface AutomationCloudDestinationCandidate {
+  destination: PipelineScheduleDestination;
+  /** The cloud project's name, and the task's when it names one. */
+  label: string;
+}
+
+/** Moves a workflow schedule to the cloud or back (the Run in control). */
+export interface AutomationScheduleMoveRequest {
+  id: string;
+  to: AutomationScheduleLocation;
+  /** The cloud project or task the person picked, when the move asked. */
+  destination?: PipelineScheduleDestination;
+  /**
+   * Replacements for model steps the cloud can't run, when the move asked,
+   * with the preflight they were chosen for: a workflow or model policy
+   * that changed since asks again.
+   */
+  models?: AutomationScheduleMoveModels;
+}
+
+/** Confirmed cloud models, bound to the preflight the person reviewed. */
+export interface AutomationScheduleMoveModels {
+  definitionHash: string;
+  policyFingerprint: string;
+  choices: CloudModelChoice[];
+}
+
+/**
+ * A move's answer. Besides success and a refusal, a move to the cloud may
+ * ask the person to pick a cloud destination (nothing moved yet), or
+ * replacements for model steps the cloud can't run (the schedule is paused
+ * here and held off in the cloud meanwhile; moving back undoes it). Either
+ * way the move is sent again with the choice.
+ */
+export type AutomationScheduleMoveResponse =
+  | AutomationMutationResponse
+  | {
+      ok: false;
+      needs: 'destination';
+      error: string;
+      candidates: AutomationCloudDestinationCandidate[];
+    }
+  | {
+      ok: false;
+      needs: 'models';
+      error: string;
+      preflight: CloudModelPreflightResult;
+    };
 
 /** Author-side link from a local automation to its Canopy Cloud share. */
 export interface AutomationRemoteMetadata {
@@ -18991,6 +19070,14 @@ export interface AutomationsApi {
    * it to the active history view without waiting for the next broadcast.
    */
   runNow(request: AutomationRunNowRequest): Promise<AutomationMutationResponse>;
+  /**
+   * Moves a workflow schedule to the cloud or back to this computer (the
+   * Run in control, CAN-6917). A move to the cloud may ask for a cloud
+   * destination or model replacements first.
+   */
+  moveSchedule(
+    request: AutomationScheduleMoveRequest,
+  ): Promise<AutomationScheduleMoveResponse>;
   cancelRun(
     request: AutomationCancelRunRequest,
   ): Promise<AutomationMutationResponse>;
@@ -23910,18 +23997,6 @@ export type AppAdvisorAction =
     }
   | { type: 'worktree.select'; projectId: string; worktreeId: string }
   | {
-      type: 'worktree.archive';
-      projectId: string;
-      worktreeId: string;
-      deleteBranch: boolean;
-      /**
-       * Which confirmation opens: `delete` (default) keeps the removed work
-       * for the project's retention window; `archive` keeps it until the
-       * user deletes it. The dialog has no mode switch of its own.
-       */
-      mode?: 'delete' | 'archive';
-    }
-  | {
       type: 'worktree.create';
       workspaceId: string;
       baseWorktreeId?: string;
@@ -24576,11 +24651,6 @@ export type AppAdvisorAction =
       projectId: string;
       workEntryId: string;
       title: string | null;
-    }
-  | {
-      type: 'standalone-chat.delete_work_entry';
-      projectId: string;
-      workEntryId: string;
     }
   | {
       type: 'standalone-chat.send_message';
@@ -28719,6 +28789,11 @@ export const IPC_CHANNELS = {
   automationsDelete: 'automations:delete',
   automationsRunNow: 'automations:run-now',
   automationsCancelRun: 'automations:cancel-run',
+  //  - `automationsMoveSchedule` (renderer → main `invoke`, CAN-6917): the
+  //    Run in control moves a workflow schedule to the cloud or back; takes
+  //    {@link AutomationScheduleMoveRequest} and resolves with
+  //    {@link AutomationScheduleMoveResponse}.
+  automationsMoveSchedule: 'automations:move-schedule',
   automationsGenerateCron: 'automations:generate-cron',
   automationsGenerateIfCommand: 'automations:generate-if-command',
   automationsChanged: 'automations:changed',
@@ -28819,6 +28894,8 @@ export const IPC_CHANNELS = {
   remoteControlRespondToPairing: 'remote-control:respond-to-pairing',
   remoteControlForgetDevice: 'remote-control:forget-device',
   remoteControlDisconnectController: 'remote-control:disconnect-controller',
+  // Updates a paired computer that runs an older protocol (CAN-5899).
+  remoteControlUpdateHost: 'remote-control:update-host',
   remoteControlInvoke: 'remote-control:invoke',
   remoteControlSend: 'remote-control:send',
   remoteControlPush: 'remote-control:push',

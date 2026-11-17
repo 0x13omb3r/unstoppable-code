@@ -201,6 +201,7 @@ export {
   hasUnpulledCommits,
   hasUnpushedCommits,
   pushBranch,
+  pushCommitToBranch,
   resetRemoteDefaultBranchCacheForTests,
   stageAllChanges,
 } from '@canopy/desktop-shared/lib/git';
@@ -5122,6 +5123,36 @@ export async function pushBranchToOriginNonInteractive(
     timeoutMs: SHARED_CONTAINER_GIT_PUSH_TIMEOUT_MS,
     nonInteractive: true,
   });
+}
+
+/** Every configured value of a git config key; empty when it isn't set. */
+async function getConfigValues(
+  repoPath: string,
+  key: string,
+): Promise<string[]> {
+  try {
+    const output = await runGit(['config', '--get-all', key], repoPath);
+    return output
+      .split('\n')
+      .map((line) => line.trim())
+      .filter((line) => line !== '');
+  } catch (error) {
+    // `git config --get-all` exits 1 when the key isn't set.
+    if (getErrorExitCode(error) === 1) return [];
+    throw error;
+  }
+}
+
+/**
+ * Every URL a push to origin goes to (CAN-6869): its configured push URLs
+ * when any is set, else every one of its URLs, as git pushes to each. The
+ * values are as configured, before the user's own url.*.insteadOf rewriting.
+ */
+export async function getOriginPushUrls(repoPath: string): Promise<string[]> {
+  const pushUrls = await getConfigValues(repoPath, 'remote.origin.pushurl');
+  return pushUrls.length > 0
+    ? pushUrls
+    : getConfigValues(repoPath, 'remote.origin.url');
 }
 
 /**

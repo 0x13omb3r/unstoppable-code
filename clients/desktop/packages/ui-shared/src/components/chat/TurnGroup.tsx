@@ -1,3 +1,4 @@
+import { DisclosureToggle } from '../Disclosure';
 import { Stack } from '../Stack';
 import { useEffect, useState, type JSX, type ReactNode } from 'react';
 import { ChevronDownIcon, ChevronRightIcon } from '../../icons';
@@ -111,12 +112,11 @@ export function TurnGroup({
         data-reverted="true"
         data-reverted-collapsed="true"
       >
-        <button
-          type="button"
+        <DisclosureToggle
+          variant="reverted-turn"
           onClick={(): void => setIsRevertedCollapsed(false)}
-          aria-expanded={false}
+          open={false}
           aria-label="Expand reverted turn"
-          className="focus-ring flex w-full items-center gap-2 rounded-md border bg-fg-primary/[0.02] px-3 py-1.5 text-left text-xs fg-secondary transition-colors hover:bg-fg-primary/[0.04]"
         >
           <span className="flex-shrink-0">
             <ChevronRightIcon />
@@ -125,7 +125,7 @@ export function TurnGroup({
           {revertedPreview ? (
             <span className="truncate">— {revertedPreview}</span>
           ) : null}
-        </button>
+        </DisclosureToggle>
       </div>
     );
   }
@@ -133,12 +133,11 @@ export function TurnGroup({
   const content = (
     <>
       {reverted && (
-        <button
-          type="button"
+        <DisclosureToggle
+          variant="reverted-turn"
           onClick={(): void => setIsRevertedCollapsed(true)}
-          aria-expanded={true}
+          open={true}
           aria-label="Collapse reverted turn"
-          className="focus-ring flex w-full items-center gap-2 rounded-md border bg-fg-primary/[0.02] px-3 py-1.5 text-left text-xs fg-secondary transition-colors hover:bg-fg-primary/[0.04]"
         >
           <span className="flex-shrink-0">
             <ChevronDownIcon />
@@ -147,7 +146,7 @@ export function TurnGroup({
           {revertedPreview ? (
             <span className="truncate">— {revertedPreview}</span>
           ) : null}
-        </button>
+        </DisclosureToggle>
       )}
       {userBubble}
 

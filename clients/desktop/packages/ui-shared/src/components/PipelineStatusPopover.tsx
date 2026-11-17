@@ -322,7 +322,7 @@ export function PipelineStatusPopover({
                   {(runtime ||
                     (entry.runningJobs && entry.runningJobs.length > 0) ||
                     (entry.failedJobs && entry.failedJobs.length > 0)) && (
-                    <div className="ml-3 mt-0.5 flex flex-col gap-px">
+                    <div className="pl-3 mt-0.5 flex flex-col gap-px">
                       {runtime && (
                         <div className="text-3xs fg-secondary">{runtime}</div>
                       )}

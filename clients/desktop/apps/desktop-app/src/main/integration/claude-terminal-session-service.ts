@@ -1,6 +1,10 @@
 import { serializeVisibleReadMessage } from '@canopy/desktop-shared/lib/chat-history-serialization';
 import { chatAddressPrompt } from '@canopy/desktop-shared/lib/chat-address-prompt';
-import { APP_ADVISOR_BOT_ID } from '@canopy/desktop-shared/lib/bot-discovery';
+import {
+  APP_ADVISOR_BOT_ID,
+  botIdForProjectId,
+  isBotProjectId,
+} from '@canopy/protocol/chat-targets';
 import { resolveCoworkWorkspaceId } from '../lib/cowork-migration-map';
 import {
   type ActiveChatInputProvider,
@@ -37,7 +41,6 @@ import type { BrowserWindow } from 'electron';
 import type { WorkOwner } from '@canopy/protocol/llm-gateway';
 import { WORKER_TERMINAL_LOST_SIGNAL } from '@canopy/protocol/canopy-core';
 import {
-  APP_ADVISOR_PROJECT_ID,
   IPC_CHANNELS,
   ClaudeTerminalLaunchError,
   STANDALONE_CHAT_PROJECT_ID,
@@ -681,8 +684,7 @@ function isAppAdvisorTerminalRequest(
   request: ClaudeTerminalLaunchRequest,
 ): boolean {
   return (
-    request.assistantMode === 'app-advisor' ||
-    request.projectId === APP_ADVISOR_PROJECT_ID
+    request.assistantMode === 'app-advisor' || isBotProjectId(request.projectId)
   );
 }
 
@@ -713,7 +715,7 @@ function emptyTurnUsage(): RuntimeRecord['turnUsage'] {
 function shouldCaptureTerminalTurnDiff(record: RuntimeRecord): boolean {
   return (
     !isCoworkWorkspace(record.projectId) &&
-    record.projectId !== APP_ADVISOR_PROJECT_ID &&
+    !isBotProjectId(record.projectId) &&
     record.assistantMode !== 'app-advisor'
   );
 }
@@ -1039,10 +1041,9 @@ export class DefaultClaudeTerminalSessionService implements ClaudeTerminalSessio
         watcherRuntimeGeneration: randomUUID(),
         state: tab.claudeTerminal ?? { turnState: 'exited' },
         interfaceMode: tab.interfaceMode ?? 'claude-code',
-        assistantMode:
-          target.projectId === APP_ADVISOR_PROJECT_ID
-            ? 'app-advisor'
-            : 'default',
+        assistantMode: isBotProjectId(target.projectId)
+          ? 'app-advisor'
+          : 'default',
         planMode: false,
         auditTurnOpen: false,
         turnUsage: emptyTurnUsage(),
@@ -1057,10 +1058,9 @@ export class DefaultClaudeTerminalSessionService implements ClaudeTerminalSessio
         ) &&
         tab.sdkSessionId
       ) {
-        const cwd =
-          target.projectId === APP_ADVISOR_PROJECT_ID
-            ? getAppAdvisorHomeDir()
-            : resolveWorktreeCwd(target.projectId, target.worktreeId);
+        const cwd = isBotProjectId(target.projectId)
+          ? getAppAdvisorHomeDir()
+          : resolveWorktreeCwd(target.projectId, target.worktreeId);
         const transcriptPath = await resolveClaudeCodeSessionTranscriptPath(
           tab.sdkSessionId,
           cwd,
@@ -1460,6 +1460,9 @@ export class DefaultClaudeTerminalSessionService implements ClaudeTerminalSessio
     }
 
     const appAdvisorMode = isAppAdvisorTerminalRequest(request);
+    const botId =
+      botIdForProjectId(request.projectId) ??
+      (request.assistantMode === 'app-advisor' ? APP_ADVISOR_BOT_ID : null);
     // Preserve the tab's auto mode instead of forcing `'claude-code'` —
     // the renderer derives the rendered surface from this value.
     const interfaceMode: ChatInterfaceMode =
@@ -1927,9 +1930,9 @@ export class DefaultClaudeTerminalSessionService implements ClaudeTerminalSessio
                   false,
                 ),
             chatAddressPrompt(
-              appAdvisorMode
+              botId
                 ? {
-                    botId: APP_ADVISOR_BOT_ID,
+                    botId,
                     taskId: request.worktreeId,
                     chatId: request.chatId,
                   }

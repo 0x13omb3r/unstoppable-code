@@ -1,10 +1,10 @@
 import type { CodeGraphPathResult } from '@canopy/desktop-shared/types/code-graph-tools';
 import {
-  APP_ADVISOR_PROJECT_ID,
   PIPELINE_EDITOR_PROJECT_ID,
   PIPELINE_EDITOR_WORKTREE_ID,
   WORKSPACE_ROOT_REPO_ID,
 } from '@canopy/desktop-shared/types';
+import { isBotProjectId } from '@canopy/protocol/chat-targets';
 import type {
   CodeGraphCommunityRecord,
   CodeGraphCustomLanguagesReport,
@@ -177,7 +177,7 @@ function guardRejectionMessage(
     return `${toolDisplayName} is only available for worktree chats, not standalone chats.`;
   }
   if (
-    projectId === APP_ADVISOR_PROJECT_ID ||
+    isBotProjectId(projectId) ||
     (projectId === PIPELINE_EDITOR_PROJECT_ID &&
       worktreeId === PIPELINE_EDITOR_WORKTREE_ID)
   ) {

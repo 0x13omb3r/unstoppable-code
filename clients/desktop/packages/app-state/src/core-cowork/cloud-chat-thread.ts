@@ -58,6 +58,40 @@ export interface CloudChatSession {
   readonly activeTurnId: string | null;
 }
 
+/**
+ * A v2 chat's conversation snapshot, as revision 3 of core.chat.snapshot.get
+ * carries it when asked for (CAN-6863).
+ */
+export interface CloudChatConversation {
+  readonly sessionId: string;
+  /** The REST conversation body, as JSON; the host parses it. */
+  readonly value: unknown;
+  /** The snapshot revision it was read at. */
+  readonly revision: number;
+}
+
+/**
+ * Parses a snapshot read. An unreadable conversation never fails the read:
+ * it is dropped, and the host reads the conversation its own way (CAN-6863).
+ */
+function parseSnapshotRead(
+  value: unknown,
+): ReturnType<typeof CoreChatSnapshotGetResultSchema.safeParse> {
+  const parsed = CoreChatSnapshotGetResultSchema.safeParse(value);
+  if (
+    parsed.success ||
+    typeof value !== 'object' ||
+    value === null ||
+    !('conversation' in value)
+  )
+    return parsed;
+  return CoreChatSnapshotGetResultSchema.safeParse(
+    Object.fromEntries(
+      Object.entries(value).filter(([key]) => key !== 'conversation'),
+    ),
+  );
+}
+
 /** A turn that stopped running, as the web core's runtime reported it. */
 export interface CloudChatSettledTurn {
   readonly turnId: string;
@@ -107,6 +141,16 @@ export interface CloudChatSendInput {
 
 export interface CloudChatThread {
   readonly target: CloudChatThreadTarget;
+  /**
+   * The conversation the thread's last snapshot read carried, while no later
+   * runtime change has arrived; null when it carried none (CAN-6863).
+   */
+  getConversation(): CloudChatConversation | null;
+  /**
+   * Reads the snapshot again and resolves with its conversation, or null when
+   * the read failed or carried none (CAN-6863).
+   */
+  readConversation(): Promise<CloudChatConversation | null>;
   send(input: CloudChatSendInput): Promise<void>;
   /** Loads the next older transcript page; resolves at once when none is left. */
   loadOlder(): Promise<void>;
@@ -185,6 +229,12 @@ export interface CloudChatThread {
 export interface BindCloudChatThreadOptions {
   readonly invoker: CoreCoworkInvoker;
   readonly target: CloudChatThreadTarget;
+  /**
+   * Whether the snapshot reads also ask for the chat's v2 conversation, for a
+   * host binding that reads it from the thread (CAN-6863). A core that does
+   * not serve it leaves it out, and the host reads it its own way.
+   */
+  readonly readConversation?: () => boolean;
   readonly chatStore: { getState(): ChatStoreState };
   readonly project: ProjectCloudChatMessages;
   readonly newId?: () => string;
@@ -434,6 +484,36 @@ export function bindCloudChatThread(
   let appliedRevision = -1;
   /** The revision that last set this chat's runtime. */
   let runtimeRevision = -1;
+  /** The conversation the last snapshot read carried (CAN-6863). */
+  let conversation: CloudChatConversation | null = null;
+  const snapshotParams = (): {
+    readonly scope: typeof scope;
+    readonly chatId: string;
+    readonly conversation?: true;
+  } => ({
+    scope,
+    chatId: target.chatId,
+    ...(options.readConversation?.() === true
+      ? { conversation: true as const }
+      : {}),
+  });
+  const conversationOf = (read: {
+    readonly revision: number;
+    readonly sessionId?: string;
+    readonly conversation?: unknown;
+  }): CloudChatConversation | null =>
+    read.conversation === undefined || read.sessionId === undefined
+      ? null
+      : {
+          sessionId: read.sessionId,
+          value: read.conversation,
+          revision: read.revision,
+        };
+  /** The last conversation, unless a runtime change has arrived since. */
+  const freshConversation = (): CloudChatConversation | null =>
+    conversation !== null && conversation.revision >= runtimeRevision
+      ? conversation
+      : null;
   let raw: unknown[] = [];
   let runtimeStatus = 'idle';
   /** The running turn's id as the web core reports it, if it does. */
@@ -1243,15 +1323,18 @@ export function bindCloudChatThread(
     const current = epoch;
     queueRead = (async (): Promise<void> => {
       try {
-        const reply = CoreChatSnapshotGetResultSchema.safeParse(
+        // Started from a settled promise: a request that throws at once
+        // still settles this read only after it is recorded as out.
+        const reply = parseSnapshotRead(
           unwrap(
-            await invoker.request('core.chat.snapshot.get', {
-              scope,
-              chatId: target.chatId,
-            }),
+            await Promise.resolve().then(() =>
+              invoker.request('core.chat.snapshot.get', snapshotParams()),
+            ),
           ),
         );
+        if (!reply.success) conversation = null;
         if (reply.success && !closed && current === epoch) {
+          conversation = conversationOf(reply.data);
           setQueue(queueOf(reply.data));
           // A continued chat's re-read names its new session, with that
           // session's runtime rather than the ended one's.
@@ -1273,7 +1356,9 @@ export function bindCloudChatThread(
           }
         }
       } catch {
-        // Kept: the next change or re-read reads it again.
+        // Kept: the next change or re-read reads it again. A host waiting on
+        // the conversation reads it its own way.
+        conversation = null;
       } finally {
         queueRead = null;
         if (queueReadAgain && !closed) {
@@ -1600,12 +1685,9 @@ export function bindCloudChatThread(
     stream = null;
     if (previous !== null) void previous.close();
     try {
-      const snapshot = CoreChatSnapshotGetResultSchema.safeParse(
+      const snapshot = parseSnapshotRead(
         unwrap(
-          await invoker.request('core.chat.snapshot.get', {
-            scope,
-            chatId: target.chatId,
-          }),
+          await invoker.request('core.chat.snapshot.get', snapshotParams()),
         ),
       );
       if (!snapshot.success) throw invalid('chat snapshot');
@@ -1614,6 +1696,7 @@ export function bindCloudChatThread(
       if (closed || current !== epoch) return;
       appliedRevision = snapshot.data.revision;
       runtimeRevision = snapshot.data.revision;
+      conversation = conversationOf(snapshot.data);
       const runtime = snapshot.data.runtimeByChatId[target.chatId];
       sessionId = snapshot.data.sessionId ?? null;
       runtimeStatus = runtime?.status ?? 'idle';
@@ -1996,6 +2079,18 @@ export function bindCloudChatThread(
     },
     isTurnRunning: () => reportedRunning,
     getSession: () => session,
+    getConversation: freshConversation,
+    readConversation: async () => {
+      if (closed) return null;
+      refreshQueue();
+      // A read already out was asked before this; the one it chains is not.
+      let pending = queueRead;
+      while (pending !== null) {
+        await pending;
+        pending = queueRead === pending ? null : queueRead;
+      }
+      return closed ? null : freshConversation();
+    },
     subscribeSession: (listener) => {
       sessionListeners.add(listener);
       return () => {

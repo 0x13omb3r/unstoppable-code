@@ -37,7 +37,7 @@ export function AccountDigestsPage({
       )}
       {/* Labeled group, so the raised rows below are read as the archive
           rather than as more of the request control above them. */}
-      <div className="mt-1 flex flex-col gap-3">
+      <div className="pt-1 flex flex-col gap-3">
         <Heading
           level={3}
           variant="title"

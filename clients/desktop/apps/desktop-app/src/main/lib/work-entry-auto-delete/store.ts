@@ -14,7 +14,11 @@ const armSchema = z.object({
   unmergedLocalBranchDelete: z.enum(['ask', 'error', 'force']),
   state: z.enum(['armed', 'awaiting-branch-confirmation']),
   armedAt: z.string().datetime(),
-  armedBy: z.object({ chatId: z.string().regex(/^[a-z0-9][a-z0-9-]*$/) }),
+  armedBy: z.object({
+    chatId: z.string().regex(/^[a-z0-9][a-z0-9-]*$/),
+    projectId: z.string().min(1).optional(),
+    worktreeId: z.string().min(1).optional(),
+  }),
   identity: z.object({
     createdAt: z.string().datetime(),
     branchName: z.string().optional(),

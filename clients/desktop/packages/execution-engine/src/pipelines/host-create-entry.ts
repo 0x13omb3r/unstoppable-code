@@ -12,6 +12,7 @@ import {
   SAFE_ID_RE,
   type HostInputParse,
 } from './host-actions';
+import { APP_ADVISOR_BOT_ID } from '@canopy/protocol/chat-targets';
 
 export interface CreateProjectEntryInputs {
   projectId: string;
@@ -129,7 +130,7 @@ export function parseCreateBotEntryInputs(
   inputs: Record<string, string | undefined>,
 ): HostInputParse<CreateBotEntryInputs> {
   const step = 'create-bot-entry';
-  const botId = presentInput(inputs, 'bot_id') ?? 'app_advisor';
+  const botId = presentInput(inputs, 'bot_id') ?? APP_ADVISOR_BOT_ID;
   if (!SAFE_BOT_ID_RE.test(botId)) {
     return {
       ok: false,

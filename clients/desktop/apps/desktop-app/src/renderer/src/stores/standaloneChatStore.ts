@@ -796,6 +796,7 @@ export const useStandaloneChatStore = create<StandaloneChatState>(
         name: ORCHESTRATOR_LABEL,
         createdAt: new Date(0).toISOString(),
       };
+      // Default Bot only: this scoped page loads the Orchestrator's settings.
       if (workspaceId === APP_ADVISOR_PROJECT_ID) {
         const [settings, prefs] = await Promise.all([
           window.api.appAdvisor.settingsLoad().catch(() => null),
@@ -860,10 +861,12 @@ export const useStandaloneChatStore = create<StandaloneChatState>(
     },
 
     applyScopedPreferences: (preferences): void => {
+      // Default Bot only: these preference changes target the Orchestrator page.
       if (get().scopedWorkspaceId !== APP_ADVISOR_PROJECT_ID) return;
       const defaultPluginSelections = preferences.appAdvisorPluginSelections;
       set((state) => ({
         chatProjects: state.chatProjects.map((project) =>
+          // Default Bot only: update the Orchestrator's synthesized project.
           project.id === APP_ADVISOR_PROJECT_ID
             ? {
                 ...project,

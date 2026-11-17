@@ -1,3 +1,4 @@
+import { createOrchestratorSettingsDraftClient } from './orchestrator-settings-client';
 import { isVoiceDictationPlatform } from '@canopy/desktop-shared/platform-capabilities';
 import type {
   AccountOrganizationSettingsApi,
@@ -220,6 +221,9 @@ export function createDesktopCapabilities(
     // Observed cost reads over the `cost:*` IPC.
     costInsights: true,
     providerQuotas: true,
+    // Claude/Codex/Cursor/Copilot sign-in and execution run in desktop main,
+    // so the provider-choice list can offer them here.
+    subscriptionProviders: true,
     // Repeat-task skill suggestions are detected and surfaced by main
     // (CAN-385); the flag and preference still gate what shows.
     skillSuggestions: true,
@@ -423,6 +427,7 @@ export function createDesktopCanopyClient(
     ...(settings ? { settings } : {}),
   });
   return Object.assign(client, {
+    orchestratorSettingsDraft: createOrchestratorSettingsDraftClient(),
     // Payment forms stay in the browser: purchases hand off to it.
     creditsHandoff: createDesktopCreditsHandoff(),
     autoDeleteAttentionReceipts: {
@@ -468,6 +473,7 @@ export function createDesktopCanopyClient(
   } satisfies Pick<
     CanopyClient,
     | 'creditsHandoff'
+    | 'orchestratorSettingsDraft'
     | 'autoDeleteAttentionReceipts'
     | 'capabilitiesFor'
     | 'listWorkEntryAutoDelete'

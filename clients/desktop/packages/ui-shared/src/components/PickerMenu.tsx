@@ -477,6 +477,8 @@ export type PickerMenuOptionTone = 'primary' | 'secondary' | 'accent';
 
 export interface PickerMenuOptionProps extends ButtonHTMLAttributes<HTMLButtonElement> {
   active?: boolean;
+  /** Distinguishes a keyboard-active option from the neutral hover surface. */
+  activeTone?: 'neutral' | 'accent';
   selected?: boolean;
   tone?: PickerMenuOptionTone;
   /**
@@ -542,6 +544,7 @@ export const PickerMenuOption = forwardRef<
 >(function PickerMenuOption(
   {
     active = false,
+    activeTone = 'neutral',
     className = '',
     selected = false,
     tone = 'primary',
@@ -555,6 +558,10 @@ export const PickerMenuOption = forwardRef<
   ref,
 ): JSX.Element {
   const textClassName = usePickerMenuTextClassName();
+  const accentActive = active && !selected && activeTone === 'accent';
+  const interactionClassName = accentActive
+    ? 'bg-accent-subtle fg-accent-strong hover:bg-accent-subtle focus-visible:bg-accent-subtle'
+    : 'hover:bg-subtle focus-visible:bg-subtle';
   return (
     <button
       {...props}
@@ -563,13 +570,17 @@ export const PickerMenuOption = forwardRef<
       data-active={active || undefined}
       data-selected={selected ? 'true' : undefined}
       data-tone={tone === 'primary' ? undefined : tone}
-      className={`canopy-picker-menu-option group/picker-option focus-ring flex min-h-8 w-full min-w-0 items-center gap-2 rounded-md px-2 py-2 text-left ${textClassName} font-normal transition-colors hover:bg-subtle focus-visible:bg-subtle disabled:cursor-not-allowed disabled:fg-quaternary disabled:opacity-100 disabled:hover:bg-transparent ${
-        unavailable
-          ? OPTION_UNAVAILABLE_CLASS_NAME
-          : OPTION_TONE_CLASS_NAMES[tone]
+      className={`canopy-picker-menu-option group/picker-option focus-ring flex min-h-8 w-full min-w-0 items-center gap-2 rounded-md px-2 py-2 text-left ${textClassName} font-normal transition-colors ${interactionClassName} disabled:cursor-not-allowed disabled:fg-quaternary disabled:opacity-100 disabled:hover:bg-transparent ${
+        accentActive
+          ? unavailable
+            ? 'cursor-not-allowed opacity-50'
+            : ''
+          : unavailable
+            ? OPTION_UNAVAILABLE_CLASS_NAME
+            : OPTION_TONE_CLASS_NAMES[tone]
       }${trailingControl ? ' pr-10' : ''}${TRAILING_SLOT_CLASS_NAMES[trailingSlots]}${
         rowHoverSurface ? ' group-hover/model-row:bg-subtle' : ''
-      } ${active && !selected ? 'bg-subtle' : ''} ${className}`}
+      } ${active && !selected && !accentActive ? 'bg-subtle' : ''} ${className}`}
     />
   );
 });
@@ -753,7 +764,7 @@ export const PickerMenuSection = forwardRef<
     <div
       {...props}
       ref={ref}
-      className={`canopy-picker-menu-section -mx-1 mt-1 border-t px-1 pt-1 ${className}`}
+      className={`canopy-picker-menu-section relative -mx-1 px-1 pt-2 before:pointer-events-none before:absolute before:inset-x-0 before:top-1 before:h-[var(--border-hairline)] before:bg-line-base ${className}`}
     />
   );
 });

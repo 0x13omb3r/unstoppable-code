@@ -1,5 +1,6 @@
+import { ControlButton } from '@canopy/ui-shared/components';
 import { type JSX, useCallback, useEffect, useState } from 'react';
-import { SECONDARY_SURFACE_CLASS, Tooltip } from '@canopy/ui-shared';
+import { Tooltip } from '@canopy/ui-shared';
 import { isWakeLockSupportedPlatform } from '@canopy/desktop-shared/platform-capabilities';
 import type { WakeLockState } from '@canopy/desktop-shared/types';
 import { pt } from '@/lib/platform-text';
@@ -10,7 +11,6 @@ import {
   APP_STATUS_ICON_CLASSNAME,
   APP_STATUS_LABEL_CLASSNAME,
   SIDEBAR_LIST_ICON_CLASSNAME,
-  SIDEBAR_LIST_ITEM_CLASSNAME,
 } from './sidebar-styles';
 
 /**
@@ -22,8 +22,6 @@ import {
  * written label to read as deliberate chrome — a bare glyph there looked
  * like a stray icon under the composer. Quiet ink that brightens on hover.
  */
-const APP_STATUS_PILL_CLASSNAME = `focus-ring group inline-flex h-7 shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full pl-2 pr-2.5 text-2xs font-medium fg-secondary transition-colors hover:fg-primary ${SECONDARY_SURFACE_CLASS}`;
-
 /**
  * The glyph follows the label on hover so the whole chip lights up, not just
  * the text: `group-hover` from the pill, same as the app-status label class.
@@ -94,16 +92,13 @@ export function WakeLockIndicatorView({
       className={statusBar ? undefined : 'w-full'}
       disabled={!statusBar && !collapsed}
     >
-      <button
+      <ControlButton
         type="button"
         onClick={onClick}
         aria-label={ariaLabel}
         data-testid="sidebar-wake-lock-indicator"
-        className={
-          statusBar
-            ? APP_STATUS_PILL_CLASSNAME
-            : `${SIDEBAR_LIST_ITEM_CLASSNAME} fg-primary hover:bg-subtle`
-        }
+        presentation="wake-lock-control"
+        appearance={statusBar}
       >
         <span
           className={
@@ -121,7 +116,7 @@ export function WakeLockIndicatorView({
         >
           Sleep paused
         </span>
-      </button>
+      </ControlButton>
     </Tooltip>
   );
 }

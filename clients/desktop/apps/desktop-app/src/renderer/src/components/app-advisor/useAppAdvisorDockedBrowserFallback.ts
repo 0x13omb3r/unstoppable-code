@@ -82,12 +82,14 @@ export function useAppAdvisorDockedBrowserFallback(
     if (!docked) return undefined;
     const unsubscribeActivation = subscribeBrowserPanelActivation(
       (target): void => {
+        // Default Bot only: docked browser panels open in the singleton window.
         if (target.projectId !== APP_ADVISOR_PROJECT_ID) return;
         if (target.focus !== false) showInSeparateWindow();
       },
     );
     const unsubscribeSelection = subscribeBoundBrowserPanelSelection(
       (selection): void => {
+        // Default Bot only: docked browser panels open in the singleton window.
         if (selection.projectId === APP_ADVISOR_PROJECT_ID) {
           showInSeparateWindow();
         }

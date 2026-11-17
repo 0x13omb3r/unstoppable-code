@@ -508,7 +508,7 @@ function ChangedFilesGroupHeading({
   const isCapped = item.total > item.budget;
   const reportsTotal = isCapped || item.exactTotal;
   return (
-    <div className="mb-1 px-3">
+    <div className="pb-1 px-3">
       <Heading
         level={4}
         variant="label"
@@ -1600,7 +1600,7 @@ export function ChangedFilesSection({
       {uncommitted.length > 0 && (
         <div>
           {committed.length > 0 && (
-            <div className="mb-1 px-3">
+            <div className="pb-1 px-3">
               <Heading level={4} variant="label">
                 Uncommitted
               </Heading>
@@ -1632,7 +1632,7 @@ export function ChangedFilesSection({
       )}
       {committed.length > 0 && (
         <div>
-          <div className="mb-1 px-3">
+          <div className="pb-1 px-3">
             <Heading level={4} variant="label">
               Committed
             </Heading>

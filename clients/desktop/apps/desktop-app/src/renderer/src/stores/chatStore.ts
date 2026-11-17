@@ -58,6 +58,7 @@ export {
   resolveDeferredToolsAllowedDefault,
   resolveFallbackDefaultModel,
   resolveLaneForTarget,
+  resolveProviderDefaults,
   resolveTabDefaults,
 } from './chat/defaults';
 export {

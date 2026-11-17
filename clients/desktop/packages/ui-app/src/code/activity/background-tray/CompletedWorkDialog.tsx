@@ -1,4 +1,5 @@
 'use client';
+import { ControlButton } from '@canopy/ui-shared/components';
 import {
   useEffect,
   useLayoutEffect,
@@ -30,8 +31,7 @@ export function CompletedWorkTrigger({
   readonly restoreFocusRef: RefObject<HTMLElement | null>;
 }): JSX.Element {
   return (
-    <button
-      type="button"
+    <ControlButton
       data-testid="background-tray-completed"
       onClick={(event): void => {
         restoreFocusRef.current =
@@ -42,7 +42,7 @@ export function CompletedWorkTrigger({
             ) ?? null;
         onOpen();
       }}
-      className="focus-ring focus-ring-inset flex h-9 w-full min-w-0 items-center gap-2.5 rounded-drawer-row pl-2.75 pr-1 text-left text-s fg-secondary hover:bg-subtle"
+      presentation="drawer-completed-open"
     >
       <span aria-hidden="true" className="w-3.5 shrink-0" />
       <span className="flex flex-1 items-center gap-1.5">
@@ -51,7 +51,7 @@ export function CompletedWorkTrigger({
       <span className="flex h-7 w-7 items-center justify-center">
         <ChevronRightIcon size={14} />
       </span>
-    </button>
+    </ControlButton>
   );
 }
 

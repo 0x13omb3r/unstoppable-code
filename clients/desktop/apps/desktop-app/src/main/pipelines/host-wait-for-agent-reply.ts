@@ -125,6 +125,15 @@ function timedOut(outputs: Record<string, string>, error: string): Failure {
   });
 }
 
+function turnFailed(outputs: Record<string, string>): Failure {
+  return failure(
+    'turn_failed',
+    // No assistant reply exists, so name the failed turn instead of a missing reply body.
+    "Couldn't get a reply from this chat. The agent's turn failed before a reply was sent.",
+    outputs,
+  );
+}
+
 function stepDeadlineMessage(chatId: string): string {
   return `No reply from chat \`${chatId}\` before the step deadline`;
 }
@@ -426,6 +435,7 @@ export async function runWaitForAgentReplyHostAction(
       case 'settled':
         outputs.reply_state = result.state;
         outputs.turn_id = result.turnId;
+        if (result.state === 'failed') return turnFailed(outputs);
         break;
     }
 

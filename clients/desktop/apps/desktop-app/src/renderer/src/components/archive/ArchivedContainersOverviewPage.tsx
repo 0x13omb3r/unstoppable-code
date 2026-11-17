@@ -292,6 +292,7 @@ export function ArchivedContainersOverviewPage({
 
   const openLegacyChat = (chatId: string): void => {
     const standalone = useStandaloneChatStore.getState();
+    // Default Bot only: legacy chats use the Orchestrator archive.
     if (workspaceId === APP_ADVISOR_PROJECT_ID) {
       void standalone.selectArchive(chatId);
       return;

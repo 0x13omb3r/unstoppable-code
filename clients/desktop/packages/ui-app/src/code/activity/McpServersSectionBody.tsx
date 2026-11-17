@@ -1,5 +1,6 @@
 'use client';
 
+import { ControlButton } from '@canopy/ui-shared/components';
 import { type JSX, type ReactNode } from 'react';
 import {
   mcpAuthConnectLabel,
@@ -184,15 +185,6 @@ export function McpServersSectionBody({
             const toggleTitle = proxyActive
               ? `${brandAppName} proxy enabled. Click to use agent provider auth.`
               : `Using agent provider auth. Click to use ${brandAppName} proxy.`;
-            const toggleClass = compact
-              ? // Borderless in the card; it shows on hover or focus unless it
-                // is on (its state stays visible) or the pointer is touch.
-                proxyActive
-                ? 'bg-accent-subtle fg-accent-strong'
-                : 'fg-tertiary opacity-0 hover:bg-subtle hover:fg-primary focus-visible:opacity-100 group-hover/mcp-row:opacity-100 group-focus-within/mcp-row:opacity-100 pointer-coarse:opacity-100'
-              : proxyActive
-                ? 'border-line-accent bg-accent-subtle fg-accent-strong'
-                : 'fg-secondary hover:bg-fg-primary/[0.08] hover:fg-primary';
             // In the card, a status earns space only when it needs the user.
             const compactStatusInk =
               server.authStatus === 'error'
@@ -271,7 +263,6 @@ export function McpServersSectionBody({
                         active={proxyActive}
                         updating={proxyUpdating}
                         ariaLabel={toggleTitle}
-                        toggleClass={toggleClass}
                         bordered={!compact}
                         heading={toggleHeading}
                         action={toggleAction}
@@ -357,7 +348,7 @@ export function McpServersSectionBody({
                   </p>
                 )}
                 {server.authStatus === 'error' && server.lastError && (
-                  <p className="mt-1">
+                  <p className="pt-1">
                     <StatusLabel size="2xs">{server.lastError}</StatusLabel>
                   </p>
                 )}
@@ -382,7 +373,7 @@ export function McpServersSectionBody({
       {body}
       {warnings.length > 0 && (
         <p
-          className={`text-2xs fg-warning${body === null ? '' : ' mt-2'}`}
+          className={`text-2xs fg-warning${body === null ? '' : ' pt-2'}`}
           data-testid="mcp-servers-card-warnings"
         >
           Some MCP servers could not be loaded.
@@ -396,7 +387,6 @@ interface ProxyToggleProps {
   readonly active: boolean;
   readonly updating: boolean;
   readonly ariaLabel: string;
-  readonly toggleClass: string;
   /** Draws the outline; the card's compact rows go without. */
   readonly bordered: boolean;
   readonly heading: string;
@@ -409,7 +399,6 @@ function ProxyToggle({
   active,
   updating,
   ariaLabel,
-  toggleClass,
   bordered,
   heading,
   action,
@@ -418,17 +407,24 @@ function ProxyToggle({
 }: ProxyToggleProps): JSX.Element {
   return (
     <ActionTooltip title={heading} description={action}>
-      <button
-        type="button"
+      <ControlButton
         onClick={onToggle}
         disabled={updating}
         aria-label={ariaLabel}
         aria-pressed={active}
         data-testid="mcp-servers-card-proxy-toggle"
-        className={`focus-ring relative inline-flex h-7 w-7 items-center justify-center rounded-md ${bordered ? 'border ' : ''}transition-colors before:absolute before:-inset-2 before:content-[''] disabled:opacity-60 ${toggleClass}`}
+        presentation={
+          bordered
+            ? active
+              ? 'proxy-toggle-panel-on'
+              : 'proxy-toggle-panel-off'
+            : active
+              ? 'proxy-toggle-card-on'
+              : 'proxy-toggle-card-off'
+        }
       >
         {logo}
-      </button>
+      </ControlButton>
     </ActionTooltip>
   );
 }

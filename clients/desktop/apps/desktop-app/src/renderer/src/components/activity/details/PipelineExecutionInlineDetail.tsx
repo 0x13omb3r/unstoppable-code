@@ -1,3 +1,4 @@
+import { ControlButton } from '@canopy/ui-shared/components';
 import { AttachedNotice } from '@canopy/ui-shared/components';
 import {
   useCallback,
@@ -579,8 +580,9 @@ export function PipelineExecutionInlineDetail({
                                       key={`${jobId}-${attemptView.source}-${attemptView.attempt}-${attemptView.iteration ?? 1}-${step.id}`}
                                       className="flex flex-col gap-1"
                                     >
-                                      <button
+                                      <ControlButton
                                         type="button"
+                                        aria-expanded={isSelected}
                                         onClick={() => {
                                           if (isSelected) {
                                             setSelectedStep(null);
@@ -588,11 +590,8 @@ export function PipelineExecutionInlineDetail({
                                             setSelectedStep(stepRef);
                                           }
                                         }}
-                                        className={`focus-ring flex w-full items-start justify-between gap-3 rounded-md border px-2.5 py-2 text-left transition-colors ${
-                                          isSelected
-                                            ? 'border-fg-info/50 bg-info-subtle'
-                                            : 'bg-fg-primary/[0.02] hover:bg-fg-primary/[0.04]'
-                                        }`}
+                                        presentation="workflow-inline-step"
+                                        appearance={isSelected}
                                       >
                                         <div className="min-w-0 flex items-center gap-1.5">
                                           <ChevronIcon open={isSelected} />
@@ -646,7 +645,7 @@ export function PipelineExecutionInlineDetail({
                                             {stepResult?.status ?? 'pending'}
                                           </Badge>
                                         </div>
-                                      </button>
+                                      </ControlButton>
                                       {isSelected && (
                                         <InlineStepDetail
                                           executionId={executionId}

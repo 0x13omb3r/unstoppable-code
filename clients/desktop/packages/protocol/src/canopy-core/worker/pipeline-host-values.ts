@@ -1,6 +1,11 @@
 import { z } from 'zod';
 
 import { CODEX_SPEEDS } from '../../automations';
+import {
+  CLOUD_ATTACHMENTS_MAX_PER_MESSAGE,
+  CLOUD_ATTACHMENT_MEDIA_TYPES,
+  isCloudAttachmentFilename,
+} from '../../cloud-attachments';
 import { THINKING_LEVELS } from '../../thinking';
 
 /*
@@ -133,6 +138,52 @@ export const WorkerPipelineSendSettingsSchema = z.strictObject({
   pluginSelections: WorkerPipelinePluginSelectionsSchema.optional(),
   interfaceMode: z.enum(['canopy', 'claude-code', 'auto']).optional(),
 });
+
+/**
+ * The most bytes the files one `send-agent-message` request attaches may
+ * hold together (CAN-6857, G6). An owner that can't read the step's host
+ * paths (the cloud) gets a copy of each file with the request, so the
+ * request, with its text, stays within one relay message.
+ */
+export const WORKER_PIPELINE_HOST_ATTACHMENTS_MAX_BYTES = 2 * 1024 * 1024;
+
+/** The most files one request attaches: a cloud message's own limit. */
+export const WORKER_PIPELINE_HOST_ATTACHMENTS_MAX =
+  CLOUD_ATTACHMENTS_MAX_PER_MESSAGE;
+
+/**
+ * A copy of one file a `send-agent-message` step attaches, for an owner that
+ * can't read the step's host paths (CAN-6857): its name, never its path, and
+ * its bytes as base64, with their size and digest, which the owner checks.
+ */
+export const WorkerPipelineHostAttachmentSchema = z.strictObject({
+  filename: z.string().refine(isCloudAttachmentFilename, {
+    message: 'Not a portable file name.',
+  }),
+  mediaType: z.enum(CLOUD_ATTACHMENT_MEDIA_TYPES),
+  size: z.number().int().min(0).max(WORKER_PIPELINE_HOST_ATTACHMENTS_MAX_BYTES),
+  contentSha256: z.string().regex(/^[0-9a-f]{64}$/),
+  /** Base64 of the whole file. */
+  data: z
+    .string()
+    .max(Math.ceil(WORKER_PIPELINE_HOST_ATTACHMENTS_MAX_BYTES / 3) * 4)
+    .regex(/^[A-Za-z0-9+/]*={0,2}$/),
+});
+
+export type WorkerPipelineHostAttachment = z.output<
+  typeof WorkerPipelineHostAttachmentSchema
+>;
+
+export const WorkerPipelineHostAttachmentsSchema = z
+  .array(WorkerPipelineHostAttachmentSchema)
+  .min(1)
+  .max(WORKER_PIPELINE_HOST_ATTACHMENTS_MAX)
+  .refine(
+    (files) =>
+      files.reduce((total, file) => total + file.size, 0) <=
+      WORKER_PIPELINE_HOST_ATTACHMENTS_MAX_BYTES,
+    'The attached files are too large together.',
+  );
 
 export const WorkerPipelineChatAddressSchema = z.discriminatedUnion('kind', [
   z.strictObject({

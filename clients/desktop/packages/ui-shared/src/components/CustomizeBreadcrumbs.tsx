@@ -1,3 +1,5 @@
+import { CUSTOMIZE_CRUMB_CLASS } from './control-button-shared';
+import { ControlButton } from './Button';
 import type { JSX, ReactNode } from 'react';
 import { ChevronRightMediumIcon } from '../icons/AppIcons';
 import { REPLAY_MASK_CLASS } from '../lib/replay-privacy';
@@ -35,9 +37,6 @@ export interface CustomizeBreadcrumbsProps {
   }) => ReactNode;
 }
 
-const CRUMB_CLASS =
-  'focus-ring inline-flex h-7 items-center whitespace-nowrap rounded-md px-1.5 text-s font-normal fg-secondary transition-colors hover:bg-subtle hover:fg-primary';
-
 /**
  * The Customize location trail shared by desktop and web: chevron-separated
  * crumbs on one row, ending at the current page. The first crumb's padding
@@ -67,7 +66,7 @@ export function CustomizeBreadcrumbs({
             item.label
           );
           const width = item.shrink || current ? 'min-w-0' : 'shrink-0';
-          const navigable = `${CRUMB_CLASS} ${item.shrink ? 'max-w-full' : ''}`;
+          const navigable = `${CUSTOMIZE_CRUMB_CLASS} ${item.shrink ? 'max-w-full' : ''}`;
           let crumb: ReactNode;
           if (current) {
             crumb = (
@@ -90,15 +89,16 @@ export function CustomizeBreadcrumbs({
             });
           } else if (item.onSelect) {
             crumb = (
-              <button
+              <ControlButton
                 type="button"
                 onClick={item.onSelect}
                 data-testid={item.testId}
                 data-entry-kind={item.entryKind}
-                className={navigable}
+                presentation="customize-breadcrumb"
+                appearance={{ shrink: !!item.shrink }}
               >
                 {label}
-              </button>
+              </ControlButton>
             );
           } else {
             crumb = (

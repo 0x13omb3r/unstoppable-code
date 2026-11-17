@@ -4,10 +4,7 @@ import { UnsavedMessageEdits } from '@canopy/ui-shared/components';
 import { useChatStore as useLiveChatStore } from '@/stores/chatStore';
 import type { UnsavedQueuedEdit } from '@/stores/chat/state';
 import { useChatSurfaceStore } from '@/stores/chat/surface-store';
-import {
-  INSERT_CHAT_TEXT_EVENT,
-  type InsertChatTextDetail,
-} from '@/lib/editorSelectionContext';
+import { requestChatComposerText } from '@canopy/app-core';
 
 interface UnsavedQueuedEditsProps {
   readonly worktreeTarget: { projectId: string; worktreeId: string } | null;
@@ -47,21 +44,10 @@ export function UnsavedQueuedEdits({
         if (edit) dismiss(edit);
       }}
       onRestore={(draft): void => {
-        // The composer's own insert, as a file's Add to chat uses. Kept
-        // until the composer takes it, so a closed composer loses nothing.
-        let handled = false;
-        const detail: InsertChatTextDetail = {
-          text: draft.text,
-          targetTabId: chatId,
-          markHandled: (): void => {
-            handled = true;
-          },
-        };
-        document.dispatchEvent(
-          new CustomEvent(INSERT_CHAT_TEXT_EVENT, { detail }),
-        );
+        // Kept until the composer takes it, so a closed composer loses nothing.
         const edit = editOf(draft);
-        if (handled && edit) dismiss(edit);
+        if (requestChatComposerText({ chatId, text: draft.text }) && edit)
+          dismiss(edit);
       }}
     />
   );

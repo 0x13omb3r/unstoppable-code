@@ -1,3 +1,4 @@
+import { ControlButton } from '@canopy/ui-shared/components';
 import { POSTHOG_REPLAY_BLOCK_CLASS } from '@canopy/desktop-instrumentation/posthog-replay-privacy';
 import { replayBlockClassFor } from '@canopy/desktop-instrumentation/posthog-replay-surfaces';
 import {
@@ -454,13 +455,6 @@ interface SettingsOptionCardProps {
   readonly dataTestId?: string;
 }
 
-// `border-<color>` utilities are inert under the unlayered base border rule
-// (CAN-2734), so the resting and selected outlines are rings.
-const OPTION_CARD_SELECTED_CLASS_NAME =
-  'bg-accent-subtle ring-1 ring-line-accent';
-const OPTION_CARD_RESTING_CLASS_NAME =
-  'bg-secondary ring-[length:var(--border-hairline)] ring-line-base hover:ring-line-secondary';
-
 /**
  * One choice in a small set of mutually exclusive options that each need a
  * sentence of explanation or a preview. Selection is the accent outline on
@@ -477,19 +471,18 @@ export function SettingsOptionCard({
   dataTestId,
 }: SettingsOptionCardProps): JSX.Element {
   return (
-    <button
+    <ControlButton
       type="button"
       aria-pressed={selected}
       disabled={disabled}
       onClick={onSelect}
       data-testid={dataTestId}
-      className={`focus-ring flex flex-col rounded-lg p-3 text-left transition-colors disabled:cursor-not-allowed disabled:opacity-60 ${
-        preview ? 'items-center gap-2 text-center' : ''
-      } ${fullWidth ? 'col-span-full' : ''} ${
-        selected
-          ? OPTION_CARD_SELECTED_CLASS_NAME
-          : OPTION_CARD_RESTING_CLASS_NAME
-      }`}
+      presentation="settings-option-card"
+      appearance={{
+        preview: Boolean(preview),
+        fullWidth: fullWidth === true,
+        selected,
+      }}
     >
       {preview}
       <span className="flex flex-col gap-1">
@@ -500,7 +493,7 @@ export function SettingsOptionCard({
           </span>
         ) : null}
       </span>
-    </button>
+    </ControlButton>
   );
 }
 

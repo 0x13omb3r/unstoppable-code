@@ -32,6 +32,7 @@ export async function resolveSessionTargetKind(
   port: PipelineReadPort,
   action: Extract<AutomationAction, { type: 'worktree_session_prompt' }>,
 ): Promise<AutomationSessionTargetKind | undefined> {
+  // Default Bot only: this workflow target kind has no Bot ID field.
   if (action.workspaceId === APP_ADVISOR_PROJECT_ID) return 'app_advisor';
   if (action.workspaceId === STANDALONE_CHAT_PROJECT_ID) return 'cowork';
   try {

@@ -4,6 +4,7 @@ import {
   Button,
   HostTooltipProvider,
   NoticeButton,
+  SWITCH_PROVIDER_LABEL,
   Tooltip,
   TooltipProvider,
   UninstallConfirmDialog,
@@ -159,7 +160,9 @@ function UsageLimitSection(): JSX.Element {
             actions={
               <>
                 <NoticeButton variant="secondary">Switch model</NoticeButton>
-                <NoticeButton variant="primary">Buy AI Credits</NoticeButton>
+                <NoticeButton variant="primary">
+                  {SWITCH_PROVIDER_LABEL}
+                </NoticeButton>
               </>
             }
             onDismiss={noop}

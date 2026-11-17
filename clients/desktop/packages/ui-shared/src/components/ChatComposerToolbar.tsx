@@ -1,3 +1,5 @@
+import { ControlButton } from './Button';
+
 import type { CSSProperties, JSX, ReactNode, Ref } from 'react';
 import {
   ChatComposerOverflowMenu,
@@ -11,17 +13,6 @@ export type ChatComposerToolbarChipActiveTone =
   | 'warning'
   | 'accent'
   | 'status-active';
-
-const ACTIVE_TONE_CLASS_NAMES: Record<
-  ChatComposerToolbarChipActiveTone,
-  string
-> = {
-  default: 'hover:bg-subtle',
-  warning: 'bg-warning-subtle fg-warning hover:bg-warning-subtle',
-  accent: 'bg-accent-subtle fg-accent-strong hover:bg-accent-subtle',
-  // Something running on the chat's behalf (its watchers).
-  'status-active': 'bg-info-subtle fg-info hover:bg-info-subtle',
-};
 
 /**
  * Controlled-component contract for a single composer chip (plugins, model,
@@ -282,7 +273,7 @@ export function ChatComposerToolbar({
         <ChatComposerToolbarChip {...thinking} />
       ) : null}
       {capsuleLayout && !compact && usageSlot ? (
-        <div className="ml-1 shrink-0">{usageSlot}</div>
+        <div className="shrink-0 pl-1">{usageSlot}</div>
       ) : !capsuleLayout ? (
         usageSlot
       ) : null}
@@ -412,8 +403,7 @@ export function ChatComposerToolbar({
  * hardware (DESIGN.md), untouched on a mouse. One string so the model picker,
  * the thinking control and the toolbar chip cannot drift apart.
  */
-export const CAPSULE_TOUCH_FLOOR_CLASS =
-  'pointer-coarse:min-h-11 pointer-coarse:min-w-11 pointer-coarse:justify-center';
+export { CAPSULE_TOUCH_FLOOR_CLASS } from './control-button-shared';
 
 export function ChatComposerToolbarChip({
   buttonRef,
@@ -443,22 +433,9 @@ export function ChatComposerToolbarChip({
   // pointer (the web composer on a phone) it grows to the 44px tap floor like
   // the compact chip, since a 32px control is below the touch minimum.
   const foldable = variant === 'capsule' && labelCollapsed !== undefined;
-  const shapeClassName =
-    variant === 'capsule'
-      ? // An icon-only capsule is a 32px circle, not a padded oval. A
-        // foldable capsule keeps 8px sides so it folds to that same circle;
-        // its label carries the gap and the extra 2px of end padding.
-        `focus-ring h-8 rounded-full text-xs ${
-          foldable
-            ? 'px-2 duration-200 ease-out'
-            : label || trailing
-              ? 'gap-1.5 px-2.5'
-              : 'w-8 justify-center gap-1.5'
-        } ${CAPSULE_TOUCH_FLOOR_CLASS}`
-      : `gap-1 rounded-md px-1.5 py-0.5 text-2xs ${CAPSULE_TOUCH_FLOOR_CLASS} pointer-coarse:px-2`;
 
   const button = (
-    <button
+    <ControlButton
       ref={buttonRef}
       type="button"
       onClick={onClick}
@@ -471,11 +448,14 @@ export function ChatComposerToolbarChip({
       aria-describedby={ariaDescribedBy}
       data-testid={dataTestId}
       style={active ? activeStyle : undefined}
-      className={`flex shrink-0 items-center transition-colors disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-transparent ${shapeClassName} ${
-        active
-          ? ACTIVE_TONE_CLASS_NAMES[activeTone]
-          : 'fg-secondary hover:bg-subtle hover:fg-primary'
-      }`}
+      presentation="composer-toolbar-chip"
+      appearance={{
+        variant,
+        foldable,
+        labelled: !!(label || trailing),
+        active: !!active,
+        activeTone,
+      }}
     >
       {icon}
       {label && foldable ? (
@@ -495,7 +475,7 @@ export function ChatComposerToolbarChip({
         )
       )}
       {trailing}
-    </button>
+    </ControlButton>
   );
 
   if (!title) {

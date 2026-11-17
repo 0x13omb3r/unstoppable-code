@@ -274,7 +274,7 @@ export function OverviewPage(): JSX.Element {
       const state = rowStatesById[executionId];
       const hiddenCount = projection.pipelineHiddenCounts[executionId];
       return (
-        <div className="mt-1 flex flex-col gap-1">
+        <div className="pt-1 flex flex-col gap-1">
           {state ? (
             <DagProgressBar
               executionState={state}

@@ -1,9 +1,9 @@
 import {
-  APP_ADVISOR_PROJECT_ID,
   CODE_REVIEW_CHAT_PROJECT_ID,
   COWORK_HOME_WORKTREE_ID,
   STANDALONE_CHAT_PROJECT_ID,
 } from '@canopy/desktop-shared/types';
+import { isBotProjectId } from '@canopy/protocol/chat-targets';
 import { isCoworkChatTarget } from '@/lib/cowork';
 import { requestChatPanelReveal } from '@/lib/chatPanelReveal';
 import { useNavigationStore } from '@/stores/navigationStore';
@@ -82,7 +82,7 @@ async function openLiveChat(target: LiveChatNavigationTarget): Promise<void> {
     // for this retained identity instead; there is still no live chat host.
     throw new Error('The legacy review chat view is unavailable');
   }
-  if (target.projectId === APP_ADVISOR_PROJECT_ID) {
+  if (isBotProjectId(target.projectId)) {
     // App Advisor chats are live tabs in its own BrowserWindow; opening the
     // window with the target `chatId` selects that exact chat's tab (the
     // App-Advisor analog of the worktree `switchTab`).

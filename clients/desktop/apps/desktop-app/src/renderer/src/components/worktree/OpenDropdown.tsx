@@ -1,3 +1,4 @@
+import { ControlButton } from '@canopy/ui-shared/components';
 import { OpenAppSplitSurface } from '@canopy/ui-shared/components';
 import {
   type JSX,
@@ -15,7 +16,6 @@ import {
   DropdownMenuLabel,
   FloatingMenu,
   PickerMenuOptionCheck,
-  SECONDARY_SURFACE_HOVER_CLASS,
   Tooltip,
 } from '@canopy/ui-shared';
 import {
@@ -123,11 +123,11 @@ export function OpenDropdown({
               label={`Open in ${splitApp.name}`}
               className="items-stretch"
             >
-              <button
+              <ControlButton
                 type="button"
                 data-testid="worktree-open-app"
                 onClick={() => handleOpenApp(splitApp.id)}
-                className={`focus-ring flex w-7 items-center justify-center gap-1.5 text-xs font-medium fg-primary transition-colors ${SECONDARY_SURFACE_HOVER_CLASS} @[560px]/prbar:w-auto @[560px]/prbar:justify-start @[560px]/prbar:px-2.5`}
+                presentation="worktree-open-app"
                 aria-label={`Open in ${splitApp.name}`}
               >
                 {/* Compact mode: below a 560px status region the label drops and
@@ -139,7 +139,7 @@ export function OpenDropdown({
                   className="h-4 w-4"
                   draggable={false}
                 />
-              </button>
+              </ControlButton>
             </Tooltip>
             <span className="flex h-4 self-center">
               <Divider orientation="vertical" aria-hidden />
@@ -147,7 +147,7 @@ export function OpenDropdown({
           </>
         )}
         <Tooltip label="Open in…" className="items-stretch" suppressed={open}>
-          <button
+          <ControlButton
             ref={triggerRef}
             type="button"
             data-testid="worktree-open-trigger"
@@ -159,15 +159,12 @@ export function OpenDropdown({
             aria-expanded={open}
             aria-controls={open ? menuId : undefined}
             aria-label="Open in…"
-            className={`focus-ring flex items-center transition-colors ${SECONDARY_SURFACE_HOVER_CLASS} ${
-              splitApp && splitApp.icon
-                ? 'w-7 justify-center'
-                : 'gap-1 px-2.5 text-xs font-medium fg-primary'
-            }`}
+            presentation="worktree-open-menu"
+            appearance={Boolean(splitApp?.icon)}
           >
             {(!splitApp || !splitApp.icon) && 'Open in'}
             <ChevronDownMediumIcon size={16} className="shrink-0 fg-primary" />
-          </button>
+          </ControlButton>
         </Tooltip>
       </OpenAppSplitSurface>
 

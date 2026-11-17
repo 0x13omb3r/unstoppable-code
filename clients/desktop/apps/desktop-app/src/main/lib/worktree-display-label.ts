@@ -1,8 +1,5 @@
-import {
-  APP_ADVISOR_PROJECT_ID,
-  IPC_CHANNELS,
-  type WorktreeData,
-} from '@canopy/desktop-shared/types';
+import { IPC_CHANNELS, type WorktreeData } from '@canopy/desktop-shared/types';
+import { isBotProjectId } from '@canopy/protocol/chat-targets';
 import {
   canGenerateWorktreeLabel,
   evaluateGeneratedWorktreeLabel,
@@ -45,8 +42,8 @@ export async function readWorktreeDisplayLabelContext(
   projectId: string,
   worktreeId: string,
 ): Promise<WorktreeDisplayLabelContext> {
-  // Cowork projects and the advisor have no worktree rows to label.
-  if (projectId === APP_ADVISOR_PROJECT_ID || isCoworkWorkspace(projectId)) {
+  // Bot and Cowork projects have no code-worktree rows to label.
+  if (isBotProjectId(projectId) || isCoworkWorkspace(projectId)) {
     return {};
   }
   const worktrees = await readWorkspaceWorktrees(projectId).catch(

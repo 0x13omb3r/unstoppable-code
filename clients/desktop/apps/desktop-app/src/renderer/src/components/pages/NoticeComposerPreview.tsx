@@ -167,7 +167,7 @@ export function NoticeComposerPreview({
                   // (`chat-input-notices` in `ChatInput`); keep the two in
                   // step so this page shows the real gap.
                   beforeComposer: (
-                    <div className="mb-1.5">{renderNotice(selected)}</div>
+                    <div className="pb-1.5">{renderNotice(selected)}</div>
                   ),
                 }
               : {})}

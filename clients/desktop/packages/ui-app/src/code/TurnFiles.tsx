@@ -38,7 +38,7 @@ interface LocatedFile {
   sourceIdentities?: string[];
 }
 
-function FileChip({
+function TranscriptFileControl({
   entry,
   pending = false,
   waiting = false,
@@ -220,14 +220,14 @@ export function TurnFiles({
   if (!heading) return null;
   const entries = [
     ...located.map((entry) => (
-      <FileChip
+      <TranscriptFileControl
         key={entry.identity}
         entry={entry}
         presentation={located.length + pending.length === 1 ? 'summary' : 'row'}
       />
     )),
     ...pending.map((entry) => (
-      <FileChip
+      <TranscriptFileControl
         key={entry.identity}
         entry={entry}
         pending

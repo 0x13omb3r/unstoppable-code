@@ -30,7 +30,7 @@ import {
   REPLAY_BLOCK_CLASS,
   REPLAY_MASK_CLASS,
 } from '../../lib/replay-privacy';
-import { Button } from '../Button';
+import { ControlButton, Button } from '../Button';
 import { Heading } from '../Heading';
 import { Tooltip } from '../Tooltip';
 import { WorkPath } from '../WorkPath';
@@ -365,16 +365,16 @@ export function LedgerFileChip({
 }: LedgerFileChipProps): JSX.Element {
   const label = ledgerFileLabel(file);
   return (
-    <button
+    <ControlButton
       type="button"
       data-testid="ledger-entry-file-ref"
       aria-label={`Open ${label}`}
       onClick={() => onOpen(file)}
-      className="focus-ring inline-flex max-w-full items-center gap-1 rounded-md bg-subtle px-2 py-1 font-mono text-2xs fg-secondary hover:bg-secondary hover:fg-primary"
+      presentation="ledger-file"
     >
       <FileIcon size={12} aria-hidden="true" className="shrink-0" />
       <span className="truncate">{label}</span>
-    </button>
+    </ControlButton>
   );
 }
 

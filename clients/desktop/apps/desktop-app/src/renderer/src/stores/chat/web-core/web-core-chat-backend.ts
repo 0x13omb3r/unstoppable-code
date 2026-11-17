@@ -142,6 +142,7 @@ import { useWebCoreModelCatalogStore } from './model-catalog';
 import { releaseWebCoreSend, webCoreSendBinding } from './send-binding';
 import {
   claimCloudSend,
+  claimCloudSendCommand,
   nextCloudSendSequence,
   settleCloudSend,
   whenCloudSendMayPost,
@@ -776,7 +777,27 @@ export interface WebCoreChatBackendCore {
         readonly message?: string;
       }
   >;
+  /**
+   * Whether the web core took the send posted to a chat as `commandId`
+   * (CAN-6798): `unknown` when it can't say yet, so the caller asks again.
+   */
+  readonly readSendReceipt: (
+    target: ChatTarget,
+    commandId: string,
+  ) => Promise<CloudSendReceiptOutcome>;
 }
+
+/**
+ * What the web core says became of a send, by its command id: `refused`
+ * when it answered the command and didn't take it, so the command is spent
+ * and a resend needs a new one; `not_taken` when it has no such command,
+ * which may still be in flight.
+ */
+export type CloudSendReceiptOutcome =
+  | 'taken'
+  | 'refused'
+  | 'not_taken'
+  | 'unknown';
 
 type ChatTarget = {
   readonly projectId: string;
@@ -3846,6 +3867,31 @@ export function createWebCoreChatBackendCore(
     };
   }
 
+  async function readSendReceipt(
+    target: ChatTarget,
+    commandId: string,
+  ): Promise<CloudSendReceiptOutcome> {
+    let reply: unknown;
+    try {
+      reply = await request('core.chat.send.receipt', {
+        scope: { ...bareScope(target), chatId: ids.chatToCore(target.chatId) },
+        commandId,
+      });
+    } catch (error) {
+      // Offline, or the task can't be read yet: the caller asks again.
+      reportClientAppError(error);
+      return 'unknown';
+    }
+    const receipt = CoreChatSendReceiptResultSchema.safeParse(reply);
+    if (!receipt.success || receipt.data.outcome === 'conflict')
+      return 'unknown';
+    if (receipt.data.outcome === 'missing') return 'not_taken';
+    return receipt.data.receipt.outcome === 'applied' ||
+      receipt.data.receipt.outcome === 'already_applied'
+      ? 'taken'
+      : 'refused';
+  }
+
   /**
    * The attachments a send carries: each pending attachment the web core
    * holds by id. A local file, or more than a message takes, is refused
@@ -3874,8 +3920,11 @@ export function createWebCoreChatBackendCore(
     // Claimed on arrival, before any wait: its chat's later sends wait until
     // this one posted or failed (CAN-6828).
     const press = claimCloudSend(req.userMessageId);
+    // The command id its caller minted, so the web core takes it at most
+    // once however often it is sent (CAN-6798).
+    const commandId = claimCloudSendCommand(req.userMessageId) ?? newId();
     try {
-      return await sendMessageInOrder(req, press);
+      return await sendMessageInOrder(req, press, commandId);
     } finally {
       if (press !== undefined) settleCloudSend(press);
     }
@@ -3884,6 +3933,7 @@ export function createWebCoreChatBackendCore(
   async function sendMessageInOrder(
     req: ChatSendMessageRequest,
     press: CloudSendPress | undefined,
+    commandId: string,
   ): Promise<ChatSendMessageResult> {
     if ((req.fileReferences?.length ?? 0) > 0)
       throw webCoreUnavailable('File mentions');
@@ -3923,7 +3973,6 @@ export function createWebCoreChatBackendCore(
         options.modelOption?.(req.projectId, req.model),
         useWebCoreFastModeStore.getState().byChat[req.chatId],
       );
-      const commandId = newId();
       const scope = bareScope(req);
       const boundPrincipal = webCoreSendBinding(req.userMessageId);
       let settle = (): void => undefined;
@@ -4941,5 +4990,6 @@ export function createWebCoreChatBackendCore(
     storeRuntimesChanged,
     releaseSandboxStates,
     uploadAttachment,
+    readSendReceipt,
   };
 }

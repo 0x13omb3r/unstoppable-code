@@ -83,12 +83,15 @@
     "./repo-rules": "./src/repo-rules/index.ts",
     "./script-actions": "./src/script-actions/index.ts",
     "./onboarding": "./src/onboarding/index.ts",
+    "./providers": "./src/providers/index.ts",
     "./onboarding-tips": "./src/onboarding-tips/index.ts",
     "./suggestions": "./src/suggestions/index.ts",
     "./composer-recovery": "./src/composer-recovery/index.ts",
     "./cloud-sandbox-status": "./src/cloud-sandbox-status/index.ts",
     "./file-link-status": "./src/file-link-status/index.ts",
     "./marketplace-sources": "./src/marketplace-sources/index.ts",
+    "./orchestrator": "./src/orchestrator/index.ts",
+    "./orchestrator/*": "./src/orchestrator/*.tsx",
     "./standing-conditions": "./src/standing-conditions/index.ts"
   },
   "dependencies": {
@@ -138,6 +141,7 @@
     "./src/lifecycle-journal/**",
     "./src/local-memory/**",
     "./src/marketplace-sources/**",
+    "./src/orchestrator/**",
     "./src/onboarding-tips/**",
     "./src/onboarding/**",
     "./src/org-projects/**",

@@ -1,3 +1,4 @@
+import { ControlButton } from '../Button';
 import { memo, useId, type JSX } from 'react';
 import { FolderIcon } from '../../icons/AppIcons';
 import { TitlebarIconButton } from '../TitlebarIconButton';
@@ -129,7 +130,7 @@ export const TurnFileChipView = memo(function TurnFileChipView({
           : `@container/turn-file group/turn-file relative cursor-default select-none ${TURN_FILE_ROW_CLASS_NAME}`
       }
     >
-      <button
+      <ControlButton
         type="button"
         data-testid="turn-file-chip-open"
         onClick={disabled ? undefined : onOpen}
@@ -143,10 +144,13 @@ export const TurnFileChipView = memo(function TurnFileChipView({
         aria-busy={busy}
         aria-disabled={disabled}
         {...(describedBy ? { 'aria-describedby': describedBy } : {})}
-        className={`focus-ring focus-ring-stretched inline-flex min-h-8 min-w-0 max-w-3/5 shrink items-center rounded-sm text-left before:absolute ${presentation === 'summary' ? 'before:inset-1 before:rounded-lg' : 'focus-ring-inset before:inset-0 before:rounded-[calc(var(--radius-xl)-5px)]'} aria-disabled:cursor-default pointer-coarse:min-h-11`}
+        presentation="turn-file-chip"
+        appearance={{
+          presentation: presentation === 'summary' ? 'summary' : 'detail',
+        }}
       >
         <FileLabel filename={filename} />
-      </button>
+      </ControlButton>
       {status && (
         <span
           id={statusId}

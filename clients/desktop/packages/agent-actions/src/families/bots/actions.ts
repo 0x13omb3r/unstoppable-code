@@ -43,7 +43,7 @@ export const BOT_ACTION_TYPES = [
 export type BotActionType = (typeof BOT_ACTION_TYPES)[number];
 
 /** Public bot ID. The internal `app-advisor` workspace ID is not a bot ID. */
-export const APP_ADVISOR_BOT_ID = 'app_advisor';
+export { APP_ADVISOR_BOT_ID } from '@canopy/protocol/chat-targets';
 
 // Bot IDs share the public opaque-ID validation of project discovery.
 const botIdSchema = projectsListTaskChatsActionSchema.shape.projectId;

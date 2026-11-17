@@ -284,13 +284,15 @@ export function FindInSurfaceBar({
           />
         </div>
         {error ? (
-          <ErrorBanner
-            errorSource="surface-find-error"
-            className="mx-1 mb-1"
-            error={error.message}
-            onRetry={error.onRetry}
-            testId="surface-find-error"
-          />
+          <div className="px-1 pb-1 empty:hidden">
+            <ErrorBanner
+              errorSource="surface-find-error"
+              className=""
+              error={error.message}
+              onRetry={error.onRetry}
+              testId="surface-find-error"
+            />
+          </div>
         ) : null}
       </div>
     </PaneSheet>

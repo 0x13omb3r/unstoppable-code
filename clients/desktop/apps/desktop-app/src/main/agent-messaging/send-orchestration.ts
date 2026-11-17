@@ -9,7 +9,6 @@ import {
   type InlineChatWatcherReservation,
 } from '@canopy/desktop-shared/lib/chat-send-actions';
 import {
-  APP_ADVISOR_PROJECT_ID,
   STANDALONE_CHAT_PROJECT_ID,
   type ChatCommandEnvelope,
   type ChatCreateTabCommand,
@@ -17,6 +16,7 @@ import {
   type ChatSendMessageRequest,
   type ChatSendTurnOverride,
 } from '@canopy/desktop-shared/types';
+import { isBotProjectId } from '@canopy/protocol/chat-targets';
 import {
   buildAgentSenderRequest,
   buildPipelineSenderRequest,
@@ -295,10 +295,7 @@ async function send(
     caller = pipelineDiscoveryCaller(trusted.source);
   } else {
     source = await canonicalSource(trusted.source);
-    if (
-      (trusted.kind === 'app_advisor') !==
-      (source.projectId === APP_ADVISOR_PROJECT_ID)
-    )
+    if ((trusted.kind === 'app_advisor') !== isBotProjectId(source.projectId))
       throw new AgentChatSendError(
         'validation_failed',
         'The trusted sender runtime is inconsistent.',

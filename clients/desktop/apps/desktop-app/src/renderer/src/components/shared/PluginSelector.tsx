@@ -829,6 +829,7 @@ export function PluginSelector({
           showCollectionKind={true}
           loading={loading}
           providerIconScope={providerIconScope}
+          autoFocusSearch
           selectionCopy={selectionCopy}
           toolbarTrailing={
             <Badge

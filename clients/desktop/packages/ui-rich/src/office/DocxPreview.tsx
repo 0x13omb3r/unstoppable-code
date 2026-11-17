@@ -74,7 +74,7 @@ export function DocxPreview({
           data-testid="docx-preview-loading"
         >
           <DelayedLoadingPlaceholder>
-            <CenteredLoadingSpinner className="my-12" />
+            <CenteredLoadingSpinner spacing="section" />
           </DelayedLoadingPlaceholder>
         </div>
       ) : (

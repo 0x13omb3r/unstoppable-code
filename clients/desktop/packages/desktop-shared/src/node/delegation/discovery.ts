@@ -5,6 +5,10 @@ import type {
   DelegationModelDiscovery,
 } from '@canopy/protocol/delegation/discovery';
 import {
+  filterManagedDelegationCapabilities,
+  type ManagedDelegationSurface,
+} from '@canopy/protocol/delegation';
+import {
   formatAgentRouteModelId,
   parseAgentRouteModelId,
 } from '@canopy/protocol/agents';
@@ -15,6 +19,8 @@ const MAX_AGENT_MODEL_CHECKS = 512;
 
 /** No vendor unions, native handles, credentials or billing fallbacks cross this seam. */
 export async function discoverDelegationModels(options: {
+  /** Trusted host surface; omission preserves historical generic Code callers. */
+  surface?: ManagedDelegationSurface;
   modelIds: readonly string[];
   agents?: readonly { agentId: string; label: string }[];
   preferredModelId?: string;
@@ -52,7 +58,10 @@ export async function discoverDelegationModels(options: {
       harnessId: model.harnessId,
       runtimeKind: model.runtimeKind,
       supportedThinkingLevels: [...model.supportedThinkingLevels],
-      capabilities: [...model.capabilities],
+      capabilities: filterManagedDelegationCapabilities(
+        options.surface ?? 'worktree-chat',
+        model.capabilities,
+      ),
       availability: model.availability,
       authState: model.authState,
       ...(model.disabledReason ? { disabledReason: model.disabledReason } : {}),

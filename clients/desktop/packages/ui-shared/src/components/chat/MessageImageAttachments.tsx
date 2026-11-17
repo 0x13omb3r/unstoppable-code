@@ -10,7 +10,8 @@ import {
 import { flushSync } from 'react-dom';
 import { PlayIcon } from '../../icons/AppIcons';
 import { FileTypeIcon } from '../../icons/FileTypeIcon';
-import { BUTTON_PRESS_CLASS } from '../Button';
+import { ControlButton } from '../Button';
+import { TILE_CLASS, TILE_PRESENTATION_CLASS } from '../control-button-shared';
 import { Tooltip } from '../Tooltip';
 import { REPLAY_BLOCK_CLASS } from '../../lib/replay-privacy';
 
@@ -98,8 +99,6 @@ const IMAGE_EDGE_CLASS = `pointer-events-none absolute inset-0 rounded-md ${ATTA
  * A 64px square, with the corner of the bubble's 12px radius 6px in, so the
  * picture's corner follows the bubble's.
  */
-const TILE_CLASS =
-  'relative size-16 shrink-0 overflow-hidden rounded-md bg-secondary';
 
 /**
  * The play mark over a video's tile: the tooltip's inverse pair, which keeps
@@ -151,7 +150,7 @@ export function MessageMediaRow({
   return (
     <div
       ref={row}
-      className={`-mx-1.5 flex flex-wrap gap-1.5${alone ? '' : ' mb-1.5'}`}
+      className={`-mx-1.5 flex flex-wrap gap-1.5${alone ? '' : ' pb-1.5'}`}
       data-testid="message-image-attachments"
     >
       {shown}
@@ -160,7 +159,7 @@ export function MessageMediaRow({
           onPress={expand}
           label={`Show ${String(hidden)} more attachments`}
           testId="message-attachments-more"
-          className={`${TILE_CLASS} flex items-center justify-center text-xs fg-secondary hover:fg-primary`}
+          presentation="more"
         >
           +{hidden}
           <span aria-hidden className={IMAGE_EDGE_CLASS} />
@@ -171,7 +170,6 @@ export function MessageMediaRow({
 }
 
 /** A pressable tile: the house press, no hover fill. */
-const TILE_PRESS_CLASS = `transition-[scale] ${BUTTON_PRESS_CLASS}`;
 
 /**
  * The one element every tile in the row is: a 64px tile that opens what it
@@ -183,7 +181,7 @@ function MessageTile({
   label,
   testId,
   kind,
-  className,
+  presentation,
   hover,
   children,
   'aria-describedby': describedBy,
@@ -192,7 +190,7 @@ function MessageTile({
   readonly label: string;
   readonly testId: string;
   readonly kind?: string;
-  readonly className: string;
+  readonly presentation: keyof typeof TILE_PRESENTATION_CLASS;
   readonly hover?: {
     readonly onPointerEnter: (event: { currentTarget: HTMLElement }) => void;
     readonly onPointerLeave: () => void;
@@ -201,8 +199,9 @@ function MessageTile({
   /** A wrapping `Tooltip` describes the tile through this. */
   readonly 'aria-describedby'?: string;
 }): JSX.Element {
+  const className = `${TILE_CLASS} ${TILE_PRESENTATION_CLASS[presentation]}`;
   return onPress ? (
-    <button
+    <ControlButton
       type="button"
       onClick={onPress}
       aria-label={label}
@@ -210,11 +209,12 @@ function MessageTile({
       data-testid={testId}
       data-kind={kind}
       data-message-tile=""
-      className={`focus-ring ${TILE_PRESS_CLASS} ${className}`}
+      presentation="message-attachment-tile"
+      appearance={{ kind: presentation }}
       {...hover}
     >
       {children}
-    </button>
+    </ControlButton>
   ) : (
     <span
       role="img"
@@ -340,7 +340,7 @@ export function MessageFileTile({
       label={file.onOpen ? `${file.actionLabel ?? 'Open'} file` : 'File'}
       aria-describedby={nameId}
       testId="message-file-attachment"
-      className={`${TILE_CLASS} flex flex-col justify-between p-1.5 text-left`}
+      presentation="file"
       {...(file.onHoverStart === undefined
         ? {}
         : {
@@ -420,7 +420,7 @@ export function MessageMediaTile({
       aria-describedby={nameId}
       testId="message-image-attachment"
       kind={image.kind ?? 'image'}
-      className={`${TILE_CLASS} block`}
+      presentation="image"
     >
       {picture}
     </MessageTile>

@@ -33,6 +33,8 @@ import { createRemoteControlApi } from '../../../preload/api/remote-control-api'
 import type { PreloadIpcRenderer } from '../../../preload/ipc-router';
 import { getSecretStoragePolicy } from '../../lib/secure-storage-policy';
 import type { RemoteControlWindows } from '../client/remote-windows';
+import { RemoteHostConnection } from '../client/host-connection';
+import type { HostBridge } from '../host/bridge-window';
 import { RemoteHostSession } from '../host/host-session';
 import { RemoteUploadStore } from '../host/uploads';
 import { RemoteAccessStore } from '../remote-access-store';
@@ -52,6 +54,7 @@ import {
   REMOTE_PROTOCOL_VERSION,
 } from '../remote-protocol';
 import { RpcPeer, RpcRemoteError } from '../transport/rpc-peer';
+import type { SecureSession } from '../transport/session-manager';
 import { flushRelay, InMemoryRelayHub } from './in-memory-relay';
 import { createTestDevice, openControlSession } from './session-pair';
 
@@ -750,5 +753,512 @@ describe('updates over a remote session, across protocol versions', () => {
       ok: false,
       error: { kind: 'capability_unavailable' },
     });
+  });
+});
+
+/** A controller one protocol ahead of the host: the host is the older one. */
+const NEW_CONTROLLER = {
+  protocolVersion: REMOTE_PROTOCOL_VERSION + 1,
+  appVersion: '1.4.0',
+};
+
+interface ControllerFixture {
+  connection: RemoteHostConnection;
+  setSnapshot: (next: Partial<DesktopUpdateSnapshot>) => void;
+  setAllowed: (allowed: boolean) => void;
+  /** Turns the switch off without the host's stream reporting it yet. */
+  refuseWritesQuietly: () => void;
+  installs: string[];
+  /** Sessions the host answered, in order. */
+  sessions: RemoteHostSession[];
+  /** Times the window would reload after a new session. */
+  reconnects: { count: number };
+  /**
+   * The connection drops; the host keeps running. With `offline`, it can't
+   * be reached again until `comeBack` is called.
+   */
+  dropSession: (options?: { offline: boolean }) => { comeBack: () => void };
+  /**
+   * The host goes away to install; it answers again, on `version`, once
+   * `comeBack` is called.
+   */
+  restartHost: (version: typeof HOST_VERSION) => { comeBack: () => void };
+  close: () => Promise<void>;
+}
+
+/**
+ * A real controller connection to a host that serves `core.update` over
+ * real handshaken sessions, one per connect, so the host can restart.
+ */
+async function controllerFixture(
+  options: {
+    controller?: typeof HOST_VERSION;
+    hostPlatform?: 'darwin' | 'win32';
+    serveCore?: boolean;
+    minIntervalMs?: number;
+  } = {},
+): Promise<ControllerFixture> {
+  let snapshot: DesktopUpdateSnapshot = {
+    phase: 'idle',
+    currentVersion: '1.3.0',
+    displayVersion: '1.3.0',
+    availableVersion: null,
+    availableDisplayVersion: null,
+    progressPercent: null,
+    message: null,
+    restartPending: false,
+    targeted: false,
+  };
+  const listeners = new Set<() => void>();
+  const policyListeners = new Set<() => void>();
+  const installs: string[] = [];
+  const allow = { value: true };
+  const setSnapshot = (next: Partial<DesktopUpdateSnapshot>): void => {
+    snapshot = { ...snapshot, ...next };
+    for (const listener of [...listeners]) listener();
+  };
+  const host: CoreUpdateHost = {
+    releaseFlavor: 'stable',
+    support: () => ({ supported: true }),
+    snapshot: () => snapshot,
+    blockers: () => ({ activeChatWork: true, windowBusy: false }),
+    subscribe: (listener) => {
+      listeners.add(listener);
+      return () => listeners.delete(listener);
+    },
+    check: () => {
+      installs.push('check');
+      setSnapshot({
+        phase: 'available',
+        availableVersion: '1.4.0',
+        availableDisplayVersion: '1.4.0',
+      });
+      return Promise.resolve();
+    },
+    startDownload: () => {
+      installs.push('download');
+      setSnapshot({ phase: 'downloading', progressPercent: 40 });
+      setTimeout(() => setSnapshot({ phase: 'downloaded' }), 5);
+      return Promise.resolve();
+    },
+    installNow: () => {
+      installs.push('now');
+      return Promise.resolve();
+    },
+    scheduleRestart: () => {
+      installs.push('when_idle');
+      setSnapshot({ restartPending: true });
+    },
+    cancelScheduledRestart: () => setSnapshot({ restartPending: false }),
+  };
+  // Each run of the host has its own core.update handlers and stream epoch.
+  const runs: Array<ReturnType<typeof createCanopyDispatcher>> = [];
+  const startRun = (): ReturnType<typeof createCanopyDispatcher> => {
+    const run = createCanopyDispatcher({
+      profile: 'core',
+      definitions: {
+        queries: UPDATE_QUERY_DEFINITIONS,
+        instructions: UPDATE_INSTRUCTION_DEFINITIONS,
+        streams: UPDATE_STREAM_DEFINITIONS,
+      },
+      handlers: createCoreUpdateHandlers(host, {
+        epoch: `host-epoch-${runs.length + 1}`,
+        remote: {
+          allowed: (): boolean => allow.value,
+          nameOf: () => 'Laptop',
+          minIntervalMs: options.minIntervalMs ?? 0,
+          subscribe: (listener) => {
+            policyListeners.add(listener);
+            return (): void => {
+              policyListeners.delete(listener);
+            };
+          },
+        },
+      }),
+    });
+    runs.push(run);
+    return run;
+  };
+  let dispatcher = startRun();
+
+  const hub = new InMemoryRelayHub();
+  const laptop = createTestDevice(hub, 'Laptop');
+  const studio = createTestDevice(hub, 'Studio');
+  await flushRelay();
+  let hostVersion = HOST_VERSION;
+  let offline = false;
+  const sessions: RemoteHostSession[] = [];
+  const core =
+    options.serveCore === false
+      ? undefined
+      : createRemoteCoreAccess(() => dispatcher);
+  const reconnects = { count: 0 };
+  const bridge: HostBridge = {
+    getChatInterest: () => undefined,
+    window: null,
+    invoke: () => Promise.resolve(null),
+    post: () => undefined,
+    onPush: () => () => undefined,
+    onClosed: () => () => undefined,
+    destroy: () => undefined,
+  };
+  const connection = new RemoteHostConnection({
+    version: options.controller ?? NEW_CONTROLLER,
+    release: { flavor: 'stable', displayVersion: '1.4.0' },
+    connect: async (): Promise<SecureSession> => {
+      if (offline) throw new Error('Studio is offline.');
+      const { initiator, responder } = await openControlSession(laptop, studio);
+      sessions.push(
+        new RemoteHostSession({
+          session: responder,
+          kind: 'desktop',
+          attributedDeviceId: responder.peerDeviceId,
+          // A compatible session starts its bridge at once.
+          createBridge: (): Promise<HostBridge> => Promise.resolve(bridge),
+          mainWindowPushes: {
+            subscribe: (): (() => void) => (): void => undefined,
+          },
+          uploads: new RemoteUploadStore(
+            join(tmpdir(), 'remote-updates-uploads'),
+          ),
+          readFile: (): Promise<never> =>
+            Promise.reject(new Error('no reads in this test')),
+          disposition: (): 'tunnel' => 'tunnel',
+          isAuthorized: (): boolean => true,
+          version: hostVersion,
+          hello: (): { name: string; platform: 'darwin' | 'win32' } => ({
+            name: 'Studio',
+            platform: options.hostPlatform ?? 'darwin',
+          }),
+          onClose: (): void => undefined,
+          ...(core ? { core } : {}),
+        }),
+      );
+      return initiator;
+    },
+    onPush: (): void => undefined,
+    onDialogOpen: (): Promise<never> => Promise.reject(new Error('unused')),
+    onAppAdvisorWindow: (): Promise<never> =>
+      Promise.reject(new Error('unused')),
+    onStatusChange: (): void => undefined,
+    onReconnected: (): void => {
+      reconnects.count += 1;
+    },
+    minRetryDelayMs: 1,
+    maxRetryDelayMs: 5,
+  });
+  return {
+    connection,
+    setSnapshot,
+    setAllowed: (allowed) => {
+      allow.value = allowed;
+      for (const listener of [...policyListeners]) listener();
+    },
+    refuseWritesQuietly: () => {
+      allow.value = false;
+    },
+    installs,
+    sessions,
+    reconnects,
+    dropSession: (dropOptions) => {
+      if (dropOptions?.offline) offline = true;
+      sessions.at(-1)?.rpc.close('closed');
+      return {
+        comeBack: (): void => {
+          offline = false;
+        },
+      };
+    },
+    restartHost: (version) => {
+      offline = true;
+      sessions.at(-1)?.rpc.close('closed');
+      dispatcher = startRun();
+      // A fresh process: nothing checked, nothing pending.
+      setSnapshot({
+        phase: 'idle',
+        availableVersion: null,
+        availableDisplayVersion: null,
+        progressPercent: null,
+        restartPending: false,
+      });
+      return {
+        comeBack: (): void => {
+          hostVersion = version;
+          offline = false;
+        },
+      };
+    },
+    close: async () => {
+      connection.release();
+      for (const session of sessions) session.rpc.close('closed');
+      for (const run of runs) await run.shutdown();
+    },
+  };
+}
+
+async function waitUntil(check: () => boolean, what: string): Promise<void> {
+  for (let attempt = 0; attempt < 300; attempt += 1) {
+    if (check()) return;
+    await flushRelay(5);
+    await new Promise((resolve) => setTimeout(resolve, 2));
+  }
+  throw new Error(`Timed out waiting until ${what}.`);
+}
+
+describe('updating an older host from the controller (slice 3)', () => {
+  let fixture: ControllerFixture | null = null;
+  afterEach(async () => {
+    await fixture?.close();
+    fixture = null;
+  });
+
+  it('keeps the session for updates, updates the host and reconnects once it restarts', async () => {
+    // Rate-limited between steps: the controller waits as the host says.
+    fixture = await controllerFixture({ minIntervalMs: 20 });
+    const { connection, installs } = fixture;
+
+    connection.keepConnected();
+    await waitUntil(() => connection.update?.phase === 'ready', 'ready');
+    expect(connection.update).toMatchObject({
+      target: 'host',
+      hostVersion: '1.3.0',
+      localVersion: '1.4.0',
+      hostFlavor: 'stable',
+    });
+    expect(connection.ended).toBe(false);
+    // Nothing but the host's updates goes over the kept session.
+    await expect(connection.invoke('update:get-state', [])).rejects.toThrow(
+      'Update Studio to connect.',
+    );
+    expect(fixture.sessions).toHaveLength(1);
+
+    await connection.updateHost('update');
+    await waitUntil(() => connection.update?.phase === 'waiting', 'waiting');
+    expect(installs).toEqual(['check', 'download', 'when_idle']);
+    expect(connection.update).toMatchObject({
+      waitingForChats: true,
+      canCancel: true,
+      requestedBy: null,
+    });
+
+    const restart = fixture.restartHost(HOST_VERSION);
+    await waitUntil(
+      () => connection.update?.phase === 'restarting',
+      'restarting',
+    );
+    restart.comeBack();
+    await waitUntil(() => connection.update?.phase === 'ready', 'came back');
+    // Back on the same version: the install did not take.
+    expect(connection.update?.reason).toBe('restarted-without-updating');
+
+    await connection.updateHost('update');
+    await waitUntil(() => connection.update?.phase === 'waiting', 'waiting');
+    const updated = fixture.restartHost(NEW_CONTROLLER);
+    await waitUntil(
+      () => connection.update?.phase === 'restarting',
+      'restarting',
+    );
+    updated.comeBack();
+    await waitUntil(() => connection.status === 'connected', 'connected');
+    expect(connection.update).toBeNull();
+    expect(connection.ended).toBe(false);
+    // The window that could not load reloads now.
+    expect(fixture.reconnects.count).toBe(1);
+  });
+
+  it('keeps a waiting restart through a dropped connection', async () => {
+    fixture = await controllerFixture();
+    const { connection, installs } = fixture;
+    connection.keepConnected();
+    await waitUntil(() => connection.update?.phase === 'ready', 'ready');
+    await connection.updateHost('update');
+    await waitUntil(() => connection.update?.phase === 'waiting', 'waiting');
+
+    fixture.dropSession();
+    await waitUntil(() => fixture?.sessions.length === 2, 'reconnected');
+    await waitUntil(() => connection.update?.phase === 'waiting', 'waiting');
+    // The same run answered: nothing restarted, and the restart is still ours.
+    expect(connection.update).toMatchObject({ reason: null, canCancel: true });
+    expect(installs).toEqual(['check', 'download', 'when_idle']);
+  });
+
+  it('withdraws its own restart, and says when someone at the host did', async () => {
+    fixture = await controllerFixture();
+    const { connection, setSnapshot } = fixture;
+    connection.keepConnected();
+    await waitUntil(() => connection.update?.phase === 'ready', 'ready');
+
+    await connection.updateHost('update');
+    await waitUntil(() => connection.update?.phase === 'waiting', 'waiting');
+    await connection.updateHost('cancel');
+    await waitUntil(() => connection.update?.phase === 'ready', 'cancelled');
+    expect(connection.update?.reason).toBeNull();
+
+    await connection.updateHost('update');
+    await waitUntil(() => connection.update?.phase === 'waiting', 'waiting');
+    // The person at the host withdraws it there.
+    setSnapshot({ restartPending: false });
+    await waitUntil(() => connection.update?.phase === 'ready', 'withdrawn');
+    expect(connection.update?.reason).toBe('cancelled-at-host');
+  });
+
+  it('never claims a restart someone else asked for', async () => {
+    fixture = await controllerFixture();
+    const { connection, setSnapshot, installs } = fixture;
+    connection.keepConnected();
+    await waitUntil(() => connection.update?.phase === 'ready', 'ready');
+    // The person at the host already downloaded and scheduled the restart.
+    setSnapshot({
+      phase: 'downloaded',
+      availableVersion: '1.4.0',
+      availableDisplayVersion: '1.4.0',
+      restartPending: true,
+    });
+    await waitUntil(() => connection.update?.phase === 'waiting', 'waiting');
+    await connection.updateHost('update');
+    await waitUntil(() => installs.length === 0, 'joined');
+    expect(connection.update).toMatchObject({
+      phase: 'waiting',
+      canCancel: false,
+    });
+    await expect(connection.updateHost('cancel')).rejects.toThrow(
+      "This computer didn't ask for the other computer's restart",
+    );
+  });
+
+  it('drops a rate-limited restart request when the host withdraws one meanwhile', async () => {
+    fixture = await controllerFixture({ minIntervalMs: 300 });
+    const { connection, setSnapshot, installs } = fixture;
+    setSnapshot({
+      phase: 'downloaded',
+      availableVersion: '1.4.0',
+      availableDisplayVersion: '1.4.0',
+    });
+    connection.keepConnected();
+    await waitUntil(() => connection.update?.phase === 'ready', 'ready');
+    await connection.updateHost('update');
+    await waitUntil(() => connection.update?.phase === 'waiting', 'waiting');
+    await connection.updateHost('cancel');
+    await waitUntil(() => connection.update?.phase === 'ready', 'cancelled');
+    expect(installs).toEqual(['when_idle']);
+
+    // Inside the host's rate limit: the next apply waits out its delay.
+    await connection.updateHost('update');
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    // Meanwhile someone at the host schedules a restart and withdraws it.
+    setSnapshot({ restartPending: true });
+    await waitUntil(() => connection.update?.phase === 'waiting', 'theirs');
+    setSnapshot({ restartPending: false });
+    await waitUntil(
+      () => connection.update?.reason === 'cancelled-at-host',
+      'withdrawn',
+    );
+    await new Promise((resolve) => setTimeout(resolve, 400));
+    // The waiting request was never sent: their cancel stands.
+    expect(installs).toEqual(['when_idle']);
+    expect(connection.update?.phase).toBe('ready');
+  });
+
+  it('names a version someone at the host picked, from this side', async () => {
+    fixture = await controllerFixture();
+    const { connection, setSnapshot, installs } = fixture;
+    setSnapshot({ targeted: true });
+    connection.keepConnected();
+    await waitUntil(() => connection.update?.phase === 'ready', 'ready');
+    await connection.updateHost('update');
+    await waitUntil(() => connection.update?.phase === 'failed', 'refused');
+    expect(connection.update?.reason).toBe('targeted-update-pending');
+    expect(installs).toEqual([]);
+  });
+
+  it('shows the connection coming back when it drops with nothing pending', async () => {
+    fixture = await controllerFixture();
+    const { connection } = fixture;
+    connection.keepConnected();
+    await waitUntil(() => connection.update?.phase === 'ready', 'ready');
+    const drop = fixture.dropSession({ offline: true });
+    await waitUntil(
+      () => connection.update?.phase === 'reconnecting',
+      'reconnecting',
+    );
+    drop.comeBack();
+    await waitUntil(() => connection.update?.phase === 'ready', 'back');
+    expect(connection.update?.reason).toBeNull();
+  });
+
+  it('restarts the host now when asked, instead of waiting for its chats', async () => {
+    fixture = await controllerFixture();
+    const { connection, installs } = fixture;
+    connection.keepConnected();
+    await waitUntil(() => connection.update?.phase === 'ready', 'ready');
+    await connection.updateHost('update');
+    await waitUntil(() => connection.update?.phase === 'waiting', 'waiting');
+    await connection.updateHost('restart-now');
+    expect(installs.at(-1)).toBe('now');
+    await waitUntil(
+      () => connection.update?.phase === 'restarting',
+      'restarting',
+    );
+  });
+
+  it('says when the host does not allow updates from other computers', async () => {
+    fixture = await controllerFixture();
+    const { connection, setAllowed, installs } = fixture;
+    setAllowed(false);
+    connection.keepConnected();
+    await waitUntil(
+      () => connection.update?.phase === 'unavailable',
+      'unavailable',
+    );
+    expect(connection.update?.reason).toBe('remote-updates-off');
+    setAllowed(true);
+    await waitUntil(() => connection.update?.phase === 'ready', 'allowed');
+    expect(installs).toEqual([]);
+
+    // A step refused while the switch is off clears once it is back on.
+    fixture.refuseWritesQuietly();
+    await connection.updateHost('update');
+    await waitUntil(
+      () => connection.update?.reason === 'remote-updates-off',
+      'refused',
+    );
+    setAllowed(true);
+    await waitUntil(() => connection.update?.phase === 'ready', 'on again');
+    expect(installs).toEqual([]);
+  });
+
+  it('offers this computer’s own update when the controller is the older one', async () => {
+    fixture = await controllerFixture({ controller: OLD_CONTROLLER });
+    const { connection } = fixture;
+    connection.keepConnected();
+    await waitUntil(() => connection.ended, 'ended');
+    expect(connection.update).toMatchObject({
+      target: 'this-computer',
+      phase: 'ready',
+      hostVersion: '1.4.0',
+    });
+    // Nothing keeps the session: the host sees it close.
+    await waitUntil(
+      () => fixture?.sessions[0]?.rpc.isClosed === true,
+      'the session closed',
+    );
+  });
+
+  it('holds Windows hosts and hosts without update operations to the manual message', async () => {
+    fixture = await controllerFixture({ hostPlatform: 'win32' });
+    fixture.connection.keepConnected();
+    await waitUntil(() => fixture?.connection.ended === true, 'ended');
+    expect(fixture.connection.update).toMatchObject({
+      target: 'host',
+      phase: 'unavailable',
+      reason: 'windows-host',
+    });
+    await fixture.close();
+
+    fixture = await controllerFixture({ serveCore: false });
+    fixture.connection.keepConnected();
+    await waitUntil(() => fixture?.connection.ended === true, 'ended');
+    expect(fixture.connection.update).toBeNull();
+    expect(fixture.connection.error).toContain('Update Studio to connect.');
   });
 });

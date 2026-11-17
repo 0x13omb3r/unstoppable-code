@@ -156,6 +156,8 @@ import {
   searchWatchersJsonSchema as appAdvisorSearchWatchersJsonSchema,
   setupWatchersJsonSchema as appAdvisorSetupWatchersJsonSchema,
   watchGitHubItemsJsonSchema as appAdvisorWatchGitHubItemsJsonSchema,
+  APP_ADVISOR_SET_PROJECT_WORK_ENTRY_AUTO_DELETE_DESCRIPTION,
+  appAdvisorSetProjectWorkEntryAutoDeleteJsonSchema,
 } from '../app-advisor/definitions';
 import {
   NAVIGATION_TO_LIST_DESCRIPTION,
@@ -463,6 +465,10 @@ export const APP_ADVISOR_TERMINAL_TOOL_DEFINITIONS: Readonly<
   set_work_entry_auto_delete: {
     description: SET_WORK_ENTRY_AUTO_DELETE_DESCRIPTION,
     inputSchema: setWorkEntryAutoDeleteJsonSchema,
+  },
+  set_project_work_entry_auto_delete: {
+    description: APP_ADVISOR_SET_PROJECT_WORK_ENTRY_AUTO_DELETE_DESCRIPTION,
+    inputSchema: appAdvisorSetProjectWorkEntryAutoDeleteJsonSchema,
   },
   schedule_wakeup: {
     description: SCHEDULE_WAKEUP_DESCRIPTION,
@@ -830,11 +836,12 @@ export function getCanopyRouteTools(
       if (canonicalKey === null) {
         return true;
       }
-      // A delegate never arms removal of the work entry its parent owns; the
-      // managed-delegate listing otherwise falls back to the terminal set.
+      // A delegate never arms removal of the work entry its parent owns; every
+      // managed-delegate profile's listing otherwise falls back to the
+      // terminal set.
       if (
         canonicalKey === 'set_work_entry_auto_delete' &&
-        effectiveSurface === 'managed-delegate'
+        effectiveSurface.startsWith('managed-delegate')
       ) {
         return false;
       }

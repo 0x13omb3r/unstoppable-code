@@ -1,5 +1,6 @@
 'use client';
 
+import { ControlButton } from '@canopy/ui-shared/components';
 import { useStore } from 'zustand';
 import type { CostClient } from '@canopy/app-core';
 import type { PipelineRunCostStore } from '@canopy/app-state/cost';
@@ -80,11 +81,10 @@ function PipelineCostPreviewWithStore(
   const stepCount = view.run.agentStepCount;
 
   return (
-    <button
-      type="button"
+    <ControlButton
       onClick={props.onOpen}
       aria-label={`Cost, ${amount} observed. Open cost`}
-      className="focus-ring group flex w-full flex-col gap-3 rounded-xl border bg-base p-4 text-left transition-colors hover:bg-subtle"
+      presentation="cost-preview-open"
       data-testid="pipeline-run-cost-preview"
     >
       <span className="flex w-full items-center gap-2">
@@ -109,6 +109,6 @@ function PipelineCostPreviewWithStore(
         />
         <CostLegend segments={sourceSegments} showShare />
       </span>
-    </button>
+    </ControlButton>
   );
 }

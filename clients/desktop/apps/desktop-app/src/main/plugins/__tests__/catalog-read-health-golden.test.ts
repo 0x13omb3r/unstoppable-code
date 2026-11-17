@@ -1050,6 +1050,53 @@ describe('catalog persistence contract shared by desktop and pipeline execution 
     expect(runClaudeCliProcessOffMain).not.toHaveBeenCalled();
   });
 
+  test('compatibility metadata round-trips cache v2 while stale or malformed metadata leaves the plugin usable', () => {
+    const value = healthy();
+    const compatibility = {
+      version: 1,
+      rulesVersion: 1,
+      harnesses: { claude: { level: 'native' as const } },
+    };
+    value.marketplaces[0].plugins[0].harnessCompatibility = compatibility;
+    write(value);
+    const current = readPluginCatalog(catalogPath);
+    expect(current.state).toBe('valid');
+    if (current.state !== 'valid') throw new Error('Expected cache version 2');
+    expect(
+      current.data.marketplaces[0].plugins[0].harnessCompatibility,
+    ).toEqual(compatibility);
+    for (const metadata of [
+      { ...compatibility, rulesVersion: 2 },
+      [],
+      {
+        version: 1,
+        rulesVersion: 1,
+        harnesses: { codex: { level: 'partial', missing: ['future'] } },
+      },
+    ]) {
+      write({
+        ...value,
+        marketplaces: value.marketplaces.map((marketplace) => ({
+          ...marketplace,
+          plugins: marketplace.plugins.map((plugin) => ({
+            ...plugin,
+            harnessCompatibility: metadata,
+          })),
+        })),
+      });
+      const result = readPluginCatalog(catalogPath);
+      expect(result.state).toBe('valid');
+      if (result.state !== 'valid')
+        throw new Error('Metadata must not invalidate a plugin');
+      const plugin = result.data.marketplaces[0].plugins[0];
+      expect(plugin.name).toBe('p');
+      expect(plugin.harnessCompatibility).toBeUndefined();
+      expect(plugin.providerSupport).toEqual(
+        value.marketplaces[0].plugins[0].providerSupport,
+      );
+    }
+  });
+
   test.each(['native', 'compat'] as const)(
     'healthy Codex %s selection is retained',
     (mode) => {

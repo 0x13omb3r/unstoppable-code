@@ -718,22 +718,29 @@ const UNSAVED_EDITS = [
   },
 ];
 
-/** A queued message's edit that wasn't saved (CAN-6799), on each host. */
+/** A cleared edit, kept as empty text: Restore has nothing to put back. */
+const CLEARED_EDITS = [{ id: 'entry-2', text: '' }];
+
+/**
+ * A queued message's edit that wasn't saved (CAN-6799), the same on every
+ * host since CAN-6801 gave the web Restore.
+ */
 export function UnsavedMessageEditsSpecimen(): JSX.Element {
   return (
     <SpecimenPanel title="Unsaved edit: another client's Stop cancelled the message during the edit">
       <SpecimenGrid min={360}>
-        <SpecimenCell label="Desktop: Copy, Restore into the composer, Dismiss">
+        <SpecimenCell label="Desktop and web: Copy, Restore into the composer, Dismiss">
           <UnsavedMessageEdits
             drafts={UNSAVED_EDITS}
             onDismiss={(): void => undefined}
             onRestore={(): void => undefined}
           />
         </SpecimenCell>
-        <SpecimenCell label="Web: Copy and Dismiss">
+        <SpecimenCell label="A cleared edit: Restore keeps the card">
           <UnsavedMessageEdits
-            drafts={UNSAVED_EDITS}
+            drafts={CLEARED_EDITS}
             onDismiss={(): void => undefined}
+            onRestore={(): void => undefined}
           />
         </SpecimenCell>
       </SpecimenGrid>

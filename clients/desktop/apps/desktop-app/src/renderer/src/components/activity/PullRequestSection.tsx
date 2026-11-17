@@ -3,6 +3,7 @@ import { useShallow } from 'zustand/react/shallow';
 import {
   Stack,
   Button,
+  EmptyStateText,
   Notice,
   NoticeButton,
   Surface,
@@ -324,7 +325,10 @@ function SplitDiscardArtifacts({
             )}
           </>
         ) : (
-          <p>No branches or PRs were created yet — nothing to clean up.</p>
+          <EmptyStateText
+            title="No branches or PRs were created yet — nothing to clean up."
+            tone="inherit"
+          />
         )}
       </div>
     </Surface>

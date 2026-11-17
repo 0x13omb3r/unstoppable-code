@@ -1,3 +1,4 @@
+import { ControlButton } from '@canopy/ui-shared/components';
 /**
  * AutomationsPanel — the `automations` panel kind's surface, shown to people
  * as the Workflows panel: workflows and watchers scoped to the panel's
@@ -41,7 +42,7 @@ import type {
   AppAdvisorWatcherSummary,
   ScheduledActivity,
 } from '@canopy/desktop-shared/types';
-import { APP_ADVISOR_PROJECT_ID } from '@canopy/desktop-shared/types';
+import { isBotProjectId } from '@canopy/protocol/chat-targets';
 import { getAutomationTriggerLabel } from '@canopy/desktop-shared/lib/automations';
 import { WORKTREE_UNIT_LABEL } from '@canopy/protocol';
 import {
@@ -152,12 +153,12 @@ function PanelSectionShell({
   }
   return (
     <div className="flex min-h-0 flex-col">
-      <button
+      <ControlButton
         type="button"
         onClick={(): void => onToggle(id)}
         aria-expanded={!collapsed}
         data-testid={`automations-panel-section-${id}`}
-        className="focus-ring flex w-full shrink-0 items-center gap-1.5 px-3 py-2 text-xs font-medium fg-secondary transition-colors hover:fg-primary"
+        presentation="automation-section-toggle"
       >
         {collapsed ? (
           <ChevronRightIcon size="sm" aria-hidden="true" />
@@ -167,7 +168,7 @@ function PanelSectionShell({
         {icon}
         <span>{title}</span>
         <Count value={count} />
-      </button>
+      </ControlButton>
       {!collapsed && children}
     </div>
   );
@@ -712,7 +713,7 @@ export const AutomationsPanel = memo(function AutomationsPanel({
   }, []);
 
   const openCreate = useCallback((): void => {
-    if (projectId === APP_ADVISOR_PROJECT_ID) return;
+    if (isBotProjectId(projectId)) return;
     const ownerDocument = panelRootRef.current?.ownerDocument;
     clearMutationError();
     // A code project's draft runs a new chat on this panel's worktree each
@@ -825,7 +826,7 @@ export const AutomationsPanel = memo(function AutomationsPanel({
                 testId="automations-panel-worktree-toggle"
               />
             )}
-            {projectId !== APP_ADVISOR_PROJECT_ID && (
+            {!isBotProjectId(projectId) && (
               <Tooltip label="New workflow">
                 <Button
                   variant="ghost"

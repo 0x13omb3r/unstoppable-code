@@ -5,7 +5,6 @@
  * inventory and standalone selection adapters.
  */
 import {
-  APP_ADVISOR_PROJECT_ID,
   PIPELINE_EDITOR_PROJECT_ID,
   type ChatCommandRequest,
   type ChatCommandResult,
@@ -15,6 +14,7 @@ import {
   type PortalCommandEnvelope,
   type PortalInvocableChatTarget,
 } from '@canopy/desktop-shared/types';
+import { isBotProjectId } from '@canopy/protocol/chat-targets';
 import { normalizePluginSelections } from '@canopy/execution-engine/lib/plugin-selections-normalization';
 import { appendEnableRef } from '@canopy/desktop-shared/lib/slash-invocable-inventory';
 import { validateId } from '../../lib/validation';
@@ -55,7 +55,7 @@ export function readInvocableChatTarget(
       validateId(value.projectId, 'projectId');
       validateId(value.worktreeId, 'worktreeId');
       if (
-        value.projectId === APP_ADVISOR_PROJECT_ID ||
+        isBotProjectId(value.projectId) ||
         value.projectId === PIPELINE_EDITOR_PROJECT_ID
       )
         return null;

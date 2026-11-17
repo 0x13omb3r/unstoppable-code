@@ -1,3 +1,4 @@
+import { ControlButton } from './Button';
 import {
   forwardRef,
   type ButtonHTMLAttributes,
@@ -29,15 +30,9 @@ export type TitlebarIconButtonSurface =
   | 'panelChrome'
   | 'panelTabStrip';
 
-const SURFACE_CLASS_NAMES: Record<TitlebarIconButtonSurface, string> = {
-  titlebar: '',
-  panelChrome: 'canopy-panel-chrome-button',
-  panelTabStrip: 'canopy-panel-add-tab',
-};
-
 export interface TitlebarIconButtonProps extends Omit<
   ButtonHTMLAttributes<HTMLButtonElement>,
-  'children'
+  'children' | 'className'
 > {
   icon: AppIcon;
   /** App glyph size. Titlebar controls use 16px. */
@@ -64,11 +59,6 @@ export interface TitlebarIconButtonProps extends Omit<
   holdHoverWhenExpanded?: boolean;
 }
 
-const FOREGROUND_CLASS_NAMES: Record<TitlebarIconButtonForeground, string> = {
-  'top-bar': 'fg-secondary enabled:hover:fg-primary',
-  titlebar: 'titlebar-control-fg',
-};
-
 /**
  * Canonical 28×28 titlebar/top-bar icon action: the exact frame used by the
  * persistent titlebar corner controls (sidebar toggle, history arrows), reused
@@ -91,7 +81,6 @@ export const TitlebarIconButton = forwardRef<
     title,
     'aria-label': ariaLabel,
     type = 'button',
-    className = '',
     ...props
   },
   ref,
@@ -105,15 +94,21 @@ export const TitlebarIconButton = forwardRef<
       shortcut={tooltipShortcut}
       disabled={resolvedTooltipLabel == null || resolvedTooltipLabel === ''}
     >
-      <button
+      <ControlButton
         ref={ref}
         type={type}
         aria-label={ariaLabel}
-        className={`electron-no-drag focus-ring inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md transition-colors enabled:hover:bg-subtle disabled:opacity-35 ${coarsePointerTarget ? 'pointer-coarse:min-h-11 pointer-coarse:min-w-11' : ''} ${FOREGROUND_CLASS_NAMES[foreground]}${surface === 'titlebar' ? '' : ` ${SURFACE_CLASS_NAMES[surface]}`}${holdHoverWhenExpanded ? ' aria-expanded:bg-subtle aria-expanded:fg-primary' : ''} ${className}`}
+        presentation="titlebar-icon"
+        appearance={{
+          coarsePointerTarget,
+          foreground,
+          surface,
+          holdHoverWhenExpanded,
+        }}
         {...props}
       >
         <Icon size={iconSize} aria-hidden="true" />
-      </button>
+      </ControlButton>
     </Tooltip>
   );
 });

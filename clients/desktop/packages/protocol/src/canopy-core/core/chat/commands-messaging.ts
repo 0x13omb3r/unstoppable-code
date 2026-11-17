@@ -269,6 +269,52 @@ export const CoreChatTurnCancelErrorSchema = CanopyErrorPayloadSchema.extend({
   ]),
 });
 
+/**
+ * `core.chat.send.supersede` (CAN-6856): stops a send the client gave up on
+ * from applying, so sending its text again never runs it twice.
+ */
+export const CoreChatSendSupersedeParamsSchema = z.strictObject({
+  scope: ChatCommandScopeSchema,
+  chatId: IdentifierSchema,
+  /** The `core.chat.message.send` commandId to supersede. */
+  commandId: IdentifierSchema,
+  _meta: CanopyQueryRequestMetadataSchema.optional(),
+});
+
+export const CoreChatSendSupersedeResultSchema = z.discriminatedUnion(
+  'outcome',
+  [
+    /** No session accepted the send, and none will. */
+    z.strictObject({
+      outcome: z.literal('superseded'),
+      commandId: IdentifierSchema,
+    }),
+    /** The send was accepted before the supersede: it stands. */
+    z.strictObject({
+      outcome: z.literal('applied'),
+      commandId: IdentifierSchema,
+      entityId: IdentifierSchema,
+      messageId: IdentifierSchema,
+    }),
+  ],
+);
+
+export const CoreChatSendSupersedeErrorSchema = CanopyErrorPayloadSchema.extend(
+  {
+    code: z
+      .enum([
+        'core.chat.send.supersede.invalidState',
+        'core.chat.send.supersede.unavailable',
+      ])
+      .optional(),
+    retry: z.discriminatedUnion('kind', [
+      CanopyRetryDirectiveSchema.options[0],
+      CanopyRetryDirectiveSchema.options[1],
+      CanopyRetryDirectiveSchema.options[3],
+    ]),
+  },
+);
+
 const KeyedRetrySchema = z.discriminatedUnion('kind', [
   CanopyRetryDirectiveSchema.options[0],
   CanopyRetryDirectiveSchema.options[2],
@@ -366,5 +412,24 @@ export const CORE_CHAT_MESSAGE_INSTRUCTION_DEFINITIONS =
         'core.chat.busy',
         'core.chat.policyDenied',
       ]),
+    }),
+  });
+
+/**
+ * Served by the web core only (CAN-6856), so kept out of the composed
+ * registry: the desktop core answers `capability_unavailable`.
+ */
+export const CORE_CHAT_SEND_SUPERSEDE_INSTRUCTION_DEFINITIONS =
+  defineCanopyInstructionRegistry('core', {
+    'core.chat.send.supersede': defineCanopyInstruction({
+      plane: 'core',
+      domain: 'chat',
+      version: 1,
+      placement: 'core-only',
+      idempotency: 'inherent',
+      requiredGrants: ['core.chat.write'],
+      params: CoreChatSendSupersedeParamsSchema,
+      result: CoreChatSendSupersedeResultSchema,
+      error: CoreChatSendSupersedeErrorSchema,
     }),
   });

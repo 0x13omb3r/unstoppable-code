@@ -500,8 +500,6 @@ export interface WorktreeListPreconditions {
 export interface WorktreeListRemovalPreconditions {
   requireAuthoritativeRead?: boolean;
   requireExistingList?: boolean;
-  /** Tombstone only after the write, so a failed removal stays retryable. */
-  markRemovedAfterWrite?: boolean;
 }
 
 /** The source row fields a composition join records and its undo restores. */

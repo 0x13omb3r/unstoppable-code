@@ -7,6 +7,7 @@ import {
   CoreChatSnapshotGetResultSchema,
   CLOUD_CURATED_SKILL_SOURCE_ID,
   CORE_CATALOG_SNAPSHOT_GET_SCHEMA_REVISION,
+  CORE_CATALOG_SNAPSHOT_GET_COMPATIBILITY_REVISION,
   collectionEntryId,
   mcpServerEntryId,
   pluginEntryId,
@@ -28,7 +29,12 @@ import type {
   PortalPluginCatalogPlugin,
   PortalPluginCatalogSkill,
 } from '@canopy/protocol/portal';
-import { CoreCoworkRequestError, type CoreCoworkInvoker } from './invoker';
+import { parseHarnessCompatibility } from '@canopy/protocol/plugins';
+import {
+  CoreCoworkRequestError,
+  type CoreCoworkInvoker,
+  type CanopyCoreRelayLikeReply,
+} from './invoker';
 
 /** The cloud chat a catalog reads and writes for (web core ids, unprefixed). */
 export interface CloudChatCatalogScope {
@@ -218,6 +224,9 @@ function mapCloudChatCatalog(
         if (ref.sourceId === CLOUD_CURATED_SKILL_SOURCE_ID && !selected.has(id))
           break;
         skills.push({
+          harnessCompatibility: parseHarnessCompatibility(
+            entry.harnessCompatibility,
+          ),
           sourceId: ref.sourceId,
           skillName: ref.skillName,
           name: entry.name,
@@ -237,6 +246,9 @@ function mapCloudChatCatalog(
         if (entry.availability !== 'available') break;
         const support = content.manifest.providerSupport;
         plugins.push({
+          harnessCompatibility: parseHarnessCompatibility(
+            entry.harnessCompatibility,
+          ),
           marketplaceId: ref.marketplaceId,
           pluginName: ref.pluginName,
           name: entry.name,
@@ -266,6 +278,9 @@ function mapCloudChatCatalog(
           ? mcpServers
           : unavailableMcpServers
         ).push({
+          harnessCompatibility: parseHarnessCompatibility(
+            entry.harnessCompatibility,
+          ),
           serverId: ref.serverId,
           configId: ref.configId,
           serverName: entry.name,
@@ -379,18 +394,43 @@ export function createCloudChatCatalog(
     };
   };
 
+  // Set once a web core refuses the compatibility revision, so later
+  // refreshes of this catalog skip the rejected request.
+  let compatibilityRefused = false;
+
+  async function readSnapshot(): Promise<CanopyCoreRelayLikeReply> {
+    const params = {
+      scope: { workspaceId: scope.workspaceId },
+      kinds: [],
+      includeUnavailable: true,
+    };
+    const atSchemaRevision = (): Promise<CanopyCoreRelayLikeReply> =>
+      invoker.request('core.catalog.snapshot.get', {
+        ...params,
+        revision: CORE_CATALOG_SNAPSHOT_GET_SCHEMA_REVISION,
+      });
+    if (compatibilityRefused) return atSchemaRevision();
+    const reply = await invoker.request('core.catalog.snapshot.get', {
+      ...params,
+      revision: CORE_CATALOG_SNAPSHOT_GET_COMPATIBILITY_REVISION,
+    });
+    // Older web cores reject the optional revision at parameter validation.
+    // Retry only this read at the existing model-catalog revision. Transient
+    // and permission failures keep their own error; they never downgrade it.
+    if (reply.ok || reply.error.kind !== 'invalid_argument') return reply;
+    // Latch only when the older revision succeeds, which shows the revision
+    // was what the web core refused.
+    const fallback = await atSchemaRevision();
+    if (fallback.ok) compatibilityRefused = true;
+    return fallback;
+  }
+
   async function refresh(conflict = false): Promise<void> {
     const read = ++reads;
     const epochAtRead = modelEpoch;
     try {
       const [snapshot, selection, chat] = await Promise.all([
-        invoker.request('core.catalog.snapshot.get', {
-          scope: { workspaceId: scope.workspaceId },
-          kinds: [],
-          includeUnavailable: true,
-          // Revision 2 also answers the hosted model catalog (CAN-6753).
-          revision: CORE_CATALOG_SNAPSHOT_GET_SCHEMA_REVISION,
-        }),
+        readSnapshot(),
         invoker.request('core.catalog.selection.get', {
           scope: { chatId: scope.chatId },
         }),

@@ -237,6 +237,12 @@ import {
   type WatchGitHubItemsInput,
   type WatchGitHubItemsResult,
 } from '@canopy/desktop-shared/types';
+import {
+  botIdForProjectId,
+  isBotId,
+  isBotProjectId,
+  projectIdForBotId,
+} from '@canopy/protocol/chat-targets';
 import type {
   GitHubPullRequestFiredContext,
   GitHubPullRequestNotificationSelection,
@@ -1399,17 +1405,11 @@ function isVisibleWatcher(watcher: AppAdvisorWatcher): boolean {
   );
 }
 
-function isAppAdvisorDestination(
-  destination: AppAdvisorWatcherDestination,
-): boolean {
-  return destination.projectId === APP_ADVISOR_PROJECT_ID;
-}
-
 function isPotentialAdvisorAccessWatcher(watcher: AppAdvisorWatcher): boolean {
   return (
     watcher.trigger === 'automation_run' &&
     watcher.target.kind === 'automation' &&
-    !isAppAdvisorDestination(watcher.destination)
+    !isBotProjectId(watcher.destination.projectId)
   );
 }
 
@@ -1535,7 +1535,7 @@ async function readDestinationChatTitle(
 ): Promise<AppAdvisorWatcherDestination> {
   if (
     optionalTrimmed(destination.chatTitle) ||
-    isAppAdvisorDestination(destination) ||
+    isBotProjectId(destination.projectId) ||
     !nonBlank(destination.projectId) ||
     !nonBlank(destination.worktreeId) ||
     !nonBlank(destination.chatId)
@@ -1594,7 +1594,7 @@ function hasInvalidRecipient(
   return (
     destination.delegationId !== undefined &&
     (!nonBlank(destination.delegationId) ||
-      destination.projectId === APP_ADVISOR_PROJECT_ID)
+      isBotProjectId(destination.projectId))
   );
 }
 
@@ -2370,7 +2370,7 @@ function isPersistedWatcher(value: unknown): value is AppAdvisorWatcher {
     typeof value.destination.chatId !== 'string' ||
     (value.destination.delegationId !== undefined &&
       (!nonBlank(value.destination.delegationId) ||
-        value.destination.projectId === APP_ADVISOR_PROJECT_ID))
+        isBotProjectId(value.destination.projectId)))
   ) {
     return false;
   }
@@ -3148,7 +3148,7 @@ function validateWatcherInput(
   const requiredFieldError = validateRequiredTargetFields(entry.target);
   if (requiredFieldError) return requiredFieldError;
 
-  if (!isAppAdvisorDestination(destination)) {
+  if (!isBotProjectId(destination.projectId)) {
     if (destination.projectId === STANDALONE_CHAT_PROJECT_ID) {
       return STANDALONE_SENTINEL_DESTINATION_ERROR;
     }
@@ -3191,19 +3191,19 @@ function validateWatcherInput(
   }
 
   if (entry.target.kind === 'worktree_chat') {
-    if (entry.target.projectId.trim() === APP_ADVISOR_PROJECT_ID) {
+    if (isBotProjectId(entry.target.projectId.trim())) {
       return 'Watchers cannot target Orchestrator chats.';
     }
   } else if (
     entry.target.kind === 'worktree_chat_scope' &&
-    entry.target.projectId.trim() === APP_ADVISOR_PROJECT_ID
+    isBotProjectId(entry.target.projectId.trim())
   ) {
     return 'Watchers cannot target Orchestrator chats.';
   } else if (
     entry.target.kind !== 'automation' &&
     entry.target.kind !== 'scheduled_wakeup' &&
     entry.target.kind !== 'command_watch' &&
-    entry.target.projectId.trim() === APP_ADVISOR_PROJECT_ID
+    isBotProjectId(entry.target.projectId.trim())
   ) {
     return 'Watchers cannot target Orchestrator resources.';
   }
@@ -3311,6 +3311,7 @@ async function validateWatcherTargetIsAwaitingFutureEvent(
   ) {
     // Orchestrator reaches the cloud runs of every owner the account reads,
     // so no one owner's runs are its own to watch.
+    // Default Bot only: cloud-run visibility is the Orchestrator's account-wide capability.
     if (entry.target.projectId === APP_ADVISOR_PROJECT_ID)
       return 'Orchestrator cannot watch cloud runs yet. Read them with pipeline.execution_get.';
     return cloudRunWatcherRefusal(entry.target, cloudRunWatcherDeps());
@@ -3431,7 +3432,7 @@ async function watcherAuthorizationResources(
     // surface default; the renderer can use that model for the follow-up turn.
     const { readPreferencesFile } = await import('../lib/preferences-store');
     const preferences = await readPreferencesFile();
-    if (watcher.destination.projectId === APP_ADVISOR_PROJECT_ID)
+    if (isBotProjectId(watcher.destination.projectId))
       destinationModel = preferences.appAdvisorModel;
     else if (
       watcher.destination.projectId === STANDALONE_CHAT_PROJECT_ID ||
@@ -3642,13 +3643,13 @@ async function destinationHasWatcherDelivery(
     projectId: destination.projectId,
     worktreeId: destination.worktreeId,
   };
-  if (isAppAdvisorDestination(destination)) {
+  if (isBotProjectId(destination.projectId)) {
     const { entryId } = await resolveWorkEntryForChat(
-      APP_ADVISOR_PROJECT_ID,
+      destination.projectId,
       destination.chatId,
     );
     if (!entryId) return false;
-    scope = { projectId: APP_ADVISOR_PROJECT_ID, worktreeId: entryId };
+    scope = { projectId: destination.projectId, worktreeId: entryId };
   }
   // Defer the heavy chat-state repository/transcript graph until a replay.
   const { getChatStateService } =
@@ -4184,7 +4185,7 @@ function buildAutomationRunCorrelation(
     };
   }
   if (dispatched.projectId && dispatched.worktreeId && dispatched.chatId) {
-    if (dispatched.projectId === APP_ADVISOR_PROJECT_ID) return null;
+    if (isBotProjectId(dispatched.projectId)) return null;
     const turnMatch = dispatched.userMessageId
       ? { turnUserMessageId: dispatched.userMessageId }
       : {};
@@ -4411,9 +4412,11 @@ function automationRunFireNote(event: AppAdvisorAutomationRunEvent): string {
   if (event.status === 'canceled') {
     return 'The automation run was canceled before dispatch, so no work was dispatched.';
   }
+  const dispatchedProjectId = event.dispatched?.projectId;
   if (
     event.dispatched?.appAdvisorChatId ||
-    event.dispatched?.projectId === APP_ADVISOR_PROJECT_ID
+    (typeof dispatchedProjectId === 'string' &&
+      isBotProjectId(dispatchedProjectId))
   ) {
     return 'The automation dispatched an Orchestrator prompt; the watcher fired at dispatch because Orchestrator chats emit no completion events.';
   }
@@ -5299,7 +5302,11 @@ function chatTransportTarget(
 ): AppAdvisorWatcherTarget {
   const address = entry.target;
   const projectId =
-    'projectId' in address ? address.projectId : APP_ADVISOR_PROJECT_ID;
+    'projectId' in address
+      ? address.projectId
+      : isBotId(address.botId)
+        ? projectIdForBotId(address.botId)
+        : APP_ADVISOR_PROJECT_ID;
   if ('chatId' in address)
     return resolved.kind === 'project' && resolved.projectType === 'cowork'
       ? { kind: 'standalone_chat', projectId, chatId: address.chatId }
@@ -5894,14 +5901,15 @@ class AppAdvisorWatcherService implements InlineChatWatcherReservationPort {
   private async destinationChatAddress(
     destination: AppAdvisorWatcherDestination,
   ): Promise<CanonicalChatAddress | null> {
-    if (isAppAdvisorDestination(destination)) {
+    const botId = botIdForProjectId(destination.projectId);
+    if (botId) {
       const owner = await resolveWorkEntryForChat(
-        APP_ADVISOR_PROJECT_ID,
+        destination.projectId,
         destination.chatId,
       );
       return owner.entryId
         ? {
-            botId: 'app_advisor',
+            botId,
             taskId: owner.entryId,
             chatId: destination.chatId,
           }
@@ -9059,6 +9067,7 @@ class AppAdvisorWatcherService implements InlineChatWatcherReservationPort {
           entryId: string;
         }> = [];
         if (
+          // Default Bot only: this is the legacy global Work Entry slot.
           destination.projectId === APP_ADVISOR_PROJECT_ID &&
           destination.worktreeId === APP_ADVISOR_WORKTREE_ID
         ) {
@@ -11499,7 +11508,7 @@ class AppAdvisorWatcherService implements InlineChatWatcherReservationPort {
     if (
       event.scope === 'standalone' ||
       isCoworkWorkspace(projectId) ||
-      projectId === APP_ADVISOR_PROJECT_ID
+      isBotProjectId(projectId)
     ) {
       const owner = await resolveWorkEntryForChat(projectId, event.chatId);
       if (!owner.entryId || owner.archivedInEntryId) return null;
@@ -12342,16 +12351,18 @@ class AppAdvisorWatcherService implements InlineChatWatcherReservationPort {
       await getAutomationsService().findActivityForBackgroundAuthorization(
         watcher.target.automationId.trim(),
       );
-    const dispatchedToAdvisor =
-      event?.dispatched?.appAdvisorChatId !== undefined ||
-      event?.dispatched?.projectId === APP_ADVISOR_PROJECT_ID;
+    const dispatchedProjectId = event?.dispatched?.projectId;
     // A retried delivery keeps the classification recorded when it was
     // queued, whatever the automation's action is now.
     const queuedAdvisorPrompt =
       watcher.pendingLocalDelivery?.appAdvisorPrompt === true;
     if (
       activity?.action?.type !== 'app_advisor_prompt' &&
-      !dispatchedToAdvisor &&
+      event?.dispatched?.appAdvisorChatId === undefined &&
+      !(
+        typeof dispatchedProjectId === 'string' &&
+        isBotProjectId(dispatchedProjectId)
+      ) &&
       !queuedAdvisorPrompt
     )
       return null;
@@ -13208,9 +13219,9 @@ class AppAdvisorWatcherService implements InlineChatWatcherReservationPort {
     let deadlineExpired = false;
     const delivery = (async (): Promise<WatcherChatDeliveryOutcome> => {
       let worktreeId = watcher.destination.worktreeId;
-      if (isAppAdvisorDestination(watcher.destination)) {
+      if (isBotProjectId(watcher.destination.projectId)) {
         const resolution = await resolveWorkEntryForChat(
-          APP_ADVISOR_PROJECT_ID,
+          watcher.destination.projectId,
           watcher.destination.chatId,
         );
         if (!resolution.entryId) {
@@ -13236,7 +13247,7 @@ class AppAdvisorWatcherService implements InlineChatWatcherReservationPort {
         ...(watcherFired ? { watcherFired } : {}),
       });
       if (result !== 'terminal_presenter') return result;
-      if (isAppAdvisorDestination(watcher.destination)) {
+      if (isBotProjectId(watcher.destination.projectId)) {
         throw new Error(
           'App Advisor watcher delivery cannot use the terminal presenter.',
         );
@@ -13740,7 +13751,8 @@ class AppAdvisorWatcherService implements InlineChatWatcherReservationPort {
   ): void {
     const current = new Set<string>();
     for (const watcher of watchers) {
-      if (isAppAdvisorDestination(watcher.destination)) {
+      // Default Bot only: Portal's app_advisor summary has no botId field.
+      if (watcher.destination.projectId === APP_ADVISOR_PROJECT_ID) {
         current.add(watcher.destination.chatId);
       }
     }

@@ -46,6 +46,7 @@ import {
 import {
   canEditOrgEnforcedSettings,
   canEditUsageStatsConfig,
+  canManageExternalShares,
   canViewUsageStats,
 } from '@canopy/protocol/settings/organization-permissions';
 import { useSettingsBrand, useSettingsClient } from '../host';
@@ -59,6 +60,7 @@ import {
 } from './team-api';
 import type { SettingsFailure } from '../errors';
 import { Surface } from '@canopy/ui-shared/components';
+import { TeamExternalSharesList } from './team-external-shares-list';
 
 const USAGE_SETTINGS_ERROR_SCOPE = 'settings.organization.usage-settings';
 
@@ -595,6 +597,9 @@ function EnforcedSettingsCard({
               />
             }
           />
+          {canManageExternalShares(detail.viewerRole) ? (
+            <TeamExternalSharesList orgId={orgId} />
+          ) : null}
         </Stack>
       </div>
 

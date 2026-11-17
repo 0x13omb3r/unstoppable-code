@@ -1,9 +1,9 @@
 import { isChatLearningFlagEnabled } from './transcript-learning-gate';
 import {
-  APP_ADVISOR_PROJECT_ID,
   type ChatActiveSessionInfo,
   type LocalMemoryScopeRequest,
 } from '@canopy/desktop-shared/types';
+import { isBotProjectId } from '@canopy/protocol/chat-targets';
 import {
   getAllActiveSessionInfos,
   subscribeChatSessionActivity,
@@ -57,16 +57,14 @@ function sessionKey(session: ChatActiveSessionInfo): string {
   return `${session.projectId}/${session.worktreeId}/${session.chatId}`;
 }
 
-function isRelevantSession(session: ChatActiveSessionInfo): boolean {
-  return session.projectId !== APP_ADVISOR_PROJECT_ID;
-}
-
 function isSessionBusy(session: ChatActiveSessionInfo): boolean {
   return session.turnActive || session.pendingMessageCount > 0;
 }
 
 function currentRelevantSessions(): ChatActiveSessionInfo[] {
-  return getAllActiveSessionInfos().filter(isRelevantSession);
+  return getAllActiveSessionInfos().filter(
+    (session) => !isBotProjectId(session.projectId),
+  );
 }
 
 function userScope(): ConsolidationScope {

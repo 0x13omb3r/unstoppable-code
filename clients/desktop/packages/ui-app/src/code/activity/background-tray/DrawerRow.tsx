@@ -1,5 +1,6 @@
 'use client';
 
+import { ControlButton } from '@canopy/ui-shared/components';
 import { TrayRowHeader, TrayRowSurface } from '@canopy/ui-shared/components';
 import {
   useContext,
@@ -405,13 +406,14 @@ export function DrawerRow({
               {/* With nothing to unfold, the whole row is its way out (a pull
                 request opens on GitHub): the button lies under the row's
                 content, and controls in the row sit above it. */}
-              <button
-                type="button"
-                className={`focus-visible:outline focus-visible:outline-1 focus-visible:outline-fg-quaternary focus-visible:-outline-offset-1 outline-none ${
+              <ControlButton
+                presentation={
                   inspector && !redesigned
-                    ? `group/header flex h-9 min-w-0 flex-1 items-center gap-2.5 text-left ${modal ? 'rounded-lg pl-3' : 'rounded-drawer-row pl-2.75'}`
-                    : 'absolute inset-0 rounded-drawer-row'
-                }`}
+                    ? modal
+                      ? 'work-row-modal-header'
+                      : 'work-row-drawer-header'
+                    : 'work-row-open-overlay'
+                }
                 aria-labelledby={redesigned ? nameId : undefined}
                 aria-expanded={inspector ? open : undefined}
                 aria-controls={inspector && open ? inspectorId : undefined}
@@ -436,7 +438,7 @@ export function DrawerRow({
                     {name}, {navigation?.label}
                   </span>
                 ) : null}
-              </button>
+              </ControlButton>
               {(!inspector || redesigned) && (
                 <div className="pointer-events-none flex h-9 min-w-0 flex-1 items-center gap-2.5 pl-2.75">
                   {content}
@@ -504,7 +506,9 @@ export function DrawerRow({
             data-testid="background-tray-inspector"
           >
             {presentation === 'legacy' && (
-              <Divider aria-hidden className="mb-1 mr-9.5" />
+              <div className="pb-1 pr-9.5 empty:hidden">
+                <Divider aria-hidden />
+              </div>
             )}
             <InspectorReveal animate={animateDetails}>
               {inspector.render()}
@@ -533,7 +537,7 @@ export function InspectorSubtitle({
   return (
     <div
       data-testid="background-tray-subtitle"
-      className={`min-w-0 text-s fg-tertiary ${presentation === 'modal' ? 'ml-6' : 'mr-9.5'}`}
+      className={`min-w-0 text-s fg-tertiary ${presentation === 'modal' ? 'pl-6' : 'pr-9.5'}`}
     >
       {children}
     </div>
@@ -572,7 +576,7 @@ export function InspectorFooter({
   const leading = modal || children == null;
   return (
     <div
-      className={`mt-2 flex items-center gap-3 text-s ${leading ? '' : 'mr-9.5 justify-end'}`}
+      className={`pt-2 flex items-center gap-3 text-s ${leading ? '' : 'pr-9.5 justify-end'}`}
     >
       {children}
       {action && (

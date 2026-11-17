@@ -15,11 +15,11 @@ import {
 } from '@canopy/desktop-shared/lib/chat-send-actions';
 import { mergeAgentModelConfig } from '@canopy/execution-engine/lib/codex-speed';
 import {
-  APP_ADVISOR_PROJECT_ID,
   getProviderForChatModel,
   type ChatCommand,
   type ChatCommandEnvelope,
 } from '@canopy/desktop-shared/types';
+import { isBotProjectId } from '@canopy/protocol/chat-targets';
 import {
   AgentChatSendError,
   canonicalSource,
@@ -207,10 +207,7 @@ async function create(
     caller = pipelineDiscoveryCaller(trusted.source);
   } else {
     source = await canonicalSource(trusted.source);
-    if (
-      (trusted.kind === 'app_advisor') !==
-      (source.projectId === APP_ADVISOR_PROJECT_ID)
-    )
+    if ((trusted.kind === 'app_advisor') !== isBotProjectId(source.projectId))
       throw new AgentChatSendError(
         'validation_failed',
         'The trusted sender runtime is inconsistent.',

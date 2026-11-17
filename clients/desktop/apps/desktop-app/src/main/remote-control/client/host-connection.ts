@@ -2,7 +2,9 @@ import { classifyError } from '@canopy/protocol/app-errors/classification';
 import type { RemoteSurface } from '@canopy/desktop-shared/remote-control/surfaces';
 import type {
   CheckWorktreeRemovalAdmissionResponse,
+  RemoteControlHostUpdateAction,
   RemoteHostConnectionStatus,
+  RemoteHostUpdateStatus,
 } from '@canopy/desktop-shared/types';
 import { IPC_CHANNELS } from '@canopy/desktop-shared/types';
 import { FileSaveConflictError } from '@canopy/protocol/file-save-conflict';
@@ -42,6 +44,11 @@ import {
   type RemoteSessionEndReason,
 } from '../remote-protocol';
 import { RpcClosedError, RpcPeer, RpcRemoteError } from '../transport/rpc-peer';
+import {
+  RemoteHostUpdateTracker,
+  servesHostUpdates,
+  type LocalRelease,
+} from './host-update';
 import type {
   SecureSession,
   SessionCloseReason,
@@ -50,6 +57,10 @@ import type {
 export interface HostConnectionOptions {
   /** This computer's version; the host must speak the same protocol. */
   version: RemoteVersion;
+  /** This computer's release, shown when one of the two needs an update. */
+  release?: LocalRelease;
+  /** Diagnostics kept on this computer, such as a failed update step. */
+  log?: (message: string, context?: unknown) => void;
   connect: () => Promise<SecureSession>;
   /** `surface` absent: every window that shows the host. */
   onPush: (channel: string, args: unknown[], surface?: RemoteSurface) => void;
@@ -128,6 +139,18 @@ export class RemoteHostConnection {
   private statusValue: RemoteHostConnectionStatus = 'idle';
   private errorValue: string | null = null;
   private helloValue: HelloResult | null = null;
+  /**
+   * A session kept open on a protocol mismatch only for the host's
+   * `core.update.*` operations, so this computer can update it (CAN-5899).
+   * Never `rpc`: nothing else is sent over it.
+   */
+  private updateRpc: RpcPeer | null = null;
+  /** Follows the host's update while the two can't connect. */
+  private updateTracker: RemoteHostUpdateTracker | null = null;
+  /** Why the open update session can't serve calls. */
+  private mismatchMessage: string | null = null;
+  /** An update this computer can't drive over a session, such as its own. */
+  private staticUpdate: RemoteHostUpdateStatus | null = null;
 
   constructor(private readonly options: HostConnectionOptions) {}
 
@@ -148,10 +171,48 @@ export class RemoteHostConnection {
     return this.helloValue;
   }
 
+  /** One of the two computers needs an update before they can connect. */
+  get update(): RemoteHostUpdateStatus | null {
+    return this.updateTracker?.status ?? this.staticUpdate;
+  }
+
+  /** Runs an update step on the host while the two can't connect. */
+  async updateHost(action: RemoteControlHostUpdateAction): Promise<void> {
+    const tracker = this.updateTracker;
+    if (!tracker || !this.updateSessionOpen()) {
+      throw classifyError(
+        new Error("The other computer isn't waiting for an update."),
+        'external.state_changed',
+      );
+    }
+    switch (action) {
+      case 'update':
+        // Steps take as long as the download; progress and failures reach
+        // the window through the status.
+        void tracker.update().catch((error: unknown) => {
+          this.options.log?.('Remote host update step failed', {
+            message: error instanceof Error ? error.message : String(error),
+          });
+        });
+        return;
+      case 'restart-now':
+        return tracker.restartNow();
+      case 'cancel':
+        return tracker.cancel();
+    }
+  }
+
   keepConnected(): void {
     this.wanted = true;
-    // Opening the computer again is the user's choice to reconnect.
+    // Opening the computer again is the user's choice to reconnect; the next
+    // hello says again which computer needs an update, if either does.
     this.endedMessage = null;
+    this.staticUpdate = null;
+    // The session kept for updates stays; Reconnect reads the host again.
+    if (this.updateSessionOpen()) {
+      this.updateTracker?.refresh();
+      return;
+    }
     void this.ensure().catch(() => undefined);
   }
 
@@ -165,6 +226,7 @@ export class RemoteHostConnection {
       !this.wanted ||
       this.endedMessage !== null ||
       (this.rpc && !this.rpc.isClosed) ||
+      this.updateSessionOpen() ||
       this.connecting
     ) {
       return;
@@ -186,6 +248,8 @@ export class RemoteHostConnection {
     rpc?.close('closed');
     this.pendingRpc?.close('closed');
     this.pendingRpc = null;
+    this.closeUpdateSession();
+    this.staticUpdate = null;
     this.hadSession = false;
     this.options.onSessionEnded?.('released');
     this.setStatus('idle', null);
@@ -194,6 +258,16 @@ export class RemoteHostConnection {
   ensure(): Promise<RpcPeer> {
     if (this.rpc && !this.rpc.isClosed) return Promise.resolve(this.rpc);
     if (this.connecting) return this.connecting;
+    if (this.updateSessionOpen()) {
+      return Promise.reject(
+        classifyError(
+          new Error(
+            this.mismatchMessage ?? 'The other computer needs an update.',
+          ),
+          'external.state_changed',
+        ),
+      );
+    }
     if (this.endedMessage !== null) {
       return Promise.reject(
         classifyError(new Error(this.endedMessage), 'external.state_changed'),
@@ -390,6 +464,10 @@ export class RemoteHostConnection {
           }
           return;
         }
+        if (name === REMOTE_EVENTS.coreEvent) {
+          if (this.updateRpc === rpc) this.updateTracker?.handleEvent(payload);
+          return;
+        }
         if (name === REMOTE_EVENTS.accountProxySignInEnded) {
           const ended = AccountProxySignInEndedParamsSchema.safeParse(payload);
           if (ended.success) {
@@ -417,6 +495,8 @@ export class RemoteHostConnection {
     });
     this.pendingRpc = rpc;
     let hello: HelloResult;
+    // Set when the session stays open for the host's updates.
+    let keep = false;
     try {
       const params: HelloParams = {
         version: this.options.version,
@@ -446,16 +526,14 @@ export class RemoteHostConnection {
       ) {
         // Another protocol would read this computer's calls differently;
         // reopening the computer, after updating, tries again.
-        this.endedMessage = describeHostVersionMismatch(
+        const message = describeHostVersionMismatch(
           hello.name,
           hello.appVersion,
           hello.version ?? null,
           this.options.version,
         );
-        throw classifyError(
-          new Error(this.endedMessage),
-          'external.state_changed',
-        );
+        keep = this.handleMismatch(rpc, hello, message);
+        throw classifyError(new Error(message), 'external.state_changed');
       }
       // Hosts released before session resume answer without it.
       session.setResumeNegotiated(
@@ -471,7 +549,7 @@ export class RemoteHostConnection {
       }
     } catch (error) {
       // Never leave a session open that nothing will use.
-      rpc.close('closed');
+      if (!keep) rpc.close('closed');
       throw error;
     } finally {
       if (this.pendingRpc === rpc) this.pendingRpc = null;
@@ -479,7 +557,12 @@ export class RemoteHostConnection {
     this.helloValue = hello;
     this.rpc = rpc;
     this.attempt = 0;
-    const reconnected = this.hadSession;
+    // A host that came back compatible after an update shows a window that
+    // could not load, so it reloads as after any reconnect.
+    const updated = this.updateTracker !== null || this.staticUpdate !== null;
+    this.closeUpdateSession();
+    this.staticUpdate = null;
+    const reconnected = this.hadSession || updated;
     this.hadSession = true;
     this.setStatus(
       session.state === 'active' ? 'connected' : 'connecting',
@@ -489,7 +572,88 @@ export class RemoteHostConnection {
     return rpc;
   }
 
+  /**
+   * Decides what a protocol mismatch leaves open. A host on the older
+   * protocol that serves `core.update.*` keeps this session for its updates;
+   * otherwise the session closes and nothing retries until reopened.
+   * Returns whether the session stays open.
+   */
+  private handleMismatch(
+    rpc: RpcPeer,
+    hello: HelloResult,
+    message: string,
+  ): boolean {
+    const host = hello.version ?? null;
+    const hostIsOlder =
+      host === null ||
+      host.protocolVersion < this.options.version.protocolVersion;
+    const local = this.options.release ?? {
+      flavor: 'stable',
+      displayVersion: this.options.version.appVersion,
+    };
+    this.staticUpdate = null;
+    if (
+      !hostIsOlder ||
+      (hello.platform === 'win32' && servesHostUpdates(hello))
+    ) {
+      // This computer updates itself through its own updater. Windows hosts
+      // wait until their silent install and relaunch is proven.
+      this.staticUpdate = {
+        target: hostIsOlder ? 'host' : 'this-computer',
+        hostVersion: hello.appVersion,
+        localVersion: local.displayVersion,
+        hostFlavor: null,
+        localFlavor: local.flavor,
+        phase: hostIsOlder ? 'unavailable' : 'ready',
+        reason: hostIsOlder ? 'windows-host' : null,
+        progress: null,
+        detail: null,
+        waitingForChats: false,
+        requestedBy: null,
+        canCancel: false,
+      };
+      this.closeUpdateSession();
+      this.endedMessage = message;
+      return false;
+    }
+    if (!servesHostUpdates(hello)) {
+      this.closeUpdateSession();
+      this.endedMessage = message;
+      return false;
+    }
+    // The tracker carries on across sessions, so it can tell a host that
+    // came back from its restart on the old version.
+    if (this.updateRpc !== rpc) this.updateRpc?.close('closed');
+    this.mismatchMessage = message;
+    this.updateRpc = rpc;
+    this.attempt = 0;
+    this.updateTracker ??= new RemoteHostUpdateTracker({
+      local,
+      onChange: (): void => this.options.onStatusChange(),
+    });
+    this.updateTracker.attach(rpc, hello);
+    return true;
+  }
+
+  private updateSessionOpen(): boolean {
+    return this.updateRpc !== null && !this.updateRpc.isClosed;
+  }
+
+  /** Ends update mode: its session, its tracker and its restart timer. */
+  private closeUpdateSession(): void {
+    const rpc = this.updateRpc;
+    this.updateRpc = null;
+    this.mismatchMessage = null;
+    this.updateTracker?.dispose();
+    this.updateTracker = null;
+    rpc?.close('closed');
+  }
+
   private handleDropped(rpc: RpcPeer, reason: SessionCloseReason): void {
+    if (this.updateRpc === rpc) {
+      this.handleUpdateSessionDropped(reason);
+      return;
+    }
     if (this.rpc !== rpc) return;
     this.rpc = null;
     this.options.onSessionEnded?.(reason);
@@ -505,8 +669,37 @@ export class RemoteHostConnection {
     this.scheduleRetry();
   }
 
+  /**
+   * The session kept for the host's updates closed: the host is restarting
+   * to install, or the network dropped. Either way it reconnects, and the
+   * host's next hello says whether it can now be controlled.
+   */
+  private handleUpdateSessionDropped(reason: SessionCloseReason): void {
+    this.updateRpc = null;
+    this.updateTracker?.sessionClosed();
+    this.options.onSessionEnded?.(reason);
+    if (!this.wanted) {
+      this.setStatus('idle', null);
+      return;
+    }
+    if (this.endedMessage !== null) {
+      // The host ended the session on purpose; nothing is updating.
+      this.closeUpdateSession();
+      this.setStatus('error', this.endedMessage);
+      return;
+    }
+    this.setStatus('connecting', null);
+    this.scheduleRetry();
+  }
+
   private scheduleRetry(): void {
-    if (!this.wanted || this.retryTimer || this.endedMessage !== null) return;
+    if (
+      !this.wanted ||
+      this.retryTimer ||
+      this.endedMessage !== null ||
+      this.updateSessionOpen()
+    )
+      return;
     const min = this.options.minRetryDelayMs ?? 1_000;
     const max = this.options.maxRetryDelayMs ?? 15_000;
     const base = Math.min(max, min * 2 ** this.attempt);

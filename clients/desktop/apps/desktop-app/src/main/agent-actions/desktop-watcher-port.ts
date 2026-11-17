@@ -32,13 +32,13 @@ import type {
   TrustedChatWatcherRecipient,
 } from '@canopy/desktop-shared/lib/chat-watcher-contracts';
 import {
-  APP_ADVISOR_PROJECT_ID,
   type AppAdvisorWatcherDestination,
   type SearchAppAdvisorWatchersInput,
   type SearchAppAdvisorWatchersResult,
   type SetupAppAdvisorWatchersInput,
   type SetupAppAdvisorWatchersResult,
 } from '@canopy/desktop-shared/types';
+import { isBotProjectId } from '@canopy/protocol/chat-targets';
 import type { getAppAdvisorWatcherService } from '../app-advisor/watchers';
 import type { CanopyInjectedToolRuntime } from '../canopy-tools/core';
 import { isCoworkWorkspace } from '../lib/workspace-registry';
@@ -464,7 +464,7 @@ export async function automationWatcherRefusal(
   rawAutomationId: string,
   destination: AppAdvisorWatcherDestination,
 ): Promise<{ code?: string; message: string } | undefined> {
-  if (destination.projectId === APP_ADVISOR_PROJECT_ID) return undefined;
+  if (isBotProjectId(destination.projectId)) return undefined;
   // Check the same trimmed id the watcher service resolves.
   const automationId = rawAutomationId.trim();
   // Deferred: the automation and owner services load on first use.

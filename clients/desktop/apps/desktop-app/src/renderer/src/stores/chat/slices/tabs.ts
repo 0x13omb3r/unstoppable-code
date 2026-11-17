@@ -12,7 +12,6 @@ import { canNavigateToWorktreeFromSidebarItems } from '@/lib/worktreeNavigation'
 import { refreshCarriedGitHubWorkflowRun } from '@/components/chat/agent-artifact-projection';
 import { useProjectsStore } from '../../projectsStore';
 import {
-  APP_ADVISOR_PROJECT_ID,
   type ArchivedChatSummary,
   type ApprovalMode,
   type ApprovalRequestEvent,
@@ -27,6 +26,7 @@ import {
   SHARED_CONTAINER_VIEWER_PROJECT_ID,
   type WorktreeSelection,
 } from '@canopy/desktop-shared/types';
+import { isBotProjectId } from '@canopy/protocol/chat-targets';
 import { resolveClaudeForkResumePoint } from '@canopy/desktop-shared/lib/claude-fork-resume-point';
 import { sanitizeSystemInstructionText } from '@canopy/desktop-shared/lib/pending-system-instructions';
 import { canContinueOnOtherHarness } from '@/lib/chatProviderLock';
@@ -190,7 +190,6 @@ import {
   isWorktreeTabForkPending,
 } from '../pending-worktree-tab-forks';
 import {
-  isAppAdvisorChatTarget,
   isPipelineEditorChatTarget,
   isSentinelWriteAllowed,
   shouldArchiveChatTargetOnClose,
@@ -953,7 +952,7 @@ export const createTabsSlice: StateCreator<ChatState, [], [], ChatTabsSlice> = (
         key,
         options?.attentionLanding === true &&
           options.newlyCreated !== true &&
-          !isAppAdvisorChatTarget(projectId, worktreeId) &&
+          !isBotProjectId(projectId) &&
           !isPipelineEditorChatTarget(projectId, worktreeId),
       );
     }
@@ -1150,16 +1149,12 @@ export const createTabsSlice: StateCreator<ChatState, [], [], ChatTabsSlice> = (
     }
     // Persist last selected worktree so it can be restored on restart. Also
     // write the unified lastActiveContext MRU used for startup routing.
-    // App Advisor selections are EXCLUDED: the popout window selects
-    // `(app-advisor, <entryId>)` through this same path, and writing that
-    // into the main-window MRU would corrupt startup routing (there is no
-    // `app-advisor` sidebar workspace to resume into). Web core selections
-    // are excluded too: startup restores before the cloud connects, and main
+    // Bot selections are EXCLUDED: the Bot renderer selects them through
+    // this same path, and writing them into the main-window MRU would corrupt
+    // startup routing because there are no Bot sidebar workspaces. Web core
+    // selections are excluded too: startup restores before the cloud connects, and main
     // never holds a web core id (CAN-6175 D1).
-    if (
-      !isAppAdvisorChatTarget(projectId, worktreeId) &&
-      !isWebCoreScope(projectId)
-    ) {
+    if (!isBotProjectId(projectId) && !isWebCoreScope(projectId)) {
       void window.api.savePreferences({
         lastSelectedWorktreeProjectId: projectId,
         lastSelectedWorktreeId: worktreeId,
@@ -2674,8 +2669,7 @@ export const createTabsSlice: StateCreator<ChatState, [], [], ChatTabsSlice> = (
         ...(providerType ? { providerType } : {}),
         ...(latestTab.model ? { model: latestTab.model } : {}),
         // Keep the renderer's untouched-default marker across canonical creation.
-        ...(target.projectId === APP_ADVISOR_PROJECT_ID &&
-        latestTab.defaultStampModel
+        ...(isBotProjectId(target.projectId) && latestTab.defaultStampModel
           ? { defaultStampModel: latestTab.defaultStampModel }
           : {}),
         ...(latestTab.modelConfig

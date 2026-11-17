@@ -97,7 +97,7 @@ export function PluginAlternatives({
   );
   if (linksOnly) return <span data-testid={testIdPrefix}>{links}</span>;
   return (
-    <p data-testid={testIdPrefix} className="mt-2 text-xs fg-secondary">
+    <p data-testid={testIdPrefix} className="pt-2 text-xs fg-secondary">
       Also available from {links}
     </p>
   );

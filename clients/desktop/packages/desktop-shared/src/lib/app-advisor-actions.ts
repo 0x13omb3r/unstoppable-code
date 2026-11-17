@@ -4561,55 +4561,6 @@ export const APP_ADVISOR_ACTION_CATALOG: readonly AppAdvisorActionCatalogEntry[]
       keywords: ['worktree', 'workspace', 'code', 'select'],
     },
     {
-      type: 'worktree.archive',
-      category: 'worktree',
-      summary: `Open the removal confirmation dialog for a ${WORKTREE_LABEL} entry (worktree). Deletion retention is always on: mode "delete" (default) opens "Delete worktree?", which keeps the removed worktree's chats, Git state, and pipeline history for the project's retention window; mode "archive" opens "Archive worktree?", which keeps them until the user deletes the archive. The dialog has no mode switch, so pass the mode the user asked for. Its Keep the local branch switch starts at the requested branch handling and the dialog names that request; the user can flip it, then confirms with Delete worktree or Archive worktree.`,
-      fields: [
-        PROJECT_FIELD,
-        WORKTREE_FIELD,
-        field(
-          'deleteBranch',
-          'boolean',
-          true,
-          'Request deleting the local branch when true or preserving it when false. The dialog highlights the requested menu item; the user must confirm the final choice.',
-        ),
-        field(
-          'mode',
-          "'delete' | 'archive'",
-          false,
-          'Which confirmation opens. "delete" (default) keeps the work for the retention window; "archive" keeps it until the user deletes it. Use "archive" when the user asks to archive.',
-        ),
-      ],
-      example: {
-        type: 'worktree.archive',
-        projectId: 'project-1',
-        worktreeId: 'worktree-1',
-        deleteBranch: false,
-        mode: 'archive',
-      },
-      additionalExamples: [
-        {
-          type: 'worktree.archive',
-          projectId: 'project-1',
-          worktreeId: 'worktree-1',
-          deleteBranch: true,
-        },
-      ],
-      keywords: [
-        'worktree',
-        'workspace',
-        'archive',
-        'remove',
-        'delete branch',
-        'preserve branch',
-        'project',
-      ],
-      notes: [
-        'This removes the worktree checkout. Pass deleteBranch explicitly so local branch handling never depends on a saved preference.',
-        'Describe the dialog as it opens: its title follows mode, and the branch choice is a menu on the confirm button, not a separate option. Say which choice was requested, not that it was applied.',
-      ],
-    },
-    {
       type: 'worktree.create',
       category: 'worktree',
       summary: `Create a new ${WORKTREE_LABEL} entry (worktree) in a project.`,
@@ -7879,31 +7830,6 @@ export const APP_ADVISOR_ACTION_CATALOG: readonly AppAdvisorActionCatalogEntry[]
         'work entry',
         'rename',
         'title',
-      ],
-    },
-    {
-      type: 'standalone-chat.delete_work_entry',
-      category: 'standalone-chat',
-      summary:
-        'Delete a Work Entry and its chats from a cowork project. This action is destructive.',
-      fields: [
-        field('projectId', 'string', true, 'Cowork project id.'),
-        field('workEntryId', 'string', true, 'Work Entry id to delete.'),
-      ],
-      example: {
-        type: 'standalone-chat.delete_work_entry',
-        projectId: 'default',
-        workEntryId: 'entry-1',
-      },
-      keywords: [
-        'standalone chat',
-        'standalone cowork',
-        'work entry',
-        'delete',
-        'remove',
-      ],
-      notes: [
-        'Deletion removes the Work Entry and its persisted chat data and cannot be undone.',
       ],
     },
     {

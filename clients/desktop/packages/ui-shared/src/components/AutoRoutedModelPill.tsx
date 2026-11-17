@@ -20,7 +20,7 @@ export function AutoRoutedModelPill({
 
   return (
     <Tooltip label="Picked by model routing">
-      <span data-testid="turn-auto-model" className="ml-1 text-s fg-secondary">
+      <span data-testid="turn-auto-model" className="pl-1 text-s fg-secondary">
         {label}
       </span>
     </Tooltip>

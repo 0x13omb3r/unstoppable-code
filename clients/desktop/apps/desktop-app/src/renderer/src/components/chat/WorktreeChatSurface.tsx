@@ -18,10 +18,10 @@ import {
 import { useChatStore as useSharedChatStore } from '@canopy/app-state';
 import { projectPersistedChatTranscript } from '@canopy/desktop-shared/portal/persisted-chat-projection';
 import {
-  APP_ADVISOR_PROJECT_ID,
   type AppAdvisorJson,
   type WorktreeSelection,
 } from '@canopy/desktop-shared/types';
+import { isBotProjectId } from '@canopy/protocol/chat-targets';
 import { useChatStore } from '@/stores/chatStore';
 import { useProjectsStore } from '@/stores/projectsStore';
 import { usePanelOwnerDocument } from '@/lib/panels/panel-owner-document';
@@ -159,7 +159,7 @@ export const WorktreeChatSurface = memo(function WorktreeChatSurface({
     });
   const allowCursor = useProjectsStore(
     (state) =>
-      selectedProjectId === APP_ADVISOR_PROJECT_ID ||
+      (selectedProjectId !== undefined && isBotProjectId(selectedProjectId)) ||
       (selectedProjectId !== undefined &&
         isCoworkChatTarget(selectedProjectId)) ||
       state.projects.some(
@@ -255,7 +255,8 @@ export const WorktreeChatSurface = memo(function WorktreeChatSurface({
     isCoworkChat &&
     !composerHasText &&
     Boolean(selectedWorktree) &&
-    selectedWorktree?.projectId !== APP_ADVISOR_PROJECT_ID &&
+    (selectedWorktree?.projectId === undefined ||
+      !isBotProjectId(selectedWorktree.projectId)) &&
     !isClaudeCodeChatMode &&
     transcriptEmpty &&
     // Hidden panels must not fetch inventory or record impressions; the
@@ -411,7 +412,7 @@ export const WorktreeChatSurface = memo(function WorktreeChatSurface({
                   // App Advisor entry chats keep App Advisor assistant mode in
                   // the managed-terminal runtime, matching the native send path.
                   assistantMode={
-                    selectedWorktree.projectId === APP_ADVISOR_PROJECT_ID
+                    isBotProjectId(selectedWorktree.projectId)
                       ? 'app-advisor'
                       : undefined
                   }

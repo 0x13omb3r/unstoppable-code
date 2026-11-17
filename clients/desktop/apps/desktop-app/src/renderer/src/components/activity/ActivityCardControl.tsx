@@ -79,7 +79,7 @@ export function ActivityCardToggle({
     // above it; as the row's last control it keeps the same 4px from the
     // card's right edge, matching the first tab's 4px on the left. The 4px
     // before it is the row's gap between controls (after the `+`).
-    <span className="ml-1 inline-flex self-center last:mr-1">
+    <span className="pl-1 inline-flex self-center last:pr-1">
       {/* While the card is open the button keeps the hover look (subtle
           surface, primary ink), like the top bar's Side Panel toggle while
           its panel shows. */}

@@ -1,44 +1,10 @@
 import { useMemo, type JSX } from 'react';
-import {
-  Stack,
-  CheckStatusBadge,
-  LoadingSpinner,
-  type CheckStatusBadgeStatus,
-} from '@canopy/ui-shared/components';
+import { Stack } from '@canopy/ui-shared/components';
+import { PullRequestCheckStatusMarker } from './PullRequestCheckStatusMarker';
 import type {
   PullRequestSectionCheckDetail as CheckDetail,
   PullRequestSectionCheckStatus as CheckStatus,
 } from '../activity/PullRequestSectionBody';
-
-function toCheckStatusBadgeStatus(
-  status: CheckStatus,
-): CheckStatusBadgeStatus | null {
-  switch (status) {
-    case 'passing':
-      return 'success';
-    case 'failing':
-      return 'failure';
-    case 'neutral':
-      return 'neutral';
-    case 'pending':
-      return 'pending';
-    default:
-      return null;
-  }
-}
-
-function CheckIcon({ status }: { status: CheckStatus }): JSX.Element {
-  const mapped = toCheckStatusBadgeStatus(status);
-  if (mapped === null) {
-    return <LoadingSpinner tone="warning" />;
-  }
-  if (mapped === 'pending') {
-    return (
-      <CheckStatusBadge status="pending" pendingIcon={<LoadingSpinner />} />
-    );
-  }
-  return <CheckStatusBadge status={mapped} />;
-}
 
 interface CheckDetailsListProps {
   readonly checkDetails: readonly CheckDetail[];
@@ -108,7 +74,7 @@ export function CheckDetailsList({
             className="flex items-center justify-between gap-2 text-xs"
           >
             <span className="flex min-w-0 items-center gap-1.5">
-              <CheckIcon status={check.status} />
+              <PullRequestCheckStatusMarker status={check.status} />
               <span className="truncate fg-primary/80">{check.name}</span>
             </span>
             {check.detailsUrl && (

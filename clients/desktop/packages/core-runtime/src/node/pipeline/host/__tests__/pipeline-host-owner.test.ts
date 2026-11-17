@@ -271,6 +271,37 @@ describe('pipeline host supervisor owner channel (CAN-5771)', () => {
     await h.supervisor.stop();
   });
 
+  // CAN-6868: a cloud runner's host runs a run's child workflows in the
+  // run's executor; their host requests are the run's.
+  it("relays a child workflow's host request once its host reported the child, and no other execution's", async () => {
+    const h = harness();
+    const owner = await subscribeOwner(h.channel);
+    const host = await startRun(h, 'run-1', true);
+    // Before the host reports it, the child is no run this host holds.
+    host.send({
+      kind: 'hostRequest',
+      request: hostRequest('child-1', 'early'),
+    });
+    await settle();
+    expect(owner.items).toEqual([]);
+    host.send({
+      kind: 'child',
+      executionId: 'run-1',
+      event: 'execution.started',
+      execution: { ...projection('child-1'), parentExecutionId: 'run-1' },
+    });
+    const request = hostRequest('child-1', 'request-1');
+    host.send({ kind: 'hostRequest', request });
+    host.send({
+      kind: 'hostRequest',
+      request: hostRequest('stranger', 'request-2'),
+    });
+    await settle();
+    expect(owner.items).toEqual([request]);
+    owner.stop();
+    await h.supervisor.stop();
+  });
+
   it('a second answer for an applied request is a no-op (CAN-6171)', async () => {
     const h = harness();
     const owner = await subscribeOwner(h.channel);

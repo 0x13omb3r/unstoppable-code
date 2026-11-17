@@ -1,9 +1,7 @@
 import { memo, useCallback, type JSX } from 'react';
 import type { AgentProviderType } from '@canopy/desktop-shared/types';
-import {
-  APP_ADVISOR_PROJECT_ID,
-  STANDALONE_CHAT_PROJECT_ID,
-} from '@canopy/desktop-shared/types';
+import { STANDALONE_CHAT_PROJECT_ID } from '@canopy/desktop-shared/types';
+import { isBotProjectId } from '@canopy/protocol/chat-targets';
 import { ForkContextNotice } from '@canopy/ui-shared';
 import { Button, Divider } from '@canopy/ui-shared/components';
 import { getProviderLabel } from '@/lib/providerLabels';
@@ -110,7 +108,7 @@ export const ForkedFromLink = memo(function ForkedFromLink({
   forkedFrom,
 }: ForkedFromLinkProps): JSX.Element {
   const handleClick = useCallback((): void => {
-    if (forkedFrom.projectId === APP_ADVISOR_PROJECT_ID) {
+    if (isBotProjectId(forkedFrom.projectId)) {
       // App Advisor sources live in the popout window. Inside the popout the
       // scoped standalone store can resolve the chat directly; from the main
       // window we route through the popout's select_chat command instead of

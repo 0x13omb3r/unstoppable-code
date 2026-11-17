@@ -31,6 +31,7 @@ import type {
   MarketplaceInfo,
   PluginInfo,
 } from '@canopy/execution-engine/types/plugins';
+import type { PluginStandInCandidate } from '@canopy/protocol/plugins';
 import {
   offeredPluginHarnesses,
   pluginHarnessRows,
@@ -43,10 +44,13 @@ import { useFeatureFlagsStore } from '@/stores/featureFlagsStore';
 import { brandText } from '@/lib/brand';
 import {
   applyCodexCompatDisabledToMarketplaceCaches,
+  applyHarnessInstallsToMarketplaceCaches,
   marketplaceSourceOperations,
 } from '@/hooks/useMarketplaceList';
 import { useShareAccess } from '@/hooks/useShareAccess';
 import { usePluginMcpServerHealth } from '@/hooks/usePluginMcpServerHealth';
+import { useItemHarnessInstall } from '@/hooks/useItemHarnessInstall';
+import { useCustomizeDiscoveryEnabled } from '@canopy/ui-app/customize-discovery';
 import { computePluginShareableRef } from '@/hooks/useUnifiedTableData';
 import { SharePluginModal } from '@/components/plugins/SharePluginModal';
 import { pluginNeedsInstall } from '../../lib/pluginInstallStatus';
@@ -65,9 +69,14 @@ function resultError(error: unknown): Error {
 function installedPluginHarnessRows(
   plugin: PluginInfo,
   harnesses: readonly PluginHarnessId[],
+  showHarnessInstalls: boolean,
 ): PluginHarnessRow[] {
   return pluginHarnessRows({
     harnesses,
+    // One Add for every harness (CAN-6816): New Customize only.
+    ...(showHarnessInstalls && plugin.harnessInstalls
+      ? { harnessInstalls: plugin.harnessInstalls }
+      : {}),
     providerSupport: plugin.providerSupport,
     codexCompatDisabled: plugin.codexCompatDisabled,
     facets: plugin.facets,
@@ -99,8 +108,14 @@ export function PluginDetailView({
   onOpenEntryId,
   onOpenSource,
   bundledServerRows,
+  standIn,
 }: {
   onOpenSource?: () => void;
+  /**
+   * The publisher's MCP server one Add installs where this plugin's ChatGPT
+   * app doesn't run (CAN-6818), as the catalog grouping picked it.
+   */
+  standIn?: PluginStandInCandidate;
   mcpTarget?: PluginMcpNavigationTarget;
   plugin: PluginInfo;
   marketplace: MarketplaceInfo;
@@ -175,6 +190,58 @@ export function PluginDetailView({
   onPluginUpdatedRef.current = onPluginUpdated;
   const [autoInstalling, setAutoInstalling] = useState(false);
   const [autoInstallError, setAutoInstallError] = useState('');
+  // One Add for every harness (CAN-6816): New Customize only.
+  const installForHarnesses = useItemHarnessInstall();
+  const discoveryEnabled = useCustomizeDiscoveryEnabled();
+  const [harnessInstallNotice, setHarnessInstallNotice] = useState('');
+  // The plugin as this page last rendered it: a change made while harness
+  // discovery runs (Codex compatibility turned off, say) must survive the
+  // record landing.
+  const latestPluginRef = useRef(plugin);
+  latestPluginRef.current = plugin;
+  const mountedRef = useRef(true);
+  useEffect(() => {
+    mountedRef.current = true;
+    return (): void => {
+      mountedRef.current = false;
+    };
+  }, []);
+  const recordHarnessInstalls = useCallback(
+    (installed: PluginInfo): void => {
+      void installForHarnesses(
+        {
+          kind: 'plugin',
+          marketplaceId: installed.marketplaceId,
+          pluginName: installed.name,
+        },
+        standIn,
+      ).then((outcome) => {
+        // Only the record joins the rows: every mounted cache gets it on the
+        // plugin's current row, so a record landing after this page closed
+        // never replaces a newer row. While this page still shows the plugin,
+        // its own copy gets the record too.
+        if (outcome.kind === 'recorded' && outcome.record !== null) {
+          applyHarnessInstallsToMarketplaceCaches(
+            installed.marketplaceId,
+            installed.name,
+            outcome.record,
+          );
+          const latest = latestPluginRef.current;
+          if (
+            mountedRef.current &&
+            latest.marketplaceId === installed.marketplaceId &&
+            latest.name.toLowerCase() === installed.name.toLowerCase()
+          )
+            onPluginUpdatedRef.current({
+              ...latest,
+              harnessInstalls: outcome.record,
+            });
+        } else if (outcome.kind === 'failed')
+          setHarnessInstallNotice(outcome.message);
+      });
+    },
+    [installForHarnesses, standIn],
+  );
   const sourceUrl =
     typeof plugin.externalSource === 'string'
       ? plugin.externalSource
@@ -194,9 +261,10 @@ export function PluginDetailView({
       .then((result) => {
         // Leaving details does not cancel installation. Keep the marketplace
         // cache in sync even after this view has unmounted.
-        if (result.success && result.data)
+        if (result.success && result.data) {
           onPluginUpdatedRef.current(result.data);
-        else if (!cancelled)
+          recordHarnessInstalls(result.data);
+        } else if (!cancelled)
           setAutoInstallError(result.error ?? 'Unable to install. Try again.');
       })
       .catch((cause) => {
@@ -209,7 +277,14 @@ export function PluginDetailView({
     return (): void => {
       cancelled = true;
     };
-  }, [autoInstall, needsInstall, marketplace.id, plugin.name, sourceUrl]);
+  }, [
+    autoInstall,
+    needsInstall,
+    marketplace.id,
+    plugin.name,
+    sourceUrl,
+    recordHarnessInstalls,
+  ]);
 
   useEffect(() => {
     setCompatibilityError('');
@@ -289,6 +364,7 @@ export function PluginDetailView({
         if (!result.success || !result.data)
           throw new Error(result.error ?? 'Unknown error.');
         onPluginUpdated(result.data.plugin);
+        recordHarnessInstalls(result.data.plugin);
         return result.data;
       }
       if (!plugin.externalSource)
@@ -305,6 +381,7 @@ export function PluginDetailView({
       if (!result.success || !result.data)
         throw new Error(result.error ?? 'Failed to install plugin.');
       onPluginUpdated(result.data);
+      recordHarnessInstalls(result.data);
       return { plugin: result.data };
     } finally {
       release();
@@ -390,7 +467,7 @@ export function PluginDetailView({
         // Where an installed plugin runs: every offered harness, signed in or not.
         harnessRows={
           !needsInstall
-            ? installedPluginHarnessRows(plugin, harnesses)
+            ? installedPluginHarnessRows(plugin, harnesses, discoveryEnabled)
             : undefined
         }
         needsInstall={needsInstall}
@@ -402,6 +479,11 @@ export function PluginDetailView({
       {autoInstallError && (
         <Notice errorSource="plugin-detail-auto-install" intent="destructive">
           {autoInstallError}
+        </Notice>
+      )}
+      {harnessInstallNotice && (
+        <Notice errorSource="plugin-detail-harness-install" intent="attention">
+          {harnessInstallNotice}
         </Notice>
       )}
       {shareOpen && shareableRef && (

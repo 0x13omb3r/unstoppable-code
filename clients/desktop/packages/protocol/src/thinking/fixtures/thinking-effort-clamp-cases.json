@@ -1,0 +1,515 @@
+{
+  "$comment": "Wire clamp cases for a thinking level against a model's declared levels (CAN-6855). Two copies must stay identical: this one in agentic-core (libs/workflow-contracts/fixtures/thinking-effort-clamp-cases.json, pinning clampThinkingEffortToDeclared) and canopy's (packages/protocol/src/thinking/fixtures/thinking-effort-clamp-cases.json, pinning clampThinkingLevelToDeclared). Change both in the same change; each copy's test also pins this file's digest. Off with no Off declared goes to the weakest declared level, and weakest and strongest follow the levels' order, not the order a model lists them in. Canopy's clamp matches from its CAN-6855 pass-through change; until then it differs on the Off row for ['low', 'high'] and on rows whose declared levels are listed out of order.",
+  "cases": [
+    {
+      "level": "off",
+      "declared": [],
+      "expected": null
+    },
+    {
+      "level": "low",
+      "declared": [],
+      "expected": null
+    },
+    {
+      "level": "medium",
+      "declared": [],
+      "expected": null
+    },
+    {
+      "level": "high",
+      "declared": [],
+      "expected": null
+    },
+    {
+      "level": "xhigh",
+      "declared": [],
+      "expected": null
+    },
+    {
+      "level": "max",
+      "declared": [],
+      "expected": null
+    },
+    {
+      "level": "off",
+      "declared": ["off"],
+      "expected": "off"
+    },
+    {
+      "level": "low",
+      "declared": ["off"],
+      "expected": "off"
+    },
+    {
+      "level": "medium",
+      "declared": ["off"],
+      "expected": "off"
+    },
+    {
+      "level": "high",
+      "declared": ["off"],
+      "expected": "off"
+    },
+    {
+      "level": "xhigh",
+      "declared": ["off"],
+      "expected": "off"
+    },
+    {
+      "level": "max",
+      "declared": ["off"],
+      "expected": "off"
+    },
+    {
+      "level": "off",
+      "declared": ["low"],
+      "expected": "low"
+    },
+    {
+      "level": "low",
+      "declared": ["low"],
+      "expected": "low"
+    },
+    {
+      "level": "medium",
+      "declared": ["low"],
+      "expected": "low"
+    },
+    {
+      "level": "high",
+      "declared": ["low"],
+      "expected": "low"
+    },
+    {
+      "level": "xhigh",
+      "declared": ["low"],
+      "expected": "low"
+    },
+    {
+      "level": "max",
+      "declared": ["low"],
+      "expected": "low"
+    },
+    {
+      "level": "off",
+      "declared": ["medium"],
+      "expected": "medium"
+    },
+    {
+      "level": "low",
+      "declared": ["medium"],
+      "expected": "medium"
+    },
+    {
+      "level": "medium",
+      "declared": ["medium"],
+      "expected": "medium"
+    },
+    {
+      "level": "high",
+      "declared": ["medium"],
+      "expected": "medium"
+    },
+    {
+      "level": "xhigh",
+      "declared": ["medium"],
+      "expected": "medium"
+    },
+    {
+      "level": "max",
+      "declared": ["medium"],
+      "expected": "medium"
+    },
+    {
+      "level": "off",
+      "declared": ["off", "low"],
+      "expected": "off"
+    },
+    {
+      "level": "low",
+      "declared": ["off", "low"],
+      "expected": "low"
+    },
+    {
+      "level": "medium",
+      "declared": ["off", "low"],
+      "expected": "off"
+    },
+    {
+      "level": "high",
+      "declared": ["off", "low"],
+      "expected": "off"
+    },
+    {
+      "level": "xhigh",
+      "declared": ["off", "low"],
+      "expected": "off"
+    },
+    {
+      "level": "max",
+      "declared": ["off", "low"],
+      "expected": "off"
+    },
+    {
+      "level": "off",
+      "declared": ["off", "medium"],
+      "expected": "off"
+    },
+    {
+      "level": "low",
+      "declared": ["off", "medium"],
+      "expected": "medium"
+    },
+    {
+      "level": "medium",
+      "declared": ["off", "medium"],
+      "expected": "medium"
+    },
+    {
+      "level": "high",
+      "declared": ["off", "medium"],
+      "expected": "medium"
+    },
+    {
+      "level": "xhigh",
+      "declared": ["off", "medium"],
+      "expected": "medium"
+    },
+    {
+      "level": "max",
+      "declared": ["off", "medium"],
+      "expected": "medium"
+    },
+    {
+      "level": "off",
+      "declared": ["low", "high"],
+      "expected": "low"
+    },
+    {
+      "level": "low",
+      "declared": ["low", "high"],
+      "expected": "low"
+    },
+    {
+      "level": "medium",
+      "declared": ["low", "high"],
+      "expected": "high"
+    },
+    {
+      "level": "high",
+      "declared": ["low", "high"],
+      "expected": "high"
+    },
+    {
+      "level": "xhigh",
+      "declared": ["low", "high"],
+      "expected": "high"
+    },
+    {
+      "level": "max",
+      "declared": ["low", "high"],
+      "expected": "high"
+    },
+    {
+      "level": "off",
+      "declared": ["medium", "high"],
+      "expected": "medium"
+    },
+    {
+      "level": "low",
+      "declared": ["medium", "high"],
+      "expected": "medium"
+    },
+    {
+      "level": "medium",
+      "declared": ["medium", "high"],
+      "expected": "medium"
+    },
+    {
+      "level": "high",
+      "declared": ["medium", "high"],
+      "expected": "high"
+    },
+    {
+      "level": "xhigh",
+      "declared": ["medium", "high"],
+      "expected": "high"
+    },
+    {
+      "level": "max",
+      "declared": ["medium", "high"],
+      "expected": "high"
+    },
+    {
+      "level": "off",
+      "declared": ["off", "low", "medium", "high"],
+      "expected": "off"
+    },
+    {
+      "level": "low",
+      "declared": ["off", "low", "medium", "high"],
+      "expected": "low"
+    },
+    {
+      "level": "medium",
+      "declared": ["off", "low", "medium", "high"],
+      "expected": "medium"
+    },
+    {
+      "level": "high",
+      "declared": ["off", "low", "medium", "high"],
+      "expected": "high"
+    },
+    {
+      "level": "xhigh",
+      "declared": ["off", "low", "medium", "high"],
+      "expected": "high"
+    },
+    {
+      "level": "max",
+      "declared": ["off", "low", "medium", "high"],
+      "expected": "high"
+    },
+    {
+      "level": "off",
+      "declared": ["off", "medium", "high", "xhigh"],
+      "expected": "off"
+    },
+    {
+      "level": "low",
+      "declared": ["off", "medium", "high", "xhigh"],
+      "expected": "medium"
+    },
+    {
+      "level": "medium",
+      "declared": ["off", "medium", "high", "xhigh"],
+      "expected": "medium"
+    },
+    {
+      "level": "high",
+      "declared": ["off", "medium", "high", "xhigh"],
+      "expected": "high"
+    },
+    {
+      "level": "xhigh",
+      "declared": ["off", "medium", "high", "xhigh"],
+      "expected": "xhigh"
+    },
+    {
+      "level": "max",
+      "declared": ["off", "medium", "high", "xhigh"],
+      "expected": "xhigh"
+    },
+    {
+      "level": "off",
+      "declared": ["off", "medium", "high", "xhigh", "max"],
+      "expected": "off"
+    },
+    {
+      "level": "low",
+      "declared": ["off", "medium", "high", "xhigh", "max"],
+      "expected": "medium"
+    },
+    {
+      "level": "medium",
+      "declared": ["off", "medium", "high", "xhigh", "max"],
+      "expected": "medium"
+    },
+    {
+      "level": "high",
+      "declared": ["off", "medium", "high", "xhigh", "max"],
+      "expected": "high"
+    },
+    {
+      "level": "xhigh",
+      "declared": ["off", "medium", "high", "xhigh", "max"],
+      "expected": "xhigh"
+    },
+    {
+      "level": "max",
+      "declared": ["off", "medium", "high", "xhigh", "max"],
+      "expected": "max"
+    },
+    {
+      "level": "off",
+      "declared": ["high", "max"],
+      "expected": "high"
+    },
+    {
+      "level": "low",
+      "declared": ["high", "max"],
+      "expected": "high"
+    },
+    {
+      "level": "medium",
+      "declared": ["high", "max"],
+      "expected": "high"
+    },
+    {
+      "level": "high",
+      "declared": ["high", "max"],
+      "expected": "high"
+    },
+    {
+      "level": "xhigh",
+      "declared": ["high", "max"],
+      "expected": "high"
+    },
+    {
+      "level": "max",
+      "declared": ["high", "max"],
+      "expected": "max"
+    },
+    {
+      "level": "off",
+      "declared": ["xhigh"],
+      "expected": "xhigh"
+    },
+    {
+      "level": "low",
+      "declared": ["xhigh"],
+      "expected": "xhigh"
+    },
+    {
+      "level": "medium",
+      "declared": ["xhigh"],
+      "expected": "xhigh"
+    },
+    {
+      "level": "high",
+      "declared": ["xhigh"],
+      "expected": "xhigh"
+    },
+    {
+      "level": "xhigh",
+      "declared": ["xhigh"],
+      "expected": "xhigh"
+    },
+    {
+      "level": "max",
+      "declared": ["xhigh"],
+      "expected": "xhigh"
+    },
+    {
+      "level": "off",
+      "declared": ["max", "high"],
+      "expected": "high"
+    },
+    {
+      "level": "low",
+      "declared": ["max", "high"],
+      "expected": "high"
+    },
+    {
+      "level": "medium",
+      "declared": ["max", "high"],
+      "expected": "high"
+    },
+    {
+      "level": "high",
+      "declared": ["max", "high"],
+      "expected": "high"
+    },
+    {
+      "level": "xhigh",
+      "declared": ["max", "high"],
+      "expected": "high"
+    },
+    {
+      "level": "max",
+      "declared": ["max", "high"],
+      "expected": "max"
+    },
+    {
+      "level": "off",
+      "declared": ["high", "low"],
+      "expected": "low"
+    },
+    {
+      "level": "low",
+      "declared": ["high", "low"],
+      "expected": "low"
+    },
+    {
+      "level": "medium",
+      "declared": ["high", "low"],
+      "expected": "high"
+    },
+    {
+      "level": "high",
+      "declared": ["high", "low"],
+      "expected": "high"
+    },
+    {
+      "level": "xhigh",
+      "declared": ["high", "low"],
+      "expected": "high"
+    },
+    {
+      "level": "max",
+      "declared": ["high", "low"],
+      "expected": "high"
+    },
+    {
+      "level": "off",
+      "declared": ["high", "medium", "off"],
+      "expected": "off"
+    },
+    {
+      "level": "low",
+      "declared": ["high", "medium", "off"],
+      "expected": "medium"
+    },
+    {
+      "level": "medium",
+      "declared": ["high", "medium", "off"],
+      "expected": "medium"
+    },
+    {
+      "level": "high",
+      "declared": ["high", "medium", "off"],
+      "expected": "high"
+    },
+    {
+      "level": "xhigh",
+      "declared": ["high", "medium", "off"],
+      "expected": "high"
+    },
+    {
+      "level": "max",
+      "declared": ["high", "medium", "off"],
+      "expected": "high"
+    },
+    {
+      "level": "off",
+      "declared": ["max", "xhigh", "low"],
+      "expected": "low"
+    },
+    {
+      "level": "low",
+      "declared": ["max", "xhigh", "low"],
+      "expected": "low"
+    },
+    {
+      "level": "medium",
+      "declared": ["max", "xhigh", "low"],
+      "expected": "xhigh"
+    },
+    {
+      "level": "high",
+      "declared": ["max", "xhigh", "low"],
+      "expected": "xhigh"
+    },
+    {
+      "level": "xhigh",
+      "declared": ["max", "xhigh", "low"],
+      "expected": "xhigh"
+    },
+    {
+      "level": "max",
+      "declared": ["max", "xhigh", "low"],
+      "expected": "max"
+    }
+  ]
+}

@@ -13,8 +13,8 @@ export interface ResizeRailIndicatorProps {
 // its 8px handle; at rest the stylesheet scales it to half. A 1px box would
 // sit on a half pixel, which Chromium snaps once the box is transformed.
 const LINE_SHAPE_CLASS_NAMES: Record<ResizeRailLine, string> = {
-  vertical: 'my-2 w-0.5',
-  horizontal: 'mx-2 h-0.5',
+  vertical: 'h-[calc(100%-1rem)] w-0.5 self-center',
+  horizontal: 'h-0.5 w-[calc(100%-1rem)] self-center',
 };
 
 /**

@@ -11,6 +11,7 @@ export * from './capabilities';
 export * from './queues';
 export * from './lifetime';
 export * from './transcript';
+export * from './surface-profiles';
 export * from './limits';
 import {
   AGENT_DELEGATION_INPUT_LIMITS,

@@ -516,6 +516,15 @@ export const installedItemService = createInstalledItemStatusService({
             await saveCollectionConfig(file.collection);
         }
     }
+    // One Add for every harness (CAN-6816): an uninstalled plugin or skill
+    // is uninstalled for every harness, so its record goes too, retried when
+    // the disk refuses it (CAN-6817). A record file a newer app wrote is
+    // left as it is.
+    const { forgetItemHarnessInstalls } =
+      await import('../plugins/harness-install-runtime');
+    for (const ref of refs)
+      if (ref.kind === 'plugin' || ref.kind === 'skill')
+        await forgetItemHarnessInstalls(ref);
   },
   async publish(target) {
     try {

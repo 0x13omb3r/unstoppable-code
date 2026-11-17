@@ -646,7 +646,7 @@ export function AiCreditsRoutingStatusBanner({
     switchAvailable && provider !== undefined && resetLabel !== null ? (
       <span
         data-testid="chat-input-ai-credits-limit-resets"
-        className="mr-1 shrink-0 whitespace-nowrap tabular-nums fg-tertiary"
+        className="pr-1 shrink-0 whitespace-nowrap tabular-nums fg-tertiary"
       >
         {providerLabel} resets {resetLabel}
       </span>

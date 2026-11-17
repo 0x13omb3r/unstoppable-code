@@ -47,6 +47,7 @@ import {
 import type { FeedbackReportTelemetry } from '@canopy/protocol/feedback-report';
 import {
   createAppErrorHandler,
+  isExpectedCanopyProxyAppError,
   type AppError,
   type AppErrorHandler,
   type AppErrorReport,
@@ -611,7 +612,7 @@ function captureAppErrorInPostHog(
 ): void {
   const properties = buildAppErrorPostHogProperties(record);
   reportPostHogAppError?.({ event: APP_ERROR_POSTHOG_EVENT, properties });
-  if (!record.isRepeatSummary) {
+  if (!record.isRepeatSummary && !isExpectedCanopyProxyAppError(record.error)) {
     reportPostHogException?.(
       appErrorException(record, frames),
       thrownType === undefined

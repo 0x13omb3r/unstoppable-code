@@ -207,6 +207,7 @@ function markAppAdvisorReadIfFocused(focused: boolean): void {
   }
 
   const chatStore = useChatStore.getState();
+  // Default Bot only: the Orchestrator popout clears its own hydrated chat keys.
   const prefix = `${APP_ADVISOR_PROJECT_ID}/`;
   for (const key of Object.keys(chatStore.worktreeChats)) {
     if (!key.startsWith(prefix)) continue;

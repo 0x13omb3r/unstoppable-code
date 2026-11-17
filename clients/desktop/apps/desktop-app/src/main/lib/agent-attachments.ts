@@ -11,7 +11,7 @@ import {
  * - Work Entry workspaces: the brand-managed attachments subdir under the
  *   shared workspace folder (`.{brand}/attachments`) — the same place chat
  *   uploads land (`worktree-chat-turn.ts`) and the Attachments card lists.
- *   App Advisor uses its app-managed home; cowork uses its resolved root.
+ *   Bots use an app-managed home; Cowork uses its resolved root.
  *
  * Used by the workspace-items IPC adapter, browser screenshot/recording
  * saves, and any future agent-facing attachment writes, so saved artifacts
@@ -28,16 +28,16 @@ import {
 import { resolveCoworkWorkspaceId } from './cowork-migration-map';
 import {
   STANDALONE_CHAT_PROJECT_ID,
-  APP_ADVISOR_PROJECT_ID,
   type WorkspaceAttachmentItem,
 } from '@canopy/desktop-shared/types';
+import { isBotProjectId } from '@canopy/protocol/chat-targets';
 import { isCoworkWorkspace } from './workspace-registry';
 
 export function resolveAgentAttachmentsDir(
   projectId: string,
   worktreeId: string,
 ): string {
-  if (projectId === APP_ADVISOR_PROJECT_ID) {
+  if (isBotProjectId(projectId)) {
     return getCoworkManagedSubdir(getAppAdvisorHomeDir(), 'attachments');
   }
   if (isCoworkWorkspace(projectId)) {

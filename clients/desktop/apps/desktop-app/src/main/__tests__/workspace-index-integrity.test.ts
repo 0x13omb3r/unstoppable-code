@@ -22,6 +22,9 @@ jest.mock('node:worker_threads', () =>
 );
 
 let mockTruncateNextIndexRead = false;
+let mockStalledDiscovery:
+  | { path: string; wait: Promise<void>; started: () => void }
+  | undefined;
 jest.mock('node:fs/promises', () => {
   const actual = jest.requireActual<typeof FsPromises>('node:fs/promises');
   return {
@@ -29,6 +32,11 @@ jest.mock('node:fs/promises', () => {
     readFile: jest.fn(
       async (...args: Parameters<typeof actual.readFile>): Promise<unknown> => {
         const [target] = args;
+        const stalled = mockStalledDiscovery;
+        if (stalled && stalled.path === target) {
+          stalled.started();
+          await stalled.wait;
+        }
         if (
           mockTruncateNextIndexRead &&
           typeof target === 'string' &&
@@ -68,7 +76,23 @@ import {
   type SidebarItem,
 } from '@canopy/desktop-shared/types';
 import { listCoworkWorkspacesAsChatProjects } from '../lib/cowork-workspace-crud';
-import { getWorkspaceIndexFilePath } from '../lib/paths';
+import {
+  getArchivedContainerManifestPath,
+  getWorktreeDiscoveryFilePath,
+  getWorkspaceIndexFilePath,
+  getWorkspaceWorktreesFilePath,
+} from '../lib/paths';
+import { withW5RepositoryLock } from '../lib/w5-repository-locks';
+import {
+  isWorkspaceWorktreeRecentlyRemoved,
+  readWorkspaceWorktreesUnlocked,
+  removeWorkspaceWorktrees,
+  updateWorkspaceOwnership,
+} from '../lib/workspace-persistence';
+import { readPersonalProjectPreviewRows } from '../services/personal-project-preview-rows';
+import { getPrimaryProjectConfigFilePath } from '../lib/canopy-json';
+import { withPersonalProjectPreviewDeadline } from '../services/personal-project-preview';
+import { flushPreferencesWrites } from '../lib/preferences-store';
 import {
   __resetSidebarItemsStateForTests,
   readAllSidebarItems,
@@ -93,6 +117,7 @@ import {
   createW5CommitLogFileStore,
   W5FileWriteRefusedError,
   W5RevisionConflictError,
+  withW5Commit,
 } from '../lib/w5-commit-log-file-store';
 import { nodeW5FileStore } from '../lib/w5-file-store';
 import {
@@ -227,6 +252,200 @@ describe('workspace index integrity (real fs)', () => {
       process.env.CANOPY_DATA_DIR = originalDataDir;
     }
     await rm(dataDir, { recursive: true, force: true });
+  });
+
+  it('lists a temporary project while its worktree discovery read is still pending', async () => {
+    const id = 'temporary-with-discovery';
+    const sourceRepoPath = path.join(dataDir, 'broken-source');
+    const worktree = {
+      id: 'worktree',
+      branchName: 'feature',
+      createdAt: '2026-01-01T00:00:00.000Z',
+    };
+    await writeAllSidebarItems([
+      {
+        id,
+        name: 'Temporary project',
+        type: 'multi-repo',
+        color: '#123456',
+        collapsed: false,
+        order: 0,
+        worktrees: [],
+        repos: [],
+        temporary: true,
+        sourceRepoPath,
+      },
+    ]);
+    await writeFile(
+      getWorkspaceWorktreesFilePath(id),
+      JSON.stringify({ version: 1, worktrees: [worktree] }),
+    );
+    mkdirSync(sourceRepoPath, { recursive: true });
+    await writeFile(
+      getPrimaryProjectConfigFilePath(sourceRepoPath),
+      'malformed',
+    );
+    const discoveryPath = getWorktreeDiscoveryFilePath(id, worktree.id);
+    const discovery = {
+      discoveredAt: '2026-01-01T00:00:00.000Z',
+      slashCommands: [],
+      mcpServers: [],
+    };
+    mkdirSync(path.dirname(discoveryPath), { recursive: true });
+    await writeFile(discoveryPath, JSON.stringify({ version: 1, discovery }));
+    let release = (): void => {};
+    let started = (): void => {};
+    const hydrationStarted = new Promise<void>((resolve) => {
+      started = resolve;
+    });
+    mockStalledDiscovery = {
+      path: discoveryPath,
+      started,
+      wait: new Promise<void>((resolve) => {
+        release = resolve;
+      }),
+    };
+    const hydrated = readWorkspaceWorktreesUnlocked(id);
+    try {
+      await hydrationStarted;
+      const rows = await withPersonalProjectPreviewDeadline(
+        readPersonalProjectPreviewRows,
+        undefined,
+        1_000,
+      );
+      expect(rows).toEqual([
+        { workspaceId: id, name: 'Temporary project', kind: 'multi-repo' },
+      ]);
+    } finally {
+      release();
+      mockStalledDiscovery = undefined;
+      await expect(hydrated).resolves.toMatchObject({
+        worktrees: [{ ...worktree, discovery }],
+      });
+      await flushPreferencesWrites();
+    }
+  });
+
+  it('lists native Personal projects independently of unrelated or unreadable worktree lists', async () => {
+    const common = {
+      type: 'single-repo' as const,
+      color: '#123456',
+      collapsed: false,
+      worktrees: [],
+    };
+    await writeAllSidebarItems([
+      ...projects,
+      {
+        ...common,
+        id: 'healthy',
+        name: 'Healthy',
+        repoPath: path.join(dataDir, 'healthy'),
+        order: 3,
+      },
+      {
+        ...common,
+        id: 'unrelated',
+        name: 'Unrelated',
+        repoPath: path.join(dataDir, 'unrelated'),
+        order: 4,
+      },
+      {
+        ...common,
+        type: 'multi-repo',
+        id: 'archived',
+        name: 'Archived project',
+        order: 5,
+        repos: [],
+        temporary: true,
+        alwaysShow: false,
+      },
+    ]);
+    const manifest = getArchivedContainerManifestPath('archived', 'saved');
+    mkdirSync(path.dirname(manifest), { recursive: true });
+    await writeFile(
+      manifest,
+      JSON.stringify({
+        version: 1,
+        id: 'saved',
+        projectId: 'archived',
+        kind: 'worktree',
+        name: 'Saved worktree',
+        createdAt: '2026-01-01T00:00:00.000Z',
+        archivedAt: '2026-01-02T00:00:00.000Z',
+        retentionDays: 7,
+        expiresAt: null,
+        chatCount: 0,
+        archivedChatCount: 0,
+        executionCount: 0,
+        workspaceType: 'multi-repo',
+        originalWorktree: {
+          id: 'saved',
+          branchName: 'saved',
+          createdAt: '2026-01-01T00:00:00.000Z',
+        },
+      }),
+    );
+    await writeFile(
+      getWorkspaceWorktreesFilePath('archived'),
+      '{"version":1,"worktrees":[',
+    );
+    await expect(
+      readWorkspaceWorktreesUnlocked('archived'),
+    ).resolves.toMatchObject({
+      authority: 'unreadable',
+    });
+    await expect(
+      updateWorkspaceOwnership('unrelated', () => ({
+        owner: {
+          type: 'organization',
+          organizationId: '11111111-1111-4111-8111-111111111111',
+          projectId: '22222222-2222-4222-8222-222222222222',
+          instanceId: '33333333-3333-4333-8333-333333333333',
+          bindingGeneration: 1,
+        },
+      })),
+    ).resolves.toBe('written');
+    let release = (): void => {};
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    let acquired = (): void => {};
+    const ready = new Promise<void>((resolve) => {
+      acquired = resolve;
+    });
+    const owner = withW5RepositoryLock(
+      { kind: 'list', path: getWorkspaceWorktreesFilePath('unrelated') },
+      async () => {
+        acquired();
+        await held;
+      },
+    );
+    await ready;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const preview = readPersonalProjectPreviewRows(
+      new AbortController().signal,
+    );
+    try {
+      const timeout = new Promise<never>((_resolve, reject) => {
+        timer = setTimeout(
+          () => reject(new Error('Preview waited for the unrelated list lock')),
+          3_000,
+        );
+      });
+      await expect(Promise.race([preview, timeout])).resolves.toEqual([
+        { workspaceId: 'healthy', name: 'Healthy', kind: 'single-repo' },
+        {
+          workspaceId: 'archived',
+          name: 'Archived project',
+          kind: 'multi-repo',
+        },
+      ]);
+    } finally {
+      clearTimeout(timer);
+      release();
+      await owner;
+      await preview.catch(() => undefined);
+    }
   });
 
   it('does not provision the default project from a mid-write index read', async () => {
@@ -464,6 +683,72 @@ describe('workspace cleanup persistence integrity', () => {
     if (originalDataDir === undefined) delete process.env.CANOPY_DATA_DIR;
     else process.env.CANOPY_DATA_DIR = originalDataDir;
     rmSync(dir, { recursive: true, force: true });
+  });
+
+  it('keeps a temporary project visible until its last worktree removal commits', async () => {
+    const worktree = {
+      id: 'pending',
+      branchName: 'pending',
+      createdAt: '2026-01-01T00:00:00.000Z',
+    };
+    await writeAllSidebarItems([
+      {
+        id: 'temporary',
+        name: 'Temporary',
+        type: 'multi-repo',
+        color: '#123456',
+        collapsed: false,
+        order: 0,
+        worktrees: [worktree],
+        repos: [],
+        temporary: true,
+      },
+    ]);
+    let release = (): void => {};
+    let started = (): void => {};
+    const writing = new Promise<void>((resolve) => {
+      started = resolve;
+    });
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const refusal = new Error('List write refused');
+    jest.spyOn(host, 'commit').mockImplementationOnce(async () => {
+      started();
+      await held;
+      throw refusal;
+    });
+    const remove = (): Promise<unknown> =>
+      withW5Commit({ operation: 'w5.worktree_list.write' }, () =>
+        removeWorkspaceWorktrees('temporary', () => true),
+      );
+    const removal = remove();
+    const rejected = expect(removal).rejects.toBe(refusal);
+    try {
+      await writing;
+      await expect(
+        readPersonalProjectPreviewRows(AbortSignal.timeout(2_500)),
+      ).resolves.toEqual([
+        expect.objectContaining({ workspaceId: 'temporary' }),
+      ]);
+      expect(isWorkspaceWorktreeRecentlyRemoved('temporary', worktree.id)).toBe(
+        false,
+      );
+    } finally {
+      release();
+      await rejected;
+      await flushPreferencesWrites();
+    }
+    await expect(
+      readPersonalProjectPreviewRows(AbortSignal.timeout(2_500)),
+    ).resolves.toEqual([expect.objectContaining({ workspaceId: 'temporary' })]);
+    await expect(remove()).resolves.toHaveLength(1);
+    expect(isWorkspaceWorktreeRecentlyRemoved('temporary', worktree.id)).toBe(
+      true,
+    );
+    await expect(
+      readPersonalProjectPreviewRows(AbortSignal.timeout(2_500)),
+    ).resolves.toEqual([]);
   });
 
   it.each(sites)(

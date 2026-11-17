@@ -4,6 +4,11 @@ import {
 } from './fork-metadata';
 
 export interface SharedContainerForkRollback {
+  /**
+   * On failure, deferred actions run in reverse registration order. Callers
+   * rely on it: one registered first runs after everything registered later
+   * (the organization copy's staged-root removal follows its workspace's).
+   */
   defer(action: () => Promise<unknown>): void;
 }
 

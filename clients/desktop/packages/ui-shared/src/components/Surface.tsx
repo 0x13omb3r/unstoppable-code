@@ -1,5 +1,6 @@
 import type { CSSProperties, HTMLAttributes, JSX, ReactNode, Ref } from 'react';
 import { createElement } from 'react';
+import type { CompositeListRow } from './ListRow';
 import { HAIRLINE_INSET_RING_CLASS } from '../lib/row-chips';
 import { REPLAY_BLOCK_CLASS, REPLAY_MASK_CLASS } from '../lib/replay-privacy';
 import {
@@ -404,8 +405,8 @@ type SurfaceAttributes = Omit<
 export interface SurfaceProps extends SurfaceAttributes {
   /** What the box is; see {@link SurfaceVariant}. */
   readonly variant: SurfaceVariant;
-  /** The element to render; `div` by default. */
-  readonly as?: LayoutElement;
+  /** The element to render. Compound interactive rows use CompositeListRow. */
+  readonly as?: LayoutElement | typeof CompositeListRow;
   /** Width supplied by a resizable split-pane host. */
   readonly paneWidth?: CSSProperties['width'];
   /** Height measured by a native window host. */
@@ -539,47 +540,62 @@ export function Surface({
   children,
   ...rest
 }: SurfaceProps): JSX.Element {
+  const props = {
+    ...rest,
+    'data-surface': variant,
+    style:
+      paneWidth === undefined &&
+      paneHeight === undefined &&
+      paneBasis === undefined &&
+      nativeLeadingInset === undefined
+        ? undefined
+        : {
+            width: paneWidth,
+            height: paneHeight,
+            flexBasis: paneBasis,
+            paddingLeft: nativeLeadingInset,
+          },
+    'data-selected': selected ? '' : undefined,
+    className: surfaceClassName({
+      variant,
+      size,
+      extent,
+      padding,
+      gap,
+      direction,
+      selected,
+      interactive,
+      boundary,
+      replay,
+      className: [
+        dragRegion === undefined
+          ? ''
+          : dragRegion
+            ? 'electron-drag'
+            : 'electron-no-drag',
+        focusRing ? 'focus-ring' : '',
+        className,
+      ]
+        .filter(Boolean)
+        .join(' '),
+    }),
+  };
+  if (typeof Tag === 'string') return createElement(Tag, props, children);
+
+  const { ref, ...rowProps } = props;
   return createElement(
     Tag,
     {
-      ...rest,
-      'data-surface': variant,
-      style:
-        paneWidth === undefined &&
-        paneHeight === undefined &&
-        paneBasis === undefined &&
-        nativeLeadingInset === undefined
-          ? undefined
-          : {
-              width: paneWidth,
-              height: paneHeight,
-              flexBasis: paneBasis,
-              paddingLeft: nativeLeadingInset,
-            },
-      'data-selected': selected ? '' : undefined,
-      className: surfaceClassName({
-        variant,
-        size,
-        extent,
-        padding,
-        gap,
-        direction,
-        selected,
-        interactive,
-        boundary,
-        replay,
-        className: [
-          dragRegion === undefined
-            ? ''
-            : dragRegion
-              ? 'electron-drag'
-              : 'electron-no-drag',
-          focusRing ? 'focus-ring' : '',
-          className,
-        ]
-          .filter(Boolean)
-          .join(' '),
-      }),
+      ...rowProps,
+      presentation: 'surface',
+      ref:
+        typeof ref === 'function'
+          ? ref
+          : ref
+            ? (element): void => {
+                ref.current = element;
+              }
+            : undefined,
     },
     children,
   );

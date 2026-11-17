@@ -153,58 +153,59 @@ export function UsageErrorNotice({
   const showRetry = Boolean(onRetry) && info.kind !== 'unsupported';
 
   return (
-    <Notice
-      intent="attention"
-      title={titleForKind(info.kind)}
-      data-testid={`${testIdPrefix}-error`}
-      className={frameless ? 'mt-2' : 'mt-4'}
-      {...(detail || showRetry
-        ? {
-            actions: (
-              <>
-                {detail && (
-                  <NoticeButton
-                    variant="secondary"
-                    data-testid={`${testIdPrefix}-error-details-toggle`}
-                    aria-expanded={detailsOpen}
-                    // Only while open: the raw error is unmounted when
-                    // collapsed, and `aria-controls` must name an element
-                    // that exists.
-                    {...(detailsOpen ? { 'aria-controls': detailsId } : {})}
-                    onClick={(): void => setDetailsOpen((open) => !open)}
-                  >
-                    {detailsOpen ? 'Hide details' : 'Show details'}
-                  </NoticeButton>
-                )}
-                {showRetry && (
-                  <NoticeButton
-                    variant="secondary"
-                    data-testid={`${testIdPrefix}-error-retry`}
-                    onClick={onRetry}
-                    disabled={retrying || (isRateLimited && waitingForRetry)}
-                  >
-                    {retrying ? 'Trying again…' : 'Try again'}
-                  </NoticeButton>
-                )}
-              </>
-            ),
-          }
-        : {})}
-      {...(detail && detailsOpen
-        ? {
-            detail: (
-              <pre
-                id={detailsId}
-                data-testid={`${testIdPrefix}-error-details`}
-                className="max-h-28 overflow-auto rounded-md bg-base p-2 font-mono text-2xs leading-snug break-all whitespace-pre-wrap fg-tertiary select-text"
-              >
-                {detail}
-              </pre>
-            ),
-          }
-        : {})}
-    >
-      {message}
-    </Notice>
+    <div className={frameless ? 'pt-2' : 'pt-4'}>
+      <Notice
+        intent="attention"
+        title={titleForKind(info.kind)}
+        data-testid={`${testIdPrefix}-error`}
+        {...(detail || showRetry
+          ? {
+              actions: (
+                <>
+                  {detail && (
+                    <NoticeButton
+                      variant="secondary"
+                      data-testid={`${testIdPrefix}-error-details-toggle`}
+                      aria-expanded={detailsOpen}
+                      // Only while open: the raw error is unmounted when
+                      // collapsed, and `aria-controls` must name an element
+                      // that exists.
+                      {...(detailsOpen ? { 'aria-controls': detailsId } : {})}
+                      onClick={(): void => setDetailsOpen((open) => !open)}
+                    >
+                      {detailsOpen ? 'Hide details' : 'Show details'}
+                    </NoticeButton>
+                  )}
+                  {showRetry && (
+                    <NoticeButton
+                      variant="secondary"
+                      data-testid={`${testIdPrefix}-error-retry`}
+                      onClick={onRetry}
+                      disabled={retrying || (isRateLimited && waitingForRetry)}
+                    >
+                      {retrying ? 'Trying again…' : 'Try again'}
+                    </NoticeButton>
+                  )}
+                </>
+              ),
+            }
+          : {})}
+        {...(detail && detailsOpen
+          ? {
+              detail: (
+                <pre
+                  id={detailsId}
+                  data-testid={`${testIdPrefix}-error-details`}
+                  className="max-h-28 overflow-auto rounded-md bg-base p-2 font-mono text-2xs leading-snug break-all whitespace-pre-wrap fg-tertiary select-text"
+                >
+                  {detail}
+                </pre>
+              ),
+            }
+          : {})}
+      >
+        {message}
+      </Notice>
+    </div>
   );
 }

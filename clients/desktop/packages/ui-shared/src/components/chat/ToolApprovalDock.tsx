@@ -376,7 +376,7 @@ export const ToolApprovalDock = memo(function ToolApprovalDock({
         // input the agent asks to run.
         <div
           data-testid="tool-approval-dock"
-          className="mb-1.5 flex flex-col gap-1"
+          className="pb-1.5 flex flex-col gap-1"
         >
           {pending.length > 1 && (
             <div className="flex items-center justify-between px-0.5">

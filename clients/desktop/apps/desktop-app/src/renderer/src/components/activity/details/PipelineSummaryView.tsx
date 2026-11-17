@@ -1,3 +1,4 @@
+import { ControlButton } from '@canopy/ui-shared/components';
 import { useMemo, useState, type JSX } from 'react';
 import type {
   ExecutionState,
@@ -62,12 +63,12 @@ function AdaptiveAdvisor({
   return (
     <Surface variant="inset" data-testid="pipeline-summary-advisor">
       <div className="flex items-center gap-2 px-4 py-2.5">
-        <button
+        <ControlButton
           type="button"
           onClick={(): void => setExpanded((v) => !v)}
           aria-expanded={expanded}
           data-testid="pipeline-summary-advisor-toggle"
-          className="focus-ring -mx-1 flex flex-1 items-center gap-2 rounded-md px-1 py-0.5 text-left"
+          presentation="workflow-advisor-toggle"
         >
           <AgentAssistantIcon
             size="sm"
@@ -84,7 +85,7 @@ function AdaptiveAdvisor({
           ) : null}
           <span className="flex-1" />
           <ChevronIcon open={expanded} />
-        </button>
+        </ControlButton>
         <AdvisorHeaderAction
           snapshot={advisorSnapshot}
           pipelineStatus={state.status}

@@ -446,7 +446,9 @@ function CostScopeViewContent({
                     })}
                     {unattachedVisible && view.unattached !== undefined ? (
                       <>
-                        <Divider className="mx-2 my-1" />
+                        <div className="px-2 py-1">
+                          <Divider />
+                        </div>
                         <CostRow
                           name="Not tied to a chat"
                           amountLabel={formatCostTotalIn(

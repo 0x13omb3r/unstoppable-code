@@ -138,6 +138,12 @@ export interface RunJobOptions {
     readonly gate: PipelineCapacityGate;
     readonly keepChatReserve: boolean;
   };
+  /**
+   * Checks the step that just ran; a message fails it, whatever its
+   * `continue_on_error` says, and ends the job. A read-only job's variant
+   * uses it to refuse a step that changed its checkout (CAN-6892).
+   */
+  afterStep?: (stepId: string) => Promise<string | null>;
 }
 
 /**
@@ -656,6 +662,17 @@ async function executeJobAttempt(
       leaveStep();
     }
 
+    const refusal = (await options.afterStep?.(step.id)) ?? null;
+    if (refusal !== null) {
+      stepResult = {
+        ...stepResult,
+        status: 'failure',
+        conclusion: 'failure',
+        outcome: 'failure',
+        error: refusal,
+      };
+    }
+
     if (recoveryCheckpoint) {
       const recoveryTranscriptFile = stepResult.outputs.transcript_file;
       if (
@@ -736,7 +753,11 @@ async function executeJobAttempt(
       return options.jobResult;
     }
 
-    if (stepResult.outcome === 'failure' && step.continue_on_error) {
+    if (
+      stepResult.outcome === 'failure' &&
+      step.continue_on_error &&
+      refusal === null
+    ) {
       stepResult.status = 'success';
       stepResult.conclusion = 'success';
     }
@@ -872,7 +893,10 @@ async function executeJobAttempt(
       return options.jobResult;
     }
 
-    if (stepResult.outcome === 'failure' && !step.continue_on_error) {
+    if (
+      stepResult.outcome === 'failure' &&
+      (!step.continue_on_error || refusal !== null)
+    ) {
       finalizeJobResult(
         options.job,
         options.jobResult,

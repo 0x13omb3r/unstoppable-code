@@ -139,11 +139,8 @@ export interface WorktreeRegistryWriteOptions {
   restoreWorktrees?: readonly Pick<WorktreeData, 'id' | 'createdAt'>[];
   /** Allows a locked read decision without replacing the list. */
   shouldWrite?: () => boolean;
-  /**
-   * Publish a removal's recently-removed markers only after the write, so a
-   * failed removal stays retryable with the row still visible.
-   */
-  markRemovedAfterWrite?: boolean;
+  /** Runs under the list lock once the write is durable. */
+  afterApply?: () => void;
   sidebarItemGroupId?: string;
   newItemId?: string;
   afterWrite?: () => Promise<void>;
@@ -592,6 +589,7 @@ async function writeAdmittedWorktreesFile(
   // The list is already applied: record it as ours even if reconciliation fails.
   const reconcileAfterWrite = reconciliation?.afterWrite;
   await afterW5Apply(async (): Promise<void> => {
+    options?.afterApply?.();
     recentWorktreesSelfWrites.set(workspaceId, Date.now());
     lastWorktreesSelfWriteContent.set(workspaceId, serialized);
     releaseSelfWrite();
@@ -1647,8 +1645,8 @@ function readRepairingWorktrees(
 }
 
 /**
- * One read of the list that takes no lock, filters no tombstones and never
- * writes. For backend readers that may run inside another task's lock
+ * One read of the committed list that takes no lock and never writes.
+ * For backend readers that may run inside another task's lock
  * context (the Ledger lifecycle, CAN-5478). There the locked read waits on a
  * held list, refuses the lock order, or throws once an inherited commit scope
  * has finished.
@@ -1659,6 +1657,14 @@ export async function readWorkspaceWorktreesUnlocked(
   const { worktrees, authority } =
     await readWorkspaceWorktreesFileDetailed(workspaceId);
   return { worktrees, authority };
+}
+
+/** Visibility depends on committed rows, without waiting for discovery files. */
+export async function hasCommittedWorkspaceWorktrees(
+  workspaceId: string,
+): Promise<boolean> {
+  const list = await worktreeListRepository.readCommitted(workspaceId);
+  return list.authority === 'ok' && list.worktrees.length > 0;
 }
 
 export async function isWorkspaceWorktreeCurrent(
@@ -2068,7 +2074,7 @@ export async function removeWorkspaceWorktrees(
   expectedRemainingWorktreeOrder?: readonly string[],
   options?: Pick<
     WorktreeRegistryWriteOptions,
-    'requireAuthoritativeRead' | 'requireExistingList' | 'markRemovedAfterWrite'
+    'requireAuthoritativeRead' | 'requireExistingList'
   >,
 ): Promise<WorktreeData[]> {
   const filePath = w5RecordReadPaths.worktrees(workspaceId);
@@ -2122,32 +2128,21 @@ export async function removeWorkspaceWorktrees(
       return [];
     }
 
-    if (!options?.markRemovedAfterWrite) {
-      for (const worktree of removedWorktrees) {
-        markWorktreeRecentlyRemovedAt(
-          workspaceId,
-          worktree.id,
-          worktree.createdAt,
-        );
-      }
-    }
-
     await writeWorkspaceWorktreesFile(
       workspaceId,
       remainingWorktrees,
-      undefined,
+      {
+        afterApply: () => {
+          for (const worktree of removedWorktrees)
+            markWorktreeRecentlyRemovedAt(
+              workspaceId,
+              worktree.id,
+              worktree.createdAt,
+            );
+        },
+      },
       read,
     );
-
-    if (options?.markRemovedAfterWrite) {
-      for (const worktree of removedWorktrees) {
-        markWorktreeRecentlyRemovedAt(
-          workspaceId,
-          worktree.id,
-          worktree.createdAt,
-        );
-      }
-    }
 
     return removedWorktrees;
   });

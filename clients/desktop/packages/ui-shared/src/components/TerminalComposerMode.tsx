@@ -1,5 +1,6 @@
 'use client';
 
+import { ControlButton } from './Button';
 import type { JSX } from 'react';
 import { TerminalIcon } from '../icons/AppIcons';
 import { Tooltip } from './Tooltip';
@@ -35,18 +36,20 @@ export function TerminalModeLabel({
 }): JSX.Element {
   if (error !== null) {
     return (
-      <ErrorBanner
-        errorSource="chat-input-terminal-mode-error"
-        className="mr-1"
-        error={error}
-        testId="chat-input-terminal-mode-error"
-      />
+      <div className="pr-1 empty:hidden">
+        <ErrorBanner
+          errorSource="chat-input-terminal-mode-error"
+          className=""
+          error={error}
+          testId="chat-input-terminal-mode-error"
+        />
+      </div>
     );
   }
   const label = (
     <span
       data-testid="chat-input-terminal-mode-label"
-      className="mr-1 select-none whitespace-nowrap text-s fg-warning"
+      className="pr-1 select-none whitespace-nowrap text-s fg-warning"
     >
       Terminal mode
     </span>
@@ -56,7 +59,7 @@ export function TerminalModeLabel({
     <>
       <span
         data-testid="chat-input-terminal-mode-hint"
-        className="mr-1 min-w-0 select-none truncate text-s fg-tertiary"
+        className="pr-1 min-w-0 select-none truncate text-s fg-tertiary"
         title={hint}
       >
         {hint}
@@ -90,20 +93,20 @@ export function TerminalRunButton({
 }: TerminalRunButtonProps): JSX.Element {
   return (
     <Tooltip label="Run terminal command">
-      <button
+      <ControlButton
         type="button"
         onClick={onRun}
         disabled={disabled}
         data-testid={dataTestId}
-        className={`focus-ring inline-flex ${tapTarget === 'touch' ? 'h-11 w-11 lg:h-8 lg:w-8' : 'h-8 w-8'} items-center justify-center rounded-full fg-emphasis transition-transform enabled:active:scale-97 disabled:cursor-not-allowed disabled:bg-muted disabled:fg-tertiary disabled:opacity-100 ${
-          failed
-            ? 'bg-destructive enabled:hover:bg-destructive-hover'
-            : 'bg-warning enabled:hover:bg-warning/90'
-        }`}
+        presentation="terminal-composer-trigger"
+        appearance={{
+          tapTarget: tapTarget === 'touch' ? 'touch' : 'desktop',
+          failed: !!failed,
+        }}
         aria-label="Run terminal command"
       >
         <TerminalIcon size={16} aria-hidden />
-      </button>
+      </ControlButton>
     </Tooltip>
   );
 }

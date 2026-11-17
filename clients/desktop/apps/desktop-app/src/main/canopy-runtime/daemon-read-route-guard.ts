@@ -4,6 +4,7 @@ import type {
   CanopyCallerDescriptor,
   CanopyWorkspaceScope,
 } from '@canopy/protocol/canopy-core';
+import { isBotProjectId } from '@canopy/protocol/chat-targets';
 import type { WorkspaceType } from '@canopy/desktop-shared/types';
 import { LOCAL_DESKTOP_AUTHORITY_ID } from './desktop-runtime-identity';
 
@@ -293,7 +294,11 @@ export function evaluateLocalRouteTarget(
     !hasOnlySelectors(scope, SCOPE_SELECTORS[shape])
   )
     return null;
-  if (lookups.excludedWorkspaceIds.has(workspaceId)) return null;
+  if (
+    isBotProjectId(workspaceId) ||
+    lookups.excludedWorkspaceIds.has(workspaceId)
+  )
+    return null;
   const resolved =
     worktreeId === undefined
       ? null

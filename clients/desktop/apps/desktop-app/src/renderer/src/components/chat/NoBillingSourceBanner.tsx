@@ -1,9 +1,17 @@
-import { useCallback, useEffect, useRef, useState, type JSX } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type JSX,
+} from 'react';
 import type {
   AgentProviderType,
   NativeAiCreditsAvailability,
 } from '@canopy/desktop-shared/types';
-import { brandText } from '@/lib/brand';
+import { buildBillingTopUpIntentPath } from '@canopy/protocol/billing';
+import { openSettingsPathOrWeb } from '@/lib/navigation/settings-destinations';
 import { resolveAiCreditsCoverage } from '@/lib/openBillingPage';
 import { getModelCatalogProviderLabel } from '@canopy/ui-shared';
 import {
@@ -16,8 +24,8 @@ import {
   POLICY_BILLING_DEAD_END_COPY,
   POLICY_ONLY_DEAD_END_COPY,
   connectProviderLabel,
-  creditsOnlyDeadEndCopy,
-  failedTurnCopy,
+  CREDITS_ONLY_DEAD_END_COPY,
+  FAILED_TURN_COPY,
   notSignedInCopy,
   type CreditsRecoveryCopy,
 } from '@canopy/ui-shared/components';
@@ -26,6 +34,7 @@ import {
   type CreditsNoticeOwner,
   type CreditsNoticePurchase,
 } from '@canopy/ui-app/credits';
+import { CreditsRowPendingAction } from '@canopy/ui-app/providers';
 import type { CreditsPromptCondition } from '@canopy/app-state/billing/credits';
 import {
   GetAiCreditsCta,
@@ -61,6 +70,15 @@ import {
 import { CreditsRecoveryView } from './CreditsRecoveryView';
 import { AuthLoginModal } from '@/components/settings/AuthLoginModal';
 import { useIsGuestCredential } from '@/hooks/useIsGuestCredential';
+import {
+  DesktopProviderChoiceDialog,
+  useDesktopProviderChoice,
+} from './providerChoice/DesktopProviderChoice';
+import {
+  desktopCreditsBalance,
+  type DesktopChoiceRow,
+  type DesktopProviderChoiceContext,
+} from './providerChoice/providerChoiceFacts';
 import type { ProviderModelAvailability } from '@/hooks/useProviderAvailability';
 import type { BillingLane } from '@canopy/desktop-shared/lib/default-model-lane';
 
@@ -68,9 +86,11 @@ import type { BillingLane } from '@canopy/desktop-shared/lib/default-model-lane'
  * Button tiers mirror `AiCreditsUsageLimitBanner` so every recovery action
  * across every chat banner reads as one system: the house `Button` recipe,
  * `primary` for the single recommended action and `secondary` for the
- * alternative. CAN-4766: "Connect {provider}" leads where it shows and
- * "Buy AI Credits" follows; the purchase is primary only when it stands alone
- * or a hand-off is waiting on it.
+ * alternative. With provider choice (CAN-6860) the notice shows one button,
+ * "Choose provider" (or a Continue menu when one source is usable now):
+ * connecting each provider and the purchase move to the rows of the list it
+ * opens. Mid-purchase it adds only Check again. Without a provider-choice
+ * context the earlier Connect-then-buy pair stays.
  */
 
 /** The purchases this banner confirms. The usage-limit banner owns its own. */
@@ -93,6 +113,12 @@ const ARRIVAL_PURCHASE: CreditsNoticePurchase = { kind: 'elsewhere' };
 export interface NoBillingSourceBannerProps {
   /** Provider the current model resolves to. Only `claude` / `codex` can bill. */
   provider: AgentProviderType;
+  /**
+   * The composer's provider-choice facts and its switch handler. Set, the
+   * notice offers provider choice in place of the purchase; the
+   * organization-policy dead ends never do (no provider gets past a policy).
+   */
+  providerChoice?: DesktopProviderChoiceContext;
   /** The main-owned queue is preserving a prompt after a credit refusal. */
   queuedCreditHeld?: boolean;
   /** Live native-auth / credits availability for that provider. */
@@ -213,6 +239,7 @@ export function NoBillingSourceBanner({
   turnActive = false,
   aiCreditsCardVisible = false,
   aiCreditsCardExpected = false,
+  providerChoice: providerChoiceContext,
 }: NoBillingSourceBannerProps): JSX.Element | null {
   const [nativeAvailability, setNativeAvailability] =
     useState<NativeAiCreditsAvailability | null>(null);
@@ -440,14 +467,21 @@ export function NoBillingSourceBanner({
   //
   // A pure POLICY dead end is the third case: every lane the user can pay for
   // is blocked by the org allowlist, so another login changes nothing.
+  const standardCreditsRefusal =
+    providerChoiceContext === undefined &&
+    !policyOnlyDeadEnd &&
+    !creditsOnlyDeadEnd &&
+    !policyRestricted &&
+    (dispatchDeadEnd || runtimeSignalActive || queuedCreditHeld);
   const showSignIn =
-    !gatewayOnlyModel &&
-    !availability.nativeAuth &&
-    noDispatchableModel?.missing !== 'policy-allowance' &&
-    (noDispatchableModel?.lanesNeeded === undefined ||
-      noDispatchableModel.lanesNeeded.some(
-        (lane) => lane === 'claude-native' || lane === 'codex-native',
-      ));
+    standardCreditsRefusal ||
+    (!gatewayOnlyModel &&
+      !availability.nativeAuth &&
+      noDispatchableModel?.missing !== 'policy-allowance' &&
+      (noDispatchableModel?.lanesNeeded === undefined ||
+        noDispatchableModel.lanesNeeded.some(
+          (lane) => lane === 'claude-native' || lane === 'codex-native',
+        )));
 
   // Last-resort credits CTA. `resolveAiCreditsCoverage(null)` returns
   // `showPurchase: false` AND `showContactAdmin: false`, and `nativeAvailability`
@@ -506,7 +540,8 @@ export function NoBillingSourceBanner({
   // pre-flight read last said: a fresh purchase never replaces it.
   const showCreditsButton =
     creditsCanHelp &&
-    (showPurchase ||
+    (standardCreditsRefusal ||
+      showPurchase ||
       showFallbackCredits ||
       pendingCredits ||
       pendingHandoff !== null);
@@ -646,9 +681,11 @@ export function NoBillingSourceBanner({
       data-testid="chat-input-no-billing-source-sign-in"
     >
       {/* Mid-purchase, connecting is the way out if credits are slow. */}
-      {visibleHandoff !== null
-        ? `${connectProviderLabel(providerLabel)} instead`
-        : connectProviderLabel(providerLabel)}
+      {standardCreditsRefusal
+        ? 'Connect Claude'
+        : visibleHandoff !== null
+          ? `${connectProviderLabel(providerLabel)} instead`
+          : connectProviderLabel(providerLabel)}
     </NoticeButton>
   ) : undefined;
   const reopenBilling = {
@@ -659,6 +696,129 @@ export function NoBillingSourceBanner({
     disabled: handoffControls?.reopenDisabled === true,
     testId: 'chat-input-no-billing-source-reopen-billing',
   };
+  // Provider choice (CAN-6860). The policy dead ends keep their copy and get
+  // none: no provider gets past an organization's policy.
+  const policyBillingDeadEnd =
+    policyRestricted &&
+    noDispatchableModel?.missing === 'both' &&
+    noDispatchableModel.hasPolicyAllowedLane !== false;
+  const offersProviderChoice =
+    providerChoiceContext !== undefined &&
+    !policyOnlyDeadEnd &&
+    !creditsOnlyDeadEnd &&
+    !policyBillingDeadEnd;
+  const choiceCondition: CreditsPromptCondition =
+    queuedCreditHeld && !policyOnlyDeadEnd
+      ? 'queued_held'
+      : runtimeSignalActive || dispatchDeadEnd
+        ? 'out_of_credits'
+        : 'no_billing_source';
+  // The notice says nothing can pay for this chat, so the list names no
+  // source as current: the chat's selected provider is a row to connect or
+  // use like any other, and the notice reads "Choose provider".
+  const sourcelessContext = useMemo<DesktopProviderChoiceContext | undefined>(
+    () =>
+      providerChoiceContext === undefined
+        ? undefined
+        : { ...providerChoiceContext, current: null },
+    [providerChoiceContext],
+  );
+  const providerChoice = useDesktopProviderChoice({
+    context: offersProviderChoice ? sourcelessContext : undefined,
+    condition: choiceCondition,
+    credits: {
+      balance: desktopCreditsBalance({
+        settled: coverageSettled,
+        canSpend: coverage.canSpendCredits,
+        // Settled with nothing to offer either way: the read was inconclusive.
+        inconclusive: showFallbackCredits,
+      }),
+      viewer: isGuest ? 'guest' : 'signed-in',
+      owner:
+        showContactAdmin && !showCreditsButton
+          ? CONTACT_ADMIN_OWNER
+          : { kind: 'personal' },
+      pending: visibleHandoff !== null,
+      pendingFeedback: visibleHandoff?.feedback ?? null,
+    },
+  });
+  // The credits row's purchase: this banner's own tracked hand-off, so
+  // once it starts the dialog closes and the notice's Check again (the
+  // `completion` slot) takes over.
+  // While a hand-off is pending the row offers Reopen billing (Check again
+  // after a failed check). Both act on the notice's own tracked hand-off
+  // (the `completion` slot): a second tracked CTA here would report on
+  // mount, close the list at once, and leave the notice's controls bound to
+  // an instance that then unmounts.
+  const renderCreditsRowAction = (row: DesktopChoiceRow): JSX.Element | null =>
+    row.action === 'check-again' ? (
+      <CreditsRowPendingAction
+        row={row}
+        {...(handoffControls?.onReopenBilling !== undefined &&
+        handoffControls.reopenDisabled !== true
+          ? {
+              onReopenBilling: (): void => {
+                providerChoice?.closeDialog();
+                handoffControls.onReopenBilling?.();
+              },
+            }
+          : {})}
+        reopenPending={handoffControls?.reopenPending === true}
+        {...(handoffControls !== null
+          ? {
+              onCheckAgain: (): void => {
+                providerChoice?.closeDialog();
+                handoffControls.onCheckAgain();
+              },
+            }
+          : {})}
+        checking={handoffControls?.checking === true}
+      />
+    ) : (
+      <span {...(creditsDisabled ? { title: 'Checking your account…' } : {})}>
+        <GetAiCreditsCta
+          label={
+            row.action === 'sign-in-to-buy'
+              ? AI_CREDITS_GUEST_PURCHASE_LABEL
+              : AI_CREDITS_PURCHASE_LABEL
+          }
+          {...(creditsScope ? { aiCreditsScope: creditsScope } : {})}
+          onCovered={(): void => {
+            setCoverageSettled(false);
+            setRefreshCoverage((n) => n + 1);
+          }}
+          handoffOnInconclusiveRead={showFallbackCredits}
+          buttonVariant="secondary"
+          buttonSize="sm"
+          disabled={creditsDisabled}
+          handoffLayout="compact"
+          billingDestination="browser"
+          onHandoffChange={(next): void => {
+            reportHandoff(next);
+            if (next !== null) providerChoice?.closeDialog();
+          }}
+          confirmArrival="no-billing-source"
+          {...(target ? { persistHandoffFor: target } : {})}
+          onGetCreditsClick={(): void => {
+            trackCreditsRecoveryClick({
+              surface: 'chat_banner',
+              action:
+                row.action === 'sign-in-to-buy'
+                  ? 'account_sign_in'
+                  : 'credits_purchase',
+              provider: 'credits',
+            });
+            // A guest's sign-in opens its own modal; close the list first so
+            // two modals never stack. A purchase closes it once its hand-off
+            // reports, so the hand-off is never cut short.
+            if (row.action === 'sign-in-to-buy') providerChoice?.closeDialog();
+            else providerChoice?.notePurchaseStart();
+          }}
+          dataTestId="provider-choice-action-credits"
+        />
+      </span>
+    );
+
   const creditsControl = (
     /* The title lives on a WRAPPER, not the button: Chromium
        suppresses pointer events on disabled controls, so a
@@ -791,7 +951,7 @@ export function NoBillingSourceBanner({
       // resolver only returns it when `lanesNeeded` is empty, which is
       // exactly `policyOnlyDeadEnd` above.
       creditsOnlyDeadEnd
-      ? creditsOnlyDeadEndCopy(brandText.appName)
+      ? CREDITS_ONLY_DEAD_END_COPY
       : policyRestricted &&
           noDispatchableModel?.missing === 'both' &&
           noDispatchableModel.hasPolicyAllowedLane !== false
@@ -802,15 +962,17 @@ export function NoBillingSourceBanner({
           dispatchDeadEnd
           ? DISPATCH_DEAD_END_COPY
           : runtimeSignalActive
-            ? failedTurnCopy(brandText.appName)
-            : notSignedInCopy({ appName: brandText.appName, providerLabel });
+            ? FAILED_TURN_COPY
+            : notSignedInCopy({ providerLabel });
 
+  const approvedRefusal =
+    providerChoice === null &&
+    (standardCreditsRefusal ||
+      (coverage.showContactAdmin && !policyOnlyDeadEnd)) &&
+    visibleHandoff === null;
   const queuedHeld = queuedCreditHeld && !policyOnlyDeadEnd;
-  const condition: CreditsPromptCondition = queuedHeld
-    ? 'queued_held'
-    : runtimeSignalActive || dispatchDeadEnd
-      ? 'out_of_credits'
-      : 'no_billing_source';
+  // One precedence for the notice and its provider list.
+  const condition = choiceCondition;
 
   // Same precedence as the copy: a dispatch dead end, then a failed turn. A
   // pure org-policy dead end is not a credits state, so it records no view.
@@ -863,24 +1025,56 @@ export function NoBillingSourceBanner({
           // organization needs its admin buys nothing here, unless a
           // purchase is already in progress or credits are the only help.
           owner={
-            showContactAdmin && !showCreditsButton
+            !approvedRefusal && showContactAdmin && !showCreditsButton
               ? CONTACT_ADMIN_OWNER
               : BUYER_OWNER
           }
           placement="composer"
+          outOfCredits={approvedRefusal}
+          canConnectClaude={showSignIn}
+          orgPoolUnavailable={coverage.showContactAdmin}
           purchase={{
             kind: 'host',
             mode: 'handoff',
-            control: creditsControl,
+            control:
+              approvedRefusal && coverage.showContactAdmin ? (
+                <NoticeButton
+                  variant={showSignIn ? 'secondary' : 'primary'}
+                  onClick={(): void => {
+                    openSettingsPathOrWeb(
+                      buildBillingTopUpIntentPath('/account/billing', {
+                        reason: 'credits',
+                        source: 'banner',
+                      }),
+                    );
+                  }}
+                >
+                  {AI_CREDITS_PURCHASE_LABEL}
+                </NoticeButton>
+              ) : (
+                creditsControl
+              ),
           }}
-          purchaseNeeded={showCreditsButton}
+          purchaseNeeded={showCreditsButton || approvedRefusal}
           contactAdmin={showContactAdmin}
           pending={
             visibleHandoff === null
               ? null
               : { feedback: visibleHandoff.feedback, reopenBilling }
           }
-          secondaryAction={connectAction}
+          // With provider choice the list's rows connect each provider, so
+          // the notice keeps one button instead of a second Connect.
+          {...(providerChoice === null
+            ? { secondaryAction: connectAction }
+            : {})}
+          {...(providerChoice !== null
+            ? {
+                providerChoice: providerChoice.notice(
+                  'chat-input-no-billing-source-provider-choice',
+                ),
+                completion: creditsControl,
+              }
+            : {})}
           // A held message keeps its own words; mid-purchase the notice
           // names the step the user is on (CAN-5162).
           {...(queuedHeld
@@ -903,10 +1097,14 @@ export function NoBillingSourceBanner({
           live region. */}
       {loginOpen && (
         <AuthLoginModal
-          provider={provider}
+          provider={standardCreditsRefusal ? 'claude' : provider}
           onClose={(): void => setLoginOpen(false)}
         />
       )}
+      <DesktopProviderChoiceDialog
+        choice={providerChoice}
+        renderCreditsAction={renderCreditsRowAction}
+      />
     </>
   );
 }

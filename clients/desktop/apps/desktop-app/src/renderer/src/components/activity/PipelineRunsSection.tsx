@@ -17,7 +17,7 @@ import type { DispatchPipelineTarget } from './useDispatchPipelineModal';
 import { isPipelineExecutionActiveStatus } from './utils';
 import type { BreadcrumbEntry } from './details/pipelineDetailTypes';
 import { openPipelineExecutionFromUi } from '@/lib/panels/open-pipeline-execution';
-import { AdvisorEtaBadge } from './AdvisorEtaBadge';
+import { AdvisorEtaStatus } from './AdvisorEtaBadge';
 import {
   usePipelineExecutionActions,
   usePipelineExecutionWatchers,
@@ -411,7 +411,7 @@ export function PipelineRunsSection({
             onOpenSource: handleOpenExecutionById,
             parentChain: [],
             renderAdvisorBadge: (run) => (
-              <AdvisorEtaBadge
+              <AdvisorEtaStatus
                 snapshot={advisorSnapshotsByExecutionId[run.id]}
                 pipelineStatus={run.status}
               />

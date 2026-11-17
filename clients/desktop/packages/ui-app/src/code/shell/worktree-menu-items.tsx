@@ -681,7 +681,7 @@ export function deriveWorktreeMenuItems(
                 ? 'destructive'
                 : 'neutral',
             testId: callbacks.testIds?.directRemoval,
-            className: 'pointer-coarse:hidden',
+            visibility: 'fine-pointer',
           },
         ]
       : [];
