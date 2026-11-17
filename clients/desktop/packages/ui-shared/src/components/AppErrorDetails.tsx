@@ -1,8 +1,8 @@
 'use client';
 
+import { CodeBlock } from './CodeBlock';
 import type { JSX } from 'react';
 import type { AppErrorPresentation } from '@canopy/protocol/app-errors';
-import { REPLAY_BLOCK_CLASS } from '../lib/replay-privacy';
 import { CopyButton } from './CopyButton';
 import { Disclosure } from './Disclosure';
 
@@ -57,14 +57,19 @@ export function AppErrorDetails({
       </div>
       {rawDetail ? (
         <Disclosure label="Technical details" dataTestId={`${dataTestId}-raw`}>
-          <pre
-            className={`max-h-64 overflow-auto whitespace-pre-wrap break-words font-mono text-xs fg-secondary ${REPLAY_BLOCK_CLASS}`}
+          <CodeBlock
+            variant="bare"
+            size="xs"
+            wrap="words"
+            tone="secondary"
+            replay="block"
+            className="max-h-64"
             data-selectable
           >
             {[rawDetail.name, rawDetail.message, rawDetail.stack]
               .filter(Boolean)
               .join('\n')}
-          </pre>
+          </CodeBlock>
         </Disclosure>
       ) : null}
     </div>

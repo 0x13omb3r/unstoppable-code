@@ -10,7 +10,6 @@ import {
   useRef,
   useState,
   type JSX,
-  type KeyboardEvent as ReactKeyboardEvent,
   type ReactNode,
   type RefObject,
 } from 'react';
@@ -20,14 +19,15 @@ import {
   CloseMediumIcon,
 } from '../../icons/AppIcons';
 import type { PanelTabModel } from '../../panels/registry-types';
+import { PickListSearch, usePickListKeys } from '../PickList';
 import { FloatingMenu } from '../FloatingMenu';
 import {
+  PickerMenuList,
   PickerMenuOption,
   PickerMenuOptionContent,
   PickerMenuOptionLabel,
   PickerMenuOptionLeading,
   PickerMenuSearchHeader,
-  PickerMenuSearchInput,
 } from '../PickerMenu';
 import { TitlebarIconButton } from '../TitlebarIconButton';
 
@@ -168,25 +168,16 @@ export function PanelTabListButton({
     if (!hidden) anchorRef.current?.focus({ preventScroll: true });
   };
 
-  const onKeyDown = (event: ReactKeyboardEvent<HTMLDivElement>): void => {
-    // Keys that confirm or browse an IME composition in the search field
-    // belong to the input method, not the list.
-    if (event.nativeEvent.isComposing || event.key === 'Process') return;
-    if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
-      event.preventDefault();
-      const step = event.key === 'ArrowDown' ? 1 : -1;
+  const keyboard = {
+    keys: rows.map(({ tab }) => tab.panelId),
+    activeKey: currentRow?.tab.panelId ?? null,
+    onActiveKeyChange: (key: string): void => {
       setKeyboardMoved(true);
-      setHighlight(
-        rows.length === 0 ? 0 : (current + step + rows.length) % rows.length,
-      );
-    } else if (event.key === 'Enter') {
-      const row = rows[current];
-      if (row !== undefined) {
-        event.preventDefault();
-        select(row.tab.panelId);
-      }
-    }
+      setHighlight(rows.findIndex(({ tab }) => tab.panelId === key));
+    },
+    onPick: select,
   };
+  const onKeyDown = usePickListKeys(keyboard);
 
   return (
     // Its own root, like the `+` root, so the row spaces both controls the
@@ -235,15 +226,16 @@ export function PanelTabListButton({
         >
           {searchable ? (
             <PickerMenuSearchHeader>
-              <PickerMenuSearchInput
+              <PickListSearch
                 ref={searchRef}
                 type="search"
                 value={query}
                 placeholder={`Search ${tabs.length} tabs`}
                 aria-label="Search tabs"
                 data-testid={`panel-tab-list-search-${groupId}`}
-                aria-controls={listId}
-                aria-activedescendant={activeDescendant}
+                listId={listId}
+                keyboard={keyboard}
+                activeDescendant={activeDescendant}
                 onChange={(event): void => {
                   setQuery(event.target.value);
                   setHighlight(0);
@@ -256,14 +248,13 @@ export function PanelTabListButton({
               />
             </PickerMenuSearchHeader>
           ) : null}
-          <div
+          <PickerMenuList
+            presentation="scrolling-tabs"
             ref={listRef}
             id={listId}
             tabIndex={-1}
             aria-activedescendant={activeDescendant}
-            role="listbox"
             aria-label="Tabs"
-            className="canopy-panel-tab-list-rows min-h-0 overflow-y-auto outline-none"
           >
             {rows.length === 0 ? (
               <div className="canopy-panel-tab-list-empty">
@@ -351,7 +342,7 @@ export function PanelTabListButton({
                 </div>
               );
             })}
-          </div>
+          </PickerMenuList>
         </div>
       </FloatingMenu>
     </div>

@@ -1,5 +1,5 @@
+import { CodeBlock } from '../CodeBlock';
 import { memo, type JSX } from 'react';
-import { REPLAY_BLOCK_CLASS } from '../../lib/replay-privacy';
 import { Button } from '../Button';
 import { LoadingSpinner } from '../LoadingSpinner';
 import { Notice, NoticeButton } from '../Notice';
@@ -45,12 +45,17 @@ export const DeferredTextOutput = memo(function DeferredTextOutput({
       {/* A host that already shows the bounded output passes an empty
           preview; only the controls render until the full output opens. */}
       {(opened || preview) && (
-        <pre
-          className={`max-h-75 overflow-auto whitespace-pre-wrap break-all px-2.5 py-2 ${REPLAY_BLOCK_CLASS}`}
+        <CodeBlock
+          variant="row"
+          size="inherit"
+          wrap="all"
+          tone="inherit"
+          replay="block"
+          className="max-h-75"
           data-testid="chat-tool-output-text"
         >
           {opened ? text : preview}
-        </pre>
+        </CodeBlock>
       )}
       <div
         className="flex items-center gap-2 px-2.5 py-1.5 ring-1 ring-inset ring-line-base"

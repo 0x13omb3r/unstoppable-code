@@ -1,5 +1,6 @@
 'use client';
 
+import { CodeBlock } from '@canopy/ui-shared/components/CodeBlock';
 import { CUSTOMIZE_LABEL } from '@canopy/protocol/ui-labels';
 import { useState, type JSX, type ReactNode } from 'react';
 import {
@@ -403,12 +404,17 @@ export function WorkflowsRunsTable({
                             size="small"
                             className="overflow-hidden"
                           >
-                            <pre
-                              className={`max-h-40 overflow-auto whitespace-pre-wrap p-2 font-mono text-xs fg-secondary ${REPLAY_BLOCK_CLASS}`}
+                            <CodeBlock
+                              variant="compact-document"
+                              size="xs"
+                              wrap="words"
+                              tone="secondary"
+                              replay="block"
+                              className="max-h-40"
                               data-testid="workflows-run-output"
                             >
                               {row.output}
-                            </pre>
+                            </CodeBlock>
                           </Surface>
                         </div>
                       ) : null}

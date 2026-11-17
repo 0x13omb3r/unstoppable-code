@@ -7,7 +7,10 @@ import { cloudAccountIdentityKey } from '@canopy/desktop-shared/lib/guest-accoun
 import { reportClientAppError } from '@canopy/desktop-instrumentation/client';
 import { cloudCoworkStore } from '@/cloud-chats/cloud-cowork-store';
 import { isWebCoreScope, webCoreLocalId } from '@/lib/chat-authority';
-import { readWebCoreSendReceipt } from '@/stores/chat/web-core';
+import {
+  readWebCoreSendReceipt,
+  supersedeWebCoreSend,
+} from '@/stores/chat/web-core';
 import {
   useHomeComposerStore,
   type HomeCloudDestination,
@@ -786,6 +789,51 @@ export async function stillMissingBeforeSendAgain(
     return 'unknown';
   }
   return 'settled';
+}
+
+/**
+ * Stops a message that may still arrive from ever arriving, before it is
+ * sent again or discarded (CAN-6856). Answers where it stands: `superseded`
+ * when it never will; `settled` when its task took it first, now shown as
+ * sent; `gone` when its task is gone; `unfenced` when the cloud, or just its
+ * chat, can't stop
+ * it, so a resend could deliver it twice; `unknown` when the cloud couldn't
+ * say, or the person or the account moved on meanwhile.
+ */
+export async function supersedeHomeOutboxEntry(
+  entry: HomeOutboxEntry,
+): Promise<'superseded' | 'settled' | 'gone' | 'unfenced' | 'unknown'> {
+  const epoch = useWorkspaceContextStore.getState().accountEpoch;
+  const outcome = await supersedeWebCoreSend(entry.destination, entry.id);
+  if (useWorkspaceContextStore.getState().accountEpoch !== epoch)
+    return 'unknown';
+  switch (outcome) {
+    case 'applied':
+      useHomeComposerStore.setState({ sendAgainMayDuplicate: false });
+      removeEntry(entry.id);
+      show({ entry, state: 'sent' });
+      return 'settled';
+    case 'superseded':
+      useHomeComposerStore.setState({ sendAgainMayDuplicate: false });
+      // Stopped, though its task is no longer listed: it goes as a new task.
+      return cloudTaskListed(entry.destination) ? 'superseded' : 'gone';
+    case 'unfenced':
+      useHomeComposerStore.setState({ sendAgainMayDuplicate: true });
+      return 'unfenced';
+    case 'chatUnfenced':
+      // Only this chat can't stop a send: other chats' cards still can.
+      useHomeComposerStore.setState((state) => ({
+        sendAgainMayDuplicateChats: state.sendAgainMayDuplicateChats.includes(
+          entry.destination.chatId,
+        )
+          ? state.sendAgainMayDuplicateChats
+          : [...state.sendAgainMayDuplicateChats, entry.destination.chatId],
+      }));
+      return 'unfenced';
+    case 'gone':
+    case 'unknown':
+      return outcome;
+  }
 }
 
 /**

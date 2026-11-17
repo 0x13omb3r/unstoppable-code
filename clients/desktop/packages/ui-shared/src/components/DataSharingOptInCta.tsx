@@ -1,12 +1,13 @@
 'use client';
 
+import { ButtonLink } from './ButtonLink';
 import type { JSX } from 'react';
 import type { DataSharingOptInFeature } from '@canopy/protocol';
 import {
   DATA_SHARING_SCOPE_ORDER,
   type DataSharingScopeKey,
 } from '../lib/data-sharing-features';
-import { Notice, NoticeButton, noticeButtonClassName } from './Notice';
+import { Notice, NoticeButton } from './Notice';
 
 // Every string below is the approved CAN-3383 copy (docs/ux-writing.md,
 // "Data-sharing opt-in hints"). Keep sentences short, keep dynamic names as
@@ -278,13 +279,17 @@ function FallbackLink({
   testId: string;
 }): JSX.Element {
   return (
-    <a
+    <ButtonLink
+      target={undefined}
+      rel={undefined}
       href={href}
       data-testid={testId}
-      className={noticeButtonClassName('secondary')}
+      variant="secondary"
+      size="sm"
+      className="max-w-full whitespace-nowrap"
     >
       {FALLBACK_LINK}
-    </a>
+    </ButtonLink>
   );
 }
 
@@ -455,16 +460,20 @@ function OptInNotice(props: DataSharingOptInCtaProps): JSX.Element {
         title={dataSharingOptInHeadline(feature)}
         actions={
           webAction === null ? undefined : (
-            <a
+            <ButtonLink
+              target={undefined}
+              rel={undefined}
               href={webAction.href}
               data-testid={`${testId}-enable`}
-              className={noticeButtonClassName('primary', 'max-w-full')}
+              variant="primary"
+              size="sm"
+              className="max-w-full whitespace-nowrap"
               onClick={(): void => webAction.onActivate()}
             >
               <span className="truncate">
                 {dataSharingOptInActionLabel(organizationName)}
               </span>
-            </a>
+            </ButtonLink>
           )
         }
         onDismiss={onDismiss}

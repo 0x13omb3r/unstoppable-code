@@ -37,8 +37,9 @@ function webCoreScope(scope: CostScopeRef): CostScopeRef | null {
 }
 
 function failure<Value>(error: CanopyErrorPayload): CostViewResult<Value> {
+  // The web core doesn't serve this read; asking again won't change it.
   if (error.kind === 'capability_unavailable')
-    return { status: 'unavailable', reason: 'runtime_unavailable' };
+    return { status: 'unavailable', reason: 'not_served' };
   return {
     status: 'error',
     reason: error.kind === 'not_found' ? 'NOT_FOUND' : 'UNKNOWN',

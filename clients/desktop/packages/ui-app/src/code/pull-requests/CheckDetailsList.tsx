@@ -1,5 +1,5 @@
 import { useMemo, type JSX } from 'react';
-import { Stack } from '@canopy/ui-shared/components';
+import { TextLink, Stack } from '@canopy/ui-shared/components';
 import { PullRequestCheckStatusMarker } from './PullRequestCheckStatusMarker';
 import type {
   PullRequestSectionCheckDetail as CheckDetail,
@@ -78,14 +78,15 @@ export function CheckDetailsList({
               <span className="truncate fg-primary/80">{check.name}</span>
             </span>
             {check.detailsUrl && (
-              <a
+              <TextLink
                 href={check.detailsUrl}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="shrink-0 fg-secondary transition-colors hover:fg-primary"
+                variant="quiet"
+                className="shrink-0"
               >
                 view &rarr;
-              </a>
+              </TextLink>
             )}
           </div>
         ))}

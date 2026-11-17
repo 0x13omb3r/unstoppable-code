@@ -2020,11 +2020,13 @@ function validateCurrentExecutionState(
     pauseLocators.add(locator);
     const definition = state.job_definitions[checkpoint.job_id];
     const result = state.jobs[checkpoint.job_id];
+    const step = result?.steps[checkpoint.step_id];
     if (
       !definition ||
       definition.logical_job_id !== checkpoint.logical_job_id ||
       result?.status !== 'paused' ||
-      !result.steps[checkpoint.step_id]?.pause_requested
+      // A run-pipeline step offers its child's pause under the child's id.
+      !(step?.pause_requested || step?.child_pause?.id === checkpoint.id)
     ) {
       throw new Error(`Pause checkpoint "${checkpoint.id}" is stale`);
     }
@@ -2889,6 +2891,9 @@ export function clearPhysicalJobBlockers(
     delete step.pause_reason;
     delete step.pause_reasons;
     delete step.selected_child_reason_ids;
+    delete step.child_pause;
+    delete step.child_pause_reason_id;
+    delete step.child_pause_responses;
   }
 }
 
@@ -3488,6 +3493,26 @@ function applyExecutionResumeSelection(
         `Status reason "${reason.id}" no longer has a valid step checkpoint`,
       );
     }
+    // A child's own approval resumes that child by its own reason (CAN-6868).
+    if (
+      reason.kind === 'action_paused' &&
+      step.status === 'paused' &&
+      reason.source.child_execution_id &&
+      reason.source.child_reason_id
+    ) {
+      step.child_execution_id = reason.source.child_execution_id;
+      step.selected_child_reason_ids = Array.from(
+        new Set([
+          ...(step.selected_child_reason_ids ?? []),
+          reason.source.child_reason_id,
+        ]),
+      );
+      job.status = 'queued';
+      job.completed_at = undefined;
+      job.conclusion = undefined;
+      job.outcome = undefined;
+      continue;
+    }
     if (
       isCheckpointPauseReason(reason.kind) &&
       step.status === 'paused' &&
@@ -3588,7 +3613,11 @@ export function prepareExecutionResume(
  */
 export function prepareActiveExecutionResume(
   state: ExecutionState,
-  selection: { statusReasonIds: readonly string[] },
+  selection: {
+    statusReasonIds: readonly string[];
+    /** Jobs a pause answer of the same resume already requeued. */
+    requeuedJobIds?: ReadonlySet<string>;
+  },
 ): ExecutionState {
   if (state.status !== 'running') {
     throw new Error(
@@ -3611,7 +3640,14 @@ export function prepareActiveExecutionResume(
         `Status reason "${reason.id}" requires input and cannot be resumed while the execution is running`,
       );
     }
-    if (state.jobs[reason.source.job_id]?.status !== 'paused') {
+    const jobStatus = state.jobs[reason.source.job_id]?.status;
+    if (
+      jobStatus !== 'paused' &&
+      !(
+        jobStatus === 'queued' &&
+        selection.requeuedJobIds?.has(reason.source.job_id)
+      )
+    ) {
       throw new Error(
         `Status reason "${reason.id}" does not belong to a paused job`,
       );
@@ -3619,7 +3655,9 @@ export function prepareActiveExecutionResume(
   }
 
   const prepared = cloneExecutionState(state);
-  applyExecutionResumeSelection(prepared, state.id, selection);
+  applyExecutionResumeSelection(prepared, state.id, {
+    statusReasonIds: selection.statusReasonIds,
+  });
   prepared.status = 'running';
   prepared.completed_at = undefined;
   return prepared;

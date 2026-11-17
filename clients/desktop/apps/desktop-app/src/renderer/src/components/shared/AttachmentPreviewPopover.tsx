@@ -1,3 +1,4 @@
+import { CodeBlock } from '@canopy/ui-shared/components/CodeBlock';
 import { ImageThumbnail } from '@canopy/ui-shared/components';
 import {
   cloudAttachmentPreview,
@@ -71,9 +72,17 @@ function TextPreview({
 }): JSX.Element {
   return (
     <div className="max-h-50 overflow-y-auto">
-      <pre className="whitespace-pre-wrap break-words p-2 font-mono text-2xs leading-relaxed fg-primary/80">
+      <CodeBlock
+        variant="compact-document"
+        size="2xs"
+        wrap="words"
+        tone="soft"
+        replay="block"
+        overflow="visible"
+        proseLeading
+      >
         {content}
-      </pre>
+      </CodeBlock>
       {truncated && <TruncatedLabel />}
     </div>
   );

@@ -160,6 +160,16 @@ export interface RunScriptOptions {
     interactive: boolean;
     shell?: CommandShellDefinition;
   };
+  /**
+   * The run's execution id, when the caller derives it to make a retry find
+   * the same run (CAN-5830); otherwise a fresh one.
+   */
+  runId?: string;
+  /**
+   * Admit the run under a ledger receipt keyed by `runId`, so a run the same
+   * id already started, for this script or another, starts nothing.
+   */
+  keyed?: boolean;
   onExecutionStarted?: () => void;
   onRendererStarted?: (event: ScriptStartedEvent) => void;
   onRendererOutput?: (event: ScriptOutputEvent) => void;
@@ -479,7 +489,7 @@ async function runScriptWithLifecycle(
     }
   }
   let outputTail = '';
-  const runId = randomUUID();
+  const runId = options.runId ?? randomUUID();
   // The worker writes the run log; this names the run it starts.
   const ref = {
     projectId: execution.projectId,
@@ -531,6 +541,7 @@ async function runScriptWithLifecycle(
         timeoutSeconds: interactive ? null : execution.timeoutSeconds,
         interactive,
         runId,
+        ...(options.keyed ? { keyed: true } : {}),
       },
       {
         observer: {

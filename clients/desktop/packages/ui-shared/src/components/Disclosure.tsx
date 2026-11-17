@@ -14,7 +14,13 @@ import {
   ChevronDownMediumIcon,
   ChevronRightMediumIcon,
 } from '../icons/AppIcons';
-import { Button, isAriaDisabled, swallowUnavailableClick } from './Button';
+import {
+  Button,
+  ControlButton,
+  isAriaDisabled,
+  swallowUnavailableClick,
+} from './Button';
+import { SHARED_CONTROL_RECIPES } from './control-button-shared';
 
 /**
  * - `inline`: a quiet text toggle with the body under it (Advanced, Setup
@@ -69,12 +75,6 @@ const CHEVRON_SLOT_CLASS =
 const CHEVRON_CLASS =
   'shrink-0 transition-transform duration-150 ease-out motion-reduce:transition-none';
 
-const TOGGLE_CLASS: Readonly<Record<DisclosureVariant, string>> = {
-  inline:
-    'focus-ring inline-flex max-w-full items-center gap-1 rounded-md py-0.5 pr-1 text-left text-xs font-medium fg-secondary hover:fg-primary',
-  box: 'focus-ring flex w-full items-center gap-2 rounded-lg px-4 py-3 text-left text-s font-medium fg-primary hover:bg-subtle',
-};
-
 const ROOT_CLASS: Readonly<Record<DisclosureVariant, string>> = {
   inline: 'flex min-w-0 flex-col gap-2',
   box: 'min-w-0 rounded-lg ring-[length:var(--border-hairline)] ring-line-base',
@@ -122,12 +122,14 @@ export function Disclosure({
       data-testid={dataTestId}
       data-state={open ? 'open' : 'closed'}
     >
-      <button
+      <ControlButton
         type="button"
+        presentation={
+          variant === 'inline' ? 'disclosure-inline' : 'disclosure-box'
+        }
         aria-expanded={open}
         aria-controls={showBody ? bodyId : undefined}
         data-testid={toggleTestId ?? `${dataTestId}-toggle`}
-        className={TOGGLE_CLASS[variant]}
         onClick={toggle}
       >
         {variant === 'inline' ? (
@@ -169,7 +171,7 @@ export function Disclosure({
             />
           </span>
         ) : null}
-      </button>
+      </ControlButton>
       {showBody ? (
         <div
           id={bodyId}
@@ -346,7 +348,7 @@ export function NativeDisclosure({
     >
       <summary
         data-testid={toggleTestId ?? `${dataTestId}-toggle`}
-        className={`${TOGGLE_CLASS[variant]} list-none [&::-webkit-details-marker]:hidden`}
+        className={`${SHARED_CONTROL_RECIPES[variant === 'inline' ? 'disclosure-inline' : 'disclosure-box']} list-none [&::-webkit-details-marker]:hidden`}
       >
         {variant === 'inline' ? chevron : null}
         {leadingIcon ? (

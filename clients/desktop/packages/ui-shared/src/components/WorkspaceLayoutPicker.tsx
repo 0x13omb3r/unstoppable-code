@@ -1,8 +1,7 @@
 'use client';
 
-import { ControlButton } from './Button';
 import type { JSX } from 'react';
-import { DropdownMenuItem } from './DropdownMenu';
+import { DropdownMenuControl, DropdownMenuItem } from './DropdownMenu';
 function IllustrationDivider({
   className,
   width,
@@ -159,11 +158,10 @@ export function WorkspaceLayoutPicker({
         <p className="label text-xs">Chat width</p>
         <div className="layouts" role="group" aria-label="Chat width">
           {(['default', 'full'] as const).map((value) => (
-            <ControlButton
+            <DropdownMenuControl
               key={value}
               type="button"
-              role="menuitemradio"
-              aria-checked={chatWidth === value}
+              choice={{ type: 'radio', checked: chatWidth === value }}
               disabled={disabled}
               data-testid={`workspace-chat-width-${value}`}
               presentation="workspace-layout-option"
@@ -173,7 +171,7 @@ export function WorkspaceLayoutPicker({
               <span className="caption">
                 {value === 'default' ? 'Default' : 'Full width'}
               </span>
-            </ControlButton>
+            </DropdownMenuControl>
           ))}
         </div>
       </div>
@@ -186,12 +184,11 @@ export function WorkspaceLayoutPicker({
           data-testid="workspace-layout-mode-toggle"
         >
           {(['minimal', 'advanced'] as const).map((value) => (
-            <ControlButton
+            <DropdownMenuControl
               key={value}
               type="button"
-              role="menuitemradio"
               aria-label={value}
-              aria-checked={mode === value}
+              choice={{ type: 'radio', checked: mode === value }}
               disabled={disabled}
               data-testid={`workspace-layout-mode-${value}`}
               presentation="workspace-layout-option"
@@ -201,7 +198,7 @@ export function WorkspaceLayoutPicker({
               <span className="caption">
                 {value === 'minimal' ? 'Minimal' : 'Advanced'}
               </span>
-            </ControlButton>
+            </DropdownMenuControl>
           ))}
         </div>
       </div>

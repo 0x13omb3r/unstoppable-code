@@ -1,3 +1,4 @@
+import { CodeBlock } from '@canopy/ui-shared/components/CodeBlock';
 import type {
   WorktreeRecoveryFinishResult,
   WorktreeRecoveryResolveResult,
@@ -261,7 +262,14 @@ export function WorktreeRecoveryDialog({
         />
       ) : null}
       <Disclosure label="Details">
-        <pre className="text-xs font-mono whitespace-pre-wrap break-words fg-secondary">
+        <CodeBlock
+          variant="bare"
+          size="xs"
+          wrap="words"
+          tone="secondary"
+          replay="inherit"
+          overflow="visible"
+        >
           {JSON.stringify(
             {
               code: recovery.code,
@@ -273,7 +281,7 @@ export function WorktreeRecoveryDialog({
             null,
             2,
           )}
-        </pre>
+        </CodeBlock>
       </Disclosure>
     </DialogModal>
   );

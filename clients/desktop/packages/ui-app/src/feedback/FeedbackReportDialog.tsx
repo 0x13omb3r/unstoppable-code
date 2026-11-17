@@ -1,5 +1,6 @@
 'use client';
 
+import { CodeBlock } from '@canopy/ui-shared/components/CodeBlock';
 import {
   useEffect,
   useRef,
@@ -39,10 +40,7 @@ import {
   FeedbackSubmissionHeldError,
   type FeedbackDialogSubmission,
 } from './FeedbackDialog';
-import {
-  DIAGNOSTIC_TEXT_CLASS_NAME,
-  FeedbackDiagnosticsPreview,
-} from './FeedbackDiagnosticsPreview';
+import { FeedbackDiagnosticsPreview } from './FeedbackDiagnosticsPreview';
 import { useFeedbackDiagnostics } from './use-feedback-diagnostics';
 
 import type {
@@ -742,14 +740,15 @@ export function FeedbackReportDialog({
                         testId="feedback-modal-sent-error"
                       />
                       {inlineContents ? (
-                        <pre
-                          className={DIAGNOSTIC_TEXT_CLASS_NAME}
+                        <CodeBlock
+                          variant="bare"
+                          className="max-h-64"
                           data-dd-privacy="hidden"
                           data-selectable
                           data-testid="feedback-modal-sent-error-detail"
                         >
                           {JSON.stringify(error.detail, null, 2)}
-                        </pre>
+                        </CodeBlock>
                       ) : null}
                     </DisclosureSection>
                   ) : null}

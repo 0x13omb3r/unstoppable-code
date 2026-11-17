@@ -21,7 +21,7 @@ import { AI_CREDITS_LABEL } from './aiCreditsLabel';
 import { formatCost, formatUsageResetWhen } from '../lib/format-usage';
 import { ProgressRing, type ProgressTone } from './Progress';
 import { REPLAY_BLOCK_CLASS } from '../lib/replay-privacy';
-import { InlineTextSkeleton } from './InlineTextSkeleton';
+import { InlineMeasuredSkeleton } from './Skeleton';
 import { ControlButton, Button } from './Button';
 
 import { DisclosureChevron, DisclosureToggle } from './Disclosure';
@@ -211,10 +211,14 @@ function CreditBalanceFigure({
         data-pending="true"
         className="flex min-w-0 items-center"
       >
-        <InlineTextSkeleton
-          className={figureWidth === null ? 'w-20 max-w-full' : 'max-w-full'}
+        <InlineMeasuredSkeleton
+          className={figureWidth === null ? 'w-20' : undefined}
           style={figureWidth === null ? undefined : { width: figureWidth }}
-        />
+        >
+          <span className="block truncate whitespace-nowrap tabular-nums">
+            0,000,000
+          </span>
+        </InlineMeasuredSkeleton>
       </span>
     );
   }
@@ -711,10 +715,10 @@ export interface UsageIndicatorProps {
    */
   readonly costPreview?: ReactNode;
   /**
-   * The host bills every turn to AI Credits with no provider subscription, so
-   * no USD figure is shown: the session Cost row, the host's cost preview row
+   * The host shows no cost: the session Cost row, the host's cost preview row
    * and the per-response Estimated cost row stay out. Tokens, duration,
-   * turns, context and the credit balance are unaffected.
+   * turns, context and the credit balance are unaffected. Amounts that do
+   * show read in the host's `CostCurrencyContext` (CAN-6634).
    */
   readonly hideCost?: boolean;
   /** Called as the popover opens and closes (hosts fetch fresh data on open). */

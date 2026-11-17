@@ -11,6 +11,8 @@ import type { CanopyCoreRelayApi } from '../../../shared/canopy-core-relay';
  */
 
 let served: ReadonlySet<string> = new Set();
+/** Each served operation's declared `detail` values, when it lists any. */
+let details: ReadonlyMap<string, readonly string[]> = new Map();
 let state: 'idle' | 'loading' | 'loaded' = 'idle';
 const listeners = new Set<() => void>();
 
@@ -41,10 +43,16 @@ export function loadWebCoreServedOperations(
         state = 'idle';
         return;
       }
-      served = new Set(
-        parsed.data.operations
-          .filter((operation) => operation.available)
-          .map((operation) => operation.name),
+      const available = parsed.data.operations.filter(
+        (operation) => operation.available,
+      );
+      served = new Set(available.map((operation) => operation.name));
+      details = new Map(
+        available.flatMap((operation) =>
+          operation.details === undefined
+            ? []
+            : [[operation.name, operation.details] as const],
+        ),
       );
       state = 'loaded';
       for (const listener of listeners) listener();
@@ -80,6 +88,18 @@ function subscribe(listener: () => void): () => void {
   };
 }
 
+/**
+ * Whether the web core serves a cloud chat's full cost breakdown (CAN-6941):
+ * `core.cost.chat.get` must list detail `full`. A web core that lists none,
+ * an older one included, serves only what it declares, so this stays off.
+ */
+export function webCoreServesSessionBreakdown(): boolean {
+  return (
+    webCoreServesCost() &&
+    (details.get('core.cost.chat.get') ?? []).includes('full')
+  );
+}
+
 /** Re-renders when the manifest read lands. */
 export function useWebCoreServesCost(): boolean {
   return useSyncExternalStore(subscribe, webCoreServesCost, () => false);
@@ -88,6 +108,7 @@ export function useWebCoreServesCost(): boolean {
 /** Test seam: forget what was read. */
 export function resetWebCoreServedOperations(): void {
   served = new Set();
+  details = new Map();
   state = 'idle';
   for (const listener of listeners) listener();
 }

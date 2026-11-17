@@ -2335,6 +2335,11 @@ body {
   margin-block: calc(var(--spacing) * 1.5);
 }
 
+.canopy-composer-work-drawer {
+  --radius-drawer-row: var(--radius-lg);
+  --radius-drawer: var(--radius-xl);
+}
+
 .canopy-feed-summary-prose {
   margin-top: var(--spacing);
 }
@@ -2345,4 +2350,21 @@ body {
 
 .canopy-memory-prose pre {
   margin-block: var(--spacing);
+}
+
+/* Active status marks communicate ongoing work without changing their size. */
+@keyframes canopy-status-pulse {
+  50% {
+    opacity: 0.5;
+  }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .canopy-status-pulse {
+    animation: canopy-status-pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+  }
+}
+
+[skullet-loading][data-inline-static] {
+  --skullet-animation: none;
 }

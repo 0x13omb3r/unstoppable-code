@@ -9,10 +9,11 @@ import {
 describeCanopyClientConformance(
   'http (client binding)',
   async (): Promise<CanopyClientConformancePair> => {
-    const { client, server } = await createHttpFramedPair();
+    const { client, server, loseNextReply } = await createHttpFramedPair();
     return {
       client,
       server,
+      ...(loseNextReply === undefined ? {} : { loseNextReply }),
       close: () => {
         client.close();
         server.close();
@@ -22,5 +23,6 @@ describeCanopyClientConformance(
   },
   {
     serverClose: false,
+    lostReplies: true,
   },
 );

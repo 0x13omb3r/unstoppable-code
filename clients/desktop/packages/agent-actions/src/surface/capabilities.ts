@@ -47,6 +47,12 @@ export interface AgentActionHostCapabilities {
    * offered: desktop serves its own injected tools over the same schemas.
    */
   memory?: AgentMemoryReach;
+  /** Paged, scope-bound reads; the host supplies the matching port members. */
+  memoryPagination?: boolean;
+  /** Withhold saving while a host offers only retrieval. */
+  memoryReadOnly?: boolean;
+  /** Withhold retrieval when only the independent save capability is enabled. */
+  memoryWriteOnly?: boolean;
   /**
    * Whether the surface offers the Feed tools (AddFeedEntry,
    * SearchFeedEntries, UpdateFeedEntry); they also need a Feed port.

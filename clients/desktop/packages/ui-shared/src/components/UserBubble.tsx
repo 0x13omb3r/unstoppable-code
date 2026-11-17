@@ -63,9 +63,10 @@ export interface UserBubbleProps {
    * Bubble tint. `default` keeps the primary/accent pill; `info` renders the
    * info-tinted variant used for Canopy-generated (watcher-fired) messages;
    * `muted` is a flat muted fill with no shadow, for a chat on its own
-   * raised surface.
+   * raised surface. `transcript-row` keeps the message actions around a
+   * full-width transcript event.
    */
-  variant?: 'default' | 'info' | 'muted';
+  variant?: 'default' | 'info' | 'muted' | 'transcript-row';
   /** Optional media rendered inside the bubble, between the header and
    * the message content (e.g. the images sent with the message). */
   media?: ReactNode;
@@ -210,7 +211,8 @@ export function UserBubble({
   // that realm — so if the main window's minimum ever drops below 640, or an
   // aux window ever needs its own tier, `useMediaQuery` needs a window-scoped
   // `matchMedia` before this gate can be trusted there.
-  const phoneSurfaceClass = isPhone ? ' ml-auto w-fit max-w-17/20' : '';
+  const phoneSurfaceClass =
+    isPhone && variant !== 'transcript-row' ? ' ml-auto w-fit max-w-17/20' : '';
 
   // ACTION BADGES. Two independent axes meet on this one element, and it is
   // worth being explicit about which is which.
@@ -315,11 +317,13 @@ export function UserBubble({
       </div>
       <div
         className={
-          (variant === 'info'
-            ? `${BUBBLE_INFO_SURFACE_CLASS} text-s fg-primary`
-            : variant === 'muted'
-              ? `${BUBBLE_MUTED_SURFACE_CLASS} text-s fg-primary`
-              : `${BUBBLE_SURFACE_CLASS} text-s fg-primary`) +
+          (variant === 'transcript-row'
+            ? 'min-w-0'
+            : variant === 'info'
+              ? `${BUBBLE_INFO_SURFACE_CLASS} text-s fg-primary`
+              : variant === 'muted'
+                ? `${BUBBLE_MUTED_SURFACE_CLASS} text-s fg-primary`
+                : `${BUBBLE_SURFACE_CLASS} text-s fg-primary`) +
           navigateClass +
           phoneBadgeClearanceClass
         }

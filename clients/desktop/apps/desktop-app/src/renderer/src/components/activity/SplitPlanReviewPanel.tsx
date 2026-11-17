@@ -1,3 +1,4 @@
+import { CodeBlock } from '@canopy/ui-shared/components/CodeBlock';
 import { DialogActionFooter } from '@canopy/ui-shared/components';
 import { memo, useMemo, useState, type JSX } from 'react';
 import {
@@ -8,7 +9,6 @@ import {
   Notice,
   Surface,
 } from '@canopy/ui-shared/components';
-import { POSTHOG_REPLAY_BLOCK_CLASS } from '@canopy/desktop-instrumentation/posthog-replay-privacy';
 import { FormField } from '@/components/pipeline/shared/FormField';
 import { SelectField } from '@/components/pipeline/shared/SelectField';
 import { TextField } from '@/components/pipeline/shared/TextField';
@@ -286,11 +286,17 @@ function HunkRow({
           </div>
           {hunk && (
             <>
-              <pre
-                className={`${POSTHOG_REPLAY_BLOCK_CLASS} mt-0.5 max-h-24 overflow-y-auto whitespace-pre-wrap break-all font-mono text-3xs fg-primary/80`}
+              <CodeBlock
+                variant="bare"
+                size="3xs"
+                wrap="all"
+                tone="soft"
+                replay="block"
+                overflow="vertical"
+                className="mt-0.5 max-h-24"
               >
                 {hunk.preview}
-              </pre>
+              </CodeBlock>
               <div className="mt-0.5 text-3xs fg-secondary">
                 <span className="fg-success-strong">+{hunk.additions}</span>{' '}
                 <span className="fg-destructive">-{hunk.deletions}</span>

@@ -1,6 +1,7 @@
 import {
   mkdtemp,
   readFile,
+  readdir,
   rename,
   stat,
   rm,
@@ -27,9 +28,13 @@ import {
 } from '../github-credential-authority';
 import * as readRepository from '../repository/read-repository';
 import { createGitHubCredentialFenceStore } from '../github-credential-fence-store';
-import { createLegacyPatGenerationReader } from '../legacy-pat-generation';
+import {
+  createLegacyPatGenerationReader,
+  legacyPatCiphertextGeneration,
+} from '../legacy-pat-generation';
 import { recordingSecureFiles } from '../repository/__tests__/store-fixtures';
 
+const openReadRepository = readRepository.openVaultReadRepository;
 const identity = { brandId: 'canopy', build: 'development' };
 const bytes = (): Uint8Array => Buffer.from('test-only-pat');
 let root: string;
@@ -68,10 +73,11 @@ async function reopen(
   >,
 ): Promise<void> {
   await vault.dispose();
-  const open = readRepository.openVaultReadRepository;
   jest
     .spyOn(readRepository, 'openVaultReadRepository')
-    .mockImplementation((input) => open({ ...input, ...options }));
+    .mockImplementation((input) =>
+      openReadRepository({ ...input, ...options }),
+    );
   vault = createDaemonVault({
     secureDataRoot: root,
     platform: { os: 'darwin', secureFiles: recordingSecureFiles() },
@@ -116,6 +122,337 @@ afterEach(async () => {
 });
 
 describe('CAN-5788 generation-fenced daemon GitHub custody', () => {
+  it.each(['rotation', 'absent legacy'] as const)(
+    'qualifies real ciphertext %s across restart, stale deletion and replacement',
+    async (change) => {
+      const legacyPath = join(root, 'github-pat.enc');
+      const ciphertext = Buffer.from('encrypted-legacy-generation-one');
+      await writeFile(legacyPath, ciphertext);
+      const legacyGeneration = createLegacyPatGenerationReader({
+        identity,
+        paths: [legacyPath],
+      });
+      const compose = (): GitHubCredentialAuthority =>
+        createGitHubCredentialAuthority({
+          identity,
+          repository: () => Promise.resolve(repository),
+          probeKeyIfDue: () => vault.probeKeyIfDue(),
+          writer: () => Promise.resolve(writer),
+          fences,
+          legacyGeneration,
+        });
+      const firstGeneration = legacyPatCiphertextGeneration(ciphertext);
+      expect(
+        await compose().set({
+          source: identity,
+          legacyGeneration: firstGeneration,
+          material: bytes(),
+        }),
+      ).toEqual({ kind: 'committed' });
+      const oldFence = await readFile(fencePath, 'utf8');
+      const oldEntry = (await vault.list())[0];
+      if (!oldEntry) throw new Error('Missing initial entry');
+      const read = await compose().resolve('git-fetch');
+      if (read.kind !== 'available') throw new Error('Missing initial PAT');
+      try {
+        if (change === 'rotation')
+          await writeFile(legacyPath, 'encrypted-legacy-generation-two');
+        else await unlink(legacyPath);
+        const spawn = jest.fn();
+        expect(await read.admit(spawn)).toEqual({
+          kind: 'refused',
+          reason: 'stale',
+        });
+        expect(spawn).not.toHaveBeenCalled();
+        expect(await repository.get(oldEntry.ref)).toMatchObject({
+          kind: 'not_found',
+          reason: 'deleted',
+        });
+        expect(await readFile(fencePath, 'utf8')).toBe(oldFence);
+        await reopen({});
+        const owner = compose();
+        expect(await owner.resolve('git-push')).toEqual({
+          kind: 'absent',
+          reason: 'absent',
+        });
+        expect(
+          await owner.set({
+            source: identity,
+            legacyGeneration: firstGeneration,
+            material: bytes(),
+          }),
+        ).toEqual({ kind: 'absent', reason: 'stale' });
+        expect(await vault.list()).toEqual([]);
+        expect(await readFile(fencePath, 'utf8')).toBe(oldFence);
+        if (change === 'absent legacy')
+          await writeFile(legacyPath, 'encrypted-legacy-generation-two');
+        const nextGeneration = await legacyGeneration(identity);
+        if (!nextGeneration) throw new Error('Missing replacement generation');
+        expect(
+          await owner.set({
+            source: identity,
+            legacyGeneration: nextGeneration,
+            material: Buffer.from('replacement-test-only-pat'),
+          }),
+        ).toEqual({ kind: 'committed' });
+        const nextFence = await fences.read();
+        expect(nextFence?.legacyGeneration).toBe(nextGeneration);
+        expect(nextFence?.pin.ref.entryId).not.toBe(oldEntry.ref.entryId);
+        const replacement = await compose().resolve('git-push');
+        if (replacement.kind !== 'available')
+          throw new Error('Missing replacement PAT');
+        expect(replacement.material).toEqual(
+          Buffer.from('replacement-test-only-pat'),
+        );
+        replacement.material.fill(0);
+        // A retained pre-delete sidecar cannot authorize a newly created entry.
+        await writeFile(fencePath, oldFence);
+        expect(await compose().resolve('git-fetch')).toEqual({
+          kind: 'absent',
+          reason: 'stale',
+        });
+        expect(await vault.list()).toEqual([]);
+        expect(await readFile(legacyPath, 'utf8')).toBe(
+          'encrypted-legacy-generation-two',
+        );
+      } finally {
+        read.material.fill(0);
+      }
+    },
+  );
+
+  it.each(['rotation', 'absent legacy'] as const)(
+    'deletes a real %s stale copy after a locked-key reopen without probing the key',
+    async (change) => {
+      const legacyPath = join(root, 'github-pat.enc');
+      const ciphertext = Buffer.from('encrypted-legacy-generation-one');
+      await writeFile(legacyPath, ciphertext);
+      const legacyGeneration = createLegacyPatGenerationReader({
+        identity,
+        paths: [legacyPath],
+      });
+      const compose = (): GitHubCredentialAuthority =>
+        createGitHubCredentialAuthority({
+          identity,
+          repository: () => Promise.resolve(repository),
+          probeKeyIfDue: () => vault.probeKeyIfDue(),
+          writer: () => Promise.resolve(writer),
+          fences,
+          legacyGeneration,
+        });
+      expect(
+        await compose().set({
+          source: identity,
+          legacyGeneration: legacyPatCiphertextGeneration(ciphertext),
+          material: bytes(),
+        }),
+      ).toEqual({ kind: 'committed' });
+      const before = await readFile(fencePath, 'utf8');
+      const entry = (await vault.list())[0];
+      if (!entry) throw new Error('Missing initial entry');
+      if (change === 'rotation')
+        await writeFile(legacyPath, 'encrypted-legacy-generation-two');
+      else await unlink(legacyPath);
+      slots.inject({ kind: 'locked' });
+      await reopen({});
+      expect(repository.status().protection.state).not.toBe('available');
+      const reads = jest.spyOn(slots.port, 'readKeySlot');
+      const probes = jest.spyOn(vault, 'probeKeyIfDue');
+      expect(await compose().resolve('git-fetch')).toEqual({
+        kind: 'absent',
+        reason: 'stale',
+      });
+      expect(reads).not.toHaveBeenCalled();
+      expect(probes).not.toHaveBeenCalled();
+      expect(await repository.get(entry.ref)).toMatchObject({
+        kind: 'not_found',
+        reason: 'deleted',
+      });
+      expect(await readFile(fencePath, 'utf8')).toBe(before);
+      await reopen({});
+      expect(await vault.list()).toEqual([]);
+      expect(await compose().resolve('git-fetch')).toEqual({
+        kind: 'absent',
+        reason: 'absent',
+      });
+      if (change === 'rotation')
+        expect(await readFile(legacyPath, 'utf8')).toBe(
+          'encrypted-legacy-generation-two',
+        );
+      else
+        await expect(readFile(legacyPath)).rejects.toMatchObject({
+          code: 'ENOENT',
+        });
+    },
+  );
+
+  it('rotates the same entry revision and refuses an outstanding old admission without deleting the replacement', async () => {
+    await seed();
+    const firstFence = await fences.read();
+    if (!firstFence) throw new Error('Missing initial fence');
+    const read = await authority.resolve('git-fetch');
+    if (read.kind !== 'available') throw new Error('Missing initial PAT');
+    try {
+      generation = 'two';
+      expect(
+        await authority.set({
+          source: identity,
+          legacyGeneration: generation,
+          material: Buffer.from('rotated-test-only-pat'),
+        }),
+      ).toEqual({ kind: 'committed' });
+      const nextFence = await fences.read();
+      expect(nextFence?.pin.ref).toEqual(firstFence.pin.ref);
+      expect(nextFence?.pin.revision).toBe(firstFence.pin.revision + 1);
+      const spawn = jest.fn();
+      expect(await read.admit(spawn)).toEqual({
+        kind: 'refused',
+        reason: 'stale',
+      });
+      expect(spawn).not.toHaveBeenCalled();
+      expect(await vault.list()).toHaveLength(1);
+      const replacement = await create().resolve('git-fetch');
+      if (replacement.kind !== 'available')
+        throw new Error('Missing rotated PAT');
+      expect(replacement.material).toEqual(
+        Buffer.from('rotated-test-only-pat'),
+      );
+      replacement.material.fill(0);
+    } finally {
+      read.material.fill(0);
+    }
+  });
+
+  it('accepts the generation length boundary without persisting secret material', async () => {
+    await seed();
+    const fence = await fences.read();
+    if (!fence) throw new Error('Missing fence');
+    const boundary = { ...fence, legacyGeneration: 'x'.repeat(4096) };
+    await fences.write(boundary);
+    expect(await fences.read()).toEqual(boundary);
+    expect(await readFile(fencePath, 'utf8')).not.toContain('test-only-pat');
+  });
+
+  it('excludes a competing vault connection before it can obtain a family writer', async () => {
+    await seed();
+    const before = await readFile(fencePath, 'utf8');
+    const competing = createDaemonVault({
+      secureDataRoot: root,
+      platform: { os: 'darwin', secureFiles: recordingSecureFiles() },
+      slots: slots.port,
+    });
+    try {
+      await expect(competing.writer('github-pat')).rejects.toThrow();
+      expect(await readFile(fencePath, 'utf8')).toBe(before);
+      expect(await vault.list()).toHaveLength(1);
+      await expect(vault.writer('github-pat')).rejects.toThrow();
+      await expect(vault.writer('copilot-account')).rejects.toThrow();
+      // The same contender succeeds once the owner releases its SQLite lock.
+      await vault.dispose();
+      await expect(competing.writer('github-pat')).resolves.toMatchObject({
+        family: 'github-pat',
+      });
+      const contenderRepository = await competing.repository();
+      const entry = (await competing.list())[0];
+      if (!entry) throw new Error('Missing retained entry');
+      const read = await contenderRepository.get(entry.ref);
+      if (read.kind !== 'available') throw new Error('Missing retained PAT');
+      try {
+        expect(read.material).toEqual(bytes());
+        expect(await readFile(fencePath, 'utf8')).toBe(before);
+      } finally {
+        read.material.fill(0);
+      }
+    } finally {
+      await competing.dispose();
+    }
+  });
+
+  it.each([
+    'older',
+    'newer',
+    'oversized',
+    'empty generation',
+    'long generation',
+  ])(
+    'preserves a rejected %s sidecar while deleting only the stale vault copy',
+    async (shape) => {
+      await seed();
+      const fence = await fences.read();
+      if (!fence) throw new Error('Missing fence');
+      const raw = JSON.stringify({
+        version: shape === 'older' ? 0 : shape === 'newer' ? 2 : 1,
+        ...fence,
+        legacyGeneration:
+          shape === 'empty generation'
+            ? ''
+            : shape === 'long generation'
+              ? 'x'.repeat(4097)
+              : fence.legacyGeneration,
+        ...(shape === 'oversized' ? { padding: 'x'.repeat(16_384) } : {}),
+      });
+      await writeFile(fencePath, raw);
+      expect(await fences.read()).toBeNull();
+      expect(await readFile(fencePath, 'utf8')).toBe(raw);
+      expect(await create().resolve('git-fetch')).toEqual({
+        kind: 'absent',
+        reason: 'stale',
+      });
+      expect(await vault.list()).toEqual([]);
+      expect(await readFile(fencePath, 'utf8')).toBe(raw);
+    },
+  );
+
+  it.each(['rename', 'directory sync'] as const)(
+    'refuses a %s publication failure and cleans its temporary',
+    async (failure) => {
+      await seed();
+      const before = await readFile(fencePath, 'utf8');
+      const failingStore = createGitHubCredentialFenceStore({
+        secureDataRoot: root,
+        secureFiles: {
+          ...recordingSecureFiles(),
+          rename: async (request) => {
+            if (failure === 'rename') throw new Error('rename failed');
+            await rename(request.from, request.to);
+            return { kind: 'renamed', sourceState: 'removed' };
+          },
+          syncDirectory: () => Promise.reject(new Error('flush failed')),
+        },
+      });
+      const owner = create(failingStore);
+      expect(
+        await owner.set({
+          source: identity,
+          legacyGeneration: 'one',
+          material: bytes(),
+        }),
+      ).toEqual({ kind: 'blocked', reason: 'unconfirmed' });
+      expect(
+        (await readdir(root)).filter((name) =>
+          name.startsWith('.github-pat-fence-'),
+        ),
+      ).toEqual([]);
+      if (failure === 'rename')
+        expect(await readFile(fencePath, 'utf8')).toBe(before);
+      else expect(await readFile(fencePath, 'utf8')).not.toBe(before);
+      // An installed but unflushed fence remains unconfirmed in this authority.
+      expect(await owner.resolve('git-push')).toEqual(
+        failure === 'rename'
+          ? { kind: 'absent', reason: 'stale' }
+          : { kind: 'blocked', reason: 'unconfirmed' },
+      );
+      if (failure === 'directory sync') {
+        const fresh = await create().resolve('git-fetch');
+        if (fresh.kind !== 'available')
+          throw new Error(
+            'Expected matching installed fence after local uncertainty',
+          );
+        fresh.material.fill(0);
+      }
+    },
+  );
+
   describe.each<{
     fault: FakeSecretProtectionFault;
     reason: string;

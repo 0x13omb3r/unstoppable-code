@@ -1,3 +1,4 @@
+import { CodeBlock } from '@canopy/ui-shared/components/CodeBlock';
 import { Stack } from '@canopy/ui-shared/components';
 import {
   Profiler,
@@ -278,9 +279,16 @@ function ParityReadout({
               refreshes {refreshCount} · build{' '}
               {Number(lastBuildDuration.toFixed(2))} ms · commits {commitCount}
             </div>
-            <pre className="max-h-32 overflow-auto whitespace-pre-wrap">
+            <CodeBlock
+              variant="bare"
+              size="inherit"
+              wrap="words"
+              tone="inherit"
+              replay="block"
+              className="max-h-32"
+            >
               {JSON.stringify(mismatches, null, 2)}
-            </pre>
+            </CodeBlock>
           </Stack>
         </Disclosure>
       </div>

@@ -8,6 +8,7 @@ import {
   type JSX,
   type ReactNode,
 } from 'react';
+import { ControlButton, type ControlButtonProps } from './Button';
 import { OPERATIONAL_STATUS_COLORS } from '../lib/operational-status-colors';
 
 /**
@@ -314,6 +315,44 @@ export const DropdownMenuItem = forwardRef<
 });
 
 DropdownMenuItem.displayName = 'DropdownMenuItem';
+
+type DropdownMenuControlProps = Extract<
+  ControlButtonProps,
+  {
+    presentation:
+      | 'workspace-layout-option'
+      | 'model-billing-option'
+      | 'model-harness-tab'
+      | 'model-picker-experimental';
+  }
+> & {
+  /** Checkbox and radio controls use their native menu checked semantics. */
+  readonly choice?: {
+    readonly type: 'radio' | 'checkbox';
+    readonly checked: boolean;
+  };
+};
+
+/** Menu item with widget-specific geometry, including non-row radio cards. */
+export const DropdownMenuControl = forwardRef<
+  HTMLButtonElement,
+  DropdownMenuControlProps
+>(function DropdownMenuControl({ choice, ...props }, ref): JSX.Element {
+  return (
+    <ControlButton
+      {...props}
+      ref={ref}
+      role={
+        choice
+          ? choice.type === 'radio'
+            ? 'menuitemradio'
+            : 'menuitemcheckbox'
+          : 'menuitem'
+      }
+      aria-checked={choice?.checked}
+    />
+  );
+});
 
 export interface DropdownMenuLinkItemProps extends AnchorHTMLAttributes<HTMLAnchorElement> {
   readonly href: string;

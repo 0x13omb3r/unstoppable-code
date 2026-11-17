@@ -126,8 +126,12 @@ function ChatAgentSentTitle({
       </span>
       {!sameContext && (
         <>
-          <span aria-hidden="true">·</span>
-          <span className={`min-w-0 truncate ${REPLAY_MASK_CLASS}`}>
+          <span aria-hidden="true" className="shrink-0">
+            ·
+          </span>
+          <span
+            className={`min-w-0 truncate ${REPLAY_MASK_CLASS}${inline ? '' : ' font-normal fg-tertiary'}`}
+          >
             {agentSent.projectLabel}
           </span>
         </>

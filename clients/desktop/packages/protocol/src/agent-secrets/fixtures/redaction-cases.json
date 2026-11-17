@@ -1,0 +1,137 @@
+{
+  "description": "Agent secret request output redaction cases shared by canopy (@canopy/protocol/agent-secrets) and Agentic Core. Each case redacts input with secrets (name to value) and must produce expected and redactions, for the whole text and for any chunking of it.",
+  "cases": [
+    {
+      "name": "raw value",
+      "secrets": {
+        "API_KEY": "hunter2-secret!"
+      },
+      "input": "token=hunter2-secret! done",
+      "expected": "token=[secret:API_KEY] done",
+      "redactions": 1
+    },
+    {
+      "name": "base64 standard and URL-safe, with and without padding",
+      "secrets": {
+        "TOKEN": "ab>>>???~~"
+      },
+      "input": "YWI+Pj4/Pz9+fg== YWI+Pj4/Pz9+fg YWI-Pj4_Pz9-fg== YWI-Pj4_Pz9-fg",
+      "expected": "[secret:TOKEN] [secret:TOKEN] [secret:TOKEN] [secret:TOKEN]",
+      "redactions": 4
+    },
+    {
+      "name": "lower- and upper-case hex",
+      "secrets": {
+        "API_KEY": "hunter2-secret!"
+      },
+      "input": "68756e746572322d73656372657421\n68756E746572322D73656372657421",
+      "expected": "[secret:API_KEY]\n[secret:API_KEY]",
+      "redactions": 2
+    },
+    {
+      "name": "percent-encoded",
+      "secrets": {
+        "PASSWORD": "p@ss w/rd&x"
+      },
+      "input": "login?user=me&password=p%40ss%20w%2Frd%26x and p%40ss%20w%2frd%26x",
+      "expected": "login?user=me&password=[secret:PASSWORD] and [secret:PASSWORD]",
+      "redactions": 2
+    },
+    {
+      "name": "JSON-escaped once and twice",
+      "secrets": {
+        "MULTI": "line1\n\"quoted\""
+      },
+      "input": "{\"v\":\"line1\\n\\\"quoted\\\"\"} \"{\\\"v\\\":\\\"line1\\\\n\\\\\\\"quoted\\\\\\\"\\\"}\"",
+      "expected": "{\"v\":\"[secret:MULTI]\"} \"{\\\"v\\\":\\\"[secret:MULTI]\\\"}\"",
+      "redactions": 2
+    },
+    {
+      "name": "non-ASCII value encoded over its UTF-8 bytes",
+      "secrets": {
+        "UNICODE": "pässwörd"
+      },
+      "input": "pässwörd cMOkc3N3w7ZyZA== 70c3a4737377c3b67264 p%C3%A4ssw%C3%B6rd",
+      "expected": "[secret:UNICODE] [secret:UNICODE] [secret:UNICODE] [secret:UNICODE]",
+      "redactions": 4
+    },
+    {
+      "name": "multi-line value",
+      "secrets": {
+        "PRIVATE_KEY": "-----BEGIN KEY-----\nMIIBOgIBAAJBAKj34\n-----END KEY-----"
+      },
+      "input": "key:\n-----BEGIN KEY-----\nMIIBOgIBAAJBAKj34\n-----END KEY-----\nend",
+      "expected": "key:\n[secret:PRIVATE_KEY]\nend",
+      "redactions": 1
+    },
+    {
+      "name": "values of 4 and 5 characters are redacted, 3 is not",
+      "secrets": {
+        "FOUR": "k9Qz",
+        "FIVE": "x7Yw2",
+        "THREE": "abc"
+      },
+      "input": "a k9Qz b x7Yw2 c abc",
+      "expected": "a [secret:FOUR] b [secret:FIVE] c abc",
+      "redactions": 2
+    },
+    {
+      "name": "longest value wins at the same start; a substring value elsewhere is its own match",
+      "secrets": {
+        "SHORT": "abcd",
+        "LONG": "abcdefgh"
+      },
+      "input": "zabcdefghz abcd abcdabcdefgh",
+      "expected": "z[secret:LONG]z [secret:SHORT] [secret:SHORT][secret:LONG]",
+      "redactions": 4
+    },
+    {
+      "name": "a value inside another value is covered by the outer one",
+      "secrets": {
+        "INNER": "cdef",
+        "OUTER": "abcdefgh"
+      },
+      "input": "[abcdefgh] [cdef]",
+      "expected": "[[secret:OUTER]] [[secret:INNER]]",
+      "redactions": 2
+    },
+    {
+      "name": "overlapping different values merge into one replacement named by the leftmost",
+      "secrets": {
+        "A": "abcdX",
+        "B": "dXYZ"
+      },
+      "input": "--abcdXYZ-- abcdX dXYZ",
+      "expected": "--[secret:A]-- [secret:A] [secret:B]",
+      "redactions": 3
+    },
+    {
+      "name": "a self-overlapping value is fully covered",
+      "secrets": {
+        "P": "ababab"
+      },
+      "input": "abababababab! ababab",
+      "expected": "[secret:P]! [secret:P]",
+      "redactions": 2
+    },
+    {
+      "name": "identical values are named by the first name in sort order",
+      "secrets": {
+        "ZETA": "same-value",
+        "ALPHA": "same-value"
+      },
+      "input": "same-value",
+      "expected": "[secret:ALPHA]",
+      "redactions": 1
+    },
+    {
+      "name": "text without secrets is unchanged",
+      "secrets": {
+        "API_KEY": "hunter2-secret!"
+      },
+      "input": "nothing to see here",
+      "expected": "nothing to see here",
+      "redactions": 0
+    }
+  ]
+}

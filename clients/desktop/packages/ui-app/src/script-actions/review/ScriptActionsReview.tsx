@@ -1,5 +1,6 @@
 'use client';
 
+import { CodeBlock } from '@canopy/ui-shared/components/CodeBlock';
 import {
   useCallback,
   useEffect,
@@ -738,13 +739,18 @@ function ScriptDetails({
         ) : null}
       </p>
       <Surface variant="group" size="small" className="overflow-hidden">
-        <pre
+        <CodeBlock
           id={commandId}
-          className={`max-h-24 overflow-auto whitespace-pre-wrap break-all px-2 py-1 font-mono text-xs fg-secondary ${REPLAY_BLOCK_CLASS}`}
+          variant="command-preview"
+          size="xs"
+          wrap="all"
+          tone="secondary"
+          replay="block"
+          className="max-h-24"
           data-testid="script-actions-command"
         >
           {action.command}
-        </pre>
+        </CodeBlock>
       </Surface>
       <p className={`text-xs fg-tertiary ${REPLAY_BLOCK_CLASS}`}>
         {scriptSourceLabel(action)}

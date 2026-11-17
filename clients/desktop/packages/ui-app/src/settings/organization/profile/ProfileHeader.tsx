@@ -10,7 +10,7 @@ import { MemberAvatar } from '../MemberAvatar';
 import { ROLE_LABEL } from '../team-role-label';
 import { ProfileIdentityEditor } from './ProfileIdentityEditor';
 import type { ProfileEditTarget } from './use-profile-editor';
-import { Heading } from '@canopy/ui-shared/components';
+import { TextLink, Heading } from '@canopy/ui-shared/components';
 import { Surface } from '@canopy/ui-shared/components';
 
 interface ProfileHeaderProps {
@@ -73,14 +73,9 @@ export function ProfileHeader({
         <ul className="pt-1 flex flex-wrap gap-3 text-s">
           {links.map((link) => (
             <li key={`${link.label}:${link.url}`}>
-              <a
-                href={link.url}
-                target="_blank"
-                rel="noreferrer"
-                className="fg-accent hover:underline"
-              >
+              <TextLink href={link.url} target="_blank" rel="noreferrer">
                 {link.label}
-              </a>
+              </TextLink>
             </li>
           ))}
         </ul>

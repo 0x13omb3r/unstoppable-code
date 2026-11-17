@@ -4,19 +4,8 @@ import {
   type GuestModelGateCopyInput,
   type GuestModelGateCopy,
 } from './guestModelGate';
-import { Button, buttonClassName } from './Button';
+import { Button } from './Button';
 import { LoadingSpinner } from './LoadingSpinner';
-
-/**
- * The gate's primary action styling. Hosts render the control themselves (an
- * anchor on the web, a button on desktop), so the class travels with the label
- * and the two cannot drift.
- */
-const GUEST_MODEL_GATE_PRIMARY_CLASS = buttonClassName({
-  variant: 'primary',
-  size: 'lg',
-  className: 'w-full',
-});
 
 /** Refusals without a display label retain their existing generic copy. */
 export type GuestModelGateSubject =
@@ -31,9 +20,8 @@ export interface GuestModelGateContentProps {
   };
   /**
    * Hosts retain sign-in navigation and authentication, including its ref.
-   * `className` is the shared primary styling; apply it as given.
    */
-  readonly renderSignIn: (label: string, className: string) => ReactNode;
+  readonly renderSignIn: (label: string) => ReactNode;
   readonly busy?: boolean;
   readonly error?: string | null;
   /** Neutral progress, announced, and kept when the fallback is withdrawn. */
@@ -92,7 +80,7 @@ export function GuestModelGateContent({
         </div>
       )}
       <div className="flex flex-col gap-2">
-        {renderSignIn(copy.signInAction, GUEST_MODEL_GATE_PRIMARY_CLASS)}
+        {renderSignIn(copy.signInAction)}
         {actionableFallback && (
           <Button
             variant="outline"

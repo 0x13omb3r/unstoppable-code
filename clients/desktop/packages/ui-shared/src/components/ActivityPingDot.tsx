@@ -1,5 +1,5 @@
 import { OPERATIONAL_STATUS_COLORS } from '../lib/operational-status-colors';
-import type { JSX } from 'react';
+import type { JSX, ReactNode } from 'react';
 import { Dot } from './Badge';
 
 export interface ActivityPingDotProps {
@@ -40,6 +40,31 @@ export function ActivityPingDot({
         className={`absolute inline-flex h-full w-full animate-ping rounded-full motion-reduce:animate-none ${OPERATIONAL_STATUS_COLORS.success.backgroundPing}`}
       />
       <Dot tone="working" className="relative" />
+    </span>
+  );
+}
+
+/** The active form of a panel's persistent icon when its activity dot has no room. */
+export function PanelActivityIndicator({
+  children,
+  active,
+  label,
+  testId,
+}: {
+  readonly children: ReactNode;
+  readonly active: boolean;
+  readonly label: string;
+  readonly testId: string;
+}): JSX.Element {
+  return (
+    <span
+      className={`inline-flex shrink-0 items-center${active ? ` canopy-status-pulse ${OPERATIONAL_STATUS_COLORS.active.foreground}` : ''}`}
+      role={active ? 'img' : undefined}
+      aria-label={active ? label : undefined}
+      title={active ? label : undefined}
+      data-testid={active ? testId : undefined}
+    >
+      {children}
     </span>
   );
 }

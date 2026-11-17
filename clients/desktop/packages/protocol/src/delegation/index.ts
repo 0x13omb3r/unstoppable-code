@@ -337,6 +337,11 @@ export interface PersistedAgentRouteSnapshot {
   readonly agentOverlay?: PersistedAgentOverlaySummary;
 }
 
+/** A host's report of a child's route, for display (CAN-6787). */
+export interface AgentDelegationReportedRoute {
+  readonly harnessId?: string;
+}
+
 /** Cumulative totals for this child run, never deltas to add repeatedly. */
 export interface AgentDelegationUsage {
   readonly inputTokens?: number;
@@ -467,6 +472,12 @@ export interface AgentDelegationSnapshot {
   readonly delegationId: string;
   readonly status: AgentDelegationStatus;
   readonly routeSnapshot?: PersistedAgentRouteSnapshot;
+  /**
+   * What a host reports of a child's route when it has no route snapshot of
+   * its own: cloud chats run delegates on Core's route (CAN-6787). Display
+   * only; a route snapshot, when present, wins.
+   */
+  readonly reportedRoute?: AgentDelegationReportedRoute;
   /** Known before asynchronous route preparation has completed. */
   readonly requestedModelId?: string;
   /**

@@ -45,7 +45,6 @@ import {
 import { ModelProviderIcon } from '@canopy/ui-shared/components';
 import { getModelCatalogProviderLabel } from '@canopy/ui-shared';
 import { TranscriptViewer } from '@/components/chat/TranscriptViewer';
-import { POSTHOG_REPLAY_BLOCK_CLASS } from '@canopy/desktop-instrumentation/posthog-replay-privacy';
 import { DialogModal } from '@/components/shared/DialogModal';
 import { SearchBar } from '@/components/shared/search/SearchBar';
 import { LoadingSpinner } from '@/components/shared/loading';
@@ -1152,11 +1151,15 @@ export function AuditTrailPage(): JSX.Element {
                                 )}
                               </p>
                             </Stack>
-                            <pre
-                              className={`${POSTHOG_REPLAY_BLOCK_CLASS} overflow-auto whitespace-pre-wrap break-words p-3 font-mono text-xs fg-primary`}
+                            <CodeBlock
+                              variant="document"
+                              size="xs"
+                              wrap="words"
+                              tone="primary"
+                              replay="block"
                             >
                               {prompt.text}
-                            </pre>
+                            </CodeBlock>
                           </Surface>
                         ),
                       )}

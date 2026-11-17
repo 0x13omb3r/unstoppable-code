@@ -1,3 +1,4 @@
+import { CodeBlock } from '../CodeBlock';
 import type { JSX, RefObject } from 'react';
 import type { ApprovalFileChange } from '@canopy/protocol/approvals';
 import { REPLAY_BLOCK_CLASS } from '../../lib/replay-privacy';
@@ -59,12 +60,18 @@ export function ApprovalContentModal({
       {/* The flush body's own inset: 16px below the header, 24px elsewhere. */}
       {content.kind === 'text' ? (
         <div className="px-6 pb-6 pt-4">
-          <pre
+          <CodeBlock
             data-testid="tool-approval-content-modal-body"
-            className={`${REPLAY_BLOCK_CLASS} select-text whitespace-pre-wrap break-all rounded-md bg-fg-primary/[0.06] px-3 py-2.5 font-mono text-xs fg-primary/90`}
+            variant="approval-document"
+            size="xs"
+            wrap="all"
+            tone="muted-primary"
+            replay="block"
+            overflow="visible"
+            selectable
           >
             {content.text}
-          </pre>
+          </CodeBlock>
         </div>
       ) : (
         <div

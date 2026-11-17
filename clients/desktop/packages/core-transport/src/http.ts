@@ -3,13 +3,13 @@
 // the POST body, and server pushes as SSE from `<connection>/events`, reopened
 // after the last event id it received. No Node imports.
 import {
-  encodeCanopyError,
   parseCanopyJsonRpcMessage,
   type CanopyErrorPayload,
   type CanopyJsonRpcMessage,
 } from '@canopy/protocol/canopy-core';
 
 import { CanopyTransportError } from './errors';
+import { canopyLostReply } from './lost-reply';
 import type { CanopyByteChannel, CanopyFramedConnection } from './types';
 
 export interface CanopyHttpConnectOptions {
@@ -352,11 +352,7 @@ class HttpConnection implements CanopyFramedConnection {
         return this.finish(UNREACHABLE);
       this.lastPostLost = true;
       if ('id' in message && 'method' in message)
-        this.deliver({
-          jsonrpc: '2.0',
-          id: message.id,
-          error: encodeCanopyError(NO_RESPONSE),
-        });
+        this.deliver(canopyLostReply(message.id, NO_RESPONSE));
       return;
     }
     this.lastPostLost = false;
@@ -371,11 +367,7 @@ class HttpConnection implements CanopyFramedConnection {
       if (this.failedInRow >= MAX_FAILED_IN_ROW)
         return this.finish(gatewayError(response));
       if ('id' in message && 'method' in message)
-        this.deliver({
-          jsonrpc: '2.0',
-          id: message.id,
-          error: encodeCanopyError(gatewayError(response)),
-        });
+        this.deliver(canopyLostReply(message.id, gatewayError(response)));
       return;
     }
     if (!response.ok) return this.finish(statusError(response.status));

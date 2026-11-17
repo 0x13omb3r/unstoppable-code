@@ -668,7 +668,9 @@ function managedMutableNodes(
     const route = snapshot.routeSnapshot;
     const isolated = snapshot.isolatedWorkspace;
     const modelLabel = modelLabelFromSnapshot(snapshot);
-    const harnessId = nonEmptyText(route?.harnessId);
+    const harnessId = nonEmptyText(
+      route?.harnessId ?? snapshot.reportedRoute?.harnessId,
+    );
     const thinkingLevel =
       route?.effectiveThinkingLevel ?? route?.requestedThinkingLevel;
     const status = managedStatus(snapshot);

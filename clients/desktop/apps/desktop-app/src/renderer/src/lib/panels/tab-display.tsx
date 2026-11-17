@@ -49,7 +49,10 @@ import {
   usePanelTabPosition,
   usePanelTabStyle,
 } from '@canopy/ui-shared/components/panels';
-import { ActivityPingDot } from '@canopy/ui-shared/components';
+import {
+  ActivityPingDot,
+  PanelActivityIndicator,
+} from '@canopy/ui-shared/components';
 import { isCloseBlockingTaskType } from '@canopy/desktop-shared/lib/background-work';
 import { OPERATIONAL_STATUS_COLORS } from '@canopy/ui-shared/lib';
 import { isPanelKind, isSessionBreakdownPanelInstance } from '@canopy/protocol';
@@ -1120,39 +1123,6 @@ export function renderPanelTabTrailing(tab: PanelTabModel): ReactNode {
 // Collapsed-bar icon components
 // ---------------------------------------------------------------------------
 
-/**
- * Wraps a panel's static kind icon so it renders blue and pulsing while the
- * panel has live activity — the collapsed icon bar's counterpart to the
- * expanded tab's trailing activity dot (a collapsed group shows no tab strip,
- * so the dot has nowhere to live). Inactive, it renders the plain icon.
- */
-function CollapsedActivityIndicator({
-  icon,
-  active,
-  label,
-  testId,
-}: {
-  icon: ReactNode;
-  active: boolean;
-  label: string;
-  testId: string;
-}): JSX.Element {
-  return (
-    <span
-      className={`inline-flex shrink-0 items-center${
-        active
-          ? ` animate-pulse ${OPERATIONAL_STATUS_COLORS.active.foreground}`
-          : ''
-      }`}
-      {...(active
-        ? { 'aria-label': label, title: label, 'data-testid': testId }
-        : {})}
-    >
-      {icon}
-    </span>
-  );
-}
-
 function TerminalCollapsedTabActivity({
   terminalId,
 }: {
@@ -1161,8 +1131,7 @@ function TerminalCollapsedTabActivity({
   const selection = usePanelActivityWorktreeSelection();
   const running = useTerminalActivityRunning(selection, terminalId);
   return (
-    <CollapsedActivityIndicator
-      icon={getPanelDefinition('terminal').icon}
+    <PanelActivityIndicator
       active={running}
       label="Running"
       testId={
@@ -1170,7 +1139,9 @@ function TerminalCollapsedTabActivity({
           ? `panel-collapsed-terminal-active-${terminalId}`
           : 'panel-collapsed-terminal-active'
       }
-    />
+    >
+      {getPanelDefinition('terminal').icon}
+    </PanelActivityIndicator>
   );
 }
 
@@ -1184,12 +1155,13 @@ function BrowserCollapsedTabActivity({
   // make this collapsed icon pulse.
   const loading = useBrowserLoading(browserId);
   return (
-    <CollapsedActivityIndicator
-      icon={<BrowserPanelTabFavicon browserId={browserId} />}
+    <PanelActivityIndicator
       active={loading}
       label="Loading"
       testId={`panel-collapsed-browser-active-${browserId}`}
-    />
+    >
+      <BrowserPanelTabFavicon browserId={browserId} />
+    </PanelActivityIndicator>
   );
 }
 

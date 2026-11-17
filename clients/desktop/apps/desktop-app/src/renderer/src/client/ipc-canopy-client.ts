@@ -1,3 +1,4 @@
+import type { WorkflowsPanelClient } from '@canopy/app-core';
 import { createOrchestratorSettingsDraftClient } from './orchestrator-settings-client';
 import { isVoiceDictationPlatform } from '@canopy/desktop-shared/platform-capabilities';
 import type {
@@ -32,6 +33,7 @@ import {
 import {
   loadWebCoreServedOperations,
   webCoreServesCost,
+  webCoreServesSessionBreakdown,
 } from '@/lib/web-core-served-operations';
 import { recordTerminalOutputApplied } from '@/lib/renderer-diagnostics/recorder';
 import { useFeatureFlagsStore } from '@/stores/featureFlagsStore';
@@ -160,6 +162,7 @@ export function createDesktopCapabilities(
     marketplaceSharedCollectionEdit: true,
     customSkillEdit: true,
     automations: true,
+    workflowsPanel: true,
     watchers: true,
     chatWatchers: true,
     workflowManagement: true,
@@ -220,6 +223,8 @@ export function createDesktopCapabilities(
     projectDeletionDiscard: true,
     // Observed cost reads over the `cost:*` IPC.
     costInsights: true,
+    // The local cost store keeps every chat's full breakdown.
+    sessionBreakdown: true,
     providerQuotas: true,
     // Claude/Codex/Cursor/Copilot sign-in and execution run in desktop main,
     // so the provider-choice list can offer them here.
@@ -378,6 +383,34 @@ function createDesktopCreditsHandoff(): CreditsHandoffClient {
  * components consume it through `CanopyClientProvider` and never touch
  * `window.api` directly.
  */
+/** Load the panel's existing renderer data paths only when a feed mounts. */
+function createLazyWorkflowsPanelClient(): WorkflowsPanelClient {
+  let adapter: Promise<WorkflowsPanelClient> | undefined;
+  let loaded: WorkflowsPanelClient | undefined;
+  const load = (): Promise<WorkflowsPanelClient> =>
+    (adapter ??= import('./workflows-panel-client').then((module) => {
+      loaded = module.createDesktopWorkflowsPanelClient();
+      return loaded;
+    }));
+  return {
+    subscribe: (scope, listener): (() => void) => {
+      if (loaded !== undefined) return loaded.subscribe(scope, listener);
+      let disposed = false;
+      let release: (() => void) | undefined;
+      void load().then((client) => {
+        if (!disposed) release = client.subscribe(scope, listener);
+      });
+      return (): void => {
+        disposed = true;
+        release?.();
+      };
+    },
+    dispatch: (scope, intent): void => {
+      loaded?.dispatch(scope, intent);
+    },
+  };
+}
+
 export function createDesktopCanopyClient(
   capabilities: CanopyCapabilities = createDesktopCapabilities(
     resolveDesktopPlatform(),
@@ -427,6 +460,7 @@ export function createDesktopCanopyClient(
     ...(settings ? { settings } : {}),
   });
   return Object.assign(client, {
+    workflowsPanel: createLazyWorkflowsPanelClient(),
     orchestratorSettingsDraft: createOrchestratorSettingsDraftClient(),
     // Payment forms stay in the browser: purchases hand off to it.
     creditsHandoff: createDesktopCreditsHandoff(),
@@ -472,6 +506,7 @@ export function createDesktopCanopyClient(
       window.api.workEntryAutoDelete.resolveBranch(request),
   } satisfies Pick<
     CanopyClient,
+    | 'workflowsPanel'
     | 'creditsHandoff'
     | 'orchestratorSettingsDraft'
     | 'autoDeleteAttentionReceipts'
@@ -494,6 +529,7 @@ function cloudScopeCapabilities(host: CanopyCapabilities): CanopyCapabilities {
       useFeatureFlagsStore.getState().isEnabled,
     ),
     costInsights: webCoreServesCost(),
+    sessionBreakdown: webCoreServesSessionBreakdown(),
   });
 }
 

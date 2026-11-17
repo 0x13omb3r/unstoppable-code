@@ -1,5 +1,7 @@
 'use client';
 
+import { TextLink } from './TextLink';
+import { CodeBlock } from './CodeBlock';
 import { Stack } from './Stack';
 import type { JSX } from 'react';
 import type {
@@ -164,14 +166,16 @@ export function CuratedPipelineCatalog(
                   <p className="text-s fg-secondary">By {detail.authorName}</p>
                 )}
                 {detail.docsUrl && /^https?:\/\//.test(detail.docsUrl) && (
-                  <a
-                    className="self-start text-s fg-accent underline"
+                  <TextLink
+                    variant="inline"
+                    size="s"
+                    className="self-start"
                     href={detail.docsUrl}
                     target="_blank"
                     rel="noreferrer"
                   >
                     Documentation
-                  </a>
+                  </TextLink>
                 )}
               </Stack>
               {props.onDownload && (
@@ -235,12 +239,17 @@ export function CuratedPipelineCatalog(
                 keepMounted
                 dataTestId="curated-pipeline-yaml-disclosure"
               >
-                <pre
-                  className="max-h-80 overflow-auto rounded-md ring-1 ring-inset ring-line-base bg-secondary p-3 text-xs fg-primary"
+                <CodeBlock
+                  variant="catalog-source"
+                  size="xs"
+                  wrap="none"
+                  tone="primary"
+                  replay="inherit"
+                  className="max-h-80"
                   data-testid="curated-pipeline-yaml"
                 >
                   {detail.rawPipeline}
-                </pre>
+                </CodeBlock>
               </Disclosure>
               <p className="text-s fg-secondary">
                 Adds an editable copy to your workflows. Review its commands and

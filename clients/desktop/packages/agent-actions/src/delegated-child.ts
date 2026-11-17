@@ -1,3 +1,4 @@
+import { MEMORY_READ_ACTION_TYPES } from './families/memory';
 import { agentActionToolResult } from './action-support';
 import { CHAT_CONTROL_ACTION_TYPES } from './families/chat-control/actions';
 import { PIPELINES_ACTION_TYPES } from './families/pipelines/actions';
@@ -52,6 +53,8 @@ const ACTION_EFFECTS: ReadonlyMap<string, AgentActionEffect> = new Map<
   ['chat.list', 'read'],
   ['chat.get', 'read'],
   ['models.list', 'read'],
+  ...MEMORY_READ_ACTION_TYPES.map((type) => [type, 'read'] as const),
+  ['memory.save', 'write'],
   ...TRANSCRIPT_READ_ACTION_TYPES.map((type) => [type, 'read'] as const),
   ...PROJECT_DISCOVERY_TYPES.map((type) => [type, 'read'] as const),
   ...PROJECT_READ_TYPES.map((type) => [type, 'read'] as const),

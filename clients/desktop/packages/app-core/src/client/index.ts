@@ -20,4 +20,5 @@ export type {
   SuggestionId,
 } from '@canopy/protocol/suggestions';
 
+export * from './workflows-panel-client';
 export * from './orchestrator-settings';

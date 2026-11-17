@@ -119,7 +119,7 @@ const CI_STATUS_DOT: Record<PullRequestSectionCheckStatus, DotTone> = {
   failing: 'danger',
   // Grey, but pulsing: colour is reserved for OUTCOMES (green/red), so a
   // check still running says so through motion instead — the same
-  // `animate-pulse` dots the sidebar uses for in-flight work.
+  // status pulse used elsewhere for work in progress.
   pending: 'filter',
   neutral: 'filter',
   none: 'filter',
@@ -140,13 +140,7 @@ export function CiStatusIndicator({ status }: CiStatusBadgeProps): JSX.Element {
       // made it the odd one out in the container).
       hover
     >
-      <span
-        className={
-          status === 'pending' ? 'inline-flex animate-pulse' : 'inline-flex'
-        }
-      >
-        <Dot tone={CI_STATUS_DOT[status]} />
-      </span>
+      <Dot tone={CI_STATUS_DOT[status]} pulse={status === 'pending'} />
       CI
     </PullRequestHeaderStatus>
   );

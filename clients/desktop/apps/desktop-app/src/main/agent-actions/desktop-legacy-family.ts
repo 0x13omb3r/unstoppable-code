@@ -1,5 +1,6 @@
 import {
   defineAgentActionFamily,
+  type AgentActionCall,
   type AgentActionDispatchOutput,
   type AgentActionFamily,
 } from '@canopy/agent-actions';
@@ -21,6 +22,7 @@ import {
   dispatchWorktreeAction,
   searchWorktreeActions,
 } from '../canopy-tools/worktree-actions';
+import { worktreeChatCoreWrites } from '../canopy-tools/worktree-chat-core-writes';
 import { isRecord } from '../lib/type-guards';
 import {
   automationWatcherRefusal,
@@ -36,7 +38,11 @@ const DESKTOP_LEGACY_ACTION_TYPE_SET: ReadonlySet<string> = new Set(
 async function dispatchDesktopLegacyAction(
   action: DesktopLegacyAction,
   runtime: CanopyInjectedToolRuntime,
-  context?: { toolUseId?: string; signal?: AbortSignal },
+  context?: {
+    toolUseId?: string;
+    signal?: AbortSignal;
+    call?: AgentActionCall<CanopyInjectedToolRuntime>;
+  },
 ): Promise<AgentActionDispatchOutput> {
   if (!runtime.worktreeActionRuntime) {
     return {
@@ -106,9 +112,14 @@ async function dispatchDesktopLegacyAction(
       }
     : { action };
   // A Stop's abort signal reaches the action, so a long dispatch can end early.
-  const actionRuntime = context?.signal
-    ? { ...runtime.worktreeActionRuntime, signal: context.signal }
-    : runtime.worktreeActionRuntime;
+  const actionRuntime = {
+    ...runtime.worktreeActionRuntime,
+    coreWrites: worktreeChatCoreWrites({
+      chatId: runtime.worktreeActionRuntime.chatId,
+      ...(context?.call ? { call: context.call } : {}),
+    }),
+    ...(context?.signal ? { signal: context.signal } : {}),
+  };
   let response = await dispatchWorktreeAction(dispatchInput, actionRuntime);
   if (preArmedRunNowWatchers !== undefined) {
     if (response.ok) {
@@ -376,5 +387,6 @@ export const desktopLegacyActionFamily: AgentActionFamily<CanopyInjectedToolRunt
       dispatchDesktopLegacyAction(action, call.host, {
         toolUseId: call.toolUseId,
         ...(call.signal ? { signal: call.signal } : {}),
+        call,
       }),
   });

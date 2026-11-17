@@ -1,3 +1,5 @@
+/// <reference types="vite/client" />
+
 import officeWorkerUrl from './office-parse.worker?worker&url';
 
 const wrapperUrlByModule = new Map<string, string>();

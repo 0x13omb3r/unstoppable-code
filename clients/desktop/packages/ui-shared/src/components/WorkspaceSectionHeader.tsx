@@ -1,3 +1,4 @@
+import { ListRowFrame } from './ListRow';
 import { ControlButton } from './Button';
 import { Dot } from './Badge';
 import {
@@ -754,7 +755,14 @@ export function WorkspaceSectionHeader({
   // 44px touch-target minimum, preventing its controls from overlapping the
   // next row. Hover actions can enter layout without changing the header height.
   return (
-    <div
+    <ListRowFrame
+      layout={
+        textScale !== 'sidebar'
+          ? 'workspace-header'
+          : touchTarget
+            ? 'workspace-header-sidebar-touch'
+            : 'workspace-header-sidebar'
+      }
       ref={rootRef}
       data-testid={
         dataTestId === undefined ? undefined : `${dataTestId}${testIdSuffix}`
@@ -764,15 +772,7 @@ export function WorkspaceSectionHeader({
       // workspace name's min-content width would become the whole sidebar's
       // floor, forcing horizontal overflow at narrow widths instead of letting
       // the name truncate.
-      className={`${headerRest.resting ? '' : 'group group/sidebar-item '}min-w-0 flex-1 ${textScale === 'sidebar' ? 'rounded-row' : 'rounded-md'} ${
-        textScale === 'sidebar'
-          ? `${touchTarget ? 'min-h-11' : 'h-8'} py-0 pl-1.5 pr-1`
-          : 'px-1.5 py-1.5'
-      } ${
-        textScale === 'sidebar'
-          ? 'fg-primary hover:bg-subtle duration-0'
-          : 'fg-primary/80 hover:bg-subtle hover:fg-primary'
-      } transition-colors`}
+      className={headerRest.resting ? undefined : 'group group/sidebar-item'}
       data-sidebar-header-resting={headerRest.resting || undefined}
       onPointerEnter={(event): void => {
         headerRest.onPointerEnter(event);
@@ -1026,7 +1026,7 @@ export function WorkspaceSectionHeader({
             </FloatingMenu>
           </>
         )}
-    </div>
+    </ListRowFrame>
   );
 }
 

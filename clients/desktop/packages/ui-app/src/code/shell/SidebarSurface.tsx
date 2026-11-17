@@ -1,5 +1,6 @@
 'use client';
 
+import { TextLink } from '@canopy/ui-shared/components';
 import {
   ControlButton,
   SidebarProjectsReturn,
@@ -1679,7 +1680,7 @@ function SidebarCurrentDestinationRow({
   if (href !== undefined) {
     return (
       <NavItemTooltip label={destination.label} compact={iconOnly}>
-        <a
+        <TextLink
           href={href}
           onClick={(event): void =>
             routeAnchorClick(event, href, onNavigateHref)
@@ -1688,10 +1689,17 @@ function SidebarCurrentDestinationRow({
           aria-current="page"
           aria-label={presentation.ariaLabel}
           data-selected
-          className={className}
+          variant="sidebar-navigation"
+          navigation={{
+            selected: true,
+            touch,
+            layout: compact ? (iconOnly ? 'icon' : 'label') : 'row',
+          }}
+          target={undefined}
+          rel={undefined}
         >
           {content}
-        </a>
+        </TextLink>
       </NavItemTooltip>
     );
   }
@@ -1723,7 +1731,7 @@ function SidebarNavItemRow({
     navKey === 'app-advisor'
       ? 'portal-sidebar-advisor'
       : `portal-sidebar-nav-${navKey}`;
-  const { className, content, ariaLabel } = sidebarNavItemPresentation(
+  const { content, ariaLabel } = sidebarNavItemPresentation(
     def.icon,
     def.label,
     action.active === true,
@@ -1734,7 +1742,7 @@ function SidebarNavItemRow({
   if (href !== undefined) {
     return (
       <NavItemTooltip label={def.label} compact={compact}>
-        <a
+        <TextLink
           href={href}
           onClick={(event): void => {
             // Opening the current row in a new tab leaves this tab's section
@@ -1750,10 +1758,17 @@ function SidebarNavItemRow({
           aria-current={action.active ? 'page' : undefined}
           aria-label={ariaLabel}
           data-selected={action.active || undefined}
-          className={className}
+          variant="sidebar-navigation"
+          navigation={{
+            selected: action.active === true,
+            touch,
+            layout: compact ? 'icon' : 'row',
+          }}
+          target={undefined}
+          rel={undefined}
         >
           {content}
-        </a>
+        </TextLink>
       </NavItemTooltip>
     );
   }

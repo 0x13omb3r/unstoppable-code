@@ -75,6 +75,14 @@ const WORKLOAD_PROFILES = Object.freeze({
     powerUserAutomationRuns: 10,
     powerUserGraphFilesPerRepo: 150,
     powerUserObserveMs: 15_000,
+    // CAN-6932: a desktop holding many retained worktrees, mostly in
+    // one project, with chats and fired watchers.
+    retainedWorktrees: 30,
+    retainedSettleMs: 10_000,
+    retainedIdleMs: 10_000,
+    retainedActiveMs: 10_000,
+    retainedStaleIntervalMs: 500,
+    retainedFocusIntervalMs: 1_000,
     navigationIterations: 3,
     interactionIterations: 2,
     stressTranscriptTurns: 25,
@@ -246,6 +254,14 @@ const WORKLOAD_PROFILES = Object.freeze({
     powerUserAutomationRuns: 42,
     powerUserGraphFilesPerRepo: 600,
     powerUserObserveMs: 60_000,
+    // CAN-6932: a desktop holding many retained worktrees, mostly in
+    // one project, with chats and fired watchers.
+    retainedWorktrees: 110,
+    retainedSettleMs: 20_000,
+    retainedIdleMs: 30_000,
+    retainedActiveMs: 20_000,
+    retainedStaleIntervalMs: 500,
+    retainedFocusIntervalMs: 1_000,
     navigationIterations: 10,
     interactionIterations: 8,
     stressTranscriptTurns: 25,
@@ -417,6 +433,14 @@ const WORKLOAD_PROFILES = Object.freeze({
     powerUserAutomationRuns: 100,
     powerUserGraphFilesPerRepo: 1_200,
     powerUserObserveMs: 120_000,
+    // CAN-6932: a desktop holding many retained worktrees, mostly in
+    // one project, with chats and fired watchers.
+    retainedWorktrees: 170,
+    retainedSettleMs: 30_000,
+    retainedIdleMs: 60_000,
+    retainedActiveMs: 30_000,
+    retainedStaleIntervalMs: 500,
+    retainedFocusIntervalMs: 1_000,
     navigationIterations: 25,
     interactionIterations: 20,
     stressTranscriptTurns: 25,
@@ -577,6 +601,12 @@ const CODE_REVIEW_REGISTRY_SCENARIOS = Object.freeze([
  * check and the work ratchet's `configSha256`, unchanged.
  */
 export const SCENARIO_SCOPED_CONFIG_KEYS = Object.freeze({
+  retainedWorktrees: Object.freeze(['retained-worktrees-idle']),
+  retainedSettleMs: Object.freeze(['retained-worktrees-idle']),
+  retainedIdleMs: Object.freeze(['retained-worktrees-idle']),
+  retainedActiveMs: Object.freeze(['retained-worktrees-idle']),
+  retainedStaleIntervalMs: Object.freeze(['retained-worktrees-idle']),
+  retainedFocusIntervalMs: Object.freeze(['retained-worktrees-idle']),
   browserActionWarmups: Object.freeze(['browser-actions']),
   browserActionIterations: Object.freeze(['browser-actions']),
   browserAgentActionsWarmups: Object.freeze(['browser-agent-actions']),
@@ -697,6 +727,7 @@ export const OPT_IN_SCENARIO_NAMES = Object.freeze([
   'lab-transcript-checkpoint',
   'many-chat-residency',
   'many-worktree-file-index',
+  'retained-worktrees-idle',
   'scope-residency',
   'projects-reload-retention',
   ...CODE_REVIEW_REGISTRY_SCENARIOS,
@@ -799,6 +830,7 @@ export const SCENARIO_NAMES = Object.freeze([
   'lab-transcript-checkpoint',
   'many-chat-residency',
   'many-worktree-file-index',
+  'retained-worktrees-idle',
   'scope-residency',
   'projects-reload-retention',
   ...CODE_REVIEW_REGISTRY_SCENARIOS,

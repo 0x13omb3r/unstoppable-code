@@ -19,6 +19,12 @@ import {
 } from './code-review-registry-scenario.mjs';
 import { perfettoTraceEvents } from './perfetto-trace.mjs';
 import { w5StoreScenarios } from './w5-store-scenario.mjs';
+import {
+  padRetainedWorktreeRow,
+  retainedIdleRates,
+  retainedWorktreesIdleConfig,
+  scaled,
+} from './retained-worktrees.mjs';
 import { w5StoreLaunchEnv } from './w5-store-arms.mjs';
 import { execFileSync } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
@@ -61,6 +67,7 @@ import {
   seedScopeResidencyFixture,
 } from './scope-residency-fixture.mjs';
 import { seedStressTranscript } from '../electron/stress-transcript-fixture.mjs';
+import { seedWorktreeRecoveryFixture } from '../electron/seeders/worktreeRecoveryFixture.mjs';
 import {
   openStressEntry,
   openStressChat,
@@ -192,7 +199,7 @@ import { seedCostIndexAudit } from './cost-index-fixture.mjs';
 import { measureAppQuit, scenarioWithQuit } from './quit-latency.mjs';
 import { performanceScenarioStatus } from './scenario-status.mjs';
 import { settlePerformanceScenario } from './smoke-acceptance.mjs';
-import { percentile } from './statistics.mjs';
+import { percentile, roundMetric } from './statistics.mjs';
 
 // apps/desktop-app/tests/performance/ -> repository root
 const PERF_REPO_ROOT = path.resolve(
@@ -3815,6 +3822,210 @@ async function runRealisticStartup({
       path.join(fixture.seed.dataDir, 'repo-shadows'),
       'current.json',
     ),
+  };
+}
+
+const RETAINED_PROJECT_CONFIG = {
+  scripts: {
+    setup: 'pnpm install --frozen-lockfile',
+    launch: 'pnpm dev',
+    teardown: 'pnpm clean',
+  },
+};
+
+function retainedWorktreeLists(userDataDir) {
+  const workspacesRoot = path.join(userDataDir, 'workspaces');
+  const index = JSON.parse(
+    readFileSync(path.join(workspacesRoot, 'index.json'), 'utf8'),
+  );
+  return index.workspaces.flatMap(({ id }) => {
+    const listPath = path.join(workspacesRoot, id, 'worktrees.json');
+    if (!existsSync(listPath)) return [];
+    const list = JSON.parse(readFileSync(listPath, 'utf8'));
+    return list.worktrees?.length
+      ? [{ workspaceId: id, listPath, list, workspacesRoot }]
+      : [];
+  });
+}
+
+function prepareRetainedWorktreesIdle(userDataDir, config) {
+  const fixture = preparePowerUserIdle(
+    userDataDir,
+    retainedWorktreesIdleConfig(config),
+  );
+  let configFiles = 0;
+  let journals = 0;
+  for (const {
+    workspaceId,
+    listPath,
+    list,
+    workspacesRoot,
+  } of retainedWorktreeLists(userDataDir)) {
+    // Seeded before launch, like the other fixtures: no W5 writer runs yet.
+    list.worktrees = list.worktrees.map((row) => padRetainedWorktreeRow(row));
+    writeFileSync(listPath, `${JSON.stringify(list, null, 2)}\n`);
+    for (const row of list.worktrees) {
+      const checkout = path.join(
+        workspacesRoot,
+        workspaceId,
+        'worktrees',
+        row.id,
+      );
+      if (!existsSync(checkout)) continue;
+      writeFileSync(
+        path.join(checkout, 'canopy.json'),
+        `${JSON.stringify(RETAINED_PROJECT_CONFIG, null, 2)}\n`,
+      );
+      configFiles += 1;
+    }
+    const stopped = list.worktrees.at(-1);
+    if (stopped.branchName === WORKTREE_BRANCH) continue;
+    journals += 1;
+    seedWorktreeRecoveryFixture({
+      userDataDir,
+      workspaceId,
+      worktreeId: stopped.id,
+      operationId: `00000000-0000-4000-8000-${String(journals).padStart(12, '0')}`,
+    });
+  }
+  return {
+    ...fixture,
+    retained: { configFiles, journals, userDataDir },
+  };
+}
+
+/** Bytes per worktree row across every list, as stored now. */
+function retainedRowBytes(userDataDir) {
+  let bytes = 0;
+  let rows = 0;
+  for (const { listPath, list } of retainedWorktreeLists(userDataDir)) {
+    bytes += statSync(listPath).size;
+    rows += list.worktrees.length;
+  }
+  return { rows, bytes, bytesPerRow: rows ? Math.round(bytes / rows) : 0 };
+}
+
+/** Main's CPU time and work counters, read without resetting them. */
+function readRetainedIdleSample(electronApp) {
+  return electronApp.evaluate(() => {
+    const counters = globalThis.__CANOPY_WORK_COUNTERS__?.snapshot() ?? null;
+    return {
+      at: Date.now(),
+      cpu: process.cpuUsage(),
+      w5: counters?.w5 ?? null,
+      ipc: counters?.ipc ?? null,
+      metadata: counters?.metadata ?? null,
+    };
+  });
+}
+
+async function retainedActivePhase({
+  page,
+  electronApp,
+  durationMs,
+  intervalMs,
+  act,
+  events,
+}) {
+  const start = await readRetainedIdleSample(electronApp);
+  const until = performance.now() + durationMs;
+  while (performance.now() < until) {
+    await act();
+    await page.waitForTimeout(intervalMs);
+  }
+  const end = await readRetainedIdleSample(electronApp);
+  return retainedIdleRates(start, end, events);
+}
+
+async function runRetainedWorktreesIdle({
+  page,
+  app,
+  electronApp,
+  config,
+  tasks,
+  fixture,
+}) {
+  await recordTask(tasks, 'open_retained_worktrees', async () => {
+    await openMainPage(page);
+    await app.selectWorktree(WORKTREE_BRANCH);
+    await expect(visibleChatPanel(page)).toBeVisible({ timeout: 60_000 });
+    await nextPaint(page);
+  });
+  const { userDataDir, ...retained } = fixture.retained;
+  // Past startup work, then a window with no input at all.
+  await page.waitForTimeout(config.retainedSettleMs);
+  const rowsMeasured = retainedRowBytes(userDataDir);
+  const start = await readRetainedIdleSample(electronApp);
+  await page.waitForTimeout(config.retainedIdleMs);
+  const end = await readRetainedIdleSample(electronApp);
+  const idle = retainedIdleRates(start, end);
+  // Main's own invalidation path, which the throttled stale broadcast follows.
+  const stale = await retainedActivePhase({
+    page,
+    electronApp,
+    durationMs: config.retainedActiveMs,
+    intervalMs: config.retainedStaleIntervalMs,
+    act: () =>
+      page.evaluate(() => window.api.invalidateDesktopSessionSnapshot()),
+    events: { key: 'send.desktop:session-snapshot-stale.main.messages' },
+  });
+  await page.waitForTimeout(config.retainedSettleMs);
+  // A window focus event as the renderer's focus listeners receive it.
+  let focuses = 0;
+  const focus = await retainedActivePhase({
+    page,
+    electronApp,
+    durationMs: config.retainedActiveMs,
+    intervalMs: config.retainedFocusIntervalMs,
+    act: async () => {
+      focuses += 1;
+      await page.evaluate(() => window.dispatchEvent(new Event('focus')));
+    },
+  });
+  const perFocus = (value) => roundMetric(value / Math.max(focuses, 1));
+  const focusRates = {
+    ...focus,
+    events: {
+      key: 'window.focus',
+      count: focuses,
+      perEvent: {
+        metadataReads: perFocus(focus.metadataReadsPerSecond * focus.seconds),
+        configReads:
+          focus.configReadsPerSecond === null
+            ? null
+            : perFocus(focus.configReadsPerSecond * focus.seconds),
+        metadata:
+          focus.metadataPerSecond === null
+            ? null
+            : scaled(
+                Object.fromEntries(
+                  Object.entries(focus.metadataPerSecond).map(([key, rate]) => [
+                    key,
+                    rate * focus.seconds,
+                  ]),
+                ),
+                Math.max(focuses, 1),
+              ),
+      },
+    },
+  };
+  const rowsAfter = retainedRowBytes(userDataDir);
+  for (const [label, phase] of [
+    ['idle', idle],
+    ['stale', stale],
+    ['focus', focusRates],
+  ])
+    console.log(
+      `[perf] retained-worktrees-idle ${label}: main ${phase.mainCpuPercentOfCore}% of one core; ${phase.metadataReadsPerSecond} metadata reads/s; ${phase.configReadsPerSecond} config reads/s${phase.events ? `; ${phase.events.count} events, ${phase.events.perEvent?.metadataReads ?? 0} metadata and ${phase.events.perEvent?.configReads ?? 0} config reads each` : ''}`,
+    );
+  return {
+    ...fixture.shape,
+    retainedWorktrees: config.retainedWorktrees,
+    worktreesPerRepository: fixture.worktreesPerRepository,
+    retained: { ...retained, rowsMeasured, rowsAfter },
+    idle,
+    stale,
+    focus: focusRates,
   };
 }
 
@@ -20764,6 +20975,10 @@ const SCENARIOS = {
     prepare: preparePowerUserActive,
     run: runPowerUserActive,
     monitorFromDomContentLoaded: true,
+  },
+  'retained-worktrees-idle': {
+    prepare: prepareRetainedWorktreesIdle,
+    run: runRetainedWorktreesIdle,
   },
   'loaded-ui': { prepare: prepareLoadedUi, run: runLoadedUi },
   'pipeline-history': {

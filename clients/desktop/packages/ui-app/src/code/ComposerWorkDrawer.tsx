@@ -103,56 +103,39 @@ function drawerEasing(node: Element): string {
  * layout change, never a height animated frame by frame), and the card
  * wipes up into it: a clip from the bottom with an 8px rise and a fade, as
  * CSS transitions, so a click mid-way reverses from where it is. Closing
- * keeps the space until the card has left. Keyboard opens and closes are
+ * holds the card's space until the exit ends. Keyboard opens and closes are
  * instant, and so is everything under reduced motion: the app's reduced
  * motion rule zeroes every CSS transition.
  */
 function DrawerReveal({
   expanded,
   animate,
+  closingHeight,
+  revealRef,
   children,
 }: {
   readonly expanded: boolean;
   readonly animate: boolean;
+  readonly closingHeight: number;
+  readonly revealRef: Ref<HTMLDivElement>;
   readonly children: ReactNode;
 }): JSX.Element {
-  // A closing card keeps its space until its exit transition ends.
-  const [closing, setClosing] = useState(false);
-  const [wasExpanded, setWasExpanded] = useState(expanded);
-  if (wasExpanded !== expanded) {
-    setWasExpanded(expanded);
-    setClosing(!expanded && animate);
-  }
-  useEffect(() => {
-    if (!closing) return;
-    // In case the transition never reports its end (a hidden tab).
-    const timer = setTimeout(() => setClosing(false), CARD_EXIT_MS + 100);
-    return (): void => clearTimeout(timer);
-  }, [closing]);
-  const reserved = expanded || closing;
   return (
     <div
+      ref={revealRef}
       inert={!expanded}
       aria-hidden={!expanded}
-      className="-mx-1 shrink-0 overflow-hidden"
-      style={{ height: reserved ? 'auto' : 0 }}
+      className={`relative -mx-1 shrink-0 ${!expanded && closingHeight === 0 ? 'overflow-hidden' : ''}`}
+      style={{ height: expanded ? 'auto' : closingHeight }}
     >
       <div
-        className={`flow-root px-1 transition-[clip-path,translate,opacity] ease-drawer ${
+        className={`flow-root px-1 ${!expanded ? 'absolute inset-x-0 bottom-0' : ''} transition-[clip-path,translate,opacity] ease-drawer ${
           animate ? (expanded ? 'duration-200' : 'duration-150') : 'duration-0'
         } ${
           expanded
             ? 'translate-y-0 opacity-100 drawer-card-clip-open'
             : 'translate-y-2 opacity-0 drawer-card-clip-closed'
         }`}
-        onTransitionEnd={(event): void => {
-          if (
-            !expanded &&
-            event.target === event.currentTarget &&
-            event.propertyName === 'opacity'
-          )
-            setClosing(false);
-        }}
       >
         {children}
       </div>
@@ -293,6 +276,7 @@ export function ComposerWorkDrawer({
     ? setPreviewSelected
     : setComposerWorkDrawerOpenKind;
   const [animate, setAnimate] = useState(false);
+  const [closingHeight, setClosingHeight] = useState(0);
   // The kind the card shows: the open one, or while it closes, the one it
   // showed, so its rows leave with it.
   const [lastKey, setLastKey] = useState<string | null>(null);
@@ -316,6 +300,7 @@ export function ComposerWorkDrawer({
   }, [expanded, onExpandedChange]);
   const cardId = useId();
   const sectionRef = useRef<HTMLDivElement>(null);
+  const revealRef = useRef<HTMLDivElement>(null);
   const pillRefs = useRef(new Map<string, HTMLButtonElement>());
   const cardBodyRef = useRef<HTMLDivElement>(null);
   const labelRef = useRef<HTMLSpanElement>(null);
@@ -398,11 +383,67 @@ export function ComposerWorkDrawer({
     },
     [],
   );
+  const bannerPositions = useRef(new Map<HTMLElement, number>());
+  const bannerAnimations = useRef(new Map<HTMLElement, Animation>());
+  const prepareToggle = (willOpen: boolean, animated: boolean): void => {
+    bannerPositions.current.clear();
+    const shouldAnimate = animated && !drawerReducedMotion();
+    setClosingHeight(
+      !willOpen && shouldAnimate
+        ? (revealRef.current?.getBoundingClientRect().height ?? 0)
+        : 0,
+    );
+    setAnimate(shouldAnimate);
+    const scope = sectionRef.current?.closest('[data-composer-motion-scope]');
+    if (!scope || !shouldAnimate) return;
+    for (const banner of scope.querySelectorAll<HTMLElement>(
+      '[data-composer-notice-stack]',
+    )) {
+      if (banner.getClientRects().length > 0) {
+        bannerPositions.current.set(banner, banner.getBoundingClientRect().top);
+      }
+    }
+  };
+  useLayoutEffect(() => {
+    for (const animation of bannerAnimations.current.values())
+      animation.cancel();
+    bannerAnimations.current.clear();
+    const destination = expanded ? 0 : closingHeight;
+    for (const [banner, top] of bannerPositions.current) {
+      if (!banner.isConnected || typeof banner.animate !== 'function') continue;
+      const start = Math.max(0, top - banner.getBoundingClientRect().top);
+      if (Math.abs(start - destination) < 0.5) continue;
+      const animation = banner.animate(
+        [
+          { transform: `translateY(${start}px)` },
+          { transform: `translateY(${destination}px)` },
+        ],
+        {
+          duration: expanded ? CARD_ENTER_MS : CARD_EXIT_MS,
+          easing: drawerEasing(banner),
+          fill: expanded ? 'none' : 'forwards',
+        },
+      );
+      bannerAnimations.current.set(banner, animation);
+    }
+    bannerPositions.current.clear();
+    if (expanded || closingHeight === 0) return;
+    // The banner travels toward its final position inside the reserved space.
+    // Once it arrives, release the space and cancel its transform before paint.
+    const release = setTimeout(() => setClosingHeight(0), CARD_EXIT_MS);
+    return (): void => clearTimeout(release);
+  }, [expanded, closingHeight]);
+  useEffect(() => {
+    const animations = bannerAnimations.current;
+    return (): void => {
+      for (const animation of animations.values()) animation.cancel();
+    };
+  }, []);
   // Closing hands focus back to the card's pill before the card turns
   // inert, so keyboard and screen-reader users keep their place.
   const closeCard = (animateClose: boolean): void => {
     if (open) pillRefs.current.get(open.key)?.focus();
-    setAnimate(animateClose);
+    prepareToggle(false, animateClose);
     setSelected(null);
   };
   useEscapeToClose(sectionRef, expanded, () => closeCard(false));
@@ -415,18 +456,21 @@ export function ComposerWorkDrawer({
           data-testid="composer-work-drawer"
           data-chat-cancel-shortcut-ignore={expanded ? 'true' : undefined}
           // The stack's inset from the composer's edges lives here alone,
-          // so the pills and the floating card move together: 8px, the
-          // composer's + button's inset, so their edges line up with it.
-          className="flex min-w-0 flex-col px-2 pb-2"
+          // so the pills and the floating card start on the chat text line.
+          className="canopy-composer-work-drawer flex min-w-0 flex-col px-3 pb-2"
         >
-          <DrawerReveal expanded={expanded} animate={animate}>
+          <DrawerReveal
+            expanded={expanded}
+            animate={animate}
+            closingHeight={closingHeight}
+            revealRef={revealRef}
+          >
             {/* The card's gap to the pills is padding, so it closes with it. */}
             <div className="pb-2">
               <Surface
                 as="section"
                 variant="card"
-                // The rows' 18px corners nest in its 22px ones over the 4px
-                // inset, as in the drawer it replaced.
+                // The rows' 12px corners nest inside the card's 16px corner.
                 size="drawer"
                 id={cardId}
                 aria-label={shownKind?.label ?? 'Work'}
@@ -463,7 +507,7 @@ export function ComposerWorkDrawer({
                       ) : null}
                       <Button
                         variant="ghost-quiet"
-                        size="sm"
+                        size="compact"
                         iconOnly
                         aria-label={`Hide ${shownKind?.label.toLowerCase() ?? 'work'}`}
                         data-testid="composer-work-card-close"
@@ -543,7 +587,9 @@ export function ComposerWorkDrawer({
                   data-testid="composer-work-pill"
                   data-work-kind={key}
                   onClick={(event): void => {
-                    setAnimate(event.detail > 0 && (isOpen || !expanded));
+                    if (isOpen || !expanded) {
+                      prepareToggle(!isOpen, event.detail > 0);
+                    }
                     // Another pill on an open card: the content slides
                     // toward the new pill's side. Keyboard switches are
                     // instant.

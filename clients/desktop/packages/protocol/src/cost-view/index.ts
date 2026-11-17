@@ -432,6 +432,11 @@ export const COST_VIEW_UNAVAILABLE_REASONS = [
   'no_scope',
   /** The cost runtime is not running (startup or shutdown). */
   'runtime_unavailable',
+  /**
+   * The host doesn't serve this read for the scope, such as a cloud chat's
+   * full breakdown (CAN-6941). Asking again won't change it.
+   */
+  'not_served',
 ] as const;
 
 export type CostViewUnavailableReason =

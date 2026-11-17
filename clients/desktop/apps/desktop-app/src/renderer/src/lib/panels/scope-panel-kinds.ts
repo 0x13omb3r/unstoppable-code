@@ -33,8 +33,13 @@ export function panelKindsUnavailableFor(
     unavailable.push('subagents', 'subagent-chat');
   }
   if (capabilities.ledger !== true) unavailable.push('ledger');
-  if (capabilities.costInsights !== true) {
-    unavailable.push('cost', 'session-breakdown');
+  if (capabilities.costInsights !== true) unavailable.push('cost');
+  // A host serving only a chat's summary row has no breakdown (CAN-6941).
+  if (
+    capabilities.costInsights !== true ||
+    capabilities.sessionBreakdown !== true
+  ) {
+    unavailable.push('session-breakdown');
   }
   // A scope that serves no activity section has no Activity tab to offer.
   if (capabilities.activitySectionIds?.length === 0) {

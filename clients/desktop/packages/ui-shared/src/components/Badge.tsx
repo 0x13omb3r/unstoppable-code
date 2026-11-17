@@ -140,6 +140,8 @@ export interface DotProps {
    * for a row's leading icon.
    */
   size?: DotSize;
+  /** Motion for a status that is in progress. */
+  pulse?: boolean;
   /**
    * Accessible name when the dot is the only thing that carries its meaning
    * (an unread group). Without it the dot is decorative and the caller says
@@ -158,12 +160,15 @@ export interface DotProps {
 export function Dot({
   tone,
   size = 'regular',
+  pulse = false,
   label,
   className,
   'data-testid': testId,
 }: DotProps): JSX.Element {
   const base = dotClassName(tone, size);
-  const cls = className ? `${base} ${className}` : base;
+  const cls = [base, pulse ? 'canopy-status-pulse' : undefined, className]
+    .filter(Boolean)
+    .join(' ');
   if (label !== undefined) {
     return (
       <span

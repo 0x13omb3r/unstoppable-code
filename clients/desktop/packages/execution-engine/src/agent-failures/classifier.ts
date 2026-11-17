@@ -1,5 +1,9 @@
 import { redactSecrets } from '../lib/redaction';
-import { AI_CREDITS_PROXY_ERROR_MARKER } from '@canopy/protocol';
+import {
+  AI_CREDITS_NO_BILLING_SOURCE_MESSAGE,
+  AI_CREDITS_PROXY_ERROR_MARKER,
+  AI_CREDITS_SESSION_BUDGET_EXHAUSTED_MESSAGE,
+} from '@canopy/protocol';
 import { isClaudeAuthenticationFailureMessage } from '@canopy/agent-transcript';
 import type {
   AgentFailureClassification,
@@ -199,8 +203,10 @@ function providerHttpStatuses(
 /**
  * Provider-agnostic (CAN-2413 review round 2). Both harnesses may strip response
  * details; main restores Codex proxy evidence and narrowly qualifying Claude
- * refusals before classification. Bare 402 text still cannot supply a proxy
- * code here; live marked responses and stored transcripts remain supported.
+ * refusals before classification. Bare 402 text supplies a proxy code here
+ * only for the hosted refusals whose copy is Canopy's own
+ * ({@link readHostedRefusalCode}); live marked responses and stored
+ * transcripts remain supported.
  *
  * This was previously gated to `codex`, which meant a Claude turn routed
  * through AI Credits could receive the identical hosted marked 402 and never
@@ -237,6 +243,39 @@ function readCanopyProxyFailureCode(
     message.includes(CANOPY_PROXY_MARKER),
   );
   return marked?.match(CANOPY_PROXY_CODE_PATTERN)?.[1];
+}
+
+/**
+ * The hosted 402 refusals whose copy is Canopy's own, by the proxy code each
+ * stands for. The Claude harness drops the marked body and renders only
+ * `API Error: 402 <message>`, and the pipeline step runner (the cloud runner's
+ * included) has no route evidence to restore it as desktop main does for a
+ * chat. So a 402 carrying exactly one of these messages restores its code:
+ * no provider sends this text, so the exact copy with the status is the
+ * evidence. Without it a cloud run's spend cap (CAN-6881) failed the step
+ * instead of pausing it.
+ */
+const HOSTED_402_REFUSALS: ReadonlyArray<
+  readonly [message: string, code: string]
+> = [
+  [AI_CREDITS_SESSION_BUDGET_EXHAUSTED_MESSAGE, 'session_budget_exhausted'],
+  [AI_CREDITS_NO_BILLING_SOURCE_MESSAGE, 'no_billing_source'],
+];
+
+function readHostedRefusalCode(
+  strings: readonly string[],
+  statuses: readonly number[],
+): string | undefined {
+  for (const [message, code] of HOSTED_402_REFUSALS)
+    if (
+      strings.some(
+        (value) =>
+          value === `API Error: 402 ${message}` ||
+          (value === message && statuses.includes(402)),
+      )
+    )
+      return code;
+  return undefined;
 }
 
 function readCodexErrorInfo(record: RecordValue): unknown {
@@ -363,7 +402,9 @@ function buildSignals(
     strings,
     errorStrings: isTerminal ? strings : [],
     statuses,
-    canopyProxyFailureCode: readCanopyProxyFailureCode(strings),
+    canopyProxyFailureCode:
+      readCanopyProxyFailureCode(strings) ??
+      readHostedRefusalCode(strings, statuses),
   };
 }
 

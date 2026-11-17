@@ -86,7 +86,11 @@ export function applyPauseResponses(
     }
     const job = prepared.jobs[checkpoint.job_id];
     const step = job?.steps[checkpoint.step_id];
-    if (!job || job.status !== 'paused' || !step?.pause_requested) {
+    if (
+      !job ||
+      job.status !== 'paused' ||
+      !(step?.pause_requested || step?.child_pause?.id === checkpoint.id)
+    ) {
       throw new Error(`Checkpoint "${checkpoint.id}" is no longer pending`);
     }
     const rawAnswers = response.answers ?? {};
@@ -108,16 +112,39 @@ export function applyPauseResponses(
   }
 
   const selectedIds = new Set(selected.map(({ checkpoint }) => checkpoint.id));
+  // A child's input answered here clears only its own reason on the step;
+  // the child's other pauses stay offered (CAN-6868).
+  const childCheckpointIds = new Set<string>();
+  const answeredChildReasons = new Set<string>();
   const selectedJobIds = new Set<string>();
   for (const { checkpoint, answers } of selected) {
     const job = prepared.jobs[checkpoint.job_id];
     const step = job.steps[checkpoint.step_id];
-    step.outputs = {
-      ...step.outputs,
-      ...Object.fromEntries(
-        Object.entries(answers).map(([key, value]) => [key, String(value)]),
-      ),
-    };
+    const childPause = step.child_pause;
+    if (childPause !== undefined) {
+      if (step.child_pause_reason_id !== undefined)
+        answeredChildReasons.add(step.child_pause_reason_id);
+      // The child's own pause: its run-pipeline step resumes the same child
+      // with the answer, which the child checks and keeps as its own.
+      step.child_pause_responses = [
+        {
+          checkpoint_id: childPause.id,
+          job_id: childPause.job_id,
+          step_id: childPause.step_id,
+          ...(Object.keys(answers).length > 0 ? { answers } : {}),
+        },
+      ];
+      delete step.child_pause;
+      delete step.child_pause_reason_id;
+      childCheckpointIds.add(checkpoint.id);
+    } else {
+      step.outputs = {
+        ...step.outputs,
+        ...Object.fromEntries(
+          Object.entries(answers).map(([key, value]) => [key, String(value)]),
+        ),
+      };
+    }
     delete step.input_request;
     delete step.pause_requested;
     job.status = 'queued';
@@ -129,14 +156,19 @@ export function applyPauseResponses(
   prepared.pending_pauses = prepared.pending_pauses.filter(
     (checkpoint) => !selectedIds.has(checkpoint.id),
   );
-  prepared.status_reasons = prepared.status_reasons.filter(
-    (reason) =>
-      !selected.some(
-        ({ checkpoint }) =>
-          reason.source.job_id === checkpoint.job_id &&
-          reason.source.step_id === checkpoint.step_id &&
-          (reason.kind === 'input_required' || reason.kind === 'action_paused'),
-      ),
-  );
+  prepared.status_reasons = prepared.status_reasons.filter((reason) => {
+    if (
+      reason.source.child_reason_id !== undefined &&
+      answeredChildReasons.has(reason.source.child_reason_id)
+    )
+      return false;
+    return !selected.some(
+      ({ checkpoint }) =>
+        !childCheckpointIds.has(checkpoint.id) &&
+        reason.source.job_id === checkpoint.job_id &&
+        reason.source.step_id === checkpoint.step_id &&
+        (reason.kind === 'input_required' || reason.kind === 'action_paused'),
+    );
+  });
   return { state: prepared, selectedJobIds: Array.from(selectedJobIds) };
 }

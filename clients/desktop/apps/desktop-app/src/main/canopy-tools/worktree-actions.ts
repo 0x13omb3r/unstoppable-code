@@ -1,3 +1,4 @@
+import { CanopyOperationError } from '@canopy/core-runtime';
 import { portablePipelineTriggerTypes } from '@canopy/protocol/pipelines';
 import { browserHandoffs } from '../browser/browser-handoffs';
 import type {
@@ -142,6 +143,8 @@ import {
   listHooks,
 } from '../services/hooks-service';
 import { PortalServiceError } from '../services/portal-service-error';
+import type { WorktreeChatCoreWrites } from './worktree-chat-core-writes';
+import { isRecord } from '../lib/type-guards';
 import {
   W5CommitLogError,
   W5CommitRefusedError,
@@ -694,6 +697,11 @@ export interface WorktreeActionRuntime {
   onPipelineStepOutput?: (event: StepOutputEvent) => void;
   /** See `WorktreeScriptActionRuntime.authorizeScriptCommand`. */
   authorizeScriptCommand?: (command: string) => Promise<boolean>;
+  /**
+   * A chat's own domain writes as keyed core operations (CAN-5830). App
+   * Advisor leaves it unset and keys its writes in its action runs.
+   */
+  coreWrites?: WorktreeChatCoreWrites;
 }
 
 export function runtimeExecutionScope(
@@ -1443,6 +1451,55 @@ function hookPauseStorageRefusal(
   return undefined;
 }
 
+/**
+ * A refused `core.worktree.hooks.setPaused` as the typed errors the direct
+ * writer's refusals answer (CAN-5680), plus a tool call id reused for
+ * another change.
+ */
+function hookPauseOperationRefusal(
+  cause: unknown,
+): AppAdvisorActionResponse | undefined {
+  if (!(cause instanceof CanopyOperationError)) return undefined;
+  const { code, message, retry, details } = cause.payload;
+  const commitId = isRecord(details) ? details.commitId : undefined;
+  switch (code) {
+    case 'core.worktree.idempotencyKeyReused':
+      return {
+        requestId: '',
+        ok: false,
+        error: {
+          code: 'idempotency_conflict',
+          message:
+            "This tool call was already used for a different hook change, or this worktree's hooks changed since it was first sent. Check the hooks, then send the action again as a new tool call.",
+          retryable: false,
+        },
+      };
+    case 'core.worktree.notFound':
+      return error('not_found', message);
+    case 'core.worktree.readOnly':
+      return error('read_only_source', message);
+    case 'core.worktree.requestInProgress':
+      return retryableError(
+        'in_progress',
+        'Another change to this worktree list is still saving. Try again in a moment.',
+      );
+    case 'core.worktree.recoveryRequired':
+      return error(
+        'execution_failed',
+        `Hook pauses can't be saved: an earlier change to this project's worktree list${typeof commitId === 'number' ? ` (commit ${commitId})` : ''} has not finished saving and needs workspace recovery.`,
+      );
+    case 'core.worktree.outcomeExpired':
+      return error(
+        'execution_failed',
+        'This hook change was already made and its result has expired. Check the hooks before trying again.',
+      );
+    default:
+      return retry.kind === 'never'
+        ? error('execution_failed', message)
+        : retryableError('execution_failed', message);
+  }
+}
+
 function retryableError(
   code: AppAdvisorActionError['code'],
   message: string,
@@ -1486,32 +1543,59 @@ async function setHookPaused(
       : action.hookKey
         ? [action.hookKey]
         : [];
-  let worktree: WorktreeData;
+  const change: { kind: 'pause' | 'resume'; hookKeys: string[] } = {
+    kind: action.type === 'hook.pause' ? 'pause' : 'resume',
+    hookKeys,
+  };
   let pausedHookKeys: string[];
-  try {
-    // Applied to the latest row, so a competing pause or resume is kept.
-    ({ worktree, pausedHookKeys } = await changeWorktreeHookPause({
-      projectId: runtime.projectId,
-      worktreeId: runtime.worktreeId,
-      change: {
-        kind: action.type === 'hook.pause' ? 'pause' : 'resume',
-        hookKeys,
-      },
-      source: 'app_advisor',
-    }));
-  } catch (cause) {
-    if (cause instanceof PortalServiceError && cause.code === 'not_found') {
-      return error('not_found', cause.message);
+  let worktree: WorktreeData | undefined;
+  let changed = true;
+  if (runtime.coreWrites) {
+    try {
+      // Applied to the latest row, so a competing pause or resume is kept.
+      ({ pausedHookKeys, changed } = await runtime.coreWrites.setHooksPaused({
+        workspaceId: runtime.projectId,
+        worktreeId: runtime.worktreeId,
+        change,
+      }));
+    } catch (cause) {
+      const refused = hookPauseOperationRefusal(cause);
+      if (refused) return refused;
+      throw cause;
     }
-    const refused = hookPauseStorageRefusal(cause);
-    if (refused) return refused;
-    throw cause;
+    // The operation answers a portable projection; the stored row lets
+    // windows apply the change in place instead of reloading every project.
+    if (changed)
+      worktree = (await readWorkspaceWorktrees(runtime.projectId)).find(
+        (row) => row.id === runtime.worktreeId,
+      );
+  } else {
+    try {
+      ({ worktree, pausedHookKeys } = await changeWorktreeHookPause({
+        projectId: runtime.projectId,
+        worktreeId: runtime.worktreeId,
+        change,
+        source: 'app_advisor',
+      }));
+    } catch (cause) {
+      if (cause instanceof PortalServiceError && cause.code === 'not_found') {
+        return error('not_found', cause.message);
+      }
+      const refused = hookPauseStorageRefusal(cause);
+      if (refused) return refused;
+      throw cause;
+    }
   }
-  const getBroadcastWindow = runtime.getSendableWindow ?? runtime.getWindow;
-  sendToWindow(getBroadcastWindow(), IPC_CHANNELS.workspaceWorktreesUpdated, {
-    workspaceId: runtime.projectId,
-    worktree,
-  });
+  if (changed) {
+    const getBroadcastWindow = runtime.getSendableWindow ?? runtime.getWindow;
+    sendToWindow(getBroadcastWindow(), IPC_CHANNELS.workspaceWorktreesUpdated, {
+      workspaceId: runtime.projectId,
+      ...(worktree ? { worktree } : {}),
+    });
+  }
+  // A repeated tool call answers its first outcome, so each hook's paused
+  // state follows the answered keys rather than a later change to the row.
+  const answeredPaused = new Set(pausedHookKeys);
   const refreshedHooks = await listHooks({
     projectId: runtime.projectId,
     worktreeId: runtime.worktreeId,
@@ -1521,7 +1605,10 @@ async function setHookPaused(
       projectId: runtime.projectId,
       worktreeId: runtime.worktreeId,
       pausedHookKeys,
-      hooks: refreshedHooks,
+      hooks: refreshedHooks.map((hook) => ({
+        ...hook,
+        paused: answeredPaused.has(hook.hookKey),
+      })),
     }),
   );
 }

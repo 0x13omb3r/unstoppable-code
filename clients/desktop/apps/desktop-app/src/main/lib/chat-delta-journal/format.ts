@@ -59,6 +59,9 @@ export const DELTA_JOURNAL_V2_FILE_NAME = 'delta-journal-v2.log';
  * first copied, byte for byte, to `<prefix><n>.bin` in the scope directory.
  */
 export const DELTA_JOURNAL_QUARANTINE_PREFIX = 'delta-journal-tail-quarantine-';
+/** Active rows startup recovery could not reconcile with history (CAN-6902). */
+export const DELTA_JOURNAL_ECHO_QUARANTINE_PREFIX =
+  'delta-journal-echo-quarantine-';
 /** Present only while a checkpoint is being written. */
 export const DELTA_CHECKPOINT_MARKER_NAME = 'delta-checkpoint.json';
 /** Suffix of an index file a checkpoint staged but has not yet published. */

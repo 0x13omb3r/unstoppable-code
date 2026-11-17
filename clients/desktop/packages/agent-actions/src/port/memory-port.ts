@@ -1,3 +1,7 @@
+import type {
+  MemorySearchResult,
+  MemoryEntryGetResult,
+} from '@canopy/protocol/canopy-core';
 import {
   agentActionIdempotencyKey,
   runIdempotentWrite,
@@ -28,6 +32,14 @@ export interface AgentMemorySearchHit {
  * a refusal is an `AgentPortError` whose message the agent reads.
  */
 export interface AgentMemoryPort<H> {
+  searchPage?(
+    input: SearchMemoryInput,
+    call: AgentActionCall<H>,
+  ): Promise<MemorySearchResult>;
+  readPage?(
+    input: ReadMemoryInput,
+    call: AgentActionCall<H>,
+  ): Promise<MemoryEntryGetResult>;
   /**
    * Saves a note into the named memory and returns its file key. The same
    * `idempotencyKey` saves at most one note.
@@ -129,6 +141,8 @@ export function createMemoryTools<H>(options: {
     },
     search: async (input, call) => {
       try {
+        if (port.searchPage)
+          return { text: JSON.stringify(await port.searchPage(input, call)) };
         const hits = await port.search(input.query, call);
         if (hits.length === 0) {
           return { text: `No memory found for "${input.query}".` };
@@ -144,6 +158,8 @@ export function createMemoryTools<H>(options: {
     },
     read: async (input, call) => {
       try {
+        if (port.readPage)
+          return { text: JSON.stringify(await port.readPage(input, call)) };
         return {
           text: await port.read(
             { memory: input.scope, fileKey: input.file },

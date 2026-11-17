@@ -1,5 +1,6 @@
 'use client';
 
+import { CodeBlock } from '@canopy/ui-shared/components/CodeBlock';
 import { type JSX, type ReactNode } from 'react';
 import { useStore } from 'zustand';
 import type { ExternalAgentsClient } from '@canopy/app-core';
@@ -354,9 +355,16 @@ function ExactRequest({
           </p>
         ) : (
           <Surface variant="inset" className="max-w-full overflow-hidden">
-            <pre className="overflow-x-auto whitespace-pre p-3 font-mono text-xs fg-secondary">
+            <CodeBlock
+              variant="document"
+              size="xs"
+              wrap="none"
+              tone="secondary"
+              replay="inherit"
+              overflow="horizontal"
+            >
               {JSON.stringify(action.arguments, null, 2)}
-            </pre>
+            </CodeBlock>
           </Surface>
         )}
       </Stack>

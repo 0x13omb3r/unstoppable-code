@@ -1,4 +1,4 @@
-import { ControlButton } from '@canopy/ui-shared/components';
+import { TextLink, ControlButton } from '@canopy/ui-shared/components';
 import {
   useContext,
   useEffect,
@@ -7,7 +7,7 @@ import {
   type ComponentPropsWithoutRef,
   type JSX,
 } from 'react';
-import { TRANSCRIPT_LINK_CLASS, Tooltip } from '@canopy/ui-shared/components';
+import { Tooltip } from '@canopy/ui-shared/components';
 import { parseFileLinkLineSuffix } from '@canopy/ui-shared/lib/file-link-line-suffix';
 import { REPLAY_MASK_CLASS } from '@canopy/ui-shared/lib/replay-privacy';
 import { useChatStore } from '@/stores/chatStore';
@@ -90,14 +90,14 @@ export function ChatMarkdownLink({
   if (typeof href !== 'string') return <span>{children}</span>;
   if (/^(https?:|mailto:)/i.test(href))
     return (
-      <a
+      <TextLink
         href={href}
         target="_blank"
         rel="noopener noreferrer"
-        className={TRANSCRIPT_LINK_CLASS}
+        variant="inline"
       >
         {children}
-      </a>
+      </TextLink>
     );
   const { href: fileHref, location } = parseFileLinkLineSuffix(href);
   const isDrivePath = /^[a-zA-Z]:[\\/]/.test(fileHref);

@@ -558,6 +558,7 @@ async function executeJobAttempt(
           : {}),
         child_execution_id: existingStep?.child_execution_id,
         selected_child_reason_ids: existingStep?.selected_child_reason_ids,
+        child_pause_responses: existingStep?.child_pause_responses,
       };
       await options.saveState();
 
@@ -606,6 +607,7 @@ async function executeJobAttempt(
         childId: options.childId,
         resumeChildExecutionId: existingStep?.child_execution_id,
         resumeChildReasonIds: existingStep?.selected_child_reason_ids,
+        resumeChildPauseResponses: existingStep?.child_pause_responses,
         jobContext,
         canopy: options.canopy,
         pipelineAssets: options.pipelineAssets,

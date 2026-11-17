@@ -1,3 +1,4 @@
+import { CodeBlock } from './CodeBlock';
 import { Stack } from './Stack';
 import type { JSX } from 'react';
 import { describeAgentBaseModel } from '@canopy/protocol/agents';
@@ -54,9 +55,17 @@ export function AgentDefinitionSummary({
         <Heading level={2} variant="title">
           Instructions
         </Heading>
-        <pre className="whitespace-pre-wrap break-words rounded-xl border bg-card p-4 font-sans text-s">
+        <CodeBlock
+          variant="card"
+          size="s"
+          wrap="words"
+          tone="inherit"
+          replay="inherit"
+          font="sans"
+          overflow="visible"
+        >
           {instructions || 'No additional instructions.'}
-        </pre>
+        </CodeBlock>
       </Stack>
 
       <Stack as="section" gap="inline">

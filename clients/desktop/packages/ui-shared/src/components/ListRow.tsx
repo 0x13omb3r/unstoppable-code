@@ -4,6 +4,7 @@ import {
   type AnchorHTMLAttributes,
   type ButtonHTMLAttributes,
   type ComponentPropsWithRef,
+  type ComponentType,
   type HTMLAttributes,
   type JSX,
   type MouseEvent,
@@ -584,6 +585,24 @@ export const ListRowStatic = forwardRef<HTMLDivElement, ListRowStaticProps>(
 ListRowStatic.displayName = 'ListRowStatic';
 
 const LIST_ROW_FRAME_LAYOUT = {
+  'archive-menu':
+    'flex w-full items-center gap-2 rounded-md pr-2 transition-colors hover:bg-subtle has-[>button:first-child:focus-visible]:bg-subtle',
+  'archive-overview':
+    'group relative flex w-full items-center rounded-md transition-colors hover:bg-fg-primary/[0.04] pointer-coarse:min-h-11',
+  'customize-installed':
+    'group/skill-row relative -ml-4 flex min-w-0 items-center gap-2 rounded-xl pr-4 transition-colors hover:bg-subtle',
+  'question-choice':
+    'group/option flex w-full rounded-lg text-left hover:bg-subtle has-[:focus-visible]:bg-subtle',
+  'queued-message-tray': 'flex h-9 min-w-0 items-center gap-2.5 px-3 text-s',
+  'queued-message-drawer':
+    'group/drawer-item flex h-9 min-w-0 items-center gap-2.5 rounded-drawer-row pl-2.75 pr-1 text-s hover:bg-subtle data-[dragging]:bg-muted',
+  'workspace-header':
+    'min-w-0 flex-1 rounded-md px-1.5 py-1.5 fg-primary/80 transition-colors hover:bg-subtle hover:fg-primary',
+  'workspace-header-sidebar':
+    'min-w-0 flex-1 h-8 rounded-row py-0 pl-1.5 pr-1 fg-primary transition-colors duration-0 hover:bg-subtle',
+  'workspace-header-sidebar-touch':
+    'min-w-0 flex-1 min-h-11 rounded-row py-0 pl-1.5 pr-1 fg-primary transition-colors duration-0 hover:bg-subtle',
+
   'file-overlap': 'flex flex-col gap-1 px-3 py-2.5 transition-colors',
   'sidebar-workspace':
     'group/header group/sidebar-item relative flex h-8 items-center gap-1.5 rounded-row pl-1.5 pr-1 fg-primary transition-colors duration-150',
@@ -619,6 +638,9 @@ const LIST_ROW_FRAME_LAYOUT = {
 
 const LIST_ROW_FRAME_STATE = {
   resting: '',
+  'compact-control': 'flex-nowrap',
+  'wrapping-control': 'flex-wrap',
+
   disabled: '',
   pressable: 'cursor-pointer hover:bg-subtle',
   'sidebar-idle': 'hover:bg-subtle',
@@ -776,4 +798,37 @@ export function ListRowFrame<Tag extends 'div' | 'li' = 'div'>({
       className,
     ),
   });
+}
+
+const LIST_ROW_LINK_FRAME_LAYOUT = {
+  'section-card':
+    'group flex items-start justify-between gap-4 rounded-xl bg-card p-5 shadow-sm transition-colors hover:bg-secondary',
+  'detail-inset':
+    'flex flex-wrap items-center justify-between gap-3 px-4 py-3 transition-colors hover:bg-secondary',
+  'sidebar-secondary':
+    'focus-ring flex items-center gap-2 rounded-md px-3 py-2 text-s fg-secondary hover:bg-secondary hover:fg-primary',
+  'queue-position':
+    'focus-ring grid grid-cols-[1.25rem_minmax(0,1fr)_auto] items-center gap-2.5 rounded-md px-2 py-1.5 transition-colors hover:bg-subtle',
+  'queue-position-current':
+    'focus-ring grid grid-cols-[1.25rem_minmax(0,1fr)_auto] items-center gap-2.5 rounded-md px-2 py-1.5 transition-colors bg-warning-subtle hover:bg-warning-subtle/80',
+} as const;
+
+interface ListRowLinkFrameProps extends Omit<
+  ListRowLinkRenderProps,
+  'className'
+> {
+  readonly layout: keyof typeof LIST_ROW_LINK_FRAME_LAYOUT;
+  /** Keep router prefetch and navigation on a host that provides them. */
+  readonly as?: ComponentType<ListRowLinkRenderProps>;
+}
+
+/** Link row with a structured body such as a card, detail list, or queue grid. */
+export function ListRowLinkFrame({
+  as: Link,
+  layout,
+  ...props
+}: ListRowLinkFrameProps): JSX.Element {
+  const className = LIST_ROW_LINK_FRAME_LAYOUT[layout];
+  if (Link) return <Link {...props} className={className} />;
+  return <a {...props} className={className} />;
 }

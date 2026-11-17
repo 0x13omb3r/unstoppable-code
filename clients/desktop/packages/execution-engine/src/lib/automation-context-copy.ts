@@ -36,11 +36,16 @@ export interface BackgroundExecutionDeniedMessageOptions {
 
 /** A retryable lookup failure has no authoritative resource verdict. */
 export function backgroundExecutionRetryMessage(
-  kind: 'run' | 'watcher',
+  kind: 'run' | 'watcher' | 'watcher-setup',
 ): string {
-  return kind === 'run'
-    ? "Couldn't check access to what this run uses. Try again in a moment."
-    : "Couldn't check access to what this watcher uses. It'll try again.";
+  switch (kind) {
+    case 'run':
+      return "Couldn't check access to what this run uses. Try again in a moment.";
+    case 'watcher':
+      return "Couldn't check access to what this watcher uses. It'll try again.";
+    case 'watcher-setup':
+      return "Couldn't check access to what this watcher uses yet, so it wasn't set up. Try again in a moment.";
+  }
 }
 
 /** Bounded recovery guidance for unattended runs; never display raw policy tokens. */
@@ -74,6 +79,10 @@ export function backgroundExecutionDeniedMessage(
       : "Couldn't confirm where something this uses came from, so it didn't run.",
     'missing-dependency': "Something this needs is missing, so it didn't run.",
     'unsupported-target': "Couldn't confirm where this runs, so it didn't run.",
+    'plugin-catalog-newer':
+      "The plugin catalog was written by a newer version of the app, so this didn't run. Update the app to run it.",
+    'plugin-catalog-damaged':
+      "The plugin catalog is damaged, so this didn't run.",
   };
   return turnedOff ? `${labels[reason]} It's been turned off.` : labels[reason];
 }

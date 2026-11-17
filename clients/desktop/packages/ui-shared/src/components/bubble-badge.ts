@@ -16,24 +16,24 @@ const BUBBLE_SURFACE_HAIRLINE = 'shadow-bubble';
  * The neutral surface shared by the sent user bubble and the queued bubble it
  * will become: `bg-quaternary` (same white as `bg-tertiary` in light, one
  * ramp step brighter in dark) inside the bubble hairline, with the one inset
- * every variant shares (`px-3 py-1.5`) so sent, watcher-fired, and queued
+ * every variant shares (`px-3 py-2`) so sent, watcher-fired, and queued
  * bubbles keep identical top and bottom padding. Consumers add only text
  * roles.
  */
-export const BUBBLE_SURFACE_CLASS = `rounded-xl bg-quaternary px-3 py-1.5 ${BUBBLE_SURFACE_HAIRLINE}`;
+export const BUBBLE_SURFACE_CLASS = `rounded-xl bg-quaternary px-3 py-2 ${BUBBLE_SURFACE_HAIRLINE}`;
 
 /**
  * Flat variant of {@link BUBBLE_SURFACE_CLASS}: the muted fill, with no
  * elevation or hairline, for a chat that sits on a raised surface of its own
  * (the App Advisor panel). The inset stays the same.
  */
-export const BUBBLE_MUTED_SURFACE_CLASS = 'rounded-xl bg-muted px-3 py-1.5';
+export const BUBBLE_MUTED_SURFACE_CLASS = 'rounded-xl bg-muted px-3 py-2';
 
 /**
  * Info-tinted variant of {@link BUBBLE_SURFACE_CLASS} for Canopy-generated
  * (watcher-fired) messages. Only the tint changes; the hairline stays.
  */
-export const BUBBLE_INFO_SURFACE_CLASS = `rounded-xl bg-info-subtle px-3 py-1.5 ${BUBBLE_SURFACE_HAIRLINE}`;
+export const BUBBLE_INFO_SURFACE_CLASS = `rounded-xl bg-info-subtle px-3 py-2 ${BUBBLE_SURFACE_HAIRLINE}`;
 
 /**
  * Shared chrome for the badges pinned to a chat bubble's corners — the

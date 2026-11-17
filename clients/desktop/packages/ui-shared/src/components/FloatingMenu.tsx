@@ -18,7 +18,10 @@ import {
 import { focusableWithin } from '../lib/focusable';
 import { focusMenuRow } from '../lib/input-modality';
 import { suppressNextClick } from '../lib/suppress-next-click';
-import { pushMenuOpenBodyFlag } from '../lib/menu-open-body-flag';
+import {
+  pushMenuOpenBodyFlag,
+  registerMenuDismissalClickGuard,
+} from '../lib/menu-open-body-flag';
 import { createPortal, flushSync } from 'react-dom';
 import { getDocument, getWindow } from '../panels/window-registry';
 import {
@@ -752,47 +755,34 @@ export const FloatingMenu = forwardRef<HTMLDivElement, FloatingMenuProps>(
       const doc = getDocument(trigger);
       const NodeConstructor = doc.defaultView?.Node;
 
-      const handlePointerDown = (event: PointerEvent): void => {
+      const isOutsidePress = (target: EventTarget | null): target is Node => {
         if (
           !closeOnOutsidePress ||
           !NodeConstructor ||
-          !(event.target instanceof NodeConstructor) ||
-          trigger?.contains(event.target) ||
-          menuRef.current?.contains(event.target) ||
-          outsidePressBoundaryRef?.current?.contains(event.target)
+          !(target instanceof NodeConstructor) ||
+          trigger?.contains(target) ||
+          menuRef.current?.contains(target) ||
+          outsidePressBoundaryRef?.current?.contains(target)
         ) {
-          return;
+          return false;
         }
-        // A nested flyout is a sibling in the body, so its clicks would read
-        // as "outside" and tear this menu (and the flyout) down before the
-        // click activates. Ignore them; the nested menu owns its own
-        // dismissal, and closing it closes this menu through the same path.
+        // A nested flyout is a sibling in the body. Its clicks belong to it.
         const ElementConstructor = doc.defaultView?.Element;
-        if (
+        return !(
           ElementConstructor &&
-          event.target instanceof ElementConstructor &&
-          (event.target.closest('[data-floating-menu-nested="true"]') !==
-            null ||
-            isInSurfaceOpenedFrom(event.target, menuId, doc))
-        ) {
-          return;
-        }
-        // The press only dismisses — swallow the click it completes so the
-        // element under the pointer is not activated. A NESTED flyout never
-        // suppresses: its parent hierarchy owns outside-dismissal semantics,
-        // and eating the click here broke both parent-row activation (the
-        // hover-out grace period keeps the flyout mounted while the pointer
-        // is over a parent row) and the parent trigger's own toggle. For a
-        // genuinely outside press the parent's handler still suppresses.
-        // A press inside the click-through region dismisses and still
-        // activates its target.
-        if (
-          !nested &&
-          outsidePressSwallowsClick &&
-          !outsidePressClickThroughRef?.current?.contains(event.target)
-        ) {
-          suppressNextClick(doc);
-        }
+          target instanceof ElementConstructor &&
+          (target.closest('[data-floating-menu-nested="true"]') !== null ||
+            isInSurfaceOpenedFrom(target, menuId, doc))
+        );
+      };
+      const swallowsOutsideClick = (target: Node): boolean =>
+        !nested &&
+        outsidePressSwallowsClick &&
+        !outsidePressClickThroughRef?.current?.contains(target);
+
+      const handlePointerDown = (event: PointerEvent): void => {
+        if (!isOutsidePress(event.target)) return;
+        if (swallowsOutsideClick(event.target)) suppressNextClick(doc);
         onOpenChange(false);
       };
       const handleDocumentKeyDown = (event: globalThis.KeyboardEvent): void => {
@@ -854,10 +844,15 @@ export const FloatingMenu = forwardRef<HTMLDivElement, FloatingMenuProps>(
       doc.addEventListener('keydown', handleDocumentKeyDown);
       // Any open menu suppresses background hover feedback app-wide.
       const releaseMenuOpenFlag = pushMenuOpenBodyFlag(doc);
+      const releaseClickGuard = registerMenuDismissalClickGuard(
+        doc,
+        (target) => isOutsidePress(target) && swallowsOutsideClick(target),
+      );
       return (): void => {
         doc.removeEventListener('pointerdown', handlePointerDown);
         doc.removeEventListener('keydown', handleDocumentKeyDown);
         releaseMenuOpenFlag();
+        releaseClickGuard();
       };
     }, [
       anchorRef,

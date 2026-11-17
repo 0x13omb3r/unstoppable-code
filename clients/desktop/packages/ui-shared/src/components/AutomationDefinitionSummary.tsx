@@ -1,3 +1,4 @@
+import { CodeBlock } from './CodeBlock';
 import { Stack } from './Stack';
 import type { JSX } from 'react';
 import {
@@ -310,9 +311,17 @@ export function AutomationDefinitionSummary({
               )}
             </Stack>
             {prompt !== null && (
-              <pre className="whitespace-pre-wrap break-words font-sans text-s">
+              <CodeBlock
+                variant="bare"
+                size="s"
+                wrap="words"
+                tone="inherit"
+                replay="inherit"
+                font="sans"
+                overflow="visible"
+              >
                 {prompt || 'No prompt text.'}
-              </pre>
+              </CodeBlock>
             )}
           </Stack>
         </div>

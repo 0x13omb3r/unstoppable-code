@@ -578,3 +578,6 @@ export { DiffFileStatusMarker } from './diff/DiffFileTree';
 export { FileTreeEditorRow, WorkflowNavJobRow } from './DiagramNodeSurface';
 export * from './WorkflowSurfaces';
 export * from './FileDiffSurfaces';
+
+export { MarkdownTableBlock, markdownTableCellProps } from './markdown-render';
+export * from './chat/TranscriptEventRow';

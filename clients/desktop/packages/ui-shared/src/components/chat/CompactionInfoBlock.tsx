@@ -1,6 +1,7 @@
 import { REPLAY_BLOCK_CLASS } from '../../lib/replay-privacy';
 import { memo, type JSX } from 'react';
 import { RestoreIcon as AppCatalogRestoreIcon } from '../../icons/AppIcons';
+import { TranscriptEventMarker } from './TranscriptEventRow';
 
 /**
  * Who compacted the session, keyed off both provider and interface mode so a
@@ -55,16 +56,11 @@ function CompactionInfoBlockComponent({
     <div
       data-testid={dataTestId}
       data-chat-notice=""
-      className="flex w-full flex-col items-center gap-1 py-2 text-center text-s fg-tertiary"
+      className="flex w-full flex-col gap-1 text-center text-xs fg-tertiary"
     >
-      <span className="flex max-w-full items-center gap-2">
-        <span className="flex h-5 shrink-0 items-center" aria-hidden="true">
-          <AppCatalogRestoreIcon size="sm" />
-        </span>
-        <span className="min-w-0 truncate">
-          {headline} at {localTime}
-        </span>
-      </span>
+      <TranscriptEventMarker icon={<AppCatalogRestoreIcon size="sm" />}>
+        {headline} at {localTime}
+      </TranscriptEventMarker>
       {summary !== undefined && summary.length > 0 ? (
         <span
           className={`${REPLAY_BLOCK_CLASS} max-w-full whitespace-pre-wrap break-words`}

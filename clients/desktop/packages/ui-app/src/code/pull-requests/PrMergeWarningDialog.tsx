@@ -1,6 +1,6 @@
 'use client';
 
-import { DialogActionFooter } from '@canopy/ui-shared/components';
+import { TextLink, DialogActionFooter } from '@canopy/ui-shared/components';
 import { useCallback, type JSX } from 'react';
 import {
   Button,
@@ -83,14 +83,16 @@ export function PrMergeWarningDialog({
           review {reviewPronoun} before merging, or merge anyway.
         </p>
         {onOpenPr === undefined ? (
-          <a
+          <TextLink
             href={prUrl}
             target="_blank"
             rel="noopener noreferrer"
-            className="focus-ring self-start text-xs font-medium fg-accent underline-offset-2 hover:underline"
+            size="xs"
+            emphasis="medium"
+            className="self-start"
           >
             View pull request on GitHub
-          </a>
+          </TextLink>
         ) : (
           <span className="self-start text-xs">
             <Button variant="link" onClick={onOpenPr}>

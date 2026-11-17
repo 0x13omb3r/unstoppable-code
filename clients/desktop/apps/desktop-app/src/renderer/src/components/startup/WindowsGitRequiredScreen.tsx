@@ -1,4 +1,4 @@
-import { Surface } from '@canopy/ui-shared/components';
+import { TextLink, Surface } from '@canopy/ui-shared/components';
 import type { JSX } from 'react';
 import { Button, DownloadIcon } from '@canopy/ui-shared';
 import { Folder, RefreshCw } from 'lucide-react';
@@ -126,7 +126,7 @@ function MissingGitView({
       ) : (
         <p className="text-s fg-secondary">
           No{' '}
-          <a
+          <TextLink
             href={GIT_HOMEPAGE_URL}
             target="_blank"
             rel="noopener noreferrer"
@@ -134,11 +134,11 @@ function MissingGitView({
               e.preventDefault();
               openExternal(GIT_HOMEPAGE_URL);
             }}
-            className="underline transition-colors hover:fg-primary"
+            variant="inherited-underlined"
             data-testid="git-gate-git-link"
           >
             Git
-          </a>{' '}
+          </TextLink>{' '}
           installation was detected and it must be installed in order to use{' '}
           {brandName}.
         </p>

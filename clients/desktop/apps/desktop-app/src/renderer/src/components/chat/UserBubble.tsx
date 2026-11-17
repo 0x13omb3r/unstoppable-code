@@ -14,8 +14,11 @@ import {
   readMessageAutoResume,
   SUBAGENT_REFERENCE_PREFIX,
   SubagentReferenceAttachment,
+  TranscriptEventRow,
   splitSubagentReference,
   useChatMessageContextMenu,
+  WakeTurnBoundary,
+  watcherFiredPresentation,
 } from '@canopy/ui-shared/components';
 import {
   AgentSentTitle,
@@ -37,7 +40,10 @@ import { MessageImages } from './MessageImages';
 import { MutedUserBubblesContext } from './muted-user-bubbles-context';
 import { ResetToPointDialog } from './ResetToPointDialog';
 import type { DisplayMessage } from './types';
+import { SparkleIcon } from '@canopy/ui-shared/icons/AppIcons';
+import { REPLAY_BLOCK_CLASS } from '@canopy/ui-shared/lib/replay-privacy';
 import { WatcherFiredTitle } from './WatcherFiredTitle';
+import { LegacyTranscriptSearchContext } from './transcript-search-reveal';
 
 interface UserBubbleProps {
   receivingContext?: AgentSentReceivingContext;
@@ -74,6 +80,7 @@ export const UserBubble = memo(function UserBubble({
   const receivingContext = useAgentSentReceivingContext(explicitContext);
   const [resetDialogOpen, setResetDialogOpen] = useState(false);
   const mutedBubble = useContext(MutedUserBubblesContext);
+  const legacySearch = useContext(LegacyTranscriptSearchContext);
   // Everything sent with the message is a tile inside the bubble.
   const attachments = useSentAttachments(message.attachmentPaths);
   const hasBody = message.blocks.some(
@@ -217,6 +224,7 @@ export const UserBubble = memo(function UserBubble({
   ) : isSteering ? (
     <SteeringTitle />
   ) : undefined;
+  const watcher = message.agentSent ? undefined : message.watcherFired;
 
   return (
     <>
@@ -224,24 +232,54 @@ export const UserBubble = memo(function UserBubble({
       {attachedSubagentReference ? (
         <SubagentReferenceAttachment title={attachedSubagentReference.title} />
       ) : null}
+      {appliedMemory && appliedMemory.facts.length > 0 ? (
+        <TranscriptEventRow
+          icon={<SparkleIcon size="sm" aria-hidden="true" />}
+          label={`Used ${appliedMemory.facts.length} ${appliedMemory.facts.length === 1 ? 'memory' : 'memories'}`}
+        >
+          <div className="flex flex-col gap-2">
+            <ul
+              className={`flex list-none flex-col gap-1 ${REPLAY_BLOCK_CLASS}`}
+            >
+              {appliedMemory.facts.map((fact, index) => (
+                <li
+                  key={`${fact.factId ?? 'memory'}-${index}`}
+                  className="whitespace-pre-wrap wrap-anywhere"
+                >
+                  {fact.factText}
+                </li>
+              ))}
+            </ul>
+            <MemoryUsedButton memory={appliedMemory} />
+          </div>
+        </TranscriptEventRow>
+      ) : null}
       <SharedUserBubble
         copyText={copyText}
         onRevert={handleRevertClick}
         onNavigate={onJumpToMessage}
         contextMenu={contextMenuTarget}
         actionsOnCorner={true}
+        footer={
+          appliedMemory?.facts.length === 0 ? (
+            <MemoryUsedButton memory={appliedMemory} />
+          ) : undefined
+        }
+        footerGap="inline"
         variant={
-          message.watcherFired || steeringRequest?.variant === 'info'
-            ? 'info'
-            : mutedBubble || isAutoResume
-              ? 'muted'
-              : 'default'
+          watcher
+            ? 'transcript-row'
+            : message.watcherFired || steeringRequest?.variant === 'info'
+              ? 'info'
+              : mutedBubble || isAutoResume
+                ? 'muted'
+                : 'default'
         }
         header={
           // Plain messages keep an undefined header so the bubble can skip.
           // An agent-sent message has no text-derived presentation, so its
           // title row carries the steering state itself.
-          message.agentSent ? (
+          watcher ? undefined : message.agentSent ? (
             <AgentSentTitle
               agentSent={message.agentSent}
               receivingContext={receivingContext}
@@ -256,36 +294,43 @@ export const UserBubble = memo(function UserBubble({
             <MessageImages attachments={attachments} alone={!hasBody} />
           ) : null
         }
-        footerGap="tight"
-        footer={
-          appliedMemory ? <MemoryUsedButton memory={appliedMemory} /> : null
-        }
       >
         <div data-chat-message-id={message.id}>
-          <CollapsibleUserMessageContent
-            forceExpanded={forceExpanded}
-            measurementKey={message.id}
-          >
-            {message.blocks.map((block, i) => (
-              <ChatBlockRenderer
-                key={i}
-                block={
-                  block.type !== 'text'
-                    ? block
-                    : steeringRequest?.textBlockIndex === i
-                      ? { ...block, text: steeringRequest.text }
-                      : attachedSubagentReference?.firstTextBlockIndex === i
-                        ? { ...block, text: attachedSubagentReference.body }
-                        : block
-                }
-                invocableMentionIndex={invocableMentionIndex}
-                filePathMentionIndex={filePathMentionIndex}
-                pluginMentionIndex={pluginMentionIndex}
-                originChatTabId={originChatTabId}
-                preserveLineBreaks
-              />
-            ))}
-          </CollapsibleUserMessageContent>
+          {watcher ? (
+            <WakeTurnBoundary
+              watcher={watcher}
+              followUp={
+                watcherFiredPresentation(copyText, 'block', watcher)?.text
+              }
+              timestamp={message.timestamp}
+              forceOpen={forceExpanded || legacySearch}
+            />
+          ) : (
+            <CollapsibleUserMessageContent
+              forceExpanded={forceExpanded}
+              measurementKey={message.id}
+            >
+              {message.blocks.map((block, i) => (
+                <ChatBlockRenderer
+                  key={i}
+                  block={
+                    block.type !== 'text'
+                      ? block
+                      : steeringRequest?.textBlockIndex === i
+                        ? { ...block, text: steeringRequest.text }
+                        : attachedSubagentReference?.firstTextBlockIndex === i
+                          ? { ...block, text: attachedSubagentReference.body }
+                          : block
+                  }
+                  invocableMentionIndex={invocableMentionIndex}
+                  filePathMentionIndex={filePathMentionIndex}
+                  pluginMentionIndex={pluginMentionIndex}
+                  originChatTabId={originChatTabId}
+                  preserveLineBreaks
+                />
+              ))}
+            </CollapsibleUserMessageContent>
+          )}
         </div>
         {message.cancelled ? <UserBubbleCancelledNote /> : null}
       </SharedUserBubble>

@@ -1,10 +1,10 @@
+import { ButtonLink } from './ButtonLink';
+import { TextLink } from './TextLink';
 import type { JSX } from 'react';
 import { CloseIcon } from '../icons/AppIcons';
-import { MCP_ROW_ACTION_CLASS_NAME } from '../lib/mcp-card-display';
 import { OPERATIONAL_STATUS_COLORS } from '../lib/operational-status-colors';
-import { SECONDARY_SURFACE_CLASS } from '../lib/row-chips';
 import { Dot } from './Badge';
-import { Button, buttonClassName } from './Button';
+import { Button } from './Button';
 import { LoadingSpinner } from './LoadingSpinner';
 import { Tooltip } from './Tooltip';
 
@@ -95,8 +95,8 @@ export function McpSignInPendingActions({
   if (variant === 'compact')
     return (
       <span className="flex items-center gap-0.5 pointer-coarse:gap-2">
-        <a
-          className={`${MCP_ROW_ACTION_CLASS_NAME} ${SECONDARY_SURFACE_CLASS} fg-primary`}
+        <TextLink
+          variant="mcp-action"
           href={authorizationUrl}
           target="_blank"
           rel="noopener noreferrer"
@@ -108,7 +108,7 @@ export function McpSignInPendingActions({
           data-testid={`${dataTestId}-reopen`}
         >
           Reopen
-        </a>
+        </TextLink>
         {onCancel !== undefined && (
           <Tooltip label={MCP_SIGN_IN_CANCEL_LABEL}>
             <Button
@@ -141,15 +141,16 @@ export function McpSignInPendingActions({
           {cancelLabel}
         </Button>
       )}
-      <a
-        className={buttonClassName({ variant: reopenVariant, size: 'md' })}
+      <ButtonLink
+        variant={reopenVariant}
+        size="md"
         href={authorizationUrl}
         target="_blank"
         rel="noopener noreferrer"
         data-testid={`${dataTestId}-reopen`}
       >
         {MCP_SIGN_IN_REOPEN_LABEL}
-      </a>
+      </ButtonLink>
     </>
   );
 }

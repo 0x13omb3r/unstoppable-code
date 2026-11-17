@@ -23,6 +23,7 @@ import type {
   ScriptStartedEvent,
 } from '@canopy/desktop-shared/types';
 import type { CommandShellDefinition } from '@canopy/desktop-shared/scripts';
+import type { CoreScriptRunLookup } from '@canopy/core-runtime/node/script/execution';
 import { getActiveDesktopRuntime } from '../canopy-runtime/desktop-runtime';
 import { LOCAL_DESKTOP_AUTHORITY_ID } from '../canopy-runtime/desktop-runtime-identity';
 import type { ScriptRunLogRef } from './script-log-store';
@@ -66,6 +67,11 @@ export interface DesktopScriptRun {
   backgroundPriority?: boolean;
   /** Names the run; minted when omitted. */
   runId?: string;
+  /**
+   * Admit the run under a ledger receipt keyed by `runId`, so a run already
+   * started under it, or under it for another script, starts nothing.
+   */
+  keyed?: boolean;
   origin?: OperationOrigin;
 }
 
@@ -180,6 +186,7 @@ export async function runDesktopScript(
         params,
         origin: run.origin ?? defaultOrigin(run.invocation),
         owner: { kind: 'system', id: LOCAL_DESKTOP_AUTHORITY_ID },
+        ...(run.keyed ? { keyed: true } : {}),
       },
       {
         ...(options.signal ? { signal: options.signal } : {}),
@@ -252,6 +259,41 @@ export function readScriptRun(request: {
     },
     { caller: SCRIPT_CALLER },
   );
+}
+
+/**
+ * The keyed run started under an execution id, if any (CAN-5830): core's
+ * in-flight run or its operation found by the ledger receipt, and the run
+ * log's record when it is still the script key's latest run. A conflict is
+ * the id already used for another script.
+ */
+export async function findScriptRun(request: {
+  projectId: string;
+  worktreeId: string;
+  executionId: string;
+  scriptKey: string;
+  tailLines: number;
+}): Promise<{
+  operation: CoreScriptRunLookup | null;
+  run: WorkerScriptExecutionListResult['runs'][number] | null;
+}> {
+  const runtime = getActiveDesktopRuntime();
+  const operation = await runtime.scriptRuns.find({
+    workspaceId: request.projectId,
+    worktreeId: request.worktreeId,
+    executionId: request.executionId,
+    scriptKey: request.scriptKey,
+  });
+  if (!operation || operation.status === 'conflict')
+    return { operation, run: null };
+  const { runs } = await listScriptRuns(request);
+  return {
+    operation,
+    run:
+      runs.find(
+        (entry) => entry.execution.executionId === request.executionId,
+      ) ?? null,
+  };
 }
 
 /** Each script key's latest run in the worktree's log. */

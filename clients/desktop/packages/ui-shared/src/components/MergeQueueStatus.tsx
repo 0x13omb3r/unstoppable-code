@@ -1,5 +1,7 @@
 'use client';
 
+import { ListRowLinkFrame } from './ListRow';
+import { TextLink } from './TextLink';
 import {
   forwardRef,
   useId,
@@ -327,18 +329,14 @@ function QueueRow({
   readonly entry: MergeQueuePopoverEntry;
 }): JSX.Element {
   return (
-    <a
+    <ListRowLinkFrame
+      layout={entry.isCurrent ? 'queue-position-current' : 'queue-position'}
       href={entry.url}
       target="_blank"
       rel="noopener noreferrer"
       aria-current={entry.isCurrent ? 'true' : undefined}
       data-testid="merge-queue-popover-row"
       data-pr-number={entry.number}
-      className={`focus-ring grid grid-cols-[1.25rem_minmax(0,1fr)_auto] items-center gap-2.5 rounded-md px-2 py-1.5 transition-colors ${
-        entry.isCurrent
-          ? 'bg-warning-subtle hover:bg-warning-subtle/80'
-          : 'hover:bg-subtle'
-      }`}
     >
       <span
         className={`text-right font-mono text-2xs tabular-nums ${
@@ -375,7 +373,7 @@ function QueueRow({
           ? ''
           : formatEstimateMinutes(entry.remainingSeconds)}
       </span>
-    </a>
+    </ListRowLinkFrame>
   );
 }
 
@@ -497,19 +495,18 @@ function OpenQueueLink({
   readonly iconOnly?: boolean;
 }): JSX.Element {
   return (
-    <a
+    <TextLink
       href={url}
       target="_blank"
       rel="noopener noreferrer"
       aria-label={iconOnly ? label : undefined}
       data-testid="merge-queue-popover-github"
-      className={`focus-ring inline-flex h-6 shrink-0 items-center gap-1.5 rounded-md text-2xs fg-primary transition-colors hover:bg-subtle ${
-        iconOnly ? 'w-6 justify-center' : 'px-2'
-      }`}
+      variant="merge-queue-github"
+      iconOnly={iconOnly}
     >
       {iconOnly ? null : 'Open queue on GitHub'}
       <ExternalIcon size={12} className="fg-secondary" />
-    </a>
+    </TextLink>
   );
 }
 

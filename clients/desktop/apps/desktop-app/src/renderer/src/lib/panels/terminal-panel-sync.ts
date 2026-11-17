@@ -77,8 +77,12 @@ async function closeTerminalBinding(
     session =
       useTerminalStore.getState().worktrees[ownerKey]?.sessions[terminalId];
   }
-  if (session === undefined || session.live) {
+  const live = session === undefined || session.live;
+  if (live)
     useTerminalActivityStore.getState().markUserInitiatedClose(terminalId);
+  // A cloud terminal is closed on its client even after its shell ended, so
+  // its reattach record goes with the tab (CAN-6939).
+  if (live || cloud) {
     void (
       cloud
         ? requireTerminalClient().command('terminal.kill', {

@@ -77,7 +77,14 @@ export type ResourceContextDecision =
         | 'access-removed'
         | 'unknown-provenance'
         | 'missing-dependency'
-        | 'unsupported-target';
+        | 'unsupported-target'
+        /**
+         * The local plugin catalog can't be used until something outside the
+         * run changes it, so retrying won't help (CAN-6900): a newer build
+         * wrote it, or it is damaged.
+         */
+        | 'plugin-catalog-newer'
+        | 'plugin-catalog-damaged';
       /**
        * Verification could not complete (cloud unreachable or an outage), so
        * this is not a verdict on the resource. Callers may retry later.

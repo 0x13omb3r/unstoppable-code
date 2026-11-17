@@ -131,6 +131,7 @@ import {
   DELTA_JOURNAL_GENESIS_DIGEST,
   DELTA_JOURNAL_MANIFEST_VERSION,
   DELTA_JOURNAL_QUARANTINE_PREFIX,
+  DELTA_JOURNAL_ECHO_QUARANTINE_PREFIX,
   FRAME_HEADER_BYTES,
   decodeDeltaJournalRecord,
   decodeDeltaJournalV2Record,
@@ -237,9 +238,11 @@ import {
 } from './replay';
 import {
   ChatTranscriptOverlay,
+  messageDigest,
   upsertActiveMessages,
   type TranscriptOverlayBase,
 } from './transcript-overlay';
+import { isPersistedChatMessage } from '../persisted-chat-message-validation';
 import {
   ChildJournalOverlay,
   readMergedChildStreamPage,
@@ -255,6 +258,26 @@ export class DeltaJournalCheckpointRequiredError extends Error {
 /** Journal size at which a checkpoint is due (P1 §A size trigger). */
 export const DELTA_JOURNAL_CHECKPOINT_BYTES = 4 * 1024 * 1024;
 const QUARANTINE_TEMPORARY_PREFIX = `.${DELTA_JOURNAL_QUARANTINE_PREFIX}`;
+
+interface QuarantineFamily {
+  prefix: string;
+  extension: string;
+  boundary: Extract<
+    DeltaJournalBoundary,
+    'tail-quarantined' | 'echo-quarantined'
+  >;
+}
+const TAIL_QUARANTINE: QuarantineFamily = {
+  prefix: DELTA_JOURNAL_QUARANTINE_PREFIX,
+  extension: '.bin',
+  boundary: 'tail-quarantined',
+};
+/** Active rows startup recovery could not reconcile with history (CAN-6902). */
+const ECHO_QUARANTINE: QuarantineFamily = {
+  prefix: DELTA_JOURNAL_ECHO_QUARANTINE_PREFIX,
+  extension: '.json',
+  boundary: 'echo-quarantined',
+};
 /** Streams, or stream metadata files, a checkpoint writes at once. */
 const STREAM_METADATA_IO_CONCURRENCY = 16;
 
@@ -301,9 +324,17 @@ function manifestGeneration(directory: string): number {
   return manifestGenerations.get(directory) ?? 0;
 }
 
-function quarantineOrdinal(name: string): number | undefined {
-  const match = /^delta-journal-tail-quarantine-(\d+)\.bin$/.exec(name);
-  return match ? Number(match[1]) : undefined;
+function quarantineOrdinal(
+  name: string,
+  family: QuarantineFamily = TAIL_QUARANTINE,
+): number | undefined {
+  if (!name.startsWith(family.prefix) || !name.endsWith(family.extension))
+    return undefined;
+  const ordinal = name.slice(
+    family.prefix.length,
+    name.length - family.extension.length,
+  );
+  return /^\d+$/.test(ordinal) ? Number(ordinal) : undefined;
 }
 
 function isQuarantineTemporary(name: string): boolean {
@@ -426,7 +457,22 @@ export interface DeltaJournalAdmission {
  * adds the scope, `occurredAt` and `storageAuthority`, and records it as a
  * session-events storage diagnostic (never a global app event).
  */
-export interface DeltaJournalDiagnostic {
+export type DeltaJournalDiagnostic =
+  | DeltaJournalTornTailDiagnostic
+  | DeltaJournalConflictingEchoDiagnostic;
+
+/**
+ * Startup recovery copied active rows it could not reconcile with history
+ * to a quarantine file, then replayed the journal without them (CAN-6902).
+ */
+export interface DeltaJournalConflictingEchoDiagnostic {
+  kind: 'delta_journal_conflicting_echo_quarantined';
+  rowCount: number;
+  /** Base name of the quarantine copy. */
+  journalQuarantineFile: string;
+}
+
+export interface DeltaJournalTornTailDiagnostic {
   kind: 'delta_journal_torn_tail_dropped';
   /** Verified journal bytes kept. */
   journalBytes: number;
@@ -443,6 +489,8 @@ export type DeltaJournalBoundary =
   | 'record-written'
   | 'record-synced'
   | 'tail-quarantined'
+  /** A conflicting active row is copied aside before recovery drops it. */
+  | 'echo-quarantined'
   | 'tail-truncated'
   | 'catalog-temp-written'
   | 'catalog-temp-synced'
@@ -557,6 +605,51 @@ function nonRevisionIndexState(indexes: ChatStorageIndexes): string {
   void _archiveRevision;
   void _mutationIds;
   return JSON.stringify({ live, archive, recovery });
+}
+
+/**
+ * `record` with the rows of its primary active effects replaced by those of
+ * `applied`, the effects recovery replayed, in `primaryEffects` order. Only
+ * rows ever differ; a record recovery replayed unchanged is returned as is.
+ */
+function withPrimaryEffects(
+  record: JournalCommit,
+  applied: readonly DeltaJournalTranscriptEffect[],
+): JournalCommit {
+  const changed = primaryEffects(record).some((effect, index) => {
+    const replay = applied[index];
+    return (
+      isActiveEffect(effect) &&
+      replay !== undefined &&
+      isActiveEffect(replay) &&
+      replay.messages !== effect.messages
+    );
+  });
+  if (!changed) return record;
+  if (record.v === 1) return { ...record, transcripts: [...applied] };
+  let index = 0;
+  return {
+    ...record,
+    transcripts: record.transcripts.map((effect) => {
+      if (
+        effect.kind === 'child-upsert' ||
+        effect.kind === 'child-settle' ||
+        effect.target.kind !== 'primary'
+      )
+        return effect;
+      const replay = applied[index];
+      index += 1;
+      if (
+        replay === undefined ||
+        !isActiveEffect(replay) ||
+        (effect.kind !== 'active' &&
+          effect.kind !== 'active-replace' &&
+          effect.kind !== 'active-upsert')
+      )
+        return effect;
+      return { ...effect, messages: replay.messages };
+    }),
+  };
 }
 
 function chatIds(indexes: ChatStorageIndexes): Set<string> {
@@ -1658,6 +1751,11 @@ export class ChatDeltaJournalWriter {
   private readonly groupCommit: GroupCommitQueue;
   /** True while a checkpoint or recovery reads and writes the files. */
   private materializing = false;
+  /** Rows startup recovery quarantined, and their quarantine files. */
+  private readonly quarantinedEchoes: Array<{
+    file: string;
+    rowCount: number;
+  }> = [];
   /** {@link manifestGenerations} when this writer opened. */
   private readonly manifestGenerationAtOpen: number;
 
@@ -1724,6 +1822,11 @@ export class ChatDeltaJournalWriter {
         chatId: string,
         messageId: string,
       ): Promise<boolean> => log.hasCommittedMessage(chatId, messageId),
+      matchesCommitted: (
+        chatId: string,
+        open: PersistedChatMessage,
+        committed: PersistedChatMessage,
+      ): Promise<boolean> => log.matchesCommitted(chatId, open, committed),
       activeMessages: (chatId: string): Promise<PersistedChatMessage[]> =>
         log.activeMessages(chatId),
       activeSnapshot: (
@@ -1770,6 +1873,17 @@ export class ChatDeltaJournalWriter {
       await writer.recover();
     } finally {
       writer.materializing = false;
+    }
+    if (writer.quarantinedEchoes.length > 0) {
+      // Fold the reconciled state into the files, so no reader replays the
+      // record that held the quarantined rows again (CAN-6902).
+      await writer.checkpoint();
+      for (const { file, rowCount } of writer.quarantinedEchoes)
+        options.onDiagnostic?.({
+          kind: 'delta_journal_conflicting_echo_quarantined',
+          rowCount,
+          journalQuarantineFile: file,
+        });
     }
     return writer;
   }
@@ -2306,11 +2420,23 @@ export class ChatDeltaJournalWriter {
       priorIndexes = nextIndexes;
     }
     const overlays = new Map<string, ChatTranscriptOverlay>();
-    for (const record of records)
+    // The records as replayed: a quarantined row is left out of the
+    // checkpoint too, which applies these instead of the journal's bytes.
+    const replayed: JournalCommit[] = [];
+    for (const record of records) {
+      const applied: DeltaJournalTranscriptEffect[] = [];
       for (const effect of primaryEffects(record)) {
         const overlay = await this.overlayFor(overlays, effect);
+        // Outside the `try`: a failed quarantine copy is not a record that
+        // doesn't apply, and the next start copies it again.
+        const kept = await this.withoutConflictingEchoes(
+          overlay,
+          effect,
+          record,
+        );
         try {
-          await overlay.apply(effect, record.toRevision);
+          await overlay.apply(kept, record.toRevision);
+          applied.push(kept);
         } catch (error) {
           // Integrity failures stay integrity failures; an operating-system
           // error may clear, so it is not made sticky.
@@ -2326,6 +2452,8 @@ export class ChatDeltaJournalWriter {
         }
         overlays.set(effect.chatId, overlay);
       }
+      replayed.push(withPrimaryEffects(record, applied));
+    }
     const childOverlays = new Map<string, ChildJournalOverlay>();
     const descriptorOverlays = new Map<string, TranscriptStreamDescriptor>();
     // Replay validates journal history, so a stream whose parent a later
@@ -2377,7 +2505,7 @@ export class ChatDeltaJournalWriter {
     this.state = {
       checkpointIndexes: checkpoint.indexes,
       indexes: metadata.indexes,
-      records,
+      records: replayed,
       overlays,
       childOverlays,
       descriptorOverlays,
@@ -2401,6 +2529,133 @@ export class ChatDeltaJournalWriter {
         removed = true;
       }
     if (removed) await fsyncDirectory(this.directory);
+  }
+
+  /**
+   * An active row the chat has already committed, in the same form or as the
+   * open form of its final form, is skipped by the overlay and every reader.
+   * It is left out of the record, so the journal never carries it (CAN-6902).
+   */
+  private async withoutCommittedEchoes(
+    overlays: ReadonlyMap<string, ChatTranscriptOverlay>,
+    staged: Map<string, ChatTranscriptOverlay>,
+    effect: DeltaJournalTranscriptEffect,
+  ): Promise<DeltaJournalTranscriptEffect> {
+    if (!isActiveEffect(effect) || effect.create) return effect;
+    const overlay =
+      staged.get(effect.chatId) ?? (await this.overlayFor(overlays, effect));
+    staged.set(effect.chatId, overlay);
+    const messages: PersistedChatMessage[] = [];
+    for (const message of effect.messages)
+      if ((await overlay.committedMessageState(message)) !== 'identical')
+        messages.push(message);
+    return messages.length === effect.messages.length
+      ? effect
+      : { ...effect, messages };
+  }
+
+  /**
+   * Startup recovery only (CAN-6902): an active row the files' history
+   * already holds in another form, which the writers' rule can't prove is the
+   * same row, would make the chat unreadable at every start. Each such row is
+   * copied to a synced quarantine file first, then left out of the replayed
+   * effect. A live commit still refuses it.
+   */
+  private async withoutConflictingEchoes(
+    overlay: ChatTranscriptOverlay,
+    effect: DeltaJournalTranscriptEffect,
+    record: { toRevision: number },
+  ): Promise<DeltaJournalTranscriptEffect> {
+    if (!isActiveEffect(effect)) return effect;
+    const conflicting: PersistedChatMessage[] = [];
+    for (const message of effect.messages)
+      if ((await overlay.committedMessageState(message)) === 'different')
+        conflicting.push(message);
+    if (conflicting.length === 0) return effect;
+    const file = await this.publishQuarantine(
+      Buffer.from(
+        `${JSON.stringify({
+          chatId: effect.chatId,
+          effect: effect.kind,
+          toRevision: record.toRevision,
+          rows: conflicting,
+        })}\n`,
+      ),
+      ECHO_QUARANTINE,
+    );
+    this.quarantinedEchoes.push({ file, rowCount: conflicting.length });
+    return {
+      ...effect,
+      messages: effect.messages.filter(
+        (message) => !conflicting.includes(message),
+      ),
+    };
+  }
+
+  /**
+   * `records` without the rows the published echo quarantine copies hold
+   * (CAN-6902). Recovery publishes a copy before the checkpoint that leaves
+   * its rows out starts, and the journal still holds them, so a checkpoint
+   * resumed after a crash applies what recovery replayed, not the journal.
+   */
+  private async withoutQuarantinedEchoes(
+    records: readonly JournalCommit[],
+  ): Promise<JournalCommit[]> {
+    const key = (
+      revision: number,
+      chatId: string,
+      row: PersistedChatMessage,
+    ): string => JSON.stringify([revision, chatId, messageDigest(row)]);
+    const copies = new Map<string, string>();
+    for (const name of await readdir(this.directory)) {
+      if (quarantineOrdinal(name, ECHO_QUARANTINE) === undefined) continue;
+      let copy: unknown;
+      try {
+        copy = JSON.parse(await readFile(join(this.directory, name), 'utf8'));
+      } catch (error) {
+        if (isErrnoException(error)) throw error;
+        throw new ChatDeltaJournalIntegrityError(
+          'Echo quarantine copy is unreadable',
+          { cause: error },
+        );
+      }
+      if (
+        !isRecord(copy) ||
+        typeof copy.chatId !== 'string' ||
+        typeof copy.toRevision !== 'number' ||
+        !Array.isArray(copy.rows) ||
+        !copy.rows.every(isPersistedChatMessage)
+      )
+        throw new ChatDeltaJournalIntegrityError(
+          'Echo quarantine copy is unreadable',
+        );
+      for (const row of copy.rows)
+        copies.set(key(copy.toRevision, copy.chatId, row), name);
+    }
+    if (copies.size === 0) return [...records];
+    const dropped = new Map<string, number>();
+    const kept = records.map((record) =>
+      withPrimaryEffects(
+        record,
+        primaryEffects(record).map((effect) => {
+          if (!isActiveEffect(effect)) return effect;
+          const messages = effect.messages.filter((message) => {
+            const file = copies.get(
+              key(record.toRevision, effect.chatId, message),
+            );
+            if (file !== undefined)
+              dropped.set(file, (dropped.get(file) ?? 0) + 1);
+            return file === undefined;
+          });
+          return messages.length === effect.messages.length
+            ? effect
+            : { ...effect, messages };
+        }),
+      ),
+    );
+    for (const [file, rowCount] of dropped)
+      this.quarantinedEchoes.push({ file, rowCount });
+    return kept;
   }
 
   /**
@@ -2430,14 +2685,26 @@ export class ChatDeltaJournalWriter {
     } finally {
       await journal.close();
     }
+    return this.publishQuarantine(tail, TAIL_QUARANTINE);
+  }
+
+  /**
+   * Publish bytes as a synced quarantine file of a family and sync the
+   * directory. Idempotent: a published copy with the same bytes is synced and
+   * reused, never duplicated.
+   */
+  private async publishQuarantine(
+    content: Buffer,
+    family: QuarantineFamily,
+  ): Promise<string> {
     let next = 1;
     for (const name of await readdir(this.directory)) {
-      const ordinal = quarantineOrdinal(name);
+      const ordinal = quarantineOrdinal(name, family);
       if (ordinal === undefined) continue;
       next = Math.max(next, ordinal + 1);
       const path = join(this.directory, name);
-      if ((await stat(path)).size !== length) continue;
-      if (!tail.equals(await readFile(path))) continue;
+      if ((await stat(path)).size !== content.length) continue;
+      if (!content.equals(await readFile(path))) continue;
       // Windows requires write access to sync a file handle.
       const existing = await open(path, 'r+');
       try {
@@ -2447,10 +2714,10 @@ export class ChatDeltaJournalWriter {
         await existing.close();
       }
       await fsyncDirectory(this.directory);
-      await this.boundary('tail-quarantined');
+      await this.boundary(family.boundary);
       return name;
     }
-    const name = `${DELTA_JOURNAL_QUARANTINE_PREFIX}${next}.bin`;
+    const name = `${family.prefix}${next}${family.extension}`;
     const path = join(this.directory, name);
     const temporary = join(
       this.directory,
@@ -2460,8 +2727,8 @@ export class ChatDeltaJournalWriter {
     try {
       const handle = await open(temporary, 'wx', 0o600);
       try {
-        await writeAt(handle, tail, 0);
-        recordChatStorageFileWrite(temporary, tail.length, false);
+        await writeAt(handle, content, 0);
+        recordChatStorageFileWrite(temporary, content.length, false);
         await handle.sync();
         recordChatStorageFileSync(temporary);
       } finally {
@@ -2474,7 +2741,7 @@ export class ChatDeltaJournalWriter {
     } finally {
       if (!renamed) await rm(temporary, { force: true });
     }
-    await this.boundary('tail-quarantined');
+    await this.boundary(family.boundary);
     return name;
   }
 
@@ -3208,12 +3475,19 @@ export class ChatDeltaJournalWriter {
       );
     const { existing } = this.validateCommit(state, input);
     const effects: DeltaJournalTranscriptEffect[] = [];
+    // Each chat's overlay before this record, shared by the echo check below
+    // and the admission after encoding.
+    const staged = new Map<string, ChatTranscriptOverlay>();
     for (const write of input.writes) {
-      const effect = await this.prepareEffect(
-        write,
-        !existing.has(write.chatId),
-        input.next,
-        created,
+      const effect = await this.withoutCommittedEchoes(
+        state.overlays,
+        staged,
+        await this.prepareEffect(
+          write,
+          !existing.has(write.chatId),
+          input.next,
+          created,
+        ),
       );
       // One effect per chat per record: an active update leaves the log
       // index one revision past the chat's current one.
@@ -3450,7 +3724,9 @@ export class ChatDeltaJournalWriter {
     );
     const admitted = new Map<string, ChatTranscriptOverlay>();
     for (const effect of primaryEffects(record)) {
-      const overlay = await this.overlayFor(state.overlays, effect);
+      const overlay =
+        staged.get(effect.chatId) ??
+        (await this.overlayFor(state.overlays, effect));
       await overlay.apply(effect, record.toRevision);
       if (
         isActiveEffect(effect) &&
@@ -4682,7 +4958,9 @@ export class ChatDeltaJournalWriter {
       });
       return;
     }
-    const records = recordsAfter(journal, checkpoint.revision);
+    const records = await this.withoutQuarantinedEchoes(
+      recordsAfter(journal, checkpoint.revision),
+    );
     await verifyRecordArtifacts(
       this.transcriptsRoot,
       recordsAfter(journal, checkpoint.transcriptProgress),

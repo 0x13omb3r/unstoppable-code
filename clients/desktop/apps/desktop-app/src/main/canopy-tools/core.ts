@@ -100,6 +100,7 @@ import { executeDesktopAgentActionTool } from '../agent-actions/desktop-surface'
 import { worktreeWatcherDestination } from '../agent-actions/desktop-watcher-port';
 import { isChatVisualsEnabled } from '../lib/chat-visuals-feature-flag';
 import { executeShowVisual, type ShowVisualHost } from './show-visual-runtime';
+import { withBackgroundRefusalAsToolError } from '../services/background-execution-refusal';
 
 export { formatAskUserAnswers };
 
@@ -288,6 +289,17 @@ export async function executeCanopyInjectedTool(
   runtime: CanopyInjectedToolRuntime,
   context?: CanopyInjectedToolContext,
 ): Promise<CanopyInjectedToolTextResult> {
+  return withBackgroundRefusalAsToolError(() =>
+    runCanopyInjectedTool(canonicalKey, rawArgs, runtime, context),
+  );
+}
+
+async function runCanopyInjectedTool(
+  canonicalKey: CanopyInjectedToolKey,
+  rawArgs: unknown,
+  runtime: CanopyInjectedToolRuntime,
+  context?: CanopyInjectedToolContext,
+): Promise<CanopyInjectedToolTextResult> {
   // Feature gate (shared defense-in-depth): both providers dispatch through
   // here, so this single check makes an OFF flip effective immediately even for
   // an already-running Codex session whose code-graph specs were baked in while
@@ -320,6 +332,22 @@ export async function executeCanopyInjectedTool(
           error: {
             code: 'capability_unavailable',
             message: 'Managed delegation is unavailable in this session.',
+            retryable: false,
+          },
+        }),
+      };
+    case 'request_secrets':
+    case 'run_with_secrets':
+    case 'write_secrets_file':
+      // Registered contracts only: no surface offers these tools and no
+      // executor exists yet, so a call fails closed.
+      return {
+        isError: true,
+        text: JSON.stringify({
+          ok: false,
+          error: {
+            code: 'capability_unavailable',
+            message: 'Secret requests are unavailable in this session.',
             retryable: false,
           },
         }),

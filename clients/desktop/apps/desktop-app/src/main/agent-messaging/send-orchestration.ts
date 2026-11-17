@@ -60,6 +60,7 @@ import type {
 } from '@canopy/desktop-shared/types';
 import type { AppAdvisorToolRuntimeSurfaces } from '../app-advisor/runtime';
 import type { AgentSenderRuntimeSource } from './sender-context';
+import { BackgroundExecutionRefusedError } from '../services/background-execution-refusal';
 
 /** The calling session, resolved only from a trusted main-process runtime. */
 export type TrustedSendCaller =
@@ -507,15 +508,30 @@ async function send(
         'validation_failed',
         'Completion watchers need the calling chat.',
       );
-    const reserved = await watchers.reserveInlineChatWatchers({
-      destination,
-      recipient: { kind: 'root' },
-      createdByToolUseId: context.toolUseId,
-      target: target.address,
-      entries: action.watchers ?? [],
-      acceptedInputId: userMessageId,
-      commandId,
-    });
+    let reserved: Awaited<
+      ReturnType<typeof watchers.reserveInlineChatWatchers>
+    >;
+    try {
+      reserved = await watchers.reserveInlineChatWatchers({
+        destination,
+        recipient: { kind: 'root' },
+        createdByToolUseId: context.toolUseId,
+        target: target.address,
+        entries: action.watchers ?? [],
+        acceptedInputId: userMessageId,
+        commandId,
+      });
+    } catch (error) {
+      // Watchers are reserved before the send, so a refused one stops it
+      // (CAN-6900): the caller is told it wasn't sent, and why.
+      if (error instanceof BackgroundExecutionRefusedError)
+        throw new AgentChatSendError(
+          'policy_blocked',
+          `Not sent. ${error.message}`,
+          error,
+        );
+      throw error;
+    }
     if (!reserved.ok)
       throw new AgentChatSendError(reserved.code, reserved.error);
     reservation = reserved.reservation;

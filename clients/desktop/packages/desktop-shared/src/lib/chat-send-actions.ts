@@ -263,7 +263,9 @@ export type AgentSendRefusalCode =
   /** A root agent's message to a chat with broader tool approvals. */
   | 'authorization_conflict'
   /** The approvals changed while the send was checked; retry it. */
-  | 'stale_ui_state';
+  | 'stale_ui_state'
+  /** An inline watcher's background authorization refused it; nothing was sent. */
+  | 'policy_blocked';
 
 /**
  * Main-only: inline completion watchers reserved before a send dispatches,

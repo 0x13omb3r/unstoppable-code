@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, type JSX, type ReactNode } from 'react';
 import {
+  TextLink,
   BackgroundWorkCapNotice,
   type BillingHistoryCharge,
   BillingHistoryTable,
@@ -479,9 +480,14 @@ function MessageRow(): JSX.Element {
       <div {...targetProps} className="focus-ring text-s fg-primary">
         Select some of this text and right-click, or focus it and press the Menu
         key. See the{' '}
-        <a href="https://example.com/docs" className="fg-accent underline">
+        <TextLink
+          href="https://example.com/docs"
+          variant="inline"
+          target={undefined}
+          rel={undefined}
+        >
           release notes
-        </a>{' '}
+        </TextLink>{' '}
         for a link menu.
         {menu}
       </div>

@@ -8,6 +8,7 @@ import {
 } from '@canopy/execution-engine/agent-failures';
 import {
   computeUsageLimitResumePrompt,
+  isLatestUserMessageHidden,
   USAGE_LIMIT_RESUME_CONTINUE_PROMPT,
   type UsageLimitResumePrompt,
 } from '@canopy/execution-engine/lib/usage-limit-resume-prompt';
@@ -398,6 +399,7 @@ async function dispatchPersistedRetry(
   userMessageId: string,
   getWindow: () => BrowserWindow | null,
   shouldContinue: () => boolean,
+  readChatTab: TransientErrorRetryServiceDependencies['readChatTab'],
 ): Promise<void> {
   // Lazy loading breaks the retry-service -> chat-service -> session ->
   // retry-service import cycle while preserving the canonical chat dispatch.
@@ -410,6 +412,11 @@ async function dispatchPersistedRetry(
     target.chatId,
   );
   if (!shouldContinue()) return;
+  const currentTab = await readChatTab(target);
+  if (!shouldContinue()) return;
+  if (!currentTab || isLatestUserMessageHidden(currentTab.messages)) {
+    throw new Error('Automatic retry requires a visible canonical input');
+  }
   const request: ChatSendMessageRequest = {
     projectId: target.projectId,
     worktreeId: target.worktreeId,
@@ -589,7 +596,7 @@ async function dispatchScheduledRetry(
 
     const tab = await service.dependencies.readChatTab(entry.target);
     if (!isLiveEntry(key, generation, entry)) return;
-    if (!tab) {
+    if (!tab || isLatestUserMessageHidden(tab.messages)) {
       clearLiveEntry(key, entry);
       return;
     }
@@ -774,14 +781,31 @@ export function initTransientErrorRetryService(
   getWindow: () => BrowserWindow | null,
   overrides: Partial<TransientErrorRetryServiceDependencies> = {},
 ): void {
+  const readChatTab = overrides.readChatTab ?? readPersistedChatTab;
   initializedService = {
     getWindow,
     dependencies: {
       readPreferences: overrides.readPreferences ?? readPreferencesFile,
-      readChatTab: overrides.readChatTab ?? readPersistedChatTab,
+      readChatTab,
       getActiveSessions:
         overrides.getActiveSessions ?? getAllActiveSessionInfos,
-      dispatchRetry: overrides.dispatchRetry ?? dispatchPersistedRetry,
+      dispatchRetry:
+        overrides.dispatchRetry ??
+        ((
+          target,
+          prompt,
+          userMessageId,
+          getRetryWindow,
+          shouldContinue,
+        ): Promise<void> =>
+          dispatchPersistedRetry(
+            target,
+            prompt,
+            userMessageId,
+            getRetryWindow,
+            shouldContinue,
+            readChatTab,
+          )),
       emitState:
         overrides.emitState ??
         ((target, data): void => emitRetryState(getWindow, target, data)),

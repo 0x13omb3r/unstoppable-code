@@ -8,6 +8,7 @@ import type {
 import type { WorktreeBaseBranchPorts } from '../lib/worktree-base-branch';
 import { LOCAL_DESKTOP_AUTHORITY_ID } from '../canopy-runtime/desktop-runtime-identity';
 import type { WorktreeActionRuntime } from './worktree-actions';
+import { worktreeChatActionKey } from './worktree-chat-core-writes';
 
 export interface SetCurrentWorktreeBaseBranchInput {
   baseBranch: string;
@@ -76,9 +77,11 @@ export async function setWorktreeBaseBranchForAgent(input: {
     },
     {
       ports: input.ports ?? (await agentBaseBranchPorts(input.chatId)),
-      idempotencyKey: input.toolUseId
-        ? `agent-chat-action:${input.chatId}:${input.toolUseId}:base-branch`
-        : `agent-chat-action:${input.chatId}:untracked:${randomUUID()}:base-branch`,
+      idempotencyKey: worktreeChatActionKey(
+        input.chatId,
+        input.toolUseId,
+        'base-branch',
+      ),
       confirm: askUserBaseBranchConfirmation(input.requestUserAnswers),
       ...(input.signal ? { signal: input.signal } : {}),
     },

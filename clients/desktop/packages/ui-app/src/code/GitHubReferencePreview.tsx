@@ -28,11 +28,11 @@ import type {
   ReferenceEnrichmentMode,
 } from '@canopy/protocol/reference-previews';
 import {
+  TextLink,
   chatMessageLinkUrlProps,
   PREVIEW_CARD_SURFACE,
   RichHoverTooltip,
   usePrHoverCards,
-  TRANSCRIPT_LINK_CLASS,
   INLINE_CHIP_CLASS,
   INLINE_CHIP_GITHUB_ICON_CLASS,
   INLINE_CHIP_ICON_CLASS,
@@ -291,14 +291,14 @@ export function GitHubReferencePreview({
   const supported = useCapabilities().referencePreviews === true;
   if (!supported || mode === 'off') {
     return href ? (
-      <a
+      <TextLink
         href={href}
         target="_blank"
         rel="noopener noreferrer"
-        className={TRANSCRIPT_LINK_CLASS}
+        variant="inline"
       >
         {children}
-      </a>
+      </TextLink>
     ) : (
       <>{children}</>
     );
@@ -367,16 +367,16 @@ function SupportedGitHubReference({
       </GitHubReferenceLabel>
     );
   const trigger = href ? (
-    <a
+    <TextLink
       ref={setTrigger}
       href={href}
       target="_blank"
       rel="noopener noreferrer"
       data-testid="github-reference"
-      className={INLINE_CHIP_CLASS}
+      variant="mention"
     >
       {content}
-    </a>
+    </TextLink>
   ) : (
     <GeneratedReferenceLink ref={setTrigger} target={stableTarget}>
       {content}

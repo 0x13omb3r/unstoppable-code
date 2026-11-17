@@ -1,5 +1,6 @@
 'use client';
 
+import { CodeBlock } from '@canopy/ui-shared/components/CodeBlock';
 import {
   useCallback,
   useEffect,
@@ -650,9 +651,16 @@ function CloudRunArtifacts({
                 {open.content.artifact.kind === 'report' ? (
                   <Markdown>{open.content.text}</Markdown>
                 ) : (
-                  <pre className="whitespace-pre-wrap font-mono text-xs fg-secondary">
+                  <CodeBlock
+                    variant="bare"
+                    size="xs"
+                    wrap="words"
+                    tone="secondary"
+                    replay="inherit"
+                    overflow="visible"
+                  >
                     {open.content.text}
-                  </pre>
+                  </CodeBlock>
                 )}
                 {open.content.truncated && (
                   <p className="text-3xs fg-secondary">

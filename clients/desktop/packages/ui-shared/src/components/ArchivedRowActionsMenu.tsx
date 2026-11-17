@@ -8,7 +8,7 @@ import {
   TrashIcon,
   TrashPermanentlyIcon,
 } from '../icons/AppIcons';
-import { isMenuOpenBodyFlagSet } from '../lib/menu-open-body-flag';
+import { menuDismissalSwallowsClick } from '../lib/menu-open-body-flag';
 import { ActionMenuRowStyle } from './ActionMenuItems';
 import { ARCHIVED_ROW_ACTIONS_VISIBLE_WIDE } from './ArchivedOverviewRow';
 import { Button } from './Button';
@@ -94,11 +94,18 @@ export function ArchivedRowActionsMenu({
           aria-expanded={open}
           aria-controls={open ? menuId : undefined}
           data-testid={`${testIdPrefix}-actions`}
-          onPointerDown={() => {
+          onPointerDown={(event) => {
             // Another row's menu dismisses on this pointerdown and swallows
             // the click that completes it, so opening on click alone would
             // cost the user a second press when switching between rows.
-            if (!open && isMenuOpenBodyFlagSet(document)) setOpen(true);
+            if (
+              !open &&
+              menuDismissalSwallowsClick(
+                event.currentTarget.ownerDocument,
+                event.target,
+              )
+            )
+              setOpen(true);
           }}
           onClick={(event) => {
             event.stopPropagation();

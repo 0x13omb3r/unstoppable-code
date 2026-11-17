@@ -1,7 +1,11 @@
 'use client';
 
 import type { JSX, ReactNode } from 'react';
-import { ErrorBanner, ToggleSwitch } from '@canopy/ui-shared/components';
+import {
+  TextLink,
+  ErrorBanner,
+  ToggleSwitch,
+} from '@canopy/ui-shared/components';
 import { Divider } from '@canopy/ui-shared/components';
 
 /**
@@ -60,14 +64,14 @@ export function BillingTogglePanel({
             <div className="min-w-0">
               <p className="text-xs fg-secondary">{description}</p>
               {learnMoreHref ? (
-                <a
+                <TextLink
                   href={learnMoreHref}
                   target="_blank"
                   rel="noreferrer"
-                  className="text-xs fg-accent hover:underline"
+                  size="xs"
                 >
                   Learn more
-                </a>
+                </TextLink>
               ) : null}
             </div>
             <ToggleSwitch

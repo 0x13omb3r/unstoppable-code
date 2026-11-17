@@ -341,6 +341,51 @@ describe('Canopy tool router (CAN-4125)', () => {
     },
   );
 
+  it.each([
+    [{ type: 'pipeline.run', pipelineId: 'p' }],
+    [{ type: 'hook.pause', all: true }],
+    [{ type: 'hook.resume', hookKey: 'h' }],
+    [{ type: 'worktree.run_script', scriptId: 'test' }],
+    [{ type: 'pipeline.execution_cancel', executionId: 'e' }],
+    [{ type: 'pipeline.execution_resume', executionId: 'e' }],
+  ])(
+    'a worktree chat keys %o by the provider tool_use id, never the per-connection request id (CAN-5830)',
+    async (action) => {
+      const router = new CanopyToolRouter({
+        interfaceRequests: fakeInterface(),
+      });
+      execute.mockResolvedValue({ text: 'ok' });
+      const route = fixture('native-sdk-full');
+      const call = (
+        id: number,
+        meta?: Record<string, string>,
+      ): ReturnType<CanopyToolRouter['callTool']> =>
+        router.callTool(route, {
+          id,
+          params: {
+            name: displayName('dispatch_action'),
+            arguments: { action },
+            ...(meta ? { _meta: meta } : {}),
+          },
+          uiServer: false,
+        });
+      // A reconnect in the same turn restarts request ids: request 1 again
+      // is a new call when the provider's tool_use id differs.
+      await call(1, { 'claudecode/toolUseId': 'toolu_a' });
+      await call(1, { 'claudecode/toolUseId': 'toolu_b' });
+      // A retry after session recovery resends the tool_use id under a new
+      // request id, so it keys the same call.
+      await call(5, { 'claudecode/toolUseId': 'toolu_a' });
+      // Without a tool_use id the registration's own id stands in.
+      await call(1);
+      const ids = execute.mock.calls.map(
+        ([, , , context]) => context?.toolUseId,
+      );
+      expect(ids.slice(0, 3)).toEqual(['toolu_a', 'toolu_b', 'toolu_a']);
+      expect(ids[3]).toMatch(/^[0-9a-f-]+:1$/);
+    },
+  );
+
   it('tool-use ids keep their per-route forms', () => {
     const router = new CanopyToolRouter({ interfaceRequests: fakeInterface() });
     const worktree = fixture('native-sdk-full');

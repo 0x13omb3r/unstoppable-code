@@ -1,5 +1,6 @@
 'use client';
 
+import { CodeBlock } from './CodeBlock';
 import { useEffect, useState, type JSX } from 'react';
 import { Notice, NoticeButton } from './Notice';
 
@@ -193,13 +194,19 @@ export function UsageErrorNotice({
         {...(detail && detailsOpen
           ? {
               detail: (
-                <pre
+                <CodeBlock
                   id={detailsId}
                   data-testid={`${testIdPrefix}-error-details`}
-                  className="max-h-28 overflow-auto rounded-md bg-base p-2 font-mono text-2xs leading-snug break-all whitespace-pre-wrap fg-tertiary select-text"
+                  variant="error-detail"
+                  size="2xs"
+                  wrap="all"
+                  tone="tertiary"
+                  replay="inherit"
+                  selectable
+                  className="max-h-28"
                 >
                   {detail}
-                </pre>
+                </CodeBlock>
               ),
             }
           : {})}

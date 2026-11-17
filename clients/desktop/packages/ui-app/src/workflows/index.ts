@@ -17,3 +17,10 @@ export * from './ScheduleRunOnField';
 export * from './pipeline-input-form';
 export * from './PipelineInputField';
 export * from './cloud-runs';
+
+export {
+  AutomationsPanel,
+  type AutomationsPanelProps,
+} from './AutomationsPanel';
+
+export * from './automations-variants';

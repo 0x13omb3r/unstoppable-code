@@ -1,3 +1,4 @@
+import { TextLink } from './TextLink';
 import { Badge } from './Badge';
 import { Stack } from './Stack';
 import type { JSX } from 'react';
@@ -126,26 +127,24 @@ function PluginSectionCard({
         )}
         {context.plugin?.homepage && (
           <Fact label="Homepage" fit="break-all">
-            <a
+            <TextLink
               href={context.plugin.homepage}
               target="_blank"
               rel="noreferrer"
-              className="fg-accent hover:underline"
             >
               {context.plugin.homepage}
-            </a>
+            </TextLink>
           </Fact>
         )}
         {context.plugin?.externalSource?.url && (
           <Fact label="Source" fit="break-all" mono>
-            <a
+            <TextLink
               href={context.plugin.externalSource.url}
               target="_blank"
               rel="noreferrer"
-              className="fg-accent hover:underline"
             >
               {context.plugin.externalSource.url}
-            </a>
+            </TextLink>
             {context.plugin.externalSource.sha && (
               <span className="pl-2 fg-secondary">
                 @{context.plugin.externalSource.sha.slice(0, 7)}
@@ -164,14 +163,13 @@ function PluginSectionCard({
         {context.marketplace?.sourceUrl && (
           <Fact label="Source" fit="break-all" mono>
             {context.marketplace.sourceType === 'github' ? (
-              <a
+              <TextLink
                 href={`https://github.com/${context.marketplace.sourceUrl}`}
                 target="_blank"
                 rel="noreferrer"
-                className="fg-accent hover:underline"
               >
                 {context.marketplace.sourceUrl}
-              </a>
+              </TextLink>
             ) : (
               context.marketplace.sourceUrl
             )}

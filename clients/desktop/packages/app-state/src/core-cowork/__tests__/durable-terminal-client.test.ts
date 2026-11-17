@@ -3,6 +3,7 @@ import {
   TERMINAL_CONNECTION_LOST_SIGNAL,
   TERMINAL_SANDBOX_ASLEEP_SIGNAL,
   TERMINAL_USER_CLOSE_SIGNAL,
+  type LoadWorktreeTerminalStateResponse,
 } from '@canopy/protocol/terminal';
 import { getTerminalReadOnlyMessage } from '../../terminal/terminal-session-state';
 import type * as DurablePty from '../durable-pty-client';
@@ -69,10 +70,21 @@ jest.mock('../durable-pty-client', () => ({
     get state(): FakePty['state'] {
       return this.pty.state;
     }
+    /** The shell the web core named: a resumed one's, else one per pty once open. */
+    get resume(): { terminalId: string; offset: number } | undefined {
+      if (this.pty.options.resume) return this.pty.options.resume;
+      return this.pty.state === 'open'
+        ? { terminalId: `shell-${ptys.indexOf(this.pty) + 1}`, offset: 0 }
+        : undefined;
+    }
   },
 }));
 
-import { createDurableTerminalClient } from '../durable-terminal-client';
+import {
+  createDurableTerminalClient,
+  type DurableTerminalRecord,
+  type DurableTerminalRecordStore,
+} from '../durable-terminal-client';
 import { createScopedTerminalClient } from '../scoped-terminal-client';
 
 const CLOUD = 'web-core:chat-1';
@@ -455,6 +467,389 @@ describe('cloud chat durable terminal client (CAN-6175 R10)', () => {
     terminals.dispose();
     expect(ptys.every((pty) => pty.disposed)).toBe(true);
     expect(terminals.owns('terminal-1')).toBe(false);
+  });
+});
+
+describe('cloud terminals after a reload (CAN-6939)', () => {
+  /** The window's records, which outlive each client as storage outlives a reload. */
+  function recordStore(): DurableTerminalRecordStore & {
+    readonly saved: Map<string, DurableTerminalRecord>;
+  } {
+    const saved = new Map<string, DurableTerminalRecord>();
+    return {
+      saved,
+      list: (projectId, worktreeId) =>
+        [...saved.values()].filter(
+          (record) =>
+            record.projectId === projectId && record.worktreeId === worktreeId,
+        ),
+      put: (record) => {
+        saved.set(record.sessionId, record);
+      },
+      remove: (sessionId) => {
+        saved.delete(sessionId);
+      },
+    };
+  }
+
+  /** A page's client: a reload is a new one over the same records. */
+  function page(
+    records: DurableTerminalRecordStore,
+    request: jest.Mock = jest.fn(),
+    bound: readonly string[] = [],
+  ): ReturnType<typeof createDurableTerminalClient> {
+    let id = 0;
+    return createDurableTerminalClient({
+      connection: () => ({
+        invoker: {
+          request,
+          openStream: (): Promise<never> => Promise.reject(new Error('unused')),
+        },
+        signal: new AbortController().signal,
+      }),
+      chatIdOf: (worktreeId) =>
+        worktreeId.startsWith('web-core:') ? worktreeId.slice(9) : null,
+      maxTerminals: 4,
+      records,
+      boundTerminalIds: (projectId, worktreeId) =>
+        projectId === 'project-1' && worktreeId === CLOUD ? bound : [],
+      randomUUID: () => `terminal-${(id += 1)}`,
+      now: () => 1_000,
+    });
+  }
+
+  const hydrate = (
+    terminals: ReturnType<typeof createDurableTerminalClient>,
+    worktreeId = CLOUD,
+  ): Promise<LoadWorktreeTerminalStateResponse> =>
+    terminals.query('terminal.worktreeState.get', {
+      projectId: 'project-1',
+      worktreeId,
+    });
+
+  /** What hydration reports of each terminal it brought back. */
+  const reported = (
+    state: LoadWorktreeTerminalStateResponse,
+  ): { id: string; exitCode: number | null; signal: string | null }[] =>
+    state.terminals.map((terminal) => ({
+      id: terminal.session.id,
+      exitCode: terminal.exitCode,
+      signal: terminal.signal,
+    }));
+
+  it("reattaches the panel's shell, with its history, and takes input", async () => {
+    const records = recordStore();
+    const before = page(records);
+    await before.command('terminal.spawn', spawnArgs);
+    ptys[0]?.open();
+    expect(records.saved.get('terminal-1')).toMatchObject({
+      chatId: 'chat-1',
+      shellTerminalId: 'shell-1',
+    });
+
+    const after = page(records, jest.fn(), ['terminal-1']);
+    const state = await hydrate(after);
+    expect(state.liveTerminalIds).toEqual(['terminal-1']);
+    expect(state.terminals.map((terminal) => terminal.session.id)).toEqual([
+      'terminal-1',
+    ]);
+    expect(ptys).toHaveLength(2);
+    expect(ptys[1]?.options).toMatchObject({
+      chatId: 'chat-1',
+      resume: { terminalId: 'shell-1', offset: 0 },
+    });
+    expect(ptys[1]?.options.dimensions).toBeUndefined();
+
+    // The web core replays the shell's history from the start.
+    ptys[1]?.options.onData(new TextEncoder().encode('before-reload-9\r\n'));
+    const attached = await after.command('terminal.attach', {
+      terminalId: 'terminal-1',
+    });
+    expect(new TextDecoder().decode(attached.replay)).toBe(
+      'before-reload-9\r\n',
+    );
+    ptys[1]?.open();
+    await after.command('terminal.write', {
+      terminalId: 'terminal-1',
+      data: 'echo after\r',
+    });
+    expect(ptys[1]?.writes).toEqual(['echo after\r']);
+    // Reattached once per page.
+    await hydrate(after);
+    expect(ptys).toHaveLength(2);
+  });
+
+  it('keeps the history of a shell that ends before its pane attaches', async () => {
+    const records = recordStore();
+    const before = page(records);
+    await before.command('terminal.spawn', spawnArgs);
+    ptys[0]?.open();
+    const after = page(records, jest.fn(), ['terminal-1']);
+    await hydrate(after);
+    // The web core replays the history, then the shell exits, before any
+    // pane has attached.
+    ptys[1]?.options.onData(new TextEncoder().encode('before-reload-9\r\n'));
+    ptys[1]?.options.onClose({ kind: 'exit', code: 0 });
+    const [terminal] = (await hydrate(after)).terminals;
+    expect(terminal).toMatchObject({ exitCode: 0, signal: null });
+    expect(terminal?.scrollbackLines).toEqual(['before-reload-9\r', '']);
+    // Its pane, mounting now, still gets the output to show read-only.
+    const attached = await after.command('terminal.attach', {
+      terminalId: 'terminal-1',
+    });
+    expect(new TextDecoder().decode(attached.replay)).toBe(
+      'before-reload-9\r\n',
+    );
+  });
+
+  it('still kills a shell left past the cap when its tab closes or the binding ends', async () => {
+    const ids = ['a', 'b', 'c', 'd', 'e'];
+    const saved = (): ReturnType<typeof recordStore> => {
+      const records = recordStore();
+      for (const id of ids)
+        records.put({
+          sessionId: `terminal-${id}`,
+          projectId: 'project-1',
+          worktreeId: CLOUD,
+          chatId: 'chat-1',
+          shellTerminalId: `shell-${id}`,
+          createdAt: 1,
+        });
+      return records;
+    };
+    const bound = ids.map((id) => `terminal-${id}`);
+    const killed = (request: jest.Mock): unknown[] =>
+      request.mock.calls.filter(
+        ([method]) => method === 'worker.terminal.kill',
+      );
+
+    // Its tab closes.
+    const records = saved();
+    const closing = jest.fn(() => Promise.resolve({ ok: true, value: null }));
+    const after = page(records, closing, bound);
+    const waiting = reported(await hydrate(after)).find(
+      (terminal) => terminal.signal !== null,
+    );
+    if (!waiting) throw new Error('Missing the terminal past the cap');
+    await after.command('terminal.kill', { terminalId: waiting.id });
+    expect(killed(closing)).toEqual([
+      [
+        'worker.terminal.kill',
+        {
+          scope: { chatId: 'chat-1' },
+          terminalId: `shell-${waiting.id.slice('terminal-'.length)}`,
+        },
+      ],
+    ]);
+    expect(records.saved.has(waiting.id)).toBe(false);
+
+    // The binding ends.
+    const disposing = jest.fn(() => Promise.resolve({ ok: true, value: null }));
+    const next = page(saved(), disposing, bound);
+    await hydrate(next);
+    next.dispose();
+    expect(killed(disposing)).toHaveLength(1);
+  });
+
+  it('resumes, rather than replaces, a shell left past the terminal cap at a reload', async () => {
+    const records = recordStore();
+    const ids = ['a', 'b', 'c', 'd', 'e'];
+    for (const id of ids)
+      records.put({
+        sessionId: `terminal-${id}`,
+        projectId: 'project-1',
+        worktreeId: CLOUD,
+        chatId: 'chat-1',
+        shellTerminalId: `shell-${id}`,
+        createdAt: 1,
+      });
+    const after = page(
+      records,
+      jest.fn(),
+      ids.map((id) => `terminal-${id}`),
+    );
+    const state = await hydrate(after);
+    // Four reattach; the fifth waits, ended, with its record kept.
+    expect(state.liveTerminalIds).toHaveLength(4);
+    const waiting = reported(state).find(
+      (terminal) => terminal.signal !== null,
+    );
+    if (!waiting) throw new Error('Missing the terminal past the cap');
+    expect(records.saved.get(waiting.id)?.shellTerminalId).toBe(
+      `shell-${waiting.id.slice('terminal-'.length)}`,
+    );
+    await after.command('terminal.kill', { terminalId: 'terminal-a' });
+    await after.command('terminal.restore', {
+      terminalId: waiting.id,
+      cols: 80,
+      rows: 24,
+    });
+    expect(ptys.at(-1)?.options.resume).toEqual({
+      terminalId: `shell-${waiting.id.slice('terminal-'.length)}`,
+      offset: 0,
+    });
+    expect(records.saved.get(waiting.id)?.shellTerminalId).toBe(
+      `shell-${waiting.id.slice('terminal-'.length)}`,
+    );
+  });
+
+  it('shows a shell that is gone as ended, and restarts it as a new shell', async () => {
+    const records = recordStore();
+    const before = page(records);
+    await before.command('terminal.spawn', spawnArgs);
+    ptys[0]?.open();
+    // Never opened: no shell to come back to.
+    await before.command('terminal.spawn', spawnArgs);
+
+    const after = page(records, jest.fn(), ['terminal-1', 'terminal-2']);
+    const exits: DomainEventMap['terminal.exit'][] = [];
+    after.subscribe('terminal.exit', (event) => exits.push(event));
+    const state = await hydrate(after);
+    expect(reported(state)).toEqual([
+      { id: 'terminal-1', exitCode: null, signal: null },
+      {
+        id: 'terminal-2',
+        exitCode: null,
+        signal: TERMINAL_CONNECTION_LOST_SIGNAL,
+      },
+    ]);
+    // The second never had a shell: its record goes at once.
+    expect(records.saved.has('terminal-2')).toBe(false);
+    // A dropped connection keeps the record; a shell the web core says is
+    // gone does not.
+    const lost = page(records, jest.fn(), ['terminal-1']);
+    await hydrate(lost);
+    ptys[3]?.options.onClose({ kind: 'connection-lost', phase: 'connecting' });
+    expect(records.saved.has('terminal-1')).toBe(true);
+    ptys[2]?.options.onClose({
+      kind: 'connection-lost',
+      phase: 'connecting',
+      gone: true,
+    });
+    expect(exits).toEqual([
+      expect.objectContaining({
+        terminalId: 'terminal-1',
+        signal: TERMINAL_CONNECTION_LOST_SIGNAL,
+      }),
+    ]);
+    expect(records.saved.has('terminal-1')).toBe(false);
+
+    for (const terminalId of ['terminal-1', 'terminal-2'])
+      await after.command('terminal.restore', {
+        terminalId,
+        cols: 100,
+        rows: 30,
+      });
+    expect(ptys.slice(4).map((pty) => pty.options.resume)).toEqual([
+      undefined,
+      undefined,
+    ]);
+    expect(ptys[4]?.options.dimensions).toEqual({ cols: 100, rows: 30 });
+    ptys[4]?.open();
+    expect(records.saved.get('terminal-1')?.shellTerminalId).toBe('shell-5');
+  });
+
+  it('shows a bound tab with no record as ended, and restarts it as a new shell', async () => {
+    const records = recordStore();
+    // A tab bound before records existed.
+    const after = page(records, jest.fn(), ['terminal-legacy']);
+    const state = await hydrate(after);
+    expect(ptys).toHaveLength(0);
+    expect(state.liveTerminalIds).toEqual([]);
+    expect(reported(state)).toEqual([
+      {
+        id: 'terminal-legacy',
+        exitCode: null,
+        signal: TERMINAL_CONNECTION_LOST_SIGNAL,
+      },
+    ]);
+    await after.command('terminal.restore', {
+      terminalId: 'terminal-legacy',
+      cols: 80,
+      rows: 24,
+    });
+    expect(ptys).toHaveLength(1);
+    expect(ptys[0]?.options.resume).toBeUndefined();
+    ptys[0]?.open();
+    expect(records.saved.get('terminal-legacy')).toMatchObject({
+      chatId: 'chat-1',
+      shellTerminalId: 'shell-1',
+    });
+  });
+
+  it('still kills the shell when the user closes its tab', async () => {
+    const records = recordStore();
+    const before = page(records);
+    await before.command('terminal.spawn', spawnArgs);
+    ptys[0]?.open();
+    const after = page(records, jest.fn(), ['terminal-1']);
+    await hydrate(after);
+    await after.command('terminal.kill', { terminalId: 'terminal-1' });
+    expect(ptys[1]?.disposed).toBe(true);
+    expect(records.saved.size).toBe(0);
+    await hydrate(page(records));
+    expect(ptys).toHaveLength(2);
+  });
+
+  it("forgets a closed tab's terminal: its record goes, and a reload brings nothing back", async () => {
+    const records = recordStore();
+    const before = page(records);
+    await before.command('terminal.spawn', spawnArgs);
+    await before.command('terminal.spawn', spawnArgs);
+    ptys.forEach((pty) => pty.open());
+    // The first tab was closed before the reload; no saved tab binds it.
+    const after = page(records, jest.fn(), ['terminal-2']);
+    const state = await hydrate(after);
+    expect(state.liveTerminalIds).toEqual(['terminal-2']);
+    expect(ptys.slice(2).map((pty) => pty.options.resume?.terminalId)).toEqual([
+      'shell-2',
+    ]);
+    expect(records.saved.has('terminal-1')).toBe(false);
+    // The second's shell then exits, and the user closes its ended tab.
+    ptys[2]?.options.onClose({ kind: 'exit', code: 0 });
+    expect(records.saved.has('terminal-2')).toBe(true);
+    await after.command('terminal.kill', { terminalId: 'terminal-2' });
+    expect(records.saved.size).toBe(0);
+    await hydrate(page(records, jest.fn(), []));
+    expect(ptys).toHaveLength(3);
+  });
+
+  it("never adopts another chat's terminal, nor lists the sandbox", async () => {
+    const records = recordStore();
+    // Another chat's shell runs in the sandbox, and a record names it for
+    // this work entry; another work entry has its own record too.
+    records.put({
+      sessionId: 'terminal-other-chat',
+      projectId: 'project-1',
+      worktreeId: CLOUD,
+      chatId: 'chat-2',
+      shellTerminalId: 'shell-of-chat-2',
+      createdAt: 1,
+    });
+    records.put({
+      sessionId: 'terminal-other-entry',
+      projectId: 'project-1',
+      worktreeId: 'web-core:chat-2',
+      chatId: 'chat-2',
+      shellTerminalId: 'shell-of-chat-2',
+      createdAt: 1,
+    });
+    const request = jest.fn();
+    const after = page(records, request, ['terminal-other-chat']);
+    const state = await hydrate(after);
+    expect(ptys).toHaveLength(0);
+    expect(request).not.toHaveBeenCalled();
+    expect(state.liveTerminalIds).toEqual([]);
+    expect(reported(state)).toEqual([
+      {
+        id: 'terminal-other-chat',
+        exitCode: null,
+        signal: TERMINAL_CONNECTION_LOST_SIGNAL,
+      },
+    ]);
+    expect(after.owns('terminal-other-entry')).toBe(false);
+    // The mismatched record goes; the other work entry's stays its own.
+    expect([...records.saved.keys()]).toEqual(['terminal-other-entry']);
   });
 });
 

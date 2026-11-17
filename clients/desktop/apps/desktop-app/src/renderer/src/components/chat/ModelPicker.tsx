@@ -1,4 +1,3 @@
-import { ControlButton } from '@canopy/ui-shared/components';
 import {
   acquireModelRecoveryLease,
   supersedeModelRecovery,
@@ -90,6 +89,7 @@ import {
   modelLibraryRowLock,
   pickerChromeMenuHeightPx,
   FloatingMenu,
+  DropdownMenuControl,
   DropdownMenuItem,
   ChatComposerToolbarChip,
   type ModelCatalog,
@@ -3203,10 +3203,12 @@ function ConcreteModelPicker(
                                 </span>
                               }
                             >
-                              <ControlButton
+                              <DropdownMenuControl
                                 type="button"
-                                role="menuitemcheckbox"
-                                aria-checked={billing.value === 'ai-credits'}
+                                choice={{
+                                  type: 'checkbox',
+                                  checked: billing.value === 'ai-credits',
+                                }}
                                 aria-disabled={billing.disabled === true}
                                 disabled={billing.disabled === true}
                                 aria-label="Bill this chat to AI Credits"
@@ -3300,7 +3302,7 @@ function ConcreteModelPicker(
                                 <CompactToggleIndicator
                                   checked={billing.value === 'ai-credits'}
                                 />
-                              </ControlButton>
+                              </DropdownMenuControl>
                             </RichHoverTooltip>
                           </div>
                           {billing.disabled && billing.lockedReason ? (

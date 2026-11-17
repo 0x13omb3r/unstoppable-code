@@ -1,4 +1,4 @@
-import { DialogActionFooter } from '@canopy/ui-shared/components';
+import { TextLink, DialogActionFooter } from '@canopy/ui-shared/components';
 import { Badge } from '@canopy/ui-shared/components/Badge';
 import { resolveClientAppError } from '@canopy/desktop-instrumentation/client';
 import { toAppError } from '@canopy/protocol/app-errors';
@@ -147,14 +147,16 @@ function LinearTicketCard({
               {description}
             </p>
           )}
-          <a
+          <TextLink
             href={ticket.url}
             target="_blank"
             rel="noopener noreferrer"
-            className="inline-block break-all text-xs fg-info hover:underline"
+            variant="informational"
+            size="xs"
+            className="inline-block break-all"
           >
             {ticket.url}
-          </a>
+          </TextLink>
         </Stack>
         <Button size="compact" onClick={onClear}>
           Change ticket

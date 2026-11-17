@@ -90,6 +90,9 @@ export const AGENT_CORE_TOOL_OPERATIONS = {
     'core.chat.visual.stage': [CORE_CHAT_VISUAL_STAGE_GRANTS.write],
     'worker.visual.render': [WORKER_VISUAL_GRANTS.render],
   },
+  worktreeActions: {
+    'core.worktree.hooks.setPaused': ['core.worktree.write'],
+  },
   autoArchive: {
     'core.chat.update': ['core.chat.write'],
   },

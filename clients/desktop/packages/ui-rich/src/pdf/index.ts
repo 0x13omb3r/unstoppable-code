@@ -8,3 +8,4 @@ export {
   type PdfPreviewSearchResult,
   type PdfPreviewRenderFailure,
 } from './PdfPreview';
+export { renderPdfReplyThumbnail } from './reply-thumbnail';

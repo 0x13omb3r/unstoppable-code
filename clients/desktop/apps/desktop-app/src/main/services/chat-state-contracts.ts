@@ -148,6 +148,12 @@ export interface ChatStateStorageDiagnostic {
      * excluded from replay (`recordBytes`), never treated as committed.
      */
     | 'delta_journal_torn_tail_dropped'
+    /**
+     * Startup recovery copied active rows it could not reconcile with the
+     * committed history to a quarantine file (`journalQuarantineFile`,
+     * `recordCount` rows) and replayed the journal without them (CAN-6902).
+     */
+    | 'delta_journal_conflicting_echo_quarantined'
     /** The scope moved to the delta journal (storage manifest version 3). */
     | 'delta_journal_promoted'
     /** Promotion failed; the scope stays version 2; retried with backoff. */
@@ -189,8 +195,9 @@ export interface ChatStateStorageDiagnostic {
    */
   journalTailReason?: 'incomplete' | 'checksum_mismatch';
   /**
-   * `delta_journal_torn_tail_dropped` only: base name of the quarantine copy
-   * in the scope directory, when the tail was kept for inspection.
+   * `delta_journal_torn_tail_dropped`: base name of the quarantine copy in
+   * the scope directory, when the tail was kept for inspection.
+   * `delta_journal_conflicting_echo_quarantined`: the quarantined rows' copy.
    */
   journalQuarantineFile?: string;
   /** `legacy_chat_revision_gap_recovered` only; revisions, never content. */

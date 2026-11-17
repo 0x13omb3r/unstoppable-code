@@ -102,12 +102,18 @@ const running = new Set<Lifecycle>();
  * that has marked itself `recovery-required` is failing.
  */
 function isInFlight(record: DestructiveRecoveryRecord): boolean {
-  return Array.from(running).some(
-    (lifecycle) =>
-      lifecycle.active &&
-      lifecycle.record.state !== 'recovery-required' &&
-      ownsRecord(lifecycle, record),
-  );
+  return inFlightDestructiveOperationIds().has(record.operationId);
+}
+/** Read-only: the operations {@link isInFlight} holds for, as of this call. */
+export function inFlightDestructiveOperationIds(): ReadonlySet<string> {
+  const ids = new Set<string>();
+  for (const lifecycle of running) {
+    if (!lifecycle.active || lifecycle.record.state === 'recovery-required')
+      continue;
+    ids.add(lifecycle.record.operationId);
+    if (lifecycle.supersedes) ids.add(lifecycle.supersedes);
+  }
+  return ids;
 }
 /** No lifecycle of this process owns it, even one still saving its failure. */
 function isOwnerless(record: DestructiveRecoveryRecord): boolean {

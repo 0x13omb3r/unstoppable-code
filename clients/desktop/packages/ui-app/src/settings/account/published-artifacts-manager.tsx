@@ -1,5 +1,6 @@
 'use client';
 
+import { CodeBlock } from '@canopy/ui-shared/components/CodeBlock';
 import { Badge } from '@canopy/ui-shared/components/Badge';
 import { useCallback, useEffect, useRef, useState, type JSX } from 'react';
 import { Plus } from '@canopy/ui-shared/icons/AppIcons';
@@ -324,9 +325,16 @@ export function PublishedArtifactsManager(): JSX.Element {
                     size="small"
                     className="overflow-hidden"
                   >
-                    <pre className="max-h-64 overflow-auto p-3 text-xs fg-primary">
+                    <CodeBlock
+                      variant="document"
+                      size="xs"
+                      wrap="none"
+                      tone="primary"
+                      replay="inherit"
+                      className="max-h-64"
+                    >
                       {pending.detail ? previewBody(pending.detail) : '…'}
-                    </pre>
+                    </CodeBlock>
                   </Surface>
                 </>
               )}

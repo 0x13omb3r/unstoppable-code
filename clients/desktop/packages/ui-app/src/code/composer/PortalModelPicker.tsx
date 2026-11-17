@@ -16,7 +16,6 @@ import {
   selectedAgentId,
   isConcreteSelectedModel,
   Notice,
-  noticeButtonClassName,
   preferredGatewayTabId,
   resolveModelPickerRowCue,
   type ModelCatalog,
@@ -29,6 +28,7 @@ import {
   type ModelPickerSelectionContext,
 } from '@canopy/ui-shared';
 import {
+  ButtonLink,
   AgentModelPicker,
   type AgentPickerOption,
 } from '@canopy/ui-shared/components';
@@ -919,12 +919,16 @@ function PortalConcreteModelPicker({
                 title={gatewayNotice.title}
                 actions={
                   gatewayNotice.href && gatewayNotice.linkLabel ? (
-                    <a
+                    <ButtonLink
+                      target={undefined}
+                      rel={undefined}
                       href={gatewayNotice.href}
-                      className={noticeButtonClassName('secondary')}
+                      variant="secondary"
+                      size="sm"
+                      className="max-w-full whitespace-nowrap"
                     >
                       {gatewayNotice.linkLabel}
-                    </a>
+                    </ButtonLink>
                   ) : undefined
                 }
               >

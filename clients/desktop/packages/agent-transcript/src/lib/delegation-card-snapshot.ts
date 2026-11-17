@@ -58,6 +58,8 @@ export const STREAM_CARD_KEY_CLASSES = {
   feedAssignment: 'live-only',
   // Cloud chats' model name; desktop's route snapshot names its model.
   requestedModelLabel: 'live-only',
+  // Cloud chats' report of the child's route (CAN-6787), as for the label.
+  reportedRoute: 'live-only',
   streamRevision: 'read-only',
 } as const satisfies Record<
   keyof DelegatedAgentCallBlock,

@@ -1,5 +1,6 @@
 'use client';
 
+import { CodeBlock } from '@canopy/ui-shared/components/CodeBlock';
 import { ControlButton } from '@canopy/ui-shared/components';
 import {
   FileOverlapChoiceSurface,
@@ -284,16 +285,19 @@ function OverlapOption({
             (nothing)
           </div>
         ) : (
-          <pre
-            className={`${REPLAY_BLOCK_CLASS} whitespace-pre-wrap fg-primary wrap-anywhere ${
-              prose
-                ? 'font-sans text-s leading-5'
-                : 'font-mono text-xs leading-5'
-            } ${collapses && !expanded ? 'max-h-30 overflow-hidden' : ''}`}
+          <CodeBlock
+            variant="bare"
+            font={prose ? 'sans' : 'mono'}
+            size={prose ? 's' : 'xs'}
+            relaxed
+            tone="primary"
+            wrap="anywhere"
+            overflow={collapses && !expanded ? 'hidden' : 'visible'}
+            className={collapses && !expanded ? 'max-h-30' : undefined}
             data-testid={`file-overlap-quote-${side}`}
           >
             {body}
-          </pre>
+          </CodeBlock>
         )}
         {collapses && (
           <Button

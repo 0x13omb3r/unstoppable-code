@@ -17,7 +17,7 @@ import {
   formatTurnStatusLabel,
   turnStatusBadgeVariant,
 } from './run-display';
-import { Surface } from '@canopy/ui-shared/components';
+import { TextLink, Surface } from '@canopy/ui-shared/components';
 
 interface MostExpensiveRunsProps {
   runs: readonly TelemetryExpensiveRun[];
@@ -126,16 +126,18 @@ export function MostExpensiveRuns({
                   {formatUsd(run.totalCostUsd)}
                 </span>
                 {run.prUrl && (
-                  <a
+                  <TextLink
                     href={run.prUrl}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="inline-flex items-center gap-1 text-xs font-medium fg-accent hover:underline"
+                    size="xs"
+                    emphasis="medium"
+                    withIcon
                     data-testid={`expensive-run-pr-${run.sessionId}`}
                   >
                     PR
                     <ExternalLink size={12} aria-hidden="true" />
-                  </a>
+                  </TextLink>
                 )}
               </div>
             </div>

@@ -91,6 +91,7 @@ import { countArchivedContainers } from './archived-containers';
 import { readWorkEntrySidebarSummary } from './cowork-work-entries-file';
 import { settleAll } from '@canopy/desktop-shared/node/lib/detached-work';
 import { workspaceStorageUnavailable } from './workspace-storage-availability';
+import { runWithMetadataReadCaller } from '@canopy/desktop-shared/node/work-counters';
 
 export {
   WorkspaceIndexUnreadableError,
@@ -578,22 +579,24 @@ async function readSingleRepoWorkspace(
   }
 
   const rawScripts = normalizeLegacyScriptFields(config);
+  const repoPath = config.repoPath;
   const [resolvedScripts, resolvedHooks] = isW5ProjectionOnlyView()
     ? [{}, {}]
-    : await settleAll([
-        resolveProjectScripts({
-          repoPath: config.repoPath,
-          scripts: rawScripts,
-        }),
-        resolveProjectHooks({
-          id: entry.id,
-          owner: config.owner,
-          repoPath: config.repoPath,
-          hooks: config.hooks,
-        }),
-      ]);
+    : await runWithMetadataReadCaller('sidebar.project', () =>
+        settleAll([
+          resolveProjectScripts({
+            repoPath,
+            scripts: rawScripts,
+          }),
+          resolveProjectHooks({
+            id: entry.id,
+            owner: config.owner,
+            repoPath,
+            hooks: config.hooks,
+          }),
+        ]),
+      );
 
-  const repoPath = config.repoPath;
   const worktreeEffective = isW5ProjectionOnlyView()
     ? undefined
     : await resolveWorktreeEffective(entry.id, worktrees, (wtPath) =>
@@ -678,15 +681,17 @@ async function readMultiRepoWorkspace(
   };
   const [workspaceScripts, workspaceHooks, repos] = isW5ProjectionOnlyView()
     ? ([{}, {}, effectiveConfig.repos] as const)
-    : await settleAll([
-        resolveWorkspaceRootScripts(entry.id, resolutionPaths),
-        resolveWorkspaceRootHooks(entry.id, resolutionPaths),
-        settleAll(
-          effectiveConfig.repos.map((repo) =>
-            resolveWorkspaceRepoDataHooks(entry.id, repo, resolutionPaths),
+    : await runWithMetadataReadCaller('sidebar.project', () =>
+        settleAll([
+          resolveWorkspaceRootScripts(entry.id, resolutionPaths),
+          resolveWorkspaceRootHooks(entry.id, resolutionPaths),
+          settleAll(
+            effectiveConfig.repos.map((repo) =>
+              resolveWorkspaceRepoDataHooks(entry.id, repo, resolutionPaths),
+            ),
           ),
-        ),
-      ]);
+        ]),
+      );
 
   const repoIds = effectiveConfig.repos.map((repo) => repo.id);
   const worktreeEffective = isW5ProjectionOnlyView()
@@ -808,7 +813,10 @@ async function resolveWorktreeEffective(
     worktrees.map(async (wt) => {
       try {
         const wtPath = getWorkspaceWorktreeDir(workspaceId, wt.id);
-        const overrides = await resolver(wtPath, wt.id);
+        const overrides = await runWithMetadataReadCaller(
+          'sidebar.worktree',
+          () => resolver(wtPath, wt.id),
+        );
         return [wt.id, overrides] as const;
       } catch {
         return null;

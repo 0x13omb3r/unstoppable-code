@@ -84,6 +84,8 @@ export type SurfaceVariant =
   | 'workspace-panel'
   | 'rail'
   | 'well'
+  | 'transcript-well'
+  | 'transcript-nested-well'
   | 'section';
 
 /** Attached boundaries between regions of a pane, without a rounded box. */
@@ -282,6 +284,8 @@ export const SURFACE_VARIANT_CLASS: Readonly<Record<SurfaceVariant, string>> = {
   'workspace-panel': 'min-h-55 bg-card/50',
   rail: 'bg-sidebar',
   well: 'bg-secondary',
+  'transcript-well': 'bg-fg-primary/[0.06]',
+  'transcript-nested-well': 'bg-fg-primary/[0.06]',
   section: '',
 };
 
@@ -345,6 +349,8 @@ export const SURFACE_RADIUS_CLASS: Readonly<Record<SurfaceVariant, string>> = {
   'workspace-panel': '',
   rail: '',
   well: '',
+  'transcript-well': 'rounded-xl',
+  'transcript-nested-well': 'rounded-lg',
   section: '',
 };
 

@@ -1,3 +1,4 @@
+import { CodeBlock } from '@canopy/ui-shared/components/CodeBlock';
 import { TranscriptSearchRevealContext } from './transcript-search-reveal';
 import { useContext, memo, useMemo, type JSX, type ReactNode } from 'react';
 import {
@@ -187,9 +188,16 @@ export const ToolCallBlock = memo(function ToolCallBlock({
         result={toolResult}
         expandedSlot={
           <>
-            <pre className="max-h-50 overflow-auto whitespace-pre-wrap break-all px-2.5 py-2 text-xs fg-secondary">
+            <CodeBlock
+              variant="row"
+              size="xs"
+              wrap="all"
+              tone="secondary"
+              replay="block"
+              className="max-h-50"
+            >
               {displayInput}
-            </pre>
+            </CodeBlock>
             {authRecoveryFailures.length > 0 && (
               <AuthRecoveryCard
                 failures={authRecoveryFailures}
@@ -206,11 +214,16 @@ export const ToolCallBlock = memo(function ToolCallBlock({
                     isError={result.isError}
                   />
                 ) : (
-                  <pre
-                    className={`max-h-50 overflow-auto whitespace-pre-wrap break-all px-2.5 py-2 text-xs fg-secondary`}
+                  <CodeBlock
+                    variant="row"
+                    size="xs"
+                    wrap="all"
+                    tone="secondary"
+                    replay="block"
+                    className="max-h-50"
                   >
                     {toolResult.content}
-                  </pre>
+                  </CodeBlock>
                 )}
               </ToolCallResultSection>
             )}
@@ -260,9 +273,16 @@ export const ToolCallBlock = memo(function ToolCallBlock({
             <div className="px-2.5 py-1 text-3xs font-medium fg-secondary">
               Prompt
             </div>
-            <pre className="max-h-50 overflow-auto whitespace-pre-wrap break-all px-2.5 py-2 text-xs fg-secondary">
+            <CodeBlock
+              variant="row"
+              size="xs"
+              wrap="all"
+              tone="secondary"
+              replay="block"
+              className="max-h-50"
+            >
               {prompt}
-            </pre>
+            </CodeBlock>
             {toolResult && <ToolCallResultSection result={toolResult} />}
           </>
         }
@@ -292,9 +312,16 @@ export const ToolCallBlock = memo(function ToolCallBlock({
             <div className="px-2.5 py-1 text-3xs font-medium fg-secondary">
               Message
             </div>
-            <pre className="max-h-75 overflow-auto whitespace-pre-wrap break-all px-2.5 py-2 text-xs fg-secondary">
+            <CodeBlock
+              variant="row"
+              size="xs"
+              wrap="all"
+              tone="secondary"
+              replay="block"
+              className="max-h-75"
+            >
               {message}
-            </pre>
+            </CodeBlock>
             {toolResult && <ToolCallResultSection result={toolResult} />}
           </>
         }

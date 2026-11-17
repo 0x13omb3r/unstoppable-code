@@ -1,5 +1,6 @@
 'use client';
 
+import { CodeBlock } from '@canopy/ui-shared/components/CodeBlock';
 import { useRef, useState, type FormEvent, type JSX } from 'react';
 import type { ExplorerRetrievalPreview } from '@canopy/protocol/settings/organization-memory';
 import { buildPreviewQuery } from '@canopy/protocol/settings/memory-preview-query';
@@ -20,7 +21,6 @@ import {
   ValueRows,
   Heading,
 } from '@canopy/ui-shared/components';
-import { withPrivacyClass } from '../account/privacy-class';
 import { useSettingsClient, useSettingsPrivacy } from '../host';
 import { previewMemorySearch } from './api';
 import { useMemoryErrorCopy } from './memory-error-copy';
@@ -208,14 +208,14 @@ export function RetrievalPreview({
                 />
               </div>
               <Surface variant="inset" className="overflow-hidden">
-                <pre
-                  className={withPrivacyClass(
-                    'overflow-x-auto whitespace-pre-wrap p-3 font-mono text-xs fg-primary',
-                    blockClassName,
-                  )}
+                <CodeBlock
+                  variant="document"
+                  overflow="horizontal"
+                  tone="primary"
+                  replay={blockClassName ? 'block' : 'inherit'}
                 >
                   {preview.renderedBlock}
-                </pre>
+                </CodeBlock>
               </Surface>
             </Disclosure>
           )}

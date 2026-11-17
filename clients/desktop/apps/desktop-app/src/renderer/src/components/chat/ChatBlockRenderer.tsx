@@ -55,6 +55,8 @@ import {
   Notice,
   resolveAskUserQuestionPresentation,
   Surface,
+  TranscriptEventMarker,
+  TranscriptEventRow,
   TRANSCRIPT_PROSE_CLASS,
   useSmoothStreaming,
   withSoftLineBreaks,
@@ -92,7 +94,12 @@ import {
   TimeFliesIcon as AppCatalogTimeFliesIcon,
   InfoIcon as AppCatalogInfoIcon,
 } from '@canopy/ui-shared/icons/AppIcons';
-import { RevertIcon } from '@canopy/ui-shared/icons/AppIcons';
+import { RevertIcon, ShieldIcon } from '@canopy/ui-shared/icons/AppIcons';
+import {
+  LegacyTranscriptSearchContext,
+  TranscriptSearchRevealContext,
+} from './transcript-search-reveal';
+import { REPLAY_BLOCK_CLASS } from '@canopy/ui-shared/lib/replay-privacy';
 import {
   stripOpaqueAgentCitationMarkers,
   stripProposedPlanEnvelope,
@@ -1227,6 +1234,8 @@ export const ChatBlockRenderer = memo(function ChatBlockRenderer({
   // renders through one component for its lifetime, so settling (a later
   // block arriving) never re-mounts it and restarts or cuts its reveal.
   const smoothStreaming = useSmoothStreaming();
+  const legacySearch = useContext(LegacyTranscriptSearchContext);
+  const revealSearchMatch = useContext(TranscriptSearchRevealContext);
   const [smoothTextBlock] = useState(
     () => block.type === 'text' && streaming && smoothStreaming,
   );
@@ -1738,45 +1747,29 @@ export const ChatBlockRenderer = memo(function ChatBlockRenderer({
         minute: '2-digit',
       });
       return (
-        <Surface variant="group" data-testid="chat-automation-info">
-          <div className="flex items-center gap-2 px-3 py-1.5 text-xs fg-secondary">
-            <AppCatalogTimeFliesIcon size="sm" className="flex-shrink-0" />
-            <span>
-              Chat initiated by automation
-              {block.activityName ? (
-                <>
-                  {' '}
-                  <strong>{block.activityName}</strong>
-                </>
-              ) : null}{' '}
-              at {localTime}
-            </span>
-          </div>
-        </Surface>
+        <TranscriptEventMarker
+          icon={<AppCatalogTimeFliesIcon size="sm" />}
+          dataTestId="chat-automation-info"
+        >
+          {block.activityName
+            ? `Started by ${block.activityName}`
+            : 'Started by automation'}{' '}
+          · {localTime}
+        </TranscriptEventMarker>
       );
     }
 
-    case 'claude_terminal_sync_warning': {
-      const localTime = new Date(block.timestamp).toLocaleTimeString([], {
-        hour: 'numeric',
-        minute: '2-digit',
-      });
+    case 'claude_terminal_sync_warning':
       return (
         <Notice
           role="none"
           intent="attention"
-          title={
-            <>
-              Claude Code transcript sync failed{' '}
-              <span className="fg-secondary">at {localTime}</span>
-            </>
-          }
+          title="Couldn't sync from Claude Code"
         >
           {block.message ??
             'This fork is still usable, but it may be missing the latest terminal output.'}
         </Notice>
       );
-    }
 
     case 'account_proxy_switch':
       return (
@@ -1829,10 +1822,6 @@ export const ChatBlockRenderer = memo(function ChatBlockRenderer({
     // Quiet by design: the user already made this decision in the composer,
     // so this is a receipt, not a thing to act on.
     case 'approval_resolution_info': {
-      const localTime = new Date(block.timestamp).toLocaleTimeString([], {
-        hour: 'numeric',
-        minute: '2-digit',
-      });
       const modeLabel = APPROVAL_MODE_PROSE_LABELS[block.mode];
       const requestCount = block.titles.length;
       // Only claim a switch when one is actually recorded. Main omits
@@ -1849,37 +1838,31 @@ export const ChatBlockRenderer = memo(function ChatBlockRenderer({
       // card would still be standing. The `approval_decision` diagnostic
       // carries the real granting tier for the audit trail.
       const releasedBySwitch = block.previousMode !== undefined;
-      const summary = releasedBySwitch
-        ? requestCount > 1
-          ? `Approved ${requestCount} requests by switching to ${modeLabel}`
-          : `Approved by switching to ${modeLabel}`
-        : requestCount > 1
-          ? `Approved ${requestCount} requests under ${modeLabel}`
-          : `Approved under ${modeLabel}`;
+      const summary =
+        requestCount === 1
+          ? 'Approved 1 request'
+          : `Approved ${requestCount} requests`;
       return (
-        <Notice
-          role="none"
-          intent="neutral"
-          title={
-            <>
-              {summary} <span className="fg-secondary">at {localTime}</span>
-            </>
+        <TranscriptEventRow
+          icon={<ShieldIcon size="sm" aria-hidden="true" />}
+          forceOpen={legacySearch || revealSearchMatch}
+          label={summary}
+          detail={
+            releasedBySwitch ? `Switched to ${modeLabel}` : `Under ${modeLabel}`
           }
         >
-          {requestCount === 0 ? null : (
-            <ul className="flex flex-col list-none gap-0.5">
-              {block.titles.map((title, titleIndex) => (
-                <li
-                  key={`${titleIndex}:${title}`}
-                  className="fg-secondary truncate font-mono text-xs"
-                  title={title}
-                >
+          {requestCount > 0 ? (
+            <ul
+              className={`flex list-none flex-col gap-1 ${REPLAY_BLOCK_CLASS}`}
+            >
+              {block.titles.map((title, index) => (
+                <li key={`${title}:${index}`} className="wrap-anywhere">
                   {title}
                 </li>
               ))}
             </ul>
-          )}
-        </Notice>
+          ) : null}
+        </TranscriptEventRow>
       );
     }
 
@@ -1889,27 +1872,11 @@ export const ChatBlockRenderer = memo(function ChatBlockRenderer({
         minute: '2-digit',
       });
       const fileCount = block.files.length;
-      const fileSummary =
-        fileCount === 0
-          ? 'No tracked file changes'
-          : `${fileCount} file${fileCount === 1 ? '' : 's'} (+${block.totalInsertions}, -${block.totalDeletions})`;
       return (
-        <Notice
-          role="none"
-          intent="attention"
-          icon={<RevertIcon size={16} aria-hidden="true" />}
-          title={
-            <>
-              Reverted prior turn{' '}
-              <span className="fg-secondary">at {localTime}</span>
-            </>
-          }
-        >
-          Rolled back {fileSummary}.
-          {block.attachmentPath
-            ? ' Summary attached to next message.'
-            : ' Summary could not be attached.'}
-        </Notice>
+        <TranscriptEventMarker icon={<RevertIcon size="sm" />}>
+          Rolled back {fileCount} {fileCount === 1 ? 'file' : 'files'} ·{' '}
+          {localTime}
+        </TranscriptEventMarker>
       );
     }
 
@@ -1922,26 +1889,18 @@ export const ChatBlockRenderer = memo(function ChatBlockRenderer({
         hour: 'numeric',
         minute: '2-digit',
       });
-      const title =
+      const context =
         block.kind === 'rebase_conflict'
-          ? 'Chat initiated to resolve rebase conflicts'
-          : 'Chat initiated to resolve stash-pop conflicts';
-      const description =
-        block.kind === 'rebase_conflict'
-          ? `"git pull --rebase --autostash" left ${block.repoName} (branch "${block.branchName}") in a rebasing state.`
-          : `"git pull --rebase --autostash" completed the rebase on ${block.repoName} (branch "${block.branchName}") but could not re-apply the autostashed changes.`;
+          ? 'rebase conflicts'
+          : 'stash-pop conflicts';
       return (
-        <Notice
-          role="none"
-          intent="attention"
-          title={
-            <>
-              {title} <span className="fg-secondary">at {localTime}</span>
-            </>
-          }
-        >
-          {description}
-        </Notice>
+        <TranscriptEventMarker icon={<AppCatalogInfoIcon size="sm" />}>
+          Started to resolve {context} in{' '}
+          <span className={REPLAY_BLOCK_CLASS}>
+            {block.repoName} · {block.branchName}
+          </span>{' '}
+          · {localTime}
+        </TranscriptEventMarker>
       );
     }
 
@@ -1959,17 +1918,12 @@ export const ChatBlockRenderer = memo(function ChatBlockRenderer({
         target,
       );
       return (
-        <Surface variant="group">
-          <div className="flex items-start gap-2 px-3 py-1.5 text-xs fg-secondary">
-            <AppCatalogInfoIcon size="sm" className="mt-0.5 flex-shrink-0" />
-            <div className="flex flex-col gap-0.5">
-              <div>
-                Chat initiated by <strong>{source}</strong> at {localTime}
-              </div>
-              <div>{description}</div>
-            </div>
-          </div>
-        </Surface>
+        <TranscriptEventMarker icon={<AppCatalogInfoIcon size="sm" />}>
+          <span title={description} className={REPLAY_BLOCK_CLASS}>
+            Started by {source}
+          </span>{' '}
+          · {localTime}
+        </TranscriptEventMarker>
       );
     }
   }

@@ -6,6 +6,10 @@ import { cancelChatTurnPreparations } from '../chat-turn-preparation';
 import { deferredToolsReloadCoordinator } from '../../deferred-tools/reload-coordinator';
 import { dispatchWorktreeChatTurn } from '../worktree-chat-turn';
 import { registerWorkspaceTypes } from '../workspace-registry';
+import { DelegationHostMessages } from '@canopy/desktop-shared/node/delegation/parent';
+import { installDelegationLifecycle } from '../../agents/delegation/lifecycle';
+import type { DeferredToolsResumeHandler } from '../../deferred-tools/reload-coordinator';
+import { getChatQueueService } from '../../services/chat-queue-service';
 
 type ProviderHandler = (data: unknown) => void | Promise<void>;
 interface FakeProvider {
@@ -361,4 +365,72 @@ it('a session removed during a reload before the send takes the disposed-at-send
     accepted: true,
     settledWith: 'cancelled',
   });
+});
+
+// canopy#125 phase 02a: a deferred-tools reload continuation of a turn that a
+// managed delegate's upward delivery started. The first send claims and
+// retires the delivery id. The continuation is the same accepted turn, so it
+// must run, not claim the retired id again.
+it('a reload continuation of a delegate-delivery turn runs after its delivery id is retired', async () => {
+  const messages = new DelegationHostMessages();
+  messages.admit('delivery');
+  installDelegationLifecycle({
+    shutdown: () => Promise.resolve(),
+    revoke: () => Promise.resolve(),
+    closeScope: () => Promise.resolve(),
+    isDeliveryActive: (_target, id) =>
+      messages.canDispatch(id) || messages.isSubmitted(id),
+    claimDelivery: (_target, id) => messages.claim(id),
+    releaseDelivery: (_target, id) => messages.release(id),
+    retireDelivery: (_target, id) => messages.retire(id),
+  });
+  const admit = jest
+    .spyOn(getChatQueueService(), 'admitDirectDispatchWhenAllowed')
+    .mockResolvedValue({
+      authorization: undefined,
+      release: (): void => undefined,
+    });
+  let resume: DeferredToolsResumeHandler | undefined;
+  const register = jest
+    .spyOn(deferredToolsReloadCoordinator, 'registerResumeHandler')
+    .mockImplementation((_scope, handler) => {
+      resume = handler;
+      return (): void => undefined;
+    });
+  try {
+    await dispatchWorktreeChatTurn({
+      ...scope,
+      userMessageId: 'delivery',
+      managedDelegationDeliveryId: 'delivery',
+      text: 'child result',
+      planMode: false,
+      model: 'claude-sonnet-4-6',
+      providerType: 'claude',
+      initiationSource: 'user',
+      getWindow: () => null,
+      onBeforeChatEvent: () => Promise.resolve(),
+    });
+    await waitFor(() => provider.sent === 1);
+    expect(provider.sent).toBe(1);
+    // The first send retired the delivery id.
+    expect(messages.canDispatch('delivery')).toBe(false);
+    expect(messages.isSubmitted('delivery')).toBe(false);
+    expect(resume).toBeDefined();
+
+    await resume?.({
+      scope,
+      requestId: 'reload-1',
+      toolCallId: 'tool-1',
+      userMessageId: 'delivery',
+      continuationText: 'Continue with the loaded tools.',
+      enabledResources: [],
+      signal: new AbortController().signal,
+    });
+    await waitFor(() => provider.sent === 2);
+    expect(provider.sent).toBe(2);
+    expect(provider.sentTexts[1]).toContain('Continue with the loaded tools.');
+  } finally {
+    register.mockRestore();
+    admit.mockRestore();
+  }
 });

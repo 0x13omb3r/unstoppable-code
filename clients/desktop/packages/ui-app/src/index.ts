@@ -16,6 +16,12 @@
  */
 export * from './capability';
 export { TurnFiles } from './code/TurnFiles';
+export {
+  InlineReplyFilePreview,
+  isInlineReplyOutput,
+  type InlineReplyPreviewContent,
+  type InlineReplyDocumentReader,
+} from './code/InlineReplyFilePreview';
 export * from './code/subagents/LifetimeLimitNoticeContainer';
 export {
   CHAT_VISUAL_TEST_IDS,
@@ -1114,3 +1120,5 @@ export {
   SidebarAutoDeleteProvider,
   SidebarAutoDeleteNotice,
 } from './code/shell/SidebarAutoDelete';
+
+export { readInlineReplyDocument } from './code/read-inline-reply-document';

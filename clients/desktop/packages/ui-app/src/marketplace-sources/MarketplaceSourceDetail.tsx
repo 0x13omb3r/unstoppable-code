@@ -1,6 +1,6 @@
 'use client';
 
-import { ControlButton } from '@canopy/ui-shared/components';
+import { TextLink, ControlButton } from '@canopy/ui-shared/components';
 import {
   useCallback,
   useEffect,
@@ -345,14 +345,14 @@ function MarketplaceSourceDetailBody({
             <>
               <span className={REPLAY_MASK_CLASS}>
                 {sourceUrl ? (
-                  <a
+                  <TextLink
                     href={sourceUrl}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="underline-offset-2 hover:underline"
+                    variant="inherited-hover"
                   >
                     {source.sourceLabel}
-                  </a>
+                  </TextLink>
                 ) : (
                   source.sourceLabel
                 )}

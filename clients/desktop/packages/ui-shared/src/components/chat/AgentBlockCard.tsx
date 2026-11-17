@@ -1,3 +1,4 @@
+import { CodeBlock } from '../CodeBlock';
 import { ControlButton } from '../Button';
 import {
   THINKING_LEVEL_LABELS,
@@ -348,13 +349,14 @@ export function AgentBlockCard({
                   {showResult ? 'Hide result' : 'Show result'}
                 </ControlButton>
                 {showResult && (
-                  <pre
-                    className={`${REPLAY_BLOCK_CLASS} max-h-75 overflow-auto whitespace-pre-wrap break-all border-t px-2.5 py-2 text-xs ${
-                      isError ? 'fg-destructive/80' : 'fg-secondary'
-                    }`}
+                  <CodeBlock
+                    variant="tool-output-section"
+                    wrap="all"
+                    tone={isError ? 'destructive' : 'secondary'}
+                    className="max-h-75"
                   >
                     {displayResult?.content}
-                  </pre>
+                  </CodeBlock>
                 )}
               </>
             )}
@@ -369,11 +371,16 @@ export function AgentBlockCard({
                   {showPrompt ? 'Hide prompt' : 'Show prompt'}
                 </ControlButton>
                 {showPrompt && (
-                  <pre
-                    className={`${REPLAY_BLOCK_CLASS} max-h-50 overflow-auto whitespace-pre-wrap break-all border-t px-2.5 py-2 text-xs fg-secondary`}
+                  <CodeBlock
+                    variant="tool-output-section"
+                    size="xs"
+                    wrap="all"
+                    tone="secondary"
+                    replay="block"
+                    className="max-h-50"
                   >
                     {prompt}
-                  </pre>
+                  </CodeBlock>
                 )}
               </>
             )}

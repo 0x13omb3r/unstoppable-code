@@ -1,5 +1,6 @@
 'use client';
 
+import { CodeBlock } from './CodeBlock';
 import {
   memo,
   useCallback,
@@ -819,12 +820,17 @@ function MarkdownMermaidComponent({
         </div>
       ) : (
         <div className="py-2" hidden={Boolean(error) && !codeOpen}>
-          <pre
+          <CodeBlock
             id={codeId}
-            className="max-h-128 overflow-auto rounded-md bg-secondary p-3 font-mono text-s"
+            variant="panel"
+            size="s"
+            wrap="none"
+            tone="inherit"
+            replay="inherit"
+            className="max-h-128"
           >
             <code>{source}</code>
-          </pre>
+          </CodeBlock>
         </div>
       )}
       {contextMenu && svg && (

@@ -1,3 +1,4 @@
+import { CodeBlock } from '@canopy/ui-shared/components/CodeBlock';
 import { Stack, Button, Surface } from '@canopy/ui-shared/components';
 import { type JSX } from 'react';
 import { POSTHOG_REPLAY_BLOCK_CLASS } from '@canopy/desktop-instrumentation/posthog-replay-privacy';
@@ -47,9 +48,16 @@ export function TeardownFailureDialog({
             <div
               className={`max-h-48 overflow-auto p-3 ${POSTHOG_REPLAY_BLOCK_CLASS}`}
             >
-              <pre className="whitespace-pre-wrap break-words text-xs fg-secondary font-mono">
+              <CodeBlock
+                variant="bare"
+                size="xs"
+                wrap="words"
+                tone="secondary"
+                replay="block"
+                overflow="visible"
+              >
                 {error.output}
-              </pre>
+              </CodeBlock>
             </div>
           </Surface>
         )}

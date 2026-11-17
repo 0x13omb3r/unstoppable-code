@@ -10,6 +10,7 @@ import { isWebCoreScope, webCoreLocalId } from '@/lib/chat-authority';
 import { copyTextToClipboard } from '@/lib/clipboard';
 import { openCoworkWorkEntryFromSidebar } from '@/lib/openCoworkWorkEntryFromSidebar';
 import {
+  sendAgainMayDuplicateTo,
   useHomeComposerStore,
   type HomeCloudDestination,
   type HomeKeptDraft,
@@ -17,13 +18,12 @@ import {
 } from '@/stores/homeComposerStore';
 import {
   canMoveIntoNewTask,
-  dropHomeOutboxEntry,
   dropKeptDraft,
   moveHomeOutboxEntryIntoNewTask,
   moveKeptDraftIntoNewTask,
   outboxCardShowsIn,
 } from './homeDraftPersistence';
-import { sendHomeOutboxEntryAgain } from './homeSend';
+import { discardHomeOutboxEntry, sendHomeOutboxEntryAgain } from './homeSend';
 import { useHomeScope } from './homeScope';
 
 function listOf(names: readonly string[]): string {
@@ -72,9 +72,14 @@ function OutboxCardNotice({
     () => state === 'returned' && canMoveIntoNewTask(entry.workspaceId),
   );
   const sending = useHomeComposerStore((store) => store.isSending);
+  const mayDuplicate = useHomeComposerStore((store) =>
+    sendAgainMayDuplicateTo(store, entry.destination),
+  );
   const dismiss = (): void =>
     useHomeComposerStore.getState().removeOutboxCard(entry.id);
-  const letGo = (): void => dropHomeOutboxEntry(entry.id);
+  const letGo = (): void => {
+    void discardHomeOutboxEntry(entry.id);
+  };
   const taskName =
     title === null ? (
       'its task'
@@ -209,6 +214,7 @@ function OutboxCardNotice({
           }
           onDismiss={letGo}
           dismissLabel="Discard it"
+          dismissDisabled={sending}
           actions={
             <>
               <CopyButton text={entry.text} />
@@ -231,7 +237,12 @@ function OutboxCardNotice({
           ) : (
             <>
               It was on its way to {taskName} when the app closed and hasn't
-              arrived yet. Sending it again could deliver it twice.
+              arrived yet.{' '}
+              {/* Where the cloud can't stop the earlier send, it says so before
+                  the person sends it again (CAN-6856). */}
+              {mayDuplicate
+                ? 'Sending it again could deliver it twice.'
+                : 'Sending it again stops the earlier one first, so it arrives once.'}
             </>
           )}
           {filesLost ? (

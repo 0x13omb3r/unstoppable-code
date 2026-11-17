@@ -19,6 +19,7 @@ import { z } from 'zod';
 
 import { CanopyTransportError, encodeCanopyJsonFrame } from '../codec';
 import type { CanopyFramedPair } from '../in-memory';
+import { isCanopyLostReply } from '../lost-reply';
 import type { CanopyByteChannel, CanopyFramedConnection } from '../types';
 import { serveReferenceCore, startReferenceJournal } from './reference-core';
 
@@ -111,6 +112,12 @@ export interface CanopyTransportConformanceOptions {
    * that close are registered through `todo`.
    */
   readonly serverClose?: boolean;
+  /**
+   * True when the binding can lose one request's reply while its connection
+   * stands, and its pairs offer `loseNextReply` (HTTP: a POST that gets no
+   * response). Otherwise the lost-reply case is registered through `todo`.
+   */
+  readonly lostReplies?: boolean;
 }
 
 export interface CanopyJournalConformanceOptions {
@@ -627,8 +634,45 @@ export function runCanopyTransportConformance(
       ? (name) =>
           todo(`${name} (no server close reaches the client on this binding)`)
       : test;
+  const lostReplyCase: RegisterCase =
+    options.lostReplies === true
+      ? test
+      : (name) => todo(`${name} (no lost reply alone on this binding)`);
 
   describe(`Canopy transport conformance: ${options.name}`, () => {
+    lostReplyCase(
+      'delivers a request whose reply it lost as a lost call, never as an answer (CAN-6940)',
+      async (pair) => {
+        const created = await pair();
+        const { client, server, loseNextReply } = created;
+        assert.ok(loseNextReply, 'The binding offers no loseNextReply.');
+        loseNextReply();
+        await client.send(request(1));
+        const ran = await server.receive();
+        assert.ok('id' in ran && 'method' in ran);
+        await server.send({ jsonrpc: '2.0', id: ran.id, result: { echo: 1 } });
+        const lost = await client.receive();
+        assert.ok('id' in lost && lost.id === 1 && 'error' in lost);
+        // The client may not read it as the server's answer: the request
+        // ran, and only its own idempotency says whether to send it again.
+        assert.equal(isCanopyLostReply(lost), true);
+        assert.equal(decodeCanopyError(lost.error).kind, 'unavailable');
+        assert.equal(client.signal.aborted, false);
+        // The connection stands, and a reply that arrives is the server's.
+        await client.send(request(2));
+        const next = await server.receive();
+        assert.ok('id' in next && 'method' in next);
+        await server.send({ jsonrpc: '2.0', id: next.id, result: { echo: 2 } });
+        const answered = await client.receive();
+        assert.deepEqual(answered, {
+          jsonrpc: '2.0',
+          id: 2,
+          result: { echo: 2 },
+        });
+        assert.equal(isCanopyLostReply(answered), false);
+      },
+    );
+
     wireCase(
       'reassembles a request written one byte at a time',
       async (pair) => {

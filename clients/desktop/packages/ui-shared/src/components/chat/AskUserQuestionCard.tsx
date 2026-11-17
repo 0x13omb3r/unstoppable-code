@@ -4,6 +4,7 @@
 // This module is display-only: NO stores, IPC, fetching, Electron, or Next
 // imports — hosts thread in the projected protocol state plus submit/dismiss
 // callbacks.
+import { ListRowFrame } from '../ListRow';
 import { Dot } from '../Badge';
 import {
   memo,
@@ -360,9 +361,6 @@ function presentedControl(question: PortalAskUserQuestion): PresentedControl {
  * row itself, so a click anywhere on the row (its padding and letter hint
  * included) toggles the choice.
  */
-const OPTION_FIELD_ROW_CLASSES =
-  'group/option flex w-full rounded-lg text-left hover:bg-subtle has-[:focus-visible]:bg-subtle';
-
 /** Letter shortcut, shown while the row is hovered or focused. */
 function ChoiceShortcut({ index }: { index: number }): JSX.Element | null {
   if (index >= 26) return null;
@@ -888,7 +886,7 @@ function AskUserQuestionCardImpl({
               q.options.map((opt, optIdx) => {
                 const description = q.optionDescriptions?.[optIdx];
                 return (
-                  <div key={opt} className={OPTION_FIELD_ROW_CLASSES}>
+                  <ListRowFrame key={opt} layout="question-choice">
                     <ChoiceField
                       kind={isMulti ? 'checkbox' : 'radio'}
                       layout="row"
@@ -910,14 +908,14 @@ function AskUserQuestionCardImpl({
                       }
                       end={<ChoiceShortcut index={optIdx} />}
                     />
-                  </div>
+                  </ListRowFrame>
                 );
               })
             )}
 
             {offersOwnAnswer(q) && (
               <>
-                <div className={OPTION_FIELD_ROW_CLASSES}>
+                <ListRowFrame layout="question-choice">
                   <ChoiceField
                     kind={isMulti ? 'checkbox' : 'radio'}
                     layout="row"
@@ -928,7 +926,7 @@ function AskUserQuestionCardImpl({
                     label="Other"
                     end={<ChoiceShortcut index={q.options.length} />}
                   />
-                </div>
+                </ListRowFrame>
                 {otherSelected.has(step) && (
                   <div className="px-2 pt-1">
                     {q.secret ? (

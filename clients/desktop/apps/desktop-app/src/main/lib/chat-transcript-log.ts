@@ -2558,7 +2558,7 @@ export class TranscriptStreamStore {
    * open form keeps inline. Replaying a turn's active write after the row
    * was finalized therefore converges, as it does in formats 2 and 3.
    */
-  private async matchesCommitted(
+  public async matchesCommitted(
     chatId: string,
     open: PersistedChatMessage,
     existing: PersistedChatMessage,
@@ -3252,7 +3252,7 @@ export class TranscriptStreamStore {
             persisted,
           );
         }
-        if (digest(persisted) !== digest(message))
+        if (!(await this.matchesCommitted(chatId, message, persisted)))
           throw new Error('Active message conflicts with committed history');
       }
       const logicalActiveById = new Map<string, PersistedChatMessage>();
@@ -3308,7 +3308,10 @@ export class TranscriptStreamStore {
 
     for (const message of activeRows) {
       const committed = await this.readCommittedMessage(chatId, message.id);
-      if (committed && digest(committed) !== digest(message))
+      if (
+        committed &&
+        !(await this.matchesCommitted(chatId, message, committed))
+      )
         throw new Error('Active message conflicts with committed history');
       await rememberCommitted(message.id, committed);
     }
@@ -5277,9 +5280,11 @@ export class TranscriptStreamStore {
             message.id,
             true,
           );
+          // The writers' rule (CAN-6902): a committed row that is the final
+          // form of this open row is the same message.
           return existing === undefined
             ? 'absent'
-            : digest(existing) === digest(message)
+            : (await this.matchesCommitted(chatId, message, existing))
               ? 'identical'
               : 'different';
         },
@@ -7674,7 +7679,7 @@ export class TranscriptStreamStore {
       const activeEchoes = activeById.get(row.message.id);
       if (activeEchoes) {
         for (const message of activeEchoes)
-          if (digest(row.message) !== digest(message))
+          if (!(await this.matchesCommitted(chatId, message, row.message)))
             throw new Error('Active message conflicts with committed history');
         activeById.delete(row.message.id);
       }
@@ -7702,7 +7707,10 @@ export class TranscriptStreamStore {
         );
         if (activeCard) {
           const committed = await this.readCommittedMessage(chatId, runId);
-          if (committed && digest(committed) !== digest(activeCard))
+          if (
+            committed &&
+            !(await this.matchesCommitted(chatId, activeCard, committed))
+          )
             throw new Error('Active message conflicts with committed history');
           return [activeCard];
         }

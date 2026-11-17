@@ -5,7 +5,10 @@ length-prefix codec, binding-level frames (D3 nonce handshake, ADR 2 bulk
 channels), the `CanopyFramedConnection` contract with a `node:stream` `Duplex`
 implementation, and `createInMemoryFramedPair()`. JSON-RPC envelopes and
 operation schemas live in `@canopy/protocol/canopy-core`; binding frames live
-here because they are not catalog operations. `./types` is browser-safe.
+here because they are not catalog operations. `./types` is browser-safe, and
+so is `./lost-reply`: a binding that loses one request's reply delivers a
+stand-in error it tags there, in process, so a client reads it as a lost call
+rather than the core's answer (CAN-6940).
 A message larger than one frame crosses as consecutive message parts (tag
 `0x01`) once the peer has said how large a message it joins
 (`maxMessageBytes`, `allowPeerMessageBytes`); a send over that cap is refused

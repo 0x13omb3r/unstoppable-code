@@ -3,7 +3,7 @@ import { Button } from './Button';
 import { DropdownMenuDivider, DropdownMenuItem } from './DropdownMenu';
 import { FloatingMenu } from './FloatingMenu';
 import { Tooltip } from './Tooltip';
-import { isMenuOpenBodyFlagSet } from '../lib/menu-open-body-flag';
+import { menuDismissalSwallowsClick } from '../lib/menu-open-body-flag';
 import { MoreHorizontalIcon } from '../icons/AppIcons';
 import type { UnifiedPluginEntry } from '../lib/unified-plugin-entry';
 import type { MarketplaceEntryShareStates } from '../lib/marketplace-share';
@@ -101,8 +101,15 @@ export function CustomizeRowMenu({
         aria-expanded={open}
         aria-controls={open ? menuId : undefined}
         aria-label={`More actions for ${entryName}`}
-        onPointerDown={() => {
-          if (!open && isMenuOpenBodyFlagSet(document)) setOpen(true);
+        onPointerDown={(event) => {
+          if (
+            !open &&
+            menuDismissalSwallowsClick(
+              event.currentTarget.ownerDocument,
+              event.target,
+            )
+          )
+            setOpen(true);
         }}
         onClick={() => setOpen((value) => !value)}
       >

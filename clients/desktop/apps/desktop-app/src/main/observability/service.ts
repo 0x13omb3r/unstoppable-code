@@ -1763,6 +1763,8 @@ export interface SessionDiagnosticRecord {
     | 'unknown-provenance'
     | 'missing-dependency'
     | 'unsupported-target'
+    | 'plugin-catalog-newer'
+    | 'plugin-catalog-damaged'
     | OrgProjectLinksUnknownReason
     | 'request-failed';
   /** `resource_context_denied` only: safe display identity for the refused capability. */
@@ -2041,6 +2043,8 @@ export interface SessionDiagnosticRecord {
     | 'delta_journal_newer_format'
     /** An unacknowledged delta-journal tail excluded from replay. */
     | 'delta_journal_torn_tail_dropped'
+    /** Startup recovery quarantined active rows it couldn't reconcile. */
+    | 'delta_journal_conflicting_echo_quarantined'
     /** The scope moved to the delta journal (manifest version 3). */
     | 'delta_journal_promoted'
     /** Promotion failed; the scope stays version 2. */

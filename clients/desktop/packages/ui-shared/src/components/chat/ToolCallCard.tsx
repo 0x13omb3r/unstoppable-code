@@ -1,3 +1,4 @@
+import { CodeBlock } from '../CodeBlock';
 import { REPLAY_BLOCK_CLASS } from '../../lib/replay-privacy';
 import { Stack } from '../Stack';
 import { TURN_OUTCOME_UNKNOWN_IMPACT } from './turn-outcome-label';
@@ -37,7 +38,6 @@ import {
  * Command and output under an opened step: the well, in the reply's code
  * block fill and 12px corner, with no border or heading.
  */
-const CLEAN_OUTPUT_CLASS = `${REPLAY_BLOCK_CLASS} max-h-75 overflow-auto whitespace-pre-wrap break-words rounded-lg bg-fg-primary/[0.06] px-3 py-2 font-mono text-xs fg-secondary`;
 
 /**
  * Result shape carried by a tool call. Mirrors the desktop `ToolResult` shape
@@ -168,13 +168,14 @@ export function ToolCallResultSection({
         {toolCallResultHeading(result)}
       </div>
       {children ?? (
-        <pre
-          className={`${REPLAY_BLOCK_CLASS} max-h-75 overflow-auto whitespace-pre-wrap break-all px-2.5 py-2 text-xs ${
-            result.kind === 'error' ? 'fg-destructive/80' : 'fg-secondary'
-          }`}
+        <CodeBlock
+          variant="row"
+          wrap="all"
+          tone={result.kind === 'error' ? 'destructive' : 'secondary'}
+          className="max-h-75"
         >
           {result.content}
-        </pre>
+        </CodeBlock>
       )}
       {result.kind === 'error' && (
         <p
@@ -461,10 +462,14 @@ export function ToolCallCard({
           )) ?? (
             <Stack gap="tight">
               {shownInput != null && shownInput.length > 0 && (
-                <pre className={CLEAN_OUTPUT_CLASS}>{shownInput}</pre>
+                <CodeBlock variant="output-preview" className="max-h-75">
+                  {shownInput}
+                </CodeBlock>
               )}
               {result && result.content.length > 0 && (
-                <pre className={CLEAN_OUTPUT_CLASS}>{result.content}</pre>
+                <CodeBlock variant="output-preview" className="max-h-75">
+                  {result.content}
+                </CodeBlock>
               )}
             </Stack>
           )}

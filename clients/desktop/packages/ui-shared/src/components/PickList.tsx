@@ -1,15 +1,19 @@
 'use client';
 
+import { SearchField, type SearchFieldProps } from './SearchField';
 import { Skeleton } from './Skeleton';
 import {
+  forwardRef,
   useCallback,
   useEffect,
   useId,
   useMemo,
   useRef,
   useState,
+  type ComponentPropsWithoutRef,
   type JSX,
   type ReactNode,
+  type RefObject,
 } from 'react';
 import {
   PickerMenuList,
@@ -91,10 +95,14 @@ export interface PickListProps<T> extends PickListRowProps<T> {
   readonly header?: ReactNode;
   /** Move focus to the search field on mount (default true). */
   readonly autoFocus?: boolean;
+  /** Lets the surrounding floating menu focus the search when positioned. */
+  readonly inputRef?: RefObject<HTMLInputElement | null>;
   /** Escape in the search field, for a host that closes on it. */
   readonly onEscape?: () => void;
   readonly 'data-testid'?: string;
   readonly searchTestId?: string;
+  /** Initially highlight the selected option when it is visible. */
+  readonly preferSelectedForNavigation?: boolean;
   /**
    * Caps the search field and list at this height so the list scrolls:
    * `md` (256px) in a popover or picker, `lg` (384px) in a palette.
@@ -139,6 +147,7 @@ export function resolvePickListActiveKey(
 export interface PickListKeyEvent {
   readonly key: string;
   readonly shiftKey: boolean;
+  readonly target?: EventTarget | null;
   readonly isComposing?: boolean;
   readonly nativeEvent?: { readonly isComposing: boolean };
   preventDefault: () => void;
@@ -157,14 +166,15 @@ export interface UsePickListKeysOptions {
    * An arrow moved past the rendered rows. Return true when the host brought
    * in another window of rows; otherwise the highlight wraps.
    */
+  readonly clampEdges?: boolean;
   readonly onEdge?: (direction: 'previous' | 'next') => boolean;
 }
 
 /**
  * The list keyboard for whichever input owns focus: a `SearchField`, or a
- * Slate editor through its own hook. The arrows, Home and End move the active
- * row and Enter picks it; keys during an IME composition belong to the input
- * method. The returned handler says whether it used the key.
+ * Slate editor through its own hook. The arrows move the active row and Enter
+ * picks it. Home and End move the caret in text fields and navigate elsewhere.
+ * Keys during an IME composition belong to the input method.
  */
 export function usePickListKeys({
   keys,
@@ -173,10 +183,15 @@ export function usePickListKeys({
   onPick,
   onEscape,
   onEdge,
+  clampEdges = false,
 }: UsePickListKeysOptions): (event: PickListKeyEvent) => boolean {
   return useCallback(
     (event: PickListKeyEvent): boolean => {
-      if (event.nativeEvent?.isComposing ?? event.isComposing) return false;
+      if (
+        (event.nativeEvent?.isComposing ?? event.isComposing) ||
+        event.key === 'Process'
+      )
+        return false;
       if (event.key === 'Escape' && onEscape) {
         event.preventDefault();
         onEscape();
@@ -191,19 +206,28 @@ export function usePickListKeys({
         onPick(activeKey);
         return true;
       }
+      if (
+        (event.key === 'Home' || event.key === 'End') &&
+        event.target &&
+        'nodeName' in event.target &&
+        (event.target.nodeName === 'INPUT' ||
+          event.target.nodeName === 'TEXTAREA')
+      ) {
+        return false;
+      }
       let next: number | null = null;
       if (event.key === 'ArrowDown') {
         if (active >= last && onEdge?.('next')) {
           event.preventDefault();
           return true;
         }
-        next = active >= last ? 0 : active + 1;
+        next = active >= last ? (clampEdges ? last : 0) : active + 1;
       } else if (event.key === 'ArrowUp') {
         if (active === 0 && onEdge?.('previous')) {
           event.preventDefault();
           return true;
         }
-        next = active <= 0 ? last : active - 1;
+        next = active <= 0 ? (clampEdges ? 0 : last) : active - 1;
       } else if (event.key === 'Home' && !event.shiftKey) next = 0;
       else if (event.key === 'End' && !event.shiftKey) next = last;
       const nextKey = next === null ? undefined : keys[next];
@@ -212,9 +236,72 @@ export function usePickListKeys({
       onActiveKeyChange(nextKey);
       return true;
     },
-    [activeKey, keys, onActiveKeyChange, onEdge, onEscape, onPick],
+    [activeKey, keys, onActiveKeyChange, clampEdges, onEdge, onEscape, onPick],
   );
 }
+
+interface PickListSearchProps extends Omit<
+  ComponentPropsWithoutRef<typeof PickerMenuSearchInput>,
+  'onKeyDown' | 'role' | 'aria-controls' | 'aria-activedescendant'
+> {
+  readonly listId: string;
+  readonly activeDescendant?: string;
+  readonly keyboard: UsePickListKeysOptions;
+}
+
+/** Search field for a list that draws its own groups or compound options. */
+export const PickListSearch = forwardRef<HTMLInputElement, PickListSearchProps>(
+  function PickListSearch(
+    { listId, activeDescendant, keyboard, ...props },
+    ref,
+  ): JSX.Element {
+    const handleKeys = usePickListKeys(keyboard);
+    return (
+      <PickerMenuSearchInput
+        {...props}
+        ref={ref}
+        role="combobox"
+        aria-autocomplete="list"
+        aria-expanded
+        aria-controls={listId}
+        aria-activedescendant={activeDescendant}
+        onKeyDown={(event) => {
+          if (handleKeys(event)) event.stopPropagation();
+        }}
+      />
+    );
+  },
+);
+
+interface PickListFieldProps extends SearchFieldProps {
+  readonly keyboard: UsePickListKeysOptions;
+  readonly listId?: string;
+  readonly activeDescendant?: string;
+}
+
+/** A palette search field that retains focus while controlling its options. */
+export const PickListField = forwardRef<HTMLInputElement, PickListFieldProps>(
+  function PickListField(
+    { keyboard, listId, activeDescendant, ...props },
+    ref,
+  ): JSX.Element {
+    const handleKeys = usePickListKeys(keyboard);
+    return (
+      <SearchField
+        {...props}
+        ref={ref}
+        role="combobox"
+        aria-autocomplete="list"
+        aria-expanded={listId !== undefined}
+        aria-controls={listId}
+        aria-activedescendant={activeDescendant}
+        onKeyDown={(event) => {
+          if (handleKeys(event)) event.stopPropagation();
+        }}
+      />
+    );
+  },
+);
 
 /** Adjacent rows that share a heading. A row with no heading ends a run. */
 function sectionRuns<T>(
@@ -369,8 +456,8 @@ function labelMatches(label: string, query: string): boolean {
 
 /**
  * The one search-and-pick list: a search field over picker rows. Typing
- * filters; the arrows, Home and End move the active row while focus stays in
- * the field, and Enter or a click picks. It owns the combobox, `listbox` and
+ * filters; the arrows move the active row while focus stays in the field,
+ * and Enter or a click picks. It owns the combobox, `listbox` and
  * `option` semantics and the empty and loading states, so a palette, a
  * picker and the composer's lists behave and read the same. Put it in a
  * `DialogModal` (a palette), a `FloatingPickerMenu` or a `Popover`. A host
@@ -398,16 +485,19 @@ export function PickList<T>({
   emptyLabel,
   selectedKey,
   autoFocus = true,
+  inputRef: providedInputRef,
   onEscape,
   'data-testid': dataTestId,
   searchTestId,
+  preferSelectedForNavigation = true,
   optionTestId,
   optionProps,
   listMaxHeight,
 }: PickListProps<T>): JSX.Element {
   const baseId = useId();
   const listId = `${baseId}-list`;
-  const inputRef = useRef<HTMLInputElement>(null);
+  const localInputRef = useRef<HTMLInputElement>(null);
+  const inputRef = providedInputRef ?? localInputRef;
   const [localQuery, setLocalQuery] = useState('');
   const query = controlledQuery ?? localQuery;
   const setQuery = (next: string): void => {
@@ -448,13 +538,13 @@ export function PickList<T>({
   const activeKey = resolvePickListActiveKey(
     keys,
     moved.query === query ? moved.key : null,
-    selectedKey,
+    preferSelectedForNavigation ? selectedKey : undefined,
   );
   const moveActive = (key: string): void => setMoved({ key, query });
 
   useEffect(() => {
     if (autoFocus) inputRef.current?.focus({ preventScroll: true });
-  }, [autoFocus]);
+  }, [autoFocus, inputRef]);
 
   const handleKeys = usePickListKeys({
     keys,

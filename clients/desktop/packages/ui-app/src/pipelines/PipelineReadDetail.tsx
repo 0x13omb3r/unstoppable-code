@@ -1,5 +1,6 @@
 'use client';
 
+import { CodeBlock } from '@canopy/ui-shared/components/CodeBlock';
 import {
   PipelineDetailTag,
   PipelineDetailJobHeader,
@@ -9,7 +10,6 @@ import { type JSX, useState } from 'react';
 import type { PortalPipelineDefinitionViewModel } from '@canopy/protocol/portal';
 import { PipelineIcon } from '@canopy/ui-shared';
 import { Stack, Button, Heading } from '@canopy/ui-shared/components';
-import { REPLAY_BLOCK_CLASS } from '@canopy/ui-shared/lib/replay-privacy';
 import { EmptyStateRow } from '@canopy/ui-shared/components';
 import { Surface } from '@canopy/ui-shared/components';
 import { PipelineStepRow } from './PipelineStepRow';
@@ -139,12 +139,17 @@ export function PipelineReadDetail({
             )}
             {/* Raw YAML holds prompts, scripts, and env values. */}
             <Surface variant="group" className="overflow-hidden">
-              <pre
-                className={`${REPLAY_BLOCK_CLASS} max-h-144 overflow-auto p-4 text-xs fg-primary`}
+              <CodeBlock
+                variant="file-document"
+                size="xs"
+                wrap="none"
+                tone="primary"
+                replay="block"
+                className="max-h-144"
                 data-testid="pipeline-read-detail-yaml"
               >
                 <code>{definition.canonicalYaml}</code>
-              </pre>
+              </CodeBlock>
             </Surface>
           </Stack>
         ) : (

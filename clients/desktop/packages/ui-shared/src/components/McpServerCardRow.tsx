@@ -1,6 +1,7 @@
+import { TextLink } from './TextLink';
 import type { JSX, ReactNode } from 'react';
 import { COMPACT_ACTIVITY_ITEM_CLASS_NAME } from './activity-item-density';
-import { ControlButton, Button, buttonClassName } from './Button';
+import { ControlButton, Button } from './Button';
 import { Surface } from './Surface';
 
 /** Hosts resolve identities; the shared row only renders the supplied control. */
@@ -28,8 +29,7 @@ export function McpRowSettings({
           Open MCP settings
         </Button>
       ) : (
-        <a
-          className={buttonClassName({ variant: 'link' })}
+        <TextLink
           href={destination.href}
           target="_blank"
           rel="noopener"
@@ -37,7 +37,7 @@ export function McpRowSettings({
           data-testid="mcp-servers-card-settings"
         >
           Open MCP settings
-        </a>
+        </TextLink>
       )}
     </div>
   );
@@ -94,7 +94,6 @@ export function McpServerCardRow({
   const nameClass = compact
     ? 'min-w-0 break-words fg-primary'
     : 'min-w-0 break-words text-s font-medium fg-primary';
-  const controlClass = `focus-ring rounded text-left hover:underline ${nameClass}`;
   const mainContent = (
     <>
       <div className="flex min-w-0 flex-wrap items-center gap-2">
@@ -113,8 +112,9 @@ export function McpServerCardRow({
             {name}
           </ControlButton>
         ) : (
-          <a
-            className={controlClass}
+          <TextLink
+            variant="mcp-title"
+            compact={!!compact}
             href={destination.href}
             target="_blank"
             rel="noopener"
@@ -122,7 +122,7 @@ export function McpServerCardRow({
             data-testid="mcp-servers-card-name"
           >
             {name}
-          </a>
+          </TextLink>
         )}
         {metadata}
         {status}

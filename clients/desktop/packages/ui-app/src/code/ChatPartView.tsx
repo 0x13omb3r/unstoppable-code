@@ -1,4 +1,5 @@
 'use client';
+import { CodeBlock } from '@canopy/ui-shared/components/CodeBlock';
 import { isClaudeAiCreditsFallbackErrorCode } from '@canopy/protocol/llm-gateway';
 import {
   readCodexAccountModelAccessFailure,
@@ -563,11 +564,16 @@ function ToolOutputSlot({
   return (
     <>
       {input.length > 0 && (
-        <pre
-          className={`${REPLAY_BLOCK_CLASS} max-h-50 overflow-auto whitespace-pre-wrap break-all px-2.5 py-2 text-xs fg-secondary`}
+        <CodeBlock
+          variant="row"
+          size="xs"
+          wrap="all"
+          tone="secondary"
+          replay="block"
+          className="max-h-50"
         >
           {input}
-        </pre>
+        </CodeBlock>
       )}
       <ToolCallResultSection result={result}>
         <DeferredToolOutput

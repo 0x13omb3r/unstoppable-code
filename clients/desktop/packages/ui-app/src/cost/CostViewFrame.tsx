@@ -13,9 +13,14 @@ import {
 /** A failed read's explanation, after the `Couldn't load cost.` title. */
 export function costProblemMessage(problem: CostViewProblem): string {
   if (problem.kind === 'unavailable') {
-    return problem.reason === 'no_scope'
-      ? 'This entry no longer exists.'
-      : 'Cost is not available right now. Try again in a moment.';
+    switch (problem.reason) {
+      case 'no_scope':
+        return 'This entry no longer exists.';
+      case 'not_served':
+        return "This cost view isn't available here yet.";
+      case 'runtime_unavailable':
+        return 'Cost is not available right now. Try again in a moment.';
+    }
   }
   if (problem.reason === 'NOT_FOUND') return 'No cost is recorded for it yet.';
   return problem.message.length > 0 ? problem.message : 'Try again.';
@@ -66,7 +71,14 @@ export function CostViewFrame<Value>({
         <Notice
           intent="attention"
           title="Couldn't load cost."
-          actions={<NoticeButton onClick={onRetry}>Try again</NoticeButton>}
+          // A read the host doesn't serve can't succeed on a retry (CAN-6941).
+          {...(problem.kind === 'unavailable' && problem.reason === 'not_served'
+            ? {}
+            : {
+                actions: (
+                  <NoticeButton onClick={onRetry}>Try again</NoticeButton>
+                ),
+              })}
         >
           {costProblemMessage(problem)}
         </Notice>

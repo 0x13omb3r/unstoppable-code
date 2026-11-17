@@ -1,8 +1,9 @@
 'use client';
 
+import { ButtonLink } from './ButtonLink';
 import type { JSX, MouseEvent, ReactNode } from 'react';
 import type { TryItSignInGateState } from '@canopy/protocol/try-it/continuation';
-import { Notice, NoticeButton, noticeButtonClassName } from './Notice';
+import { Notice, NoticeButton } from './Notice';
 
 /**
  * An authentication control. `href` renders a link that runs `onActivate`
@@ -90,17 +91,19 @@ function AuthControl({
   if (disabled) {
     // No href, so neither activation nor middle-click can navigate.
     return (
-      <a
+      <ButtonLink
         role="link"
         aria-disabled="true"
-        className={noticeButtonClassName(
-          variant,
-          'pointer-events-none opacity-50',
-        )}
+        href=""
+        disabled
+        variant={variant}
+        size="sm"
+        disabledAppearance="dimmed"
+        className="max-w-full whitespace-nowrap"
         data-testid={testId}
       >
         {children}
-      </a>
+      </ButtonLink>
     );
   }
   // Enter and every left click (modified or not) dispatch `click`; a middle
@@ -117,16 +120,19 @@ function AuthControl({
       });
   };
   return (
-    <a
+    <ButtonLink
       href={action.href}
       rel="noopener"
-      className={noticeButtonClassName(variant)}
+      variant={variant}
+      size="sm"
+      className="max-w-full whitespace-nowrap"
+      target={undefined}
       onClick={activate}
       onAuxClick={activate}
       data-testid={testId}
     >
       {children}
-    </a>
+    </ButtonLink>
   );
 }
 

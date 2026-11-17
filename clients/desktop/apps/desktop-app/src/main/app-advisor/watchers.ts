@@ -122,6 +122,7 @@ import {
 } from '@canopy/desktop-shared/node/background-execution-context';
 import type { ResourceContextDecision } from '@canopy/execution-engine/lib/resource-context-policy';
 import { BackgroundExecutionRefusedError } from '../services/background-execution-refusal';
+import { retryTransientAuthorization } from '../services/background-authorization-retry';
 import {
   pipelineContextResources,
   type PipelineContextResource,
@@ -1238,14 +1239,14 @@ function parseWatchersSnapshot(
   filePath: string,
   signature: string,
   raw: string,
-): WatchersFileSnapshot | null {
+): WatchersFileSnapshot {
   const parsed: unknown = JSON.parse(raw);
   if (
     !isRecord(parsed) ||
     parsed.version !== 1 ||
     !Array.isArray(parsed.watchers)
   ) {
-    return null;
+    throw new Error('Legacy watcher store has an unsupported format.');
   }
   return {
     path: filePath,
@@ -3561,30 +3562,24 @@ async function watcherAuthorizationResources(
   return resources;
 }
 
-export async function retryTransientWatcherAuthorization(
+export function retryTransientWatcherAuthorization(
   decide: () => Promise<ResourceContextDecision>,
   sleep: (ms: number) => Promise<void> = (ms) =>
     new Promise((resolve) => setTimeout(resolve, ms)),
 ): Promise<ResourceContextDecision> {
-  let authorization = await decide();
-  for (
-    let attempt = 0;
-    attempt < 2 && !authorization.allow && authorization.transient;
-    attempt++
-  ) {
-    await sleep(100 * (attempt + 1));
-    authorization = await decide();
-  }
-  return authorization;
+  return retryTransientAuthorization(decide, sleep);
 }
 
 /** A typed refusal, so tool callers can return its copy instead of failing. */
 function watcherRefusal(
   decision: Extract<ResourceContextDecision, { allow: false }>,
+  phase: 'arm' | 'delivery',
 ): BackgroundExecutionRefusedError {
   return new BackgroundExecutionRefusedError(
     decision.transient
-      ? backgroundExecutionRetryMessage('watcher')
+      ? backgroundExecutionRetryMessage(
+          phase === 'arm' ? 'watcher-setup' : 'watcher',
+        )
       : backgroundExecutionDeniedMessage(decision.reason, {
           ...(decision.subject ? { subject: decision.subject } : {}),
         }),
@@ -3614,7 +3609,7 @@ async function authorizeWatcherDelivery(
       watcher.destination,
     ),
   );
-  if (!authorization.allow) throw watcherRefusal(authorization);
+  if (!authorization.allow) throw watcherRefusal(authorization, 'delivery');
   if (destination && watcher.executionContext !== undefined) {
     // Defer the heavy chat-state repository/transcript graph until a flagged delivery.
     const { getChatStateService } =
@@ -3674,16 +3669,15 @@ async function authorizeWatcherArming(
       destination.chatId,
     )
   )?.tab;
-  const decision = await authorizeBackgroundExecution(
-    executionContext,
-    await watcherAuthorizationResources(
-      { target, destination },
-      destinationTab,
-      'arm',
-    ),
-    destination,
+  const resources = await watcherAuthorizationResources(
+    { target, destination },
+    destinationTab,
+    'arm',
   );
-  if (!decision.allow) throw watcherRefusal(decision);
+  const decision = await retryTransientWatcherAuthorization(() =>
+    authorizeBackgroundExecution(executionContext, resources, destination),
+  );
+  if (!decision.allow) throw watcherRefusal(decision, 'arm');
 }
 
 /** Bind and authorize before arming, using the same context delivery retains. */
@@ -7960,7 +7954,9 @@ class AppAdvisorWatcherService implements InlineChatWatcherReservationPort {
       applyObservation: (observation) =>
         this.applyGitHubPullRequestObservation(observation),
     });
-    void this.resumePendingGitHubDeliveries();
+    void this.resumePendingGitHubDeliveries().catch((error: unknown) =>
+      logMainProcessWarn('GitHub watcher replay unavailable.', error),
+    );
   }
 
   shutdown(): void {
@@ -10562,7 +10558,10 @@ class AppAdvisorWatcherService implements InlineChatWatcherReservationPort {
     const deliveryStarts = pendingWatcherIds.map(
       (watcherId) =>
         new Promise<void>((resolve) => {
-          void this.deliverPendingGitHubWatcher(watcherId, resolve);
+          void this.deliverPendingGitHubWatcher(watcherId, resolve).catch(
+            (error: unknown) =>
+              logMainProcessWarn('GitHub watcher delivery unavailable.', error),
+          );
         }),
     );
     await Promise.all(deliveryStarts);
@@ -10738,7 +10737,13 @@ class AppAdvisorWatcherService implements InlineChatWatcherReservationPort {
       pendingWatcherIds.map(
         (watcherId) =>
           new Promise<void>((resolve) => {
-            void this.deliverPendingGitHubWatcher(watcherId, resolve);
+            void this.deliverPendingGitHubWatcher(watcherId, resolve).catch(
+              (error: unknown) =>
+                logMainProcessWarn(
+                  'GitHub watcher delivery unavailable.',
+                  error,
+                ),
+            );
           }),
       ),
     );
@@ -13118,7 +13123,10 @@ class AppAdvisorWatcherService implements InlineChatWatcherReservationPort {
       this.githubDeliveriesInFlight.delete(watcherId);
       if (deliverAgain) {
         queueMicrotask(() => {
-          void this.deliverPendingGitHubWatcher(watcherId);
+          void this.deliverPendingGitHubWatcher(watcherId).catch(
+            (error: unknown) =>
+              logMainProcessWarn('GitHub watcher delivery unavailable.', error),
+          );
         });
       }
       await this.scheduleNextGitHubDeliveryRetry();
@@ -13157,7 +13165,9 @@ class AppAdvisorWatcherService implements InlineChatWatcherReservationPort {
     this.githubDeliveryTimer = setTimeout(
       () => {
         this.githubDeliveryTimer = null;
-        void this.resumePendingGitHubDeliveries();
+        void this.resumePendingGitHubDeliveries().catch((error: unknown) =>
+          logMainProcessWarn('GitHub watcher replay unavailable.', error),
+        );
       },
       Math.max(0, nextAttemptAt - Date.now()),
     );

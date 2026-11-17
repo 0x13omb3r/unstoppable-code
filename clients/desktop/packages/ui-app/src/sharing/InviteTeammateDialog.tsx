@@ -10,6 +10,7 @@ import {
   ErrorBanner,
   Notice,
   NoticeButton,
+  PickerMenuList,
   PickerMenuOption,
   PickerMenuOptionCheck,
   PickerMenuOptionContent,
@@ -386,9 +387,8 @@ export function InviteTeammateDialog({
             </Notice>
           )}
           {!membersLoading && !membersError && (
-            <div
-              className="max-h-40 overflow-y-auto grid grid-cols-1 content-start gap-1"
-              role="listbox"
+            <PickerMenuList
+              presentation="bounded-options"
               aria-label="Teammates"
             >
               {members.map((member) => {
@@ -423,7 +423,7 @@ export function InviteTeammateDialog({
                   </PickerMenuOption>
                 );
               })}
-            </div>
+            </PickerMenuList>
           )}
         </Stack>
 

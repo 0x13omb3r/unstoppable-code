@@ -1381,7 +1381,14 @@ describe('chat:send-message IPC qualification (CAN-5897)', () => {
   });
 
   it('a renderer cannot supply main-owned provenance', async () => {
-    for (const field of ['agentSent', 'autoResume', 'resumesInterruptedTurn'])
+    for (const field of [
+      'agentSent',
+      'autoResume',
+      'resumesInterruptedTurn',
+      // canopy#125 phase 02a: host-issued managed delegation delivery identity.
+      'managedDelegationDeliveryId',
+      'internalRow',
+    ])
       await expect(
         getHandler(IPC_CHANNELS.chatSendMessage)(undefined, {
           ...send,

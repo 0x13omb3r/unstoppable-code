@@ -1219,6 +1219,18 @@ export interface StepResult {
   child_execution_id?: string;
   selected_child_reason_ids?: string[];
   /**
+   * The input a `run-pipeline` step's child is waiting on, as the child holds
+   * it: its parent offers it as this step's pause, under the child's
+   * checkpoint id, so a person answers the child on its parent (CAN-6868).
+   * A child's approvals need no answer; each resumes by its own status reason
+   * (`selected_child_reason_ids`).
+   */
+  child_pause?: PipelinePauseCheckpoint;
+  /** The child's status reason for `child_pause`. */
+  child_pause_reason_id?: string;
+  /** Answers given on the parent to `child_pause`, which the child resumes with. */
+  child_pause_responses?: PipelinePauseResponse[];
+  /**
    * The chat send a `send-agent-message` host step recorded. Set whenever the
    * host returned one, including on a failed step whose message was already
    * accepted (a refused steer).

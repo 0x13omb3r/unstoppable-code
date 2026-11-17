@@ -7,6 +7,7 @@ export function seedWorktreeRecoveryFixture({
   userDataDir,
   workspaceId = 'demo-ts-pnpm-vite',
   worktreeId = 'demo-main',
+  operationId = '00000000-0000-4000-8000-000000000003',
   unreadable = false,
 }) {
   const rows = JSON.parse(
@@ -31,7 +32,7 @@ export function seedWorktreeRecoveryFixture({
       ? '{unreadable'
       : JSON.stringify({
           version: 1,
-          operationId: '00000000-0000-4000-8000-000000000003',
+          operationId,
           operation: 'worktree-archive',
           workspaceId,
           worktreeId,

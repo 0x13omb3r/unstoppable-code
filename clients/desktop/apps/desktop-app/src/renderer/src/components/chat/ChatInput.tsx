@@ -7672,6 +7672,7 @@ function ChatInputContent({
       data-chat-composer-root
       data-chat-composer-tab-id={tabId}
       data-testid={isEditingQueued ? 'queued-message-editor' : undefined}
+      data-composer-motion-scope
       data-composer-density={composerDensity}
       data-question-prompt={questionPromptOpen}
       // Under the controls row the panel edge sits as far from the controls

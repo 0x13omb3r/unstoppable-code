@@ -1,4 +1,5 @@
 // Browser-safe: protocol values plus transport types only.
+import { isCanopyLostReply } from '@canopy/core-transport/lost-reply';
 import type { CanopyFramedConnection } from '@canopy/core-transport/types';
 import {
   CANOPY_HOST_EXECUTION_MEMBER,
@@ -584,7 +585,7 @@ class ClientSession {
       ...(options.headers === undefined ? {} : { headers: options.headers }),
       accept: (response) => {
         if ('error' in response)
-          throw this.operationError(prepared.definition, response.error);
+          throw this.responseError(prepared.definition, response);
         const result = safeParseCanopySchema(
           prepared.definition.result,
           response.result,
@@ -612,7 +613,7 @@ class ClientSession {
     // frame, after the frames that outran this reply.
     const accept = (response: Response): StreamHandle => {
       if ('error' in response)
-        throw this.operationError(prepared.definition, response.error);
+        throw this.responseError(prepared.definition, response);
       const parsed = safeParseCanopySchema(openResult, response.result);
       const opened: Record<string, unknown> =
         parsed.success && isRecord(parsed.data) ? parsed.data : {};
@@ -787,6 +788,23 @@ class ClientSession {
       deadlineAt: deadline,
       signal: options.signal,
     };
+  }
+
+  /**
+   * An error response's error. One the binding made up for a reply it lost
+   * is a lost call, retried as the operation's idempotency allows, whatever
+   * errors the operation declares (CAN-6940).
+   */
+  private responseError(
+    definition: Definition,
+    response: CanopyJsonRpcErrorResponse,
+  ): CanopyClientError {
+    return isCanopyLostReply(response)
+      ? forDefinition(
+          decodeCanopyClientResponseError(response.error),
+          definition,
+        )
+      : this.operationError(definition, response.error);
   }
 
   /** Errors outside the operation's declared schema fail closed as `internal`. */

@@ -55,13 +55,23 @@ export const MemoryEntryAppendResultSchema = z.strictObject({
   fileKey: FileKeySchema,
 });
 
+// Revision 2 adds bounded cloud continuation; v1 desktop calls are unchanged.
+export const MEMORY_READ_SCHEMA_REVISION = 2;
+const MemoryPageSchema = z.strictObject({
+  nextCursor: z.string().max(4096).nullable(),
+  incomplete: z.boolean(),
+  notice: z.string().max(1024),
+});
+
 export const MemorySearchParamsSchema = z.strictObject({
   scope: CallerScopeSchema,
   query: z.string().min(1).max(100_000),
+  cursor: z.string().min(1).max(4096).optional(),
   _meta: CanopyQueryRequestMetadataSchema.optional(),
 });
 
 export const MemorySearchResultSchema = z.strictObject({
+  page: MemoryPageSchema.optional(),
   hits: z.array(
     z.strictObject({
       memory: MemoryScopeKindSchema,
@@ -77,14 +87,18 @@ export const MemoryEntryGetParamsSchema = z.strictObject({
   scope: CallerScopeSchema,
   memory: MemoryScopeKindSchema,
   fileKey: FileKeySchema,
+  cursor: z.string().min(1).max(4096).optional(),
   _meta: CanopyQueryRequestMetadataSchema.optional(),
 });
 
 export const MemoryEntryGetResultSchema = z.strictObject({
+  page: MemoryPageSchema.optional(),
   memory: MemoryScopeKindSchema,
   fileKey: FileKeySchema,
   content: z.string(),
 });
+
+export type MemoryEntryGetResult = z.output<typeof MemoryEntryGetResultSchema>;
 
 /** Agent history access always names the calling chat, never a search target. */
 const ChatHistoryCallerScopeSchema = CanopyWorkspaceScopeSchema.extend({
@@ -149,9 +163,9 @@ const BASE = {
   placement: 'core-only',
 } as const;
 
-// Served by the desktop dispatcher over Electron main's local memory store
-// (CAN-5993). Not composed into the shared registries: the daemon and the
-// web core do not serve them.
+// Desktop serves these over its local memory store (CAN-5993). Web core
+// additionally serves search and entry.get with revision-2 pagination (CAN-6464).
+// They stay outside the shared registries; the daemon does not serve them.
 export const CORE_MEMORY_QUERY_DEFINITIONS = defineCanopyQueryRegistry('core', {
   'core.memory.chats.search': defineCanopyQuery({
     ...BASE,

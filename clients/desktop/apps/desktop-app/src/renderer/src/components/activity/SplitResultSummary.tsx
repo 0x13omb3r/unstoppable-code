@@ -1,5 +1,5 @@
 import { Badge } from '@canopy/ui-shared/components/Badge';
-import { Stack } from '@canopy/ui-shared/components';
+import { TextLink, Stack } from '@canopy/ui-shared/components';
 import { type JSX } from 'react';
 import type { SplitPrMap } from '@canopy/desktop-shared/types/github';
 
@@ -41,26 +41,26 @@ export function SplitResultSummary({ map }: { map: SplitPrMap }): JSX.Element {
       {map.integrationPrUrl !== undefined &&
         map.integrationPrNumber !== undefined && (
           <p className="break-words text-xs fg-secondary">
-            <a
+            <TextLink
               href={map.integrationPrUrl}
               target="_blank"
               rel="noopener noreferrer"
-              className="fg-primary/80 transition-colors hover:fg-primary"
+              variant="muted"
             >
               Integration PR #{map.integrationPrNumber}
-            </a>{' '}
+            </TextLink>{' '}
             supersedes #{map.originalPrNumber}
           </p>
         )}
       <p className="break-words text-xs fg-secondary">
-        <a
+        <TextLink
           href={map.originalPrUrl}
           target="_blank"
           rel="noopener noreferrer"
-          className="fg-primary/80 transition-colors hover:fg-primary"
+          variant="muted"
         >
           Original PR #{map.originalPrNumber}
-        </a>
+        </TextLink>
         {map.status === 'completed' ? ' (closed)' : ''}
       </p>
       <div className="flex flex-col gap-1.5">
@@ -80,14 +80,15 @@ export function SplitResultSummary({ map }: { map: SplitPrMap }): JSX.Element {
                 [{child.index}/{childTotal}] {child.title}
               </span>
               {child.prUrl !== undefined && child.prNumber !== undefined && (
-                <a
+                <TextLink
                   href={child.prUrl}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="shrink-0 fg-secondary transition-colors hover:fg-primary"
+                  variant="quiet"
+                  className="shrink-0"
                 >
                   #{child.prNumber}
-                </a>
+                </TextLink>
               )}
             </div>
             <div className="mt-0.5 flex min-w-0 flex-col gap-0.5 fg-secondary">

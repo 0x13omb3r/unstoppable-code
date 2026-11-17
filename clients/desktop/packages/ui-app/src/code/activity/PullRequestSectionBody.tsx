@@ -1,6 +1,6 @@
 'use client';
 
-import { ControlButton } from '@canopy/ui-shared/components';
+import { TextLink, ControlButton } from '@canopy/ui-shared/components';
 import { Badge, type BadgeTone } from '@canopy/ui-shared/components/Badge';
 import {
   SPACE_ROLE_GAP_CLASS,
@@ -351,14 +351,15 @@ export function PullRequestRepoDetail({
             wire contract); an empty href would self-navigate, so the link
             renders only when a URL exists. */}
         {!hideGitHubLink && s.prUrl !== '' && (
-          <a
+          <TextLink
             href={s.prUrl}
             target="_blank"
             rel="noopener noreferrer"
-            className="text-xs fg-secondary transition-colors hover:fg-primary"
+            variant="quiet"
+            size="xs"
           >
             GitHub &rarr;
-          </a>
+          </TextLink>
         )}
       </div>
 
@@ -393,14 +394,15 @@ export function PullRequestRepoDetail({
                   <span className="truncate fg-primary/80">{check.name}</span>
                 </span>
                 {check.detailsUrl && (
-                  <a
+                  <TextLink
                     href={check.detailsUrl}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="shrink-0 fg-secondary transition-colors hover:fg-primary"
+                    variant="quiet"
+                    className="shrink-0"
                   >
                     view &rarr;
-                  </a>
+                  </TextLink>
                 )}
               </div>
             ))}
@@ -595,15 +597,17 @@ export function PullRequestSectionBody({
                     )}
                   </ControlButton>
                   {repo.status && repo.status.prUrl !== '' && (
-                    <a
+                    <TextLink
                       href={repo.status.prUrl}
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="flex-shrink-0 text-xs fg-secondary transition-colors hover:fg-primary"
+                      variant="quiet"
+                      size="xs"
+                      className="shrink-0"
                       onClick={(e) => e.stopPropagation()}
                     >
                       GitHub &rarr;
-                    </a>
+                    </TextLink>
                   )}
                 </div>
                 {expandedRepos.has(repo.repoId) && (
@@ -659,15 +663,17 @@ export function PullRequestSectionBody({
                   )}
                 </ControlButton>
                 {repo.status && repo.status.prUrl !== '' && (
-                  <a
+                  <TextLink
                     href={repo.status.prUrl}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="flex-shrink-0 text-xs fg-secondary transition-colors hover:fg-primary"
+                    variant="quiet"
+                    size="xs"
+                    className="shrink-0"
                     onClick={(e) => e.stopPropagation()}
                   >
                     GitHub &rarr;
-                  </a>
+                  </TextLink>
                 )}
               </div>
               {expandedRepos.has(repo.repoId) && (

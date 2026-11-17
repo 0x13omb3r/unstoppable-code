@@ -8,8 +8,11 @@ import {
   type ScriptRunResponse,
 } from '@canopy/desktop-shared/types';
 import { logMainProcessError } from '../lib/main-process-logging';
-import type { WorkerScriptExecution } from '@canopy/protocol/canopy-core';
-import { readScriptRun } from '../lib/script-execution';
+import {
+  isTerminalOperationStatus,
+  type WorkerScriptExecution,
+} from '@canopy/protocol/canopy-core';
+import { findScriptRun, readScriptRun } from '../lib/script-execution';
 import { isTrackedShellScriptRunning } from '../lib/script-runner';
 import { sendToWindow, type SendableBrowserWindow } from '../lib/window-send';
 import { readWorkspaceWorktrees } from '../lib/workspace-persistence';
@@ -22,6 +25,7 @@ import {
   type WorktreeScriptEntry,
 } from '../services/scripts-service';
 import { MAX_SCRIPT_WAIT_SECONDS } from './definitions';
+import type { WorktreeChatCoreWrites } from './worktree-chat-core-writes';
 
 /**
  * Typed worktree script actions. The project and worktree always come from
@@ -50,6 +54,8 @@ export interface WorktreeScriptActionRuntime {
    * parent's command policy, not only as the DispatchAction call.
    */
   authorizeScriptCommand?: (command: string) => Promise<boolean>;
+  /** A chat's tool call, which names the run it starts (CAN-5830). */
+  coreWrites?: Pick<WorktreeChatCoreWrites, 'scriptRunId'>;
 }
 
 const OUTPUT_TAIL_MAX_LINES = 100;
@@ -443,6 +449,99 @@ function settledRunResult(
   });
 }
 
+/** A refusal a retry of the same tool call can never turn into a run. */
+function finalFailure(
+  code: AppAdvisorActionError['code'],
+  message: string,
+): AppAdvisorActionResponse {
+  return {
+    requestId: '',
+    ok: false,
+    error: { code, message, retryable: false },
+  };
+}
+
+const RUN_AGAIN_HINT =
+  'Check the Scripts section, then send the action again as a new tool call to run it again.';
+
+type PriorRun = Awaited<ReturnType<typeof findScriptRun>>;
+
+/**
+ * A repeated tool call answers the run it already started, never a second
+ * run: from the run log while it is the script's latest run, otherwise from
+ * core's operation for that run. Whether it is still going comes from that
+ * run's own state, not from other runs of the script.
+ */
+function priorRunResult(
+  script: ScriptDescriptor,
+  operation: NonNullable<PriorRun['operation']>,
+  run: PriorRun['run'],
+): AppAdvisorActionResponse {
+  if (operation.status === 'conflict')
+    return finalFailure(
+      'idempotency_conflict',
+      `This tool call already ran a different script, so ${script.label} was not started. Send the action again as a new tool call.`,
+    );
+  const live =
+    operation.status === 'in_flight' ||
+    !isTerminalOperationStatus(operation.status);
+  const replayHint = `This tool call already started this run, so it was not started again. Read its output with GetScriptOutput using scriptId "${script.scriptKey}".`;
+  if (run) {
+    const { execution } = run;
+    // A recorded running run whose operation ended was stopped, for example
+    // by an app restart.
+    const status =
+      execution.status === 'running' && !live
+        ? 'stopped'
+        : mapHumanStatus(execution);
+    return success({
+      ...scriptIdentity(script),
+      started: true,
+      replayed: true,
+      finished: status !== 'running' && status !== 'orphaned',
+      status,
+      success: execution.status === 'success',
+      exitCode: execution.exitCode,
+      timedOut: execution.timedOut,
+      durationMs: execution.durationMs,
+      outputTail: run.lines,
+      outputTruncated: false,
+      hint: replayHint,
+    });
+  }
+  if (live)
+    return success({
+      ...scriptIdentity(script),
+      started: true,
+      replayed: true,
+      finished: false,
+      status:
+        operation.status === 'in_flight' || operation.status === 'running'
+          ? 'running'
+          : operation.status,
+      hint: replayHint,
+    });
+  if (operation.status === 'completed') {
+    const { result } = operation;
+    return success({
+      ...scriptIdentity(script),
+      started: true,
+      replayed: true,
+      finished: true,
+      status: mapHumanStatus(result),
+      success: result.status === 'success',
+      exitCode: result.exitCode,
+      timedOut: result.timedOut,
+      durationMs: result.durationMs,
+      hint: `This tool call already ran this script, and a later run has replaced its output, so it was not started again. ${RUN_AGAIN_HINT}`,
+    });
+  }
+  return finalFailure(
+    'execution_failed',
+    `This tool call already tried to run ${script.label}, and that run did not finish, so it was not started again. ${RUN_AGAIN_HINT}`,
+  );
+}
+
 /**
  * Start a run through the same service the Scripts section uses and forward
  * its started/output/complete events so the run appears in the UI. Resolves
@@ -453,6 +552,7 @@ async function startAgentRun(
   target: ScriptTarget,
   waitSeconds: number,
   runtime: WorktreeScriptActionRuntime,
+  runId: string | undefined,
 ): Promise<AppAdvisorActionResponse> {
   const key = runKey(target, entry.descriptor.scriptKey);
   activeAgentRuns.add(key);
@@ -463,6 +563,7 @@ async function startAgentRun(
     markStarted = (): void => resolve('started');
   });
   const outcome = runScript(entry.request, {
+    ...(runId ? { runId, keyed: true } : {}),
     // Runs exactly the script that was checked (and approved, for a
     // delegate); a script changed since then is refused, not run.
     expectedScript: {
@@ -518,6 +619,17 @@ export async function runWorktreeScript(
   const selected = await selectScript(target, scriptId, action.repo?.trim());
   if ('response' in selected) return selected.response;
   const script = selected.entry.descriptor;
+  const runId = runtime.coreWrites?.scriptRunId(target);
+  if (runId) {
+    const prior = await findScriptRun({
+      ...target,
+      executionId: runId,
+      scriptKey: script.scriptKey,
+      tailLines: OUTPUT_TAIL_MAX_LINES,
+    });
+    if (prior.operation)
+      return priorRunResult(script, prior.operation, prior.run);
+  }
   const block = agentRunBlock(script);
   if (block) return failure('invalid_target', block.message);
   const alreadyRunning = (): AppAdvisorActionResponse =>
@@ -559,5 +671,6 @@ export async function runWorktreeScript(
     target,
     normalizeWaitSeconds(action.waitSeconds),
     runtime,
+    runId,
   );
 }

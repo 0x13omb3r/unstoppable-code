@@ -1,3 +1,4 @@
+import { TextLink } from './TextLink';
 import type { JSX } from 'react';
 import type { SkillPublisherProvenance as Provenance } from '@canopy/protocol';
 
@@ -13,14 +14,14 @@ export function SkillPublisherProvenance({
       data-testid="publisher-skill-provenance"
     >
       <p>License: {publisher.license ?? 'See source for license terms'}</p>
-      <a
+      <TextLink
         href={publisher.sourceUrl}
         target="_blank"
         rel="noopener noreferrer"
-        className="self-start fg-accent hover:underline"
+        className="self-start"
       >
         View source
-      </a>
+      </TextLink>
     </div>
   );
 }

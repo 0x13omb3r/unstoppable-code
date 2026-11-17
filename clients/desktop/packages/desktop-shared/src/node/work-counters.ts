@@ -1,3 +1,4 @@
+import { AsyncLocalStorage } from 'node:async_hooks';
 import { CANOPY_ERROR_KINDS } from '@canopy/protocol/canopy-core';
 import { serialize } from 'node:v8';
 import {
@@ -37,7 +38,8 @@ export type WorkCounterSource =
   | 'chatStorage'
   | 'provider'
   | 'route'
-  | 'w5';
+  | 'w5'
+  | 'metadata';
 
 export interface WorkCountersSnapshot {
   /** Changes on every reset, so a reader can tell counts were cleared. */
@@ -56,6 +58,11 @@ export interface WorkCountersSnapshot {
    * judged work metric.
    */
   w5: Record<string, number>;
+  /**
+   * Metadata file work outside W5 (CAN-6932): project config file probes and
+   * reads by the caller that asked, and archive recovery journal scans.
+   */
+  metadata: Record<string, number>;
 }
 
 export interface WorkCountersResetOptions {
@@ -153,6 +160,7 @@ const counters: Record<WorkCounterSource, BoundedCounters> = {
   provider: new BoundedCounters(),
   route: new BoundedCounters(),
   w5: new BoundedCounters(),
+  metadata: new BoundedCounters(),
 };
 let generation = 0;
 let estimateIpcBytes = false;
@@ -170,6 +178,7 @@ export function snapshotWorkCounters(): WorkCountersSnapshot {
     provider: counters.provider.snapshot(),
     route: counters.route.snapshot(),
     w5: counters.w5.snapshot(),
+    metadata: counters.metadata.snapshot(),
   };
 }
 
@@ -182,6 +191,7 @@ export function resetWorkCounters(
   counters.provider.clear();
   counters.route.clear();
   counters.w5.clear();
+  counters.metadata.clear();
   generation += 1;
   estimateIpcBytes = options.estimateIpcBytes === true;
   estimateDelegationBytes = options.estimateDelegationBytes === true;
@@ -515,6 +525,35 @@ export function recordFilesRouteOutcome(
  */
 export function recordW5Work(key: string, delta = 1): void {
   counters.w5.add(key, delta);
+}
+
+/** Names the caller that metadata reads made inside `work` are counted under. */
+export type MetadataReadCaller = 'sidebar.project' | 'sidebar.worktree';
+
+const metadataReadCaller = new AsyncLocalStorage<MetadataReadCaller>();
+
+export function runWithMetadataReadCaller<T>(
+  caller: MetadataReadCaller,
+  work: () => T,
+): T {
+  return metadataReadCaller.run(caller, work);
+}
+
+/**
+ * One unit of metadata file work, keyed `<key>.<caller>`; a read outside any
+ * named caller counts under `other`. Keys are documented in
+ * `docs/desktop-app-performance.md` ("Metadata counters").
+ */
+export function recordMetadataRead(key: string): void {
+  counters.metadata.add(
+    `${key}.${metadataReadCaller.getStore() ?? 'other'}`,
+    1,
+  );
+}
+
+/** One unit of metadata work that has no caller attribution. */
+export function recordMetadataWork(key: string, delta = 1): void {
+  counters.metadata.add(key, delta);
 }
 
 /**

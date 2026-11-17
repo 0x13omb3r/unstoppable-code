@@ -24,6 +24,7 @@ import {
 } from '@/stores/chat/web-core/task-deletions';
 import { useCloudArchivedTasksStore } from '@/cloud-chats/cloud-archived-tasks';
 import { resetWebCoreServedOperations } from '@/lib/web-core-served-operations';
+import { desktopCostNavigatorFor } from '@/lib/cost/cost-navigator';
 import { createRelayCoreCoworkInvoker } from '@/cloud-chats/relay-invoker';
 import { CloudChatFileTargetContext } from '@/cloud-chats/cloud-chat-file-target';
 import {
@@ -454,6 +455,23 @@ let appliesBeforeReply = false;
  * them is refused again, and its receipt says so.
  */
 const refusedCommands = new Set<string>();
+/**
+ * The commands a supersede fenced (CAN-6856): a late send under one of them
+ * is refused, as the web core refuses a send its settled fence holds.
+ */
+const supersededCommands = new Set<string>();
+/**
+ * How the web core answers `core.chat.send.supersede`: it fences the send,
+ * or its Agentic Core has no send fences, or it can't answer now.
+ */
+let supersedeAnswer: 'fence' | 'unfenced' | 'unavailable' = 'fence';
+/**
+ * Retryable failures the web core answers before it fences (CAN-6856): a
+ * call deadline, or an attempt whose lease lapsed.
+ */
+const supersedeFailuresFirst: ('deadline_exceeded' | 'unavailable')[] = [];
+/** Conversation v1 chats, which can't stop a send (CAN-6856). */
+const v1Chats = new Set<string>();
 /** Set to have `core.chat.send.receipt` answer from `appliedSends`. */
 let servesSendReceipts = false;
 /** Set to make the web core answer a turn cancel as for a turn it no longer knows. */
@@ -607,6 +625,11 @@ function cloudScopeCapabilitiesNow(): CanopyCapabilities {
 let servesCost = false;
 /** The day a cloud task's cost is observed from, when its history is partial. */
 let costCoverageStart: string | undefined;
+/**
+ * The `detail` values the manifest declares for core.cost.chat.get
+ * (CAN-6941); undefined declares none, as an older web core does.
+ */
+let costChatDetails: string[] | undefined = ['summary'];
 
 const costOperation = (name: string): Record<string, unknown> => ({
   name,
@@ -990,7 +1013,12 @@ Object.defineProperty(window, 'canopyCore', {
           },
           operations: [
             costOperation('core.cost.scope.get'),
-            costOperation('core.cost.chat.get'),
+            {
+              ...costOperation('core.cost.chat.get'),
+              ...(costChatDetails === undefined
+                ? {}
+                : { details: costChatDetails }),
+            },
           ],
           generatedAt: CREATED_AT,
         });
@@ -1452,6 +1480,16 @@ Object.defineProperty(window, 'canopyCore', {
               },
             }));
           const sentCommand = String(request.params?.commandId);
+          // A send its supersede fenced never applies (CAN-6856).
+          if (supersededCommands.has(sentCommand))
+            return held(sendGate).then(() => ({
+              ok: false,
+              error: {
+                kind: 'failed_precondition',
+                message: 'This message was replaced by a newer send.',
+                retry: { kind: 'never' },
+              },
+            }));
           if (
             refusedCommands.has(sentCommand) ||
             (refusedSendText !== null &&
@@ -1538,7 +1576,19 @@ Object.defineProperty(window, 'canopyCore', {
             const outcome = apply();
             return held(sendGate).then(() => accepted(outcome));
           }
-          return held(sendGate).then(() => accepted(apply()));
+          // Fenced while it was on its way: it arrives too late to apply.
+          return held(sendGate).then(() =>
+            supersededCommands.has(commandId)
+              ? {
+                  ok: false,
+                  error: {
+                    kind: 'failed_precondition',
+                    message: 'This message was replaced by a newer send.',
+                    retry: { kind: 'never' },
+                  },
+                }
+              : accepted(apply()),
+          );
         }
         // A turn the web core accepts a cancel for keeps running until it
         // ends; one it no longer knows has ended.
@@ -1577,6 +1627,61 @@ Object.defineProperty(window, 'canopyCore', {
             revision: snapshotRevision,
             outcome: index >= 0 ? 'applied' : 'not_found',
           });
+        }
+        case 'core.chat.send.supersede': {
+          const commandId = String(request.params?.commandId);
+          if (v1Chats.has(String(request.params?.chatId)))
+            return Promise.resolve({
+              ok: false,
+              error: {
+                kind: 'failed_precondition',
+                code: 'core.chat.send.supersede.invalidState',
+                message: "This chat can't stop a send.",
+                retry: { kind: 'never' },
+              },
+            });
+          if (supersedeAnswer === 'unfenced')
+            return Promise.resolve({
+              ok: false,
+              error: {
+                kind: 'capability_unavailable',
+                code: 'core.chat.send.supersede.unavailable',
+                message: "This chat can't stop a send yet.",
+                retry: { kind: 'never' },
+              },
+            });
+          const failure = supersedeFailuresFirst.shift();
+          if (failure !== undefined)
+            return Promise.resolve({
+              ok: false,
+              error: {
+                kind: failure,
+                message: 'The web core did not finish stopping the send.',
+                retry: { kind: 'same_request' },
+              },
+            });
+          if (supersedeAnswer === 'unavailable')
+            return Promise.resolve({
+              ok: false,
+              error: {
+                kind: 'unavailable',
+                message: 'The web core did not answer in time.',
+                retry: { kind: 'same_request' },
+              },
+            });
+          const applied = appliedSends.find(
+            (sent) => sent.commandId === commandId,
+          );
+          if (applied !== undefined)
+            return ok({
+              outcome: 'applied',
+              commandId,
+              entityId: 'turn-1',
+              messageId: 'turn-1-u',
+            });
+          supersededCommands.add(commandId);
+          refusedCommands.add(commandId);
+          return ok({ outcome: 'superseded', commandId });
         }
         case 'core.chat.send.receipt': {
           const commandId = String(request.params?.commandId);
@@ -1991,6 +2096,10 @@ beforeEach(() => {
   sendGate = null;
   appliedSends.length = 0;
   refusedCommands.clear();
+  supersededCommands.clear();
+  supersedeAnswer = 'fence';
+  supersedeFailuresFirst.length = 0;
+  v1Chats.clear();
   appliesBeforeReply = false;
   servesSendReceipts = false;
   savedAccountId = 'account-1';
@@ -2011,6 +2120,7 @@ beforeEach(() => {
   servesCoworkLists = false;
   servesCost = false;
   costCoverageStart = undefined;
+  costChatDetails = ['summary'];
   resetWebCoreServedOperations();
   setRendererBillingLaneAvailability({
     claudeNativeAuth: undefined,
@@ -8827,6 +8937,38 @@ describe('a cloud task in the cowork page (CAN-6175 R2)', () => {
     expect(callsCarryingWebCoreIds()).toEqual([]);
   });
 
+  for (const [label, details, offered] of [
+    ['serves only its summary row', ['summary'], false],
+    ['declares no details, as an older web core', undefined, false],
+    ['serves its full breakdown', ['summary', 'full'], true],
+  ] as const) {
+    it(`offers a cloud chat's Session breakdown only when the web core ${label} (CAN-6941)`, async () => {
+      servesCost = true;
+      costChatDetails = details === undefined ? undefined : [...details];
+      renderPage();
+      act(() => {
+        openCoworkWorkEntryFromSidebar('web-core:ws-1', 'web-core:wt-1');
+      });
+      await settle();
+      // The capability follows the manifest, which loads after first render.
+      await settle();
+      const capabilities = cloudScopeCapabilitiesNow();
+      // Cost stays on either way: the summary row serves it.
+      expect(capabilities.costInsights).toBe(true);
+      expect(panelKindsUnavailableFor(capabilities)).not.toContain('cost');
+      expect(capabilities.sessionBreakdown === true).toBe(offered);
+      expect(
+        panelKindsUnavailableFor(capabilities).includes('session-breakdown'),
+      ).toBe(!offered);
+      // The cost views' chat rows open the breakdown only when it's served;
+      // otherwise the navigator has no action and they render static.
+      expect(
+        desktopCostNavigatorFor(capabilities).openSessionBreakdown !==
+          undefined,
+      ).toBe(offered);
+    });
+  }
+
   it("shows a cloud task's cost in AI Credits, and never USD for an account that bills only to AI Credits (CAN-6180)", async () => {
     servesCost = true;
     const costText = async (): Promise<string> => {
@@ -9162,7 +9304,10 @@ describe('a cloud task in the cowork page (CAN-6175 R2)', () => {
       installHomeDraftPersistence()();
       act(() => {
         useHomeComposerStore.getState().reset();
-        useHomeComposerStore.setState({ outboxCards: [] });
+        useHomeComposerStore.setState({
+          outboxCards: [],
+          sendAgainMayDuplicate: false,
+        });
         useProjectsStore.setState({ projects: [] });
         useWorkspaceContextStore.setState((store) => ({
           hydrated: false,
@@ -10304,7 +10449,10 @@ describe('a cloud task in the cowork page (CAN-6175 R2)', () => {
       resetCloudSendOrder();
       act(() => {
         useHomeComposerStore.getState().reset();
-        useHomeComposerStore.setState({ outboxCards: [] });
+        useHomeComposerStore.setState({
+          outboxCards: [],
+          sendAgainMayDuplicate: false,
+        });
       });
       render();
       await settle();
@@ -10826,7 +10974,7 @@ describe('a cloud task in the cowork page (CAN-6175 R2)', () => {
       // Never put back in the editor, and nothing sent by itself.
       expect(useHomeComposerStore.getState().text).toBe('');
       expect(noticeText('home-outbox-missing')).toContain(
-        'could deliver it twice',
+        'Sending it again stops the earlier one first, so it arrives once.',
       );
       expect(noticeText('home-outbox-missing')).toContain('Plan the launch');
       expect(sendCommandsTo(taskId)).toHaveLength(1);
@@ -10938,6 +11086,253 @@ describe('a cloud task in the cowork page (CAN-6175 R2)', () => {
         expect.objectContaining({ chatId: newTask, text: 'Plan the launch' }),
       ]);
       expect(outboxIds()).toEqual([]);
+    });
+
+    /** The supersedes the web core was asked for, by command id. */
+    const supersededAt = (): unknown[] =>
+      coreRequestLog
+        .filter((entry) => entry.method === 'core.chat.send.supersede')
+        .map((entry) => entry.params.commandId);
+
+    const discardPending = (): void => {
+      act(() => {
+        container
+          .querySelector<HTMLButtonElement>(
+            '[data-testid="home-outbox-missing"] button[aria-label="Discard it"]',
+          )
+          ?.click();
+      });
+    };
+
+    it('stops the earlier send before sending a pending message again, so the late one never arrives (CAN-6856)', async () => {
+      servesSendReceipts = true;
+      renderHome();
+      await connectWithOrgProject();
+      await settle();
+      await pickHomeProject('web-core:ws-1');
+      const { taskId, release } = await sendHeldFromHome('Plan the launch');
+      const [original] = sendCommandsTo(taskId);
+      await reloadHome(renderHome);
+      sendGate = null;
+      await pickHomeProject('web-core:ws-1');
+      expect(cardStates()).toEqual(['missing']);
+
+      click('home-outbox-send-again');
+      await settle();
+
+      // Stopped first, then sent once under a new command.
+      expect(supersededAt()).toEqual([original]);
+      const sent = sendCommandsTo(taskId);
+      expect(sent).toHaveLength(2);
+      expect(sent[1]).not.toBe(original);
+      expect(appliedSends.map((each) => each.text)).toEqual([
+        'Plan the launch',
+      ]);
+      // The earlier send reaches the web core late, and never applies.
+      release();
+      await settle();
+      expect(appliedSends.map((each) => each.text)).toEqual([
+        'Plan the launch',
+      ]);
+    });
+
+    it("sends a pending message again as before, saying it could arrive twice, where the cloud can't stop the earlier send (CAN-6856)", async () => {
+      servesSendReceipts = true;
+      supersedeAnswer = 'unfenced';
+      renderHome();
+      await connectWithOrgProject();
+      await settle();
+      await pickHomeProject('web-core:ws-1');
+      const { taskId, release } = await sendHeldFromHome('Plan the launch');
+      await reloadHome(renderHome);
+      sendGate = null;
+      await pickHomeProject('web-core:ws-1');
+
+      // Asked once: the cloud can't stop it, so nothing goes yet, and the
+      // card now says it could arrive twice.
+      click('home-outbox-send-again');
+      await settle();
+      expect(sendCommandsTo(taskId)).toHaveLength(1);
+      expect(noticeText('home-outbox-missing')).toContain(
+        'Sending it again could deliver it twice.',
+      );
+
+      // Sent again knowing that, as before send fences.
+      click('home-outbox-send-again');
+      await settle();
+      expect(sendCommandsTo(taskId)).toHaveLength(2);
+      expect(appliedSends.map((each) => each.text)).toEqual([
+        'Plan the launch',
+      ]);
+      release();
+      await settle();
+      expect(appliedSends.map((each) => each.text)).toEqual([
+        'Plan the launch',
+        'Plan the launch',
+      ]);
+    });
+
+    it("sends nothing again, and keeps the card, when the cloud can't say whether it stopped the earlier send (CAN-6856)", async () => {
+      servesSendReceipts = true;
+      supersedeAnswer = 'unavailable';
+      renderHome();
+      await connectWithOrgProject();
+      await settle();
+      await pickHomeProject('web-core:ws-1');
+      const { taskId } = await sendHeldFromHome('Plan the launch');
+      const [original] = sendCommandsTo(taskId);
+      await reloadHome(renderHome);
+      sendGate = null;
+      await pickHomeProject('web-core:ws-1');
+
+      click('home-outbox-send-again');
+      await settleUntil(
+        () => useHomeComposerStore.getState().sendError !== null,
+      );
+
+      // Asked again a bounded number of times, always for the same send.
+      expect(supersededAt()).toEqual([original, original, original]);
+      expect(sendCommandsTo(taskId)).toHaveLength(1);
+      expect(cardStates()).toEqual(['missing']);
+      expect(useHomeComposerStore.getState().sendError?.error).toBe(
+        "Couldn't check whether your earlier message arrived. Try again in a moment.",
+      );
+    });
+
+    it('asks again, for the same send, when stopping the earlier one fails for now, and sends once it is stopped (CAN-6856)', async () => {
+      servesSendReceipts = true;
+      supersedeFailuresFirst.push('deadline_exceeded', 'unavailable');
+      renderHome();
+      await connectWithOrgProject();
+      await settle();
+      await pickHomeProject('web-core:ws-1');
+      const { taskId, release } = await sendHeldFromHome('Plan the launch');
+      const [original] = sendCommandsTo(taskId);
+      await reloadHome(renderHome);
+      sendGate = null;
+      await pickHomeProject('web-core:ws-1');
+
+      click('home-outbox-send-again');
+      // Nothing goes while the cloud hasn't answered for certain.
+      await settleUntil(() => supersededAt().length >= 2);
+      expect(sendCommandsTo(taskId)).toHaveLength(1);
+      await settleUntil(() => sendCommandsTo(taskId).length === 2);
+
+      expect(supersededAt()).toEqual([original, original, original]);
+      expect(sendCommandsTo(taskId)).toHaveLength(2);
+      expect(useHomeComposerStore.getState().sendError).toBeNull();
+      release();
+      await settle();
+      expect(appliedSends.map((each) => each.text)).toEqual([
+        'Plan the launch',
+      ]);
+    });
+
+    it("warns only on a chat that can't stop a send, leaving another chat's pending message to be stopped first (CAN-6856)", async () => {
+      servesSendReceipts = true;
+      renderHome();
+      await connectWithOrgProject();
+      await settle();
+      await pickHomeProject('web-core:ws-1');
+      const oldChat = await startTask('An older chat');
+      const newChat = await startTask('A newer chat');
+      v1Chats.add(oldChat);
+      plantRecord({
+        outbox: [
+          cloudEntry('cmd-old', oldChat, 'Plan the launch'),
+          cloudEntry('cmd-new', newChat, 'Book the venue'),
+        ],
+      });
+      await reloadHome(renderHome);
+      await pickHomeProject('web-core:ws-1');
+      expect(cardStates()).toEqual(['missing', 'missing']);
+      const card = (text: string): HTMLElement | undefined =>
+        Array.from(
+          container.querySelectorAll<HTMLElement>(
+            '[data-testid="home-outbox-missing"]',
+          ),
+        ).find((each) => each.textContent?.includes(text) === true);
+      const sendAgain = (text: string): void => {
+        act(() => {
+          card(text)
+            ?.querySelector<HTMLElement>(
+              '[data-testid="home-outbox-send-again"]',
+            )
+            ?.click();
+        });
+      };
+
+      // The older chat can't stop its send: only its card says so.
+      sendAgain('Plan the launch');
+      await settle();
+      expect(sendCommandsTo(oldChat)).toHaveLength(1);
+      expect(card('Plan the launch')?.textContent).toContain(
+        'Sending it again could deliver it twice.',
+      );
+      expect(card('Book the venue')?.textContent).toContain(
+        'Sending it again stops the earlier one first, so it arrives once.',
+      );
+
+      // The newer chat's message is still stopped first, then sent once.
+      sendAgain('Book the venue');
+      await settle();
+      expect(supersededAt()).toEqual(['cmd-old', 'cmd-new']);
+      expect(sendCommandsTo(newChat)).toHaveLength(2);
+      expect(appliedSends.map((each) => each.text)).toEqual([
+        'An older chat',
+        'A newer chat',
+        'Book the venue',
+      ]);
+    });
+
+    it('stops a pending message for good when the person discards it (CAN-6856)', async () => {
+      servesSendReceipts = true;
+      renderHome();
+      await connectWithOrgProject();
+      await settle();
+      await pickHomeProject('web-core:ws-1');
+      const { taskId, release } = await sendHeldFromHome('Plan the launch');
+      const [original] = sendCommandsTo(taskId);
+      await reloadHome(renderHome);
+      sendGate = null;
+      await pickHomeProject('web-core:ws-1');
+
+      discardPending();
+      await settle();
+
+      expect(supersededAt()).toEqual([original]);
+      expect(cardStates()).toEqual([]);
+      expect(outboxIds()).toEqual([]);
+      // Discarded means never sent: the late send doesn't apply.
+      release();
+      await settle();
+      expect(appliedSends).toEqual([]);
+    });
+
+    it("keeps a pending message the person discards when the cloud can't say whether it stopped it (CAN-6856)", async () => {
+      servesSendReceipts = true;
+      supersedeAnswer = 'unavailable';
+      renderHome();
+      await connectWithOrgProject();
+      await settle();
+      await pickHomeProject('web-core:ws-1');
+      const { taskId } = await sendHeldFromHome('Plan the launch');
+      const [original] = sendCommandsTo(taskId);
+      await reloadHome(renderHome);
+      sendGate = null;
+      await pickHomeProject('web-core:ws-1');
+
+      discardPending();
+      await settleUntil(
+        () => useHomeComposerStore.getState().sendError !== null,
+      );
+
+      expect(supersededAt()).toEqual([original, original, original]);
+      expect(cardStates()).toEqual(['missing']);
+      expect(outboxIds()).toHaveLength(1);
+      expect(useHomeComposerStore.getState().sendError?.error).toBe(
+        "Couldn't stop your earlier message from arriving. Try again in a moment.",
+      );
     });
 
     it("won't send a pending message again without the files whose task is gone, and names them (CAN-6798)", async () => {

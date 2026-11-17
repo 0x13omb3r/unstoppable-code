@@ -1397,6 +1397,8 @@ export function DesktopSharedSidebarHost({
     active: boolean;
     inFlight: boolean;
     pending: boolean;
+    nextAllowedAt: number;
+    gapTimer: ReturnType<typeof setTimeout> | null;
   } | null>(null);
   const onSnapshotRef = useRef(onSnapshot);
   const onRefreshMeasuredRef = useRef(onRefreshMeasured);
@@ -1610,41 +1612,57 @@ export function DesktopSharedSidebarHost({
       workspaceMoveToOrganization,
     ],
   );
-  const refresh = useCallback(async (): Promise<void> => {
-    const state = refreshState.current;
-    if (!state?.active || state.client !== client) return;
-    if (state.inFlight) {
+  const refresh = useCallback(
+    async function refreshSnapshot(): Promise<void> {
+      const state = refreshState.current;
+      if (!state?.active || state.client !== client) return;
       state.pending = true;
-      return;
-    }
-    state.inFlight = true;
-    try {
-      do {
-        state.pending = false;
-        const startedAt = performance.now();
-        try {
-          const next = await client.query('session.snapshot', {});
-          if (!state.active) return;
-          if (state.pending) continue;
-          setSnapshot(next);
-          onSnapshotRef.current?.(next);
-          onRefreshMeasuredRef.current?.(performance.now() - startedAt);
-        } catch (error) {
-          if (!state.active) return;
-          // Keep the native path available while a snapshot is unavailable.
-          reportRendererConsoleError('Shared sidebar snapshot refresh failed', {
-            error,
-          });
-          if (!state.pending) setSnapshotFailures((count) => count + 1);
-        }
-      } while (state.active && state.pending);
-    } finally {
-      state.inFlight = false;
-    }
-  }, [client]);
+      if (state.inFlight || state.gapTimer !== null) return;
+      const delayMs = state.nextAllowedAt - performance.now();
+      if (delayMs > 0) {
+        state.gapTimer = setTimeout(() => {
+          state.gapTimer = null;
+          if (state.active) void refreshSnapshot();
+        }, delayMs);
+        return;
+      }
+      state.inFlight = true;
+      state.pending = false;
+      const startedAt = performance.now();
+      try {
+        const next = await client.query('session.snapshot', {});
+        if (!state.active) return;
+        setSnapshot(next);
+        onSnapshotRef.current?.(next);
+        onRefreshMeasuredRef.current?.(performance.now() - startedAt);
+      } catch (error) {
+        if (!state.active) return;
+        // Keep the native path available while a snapshot is unavailable.
+        reportRendererConsoleError('Shared sidebar snapshot refresh failed', {
+          error,
+        });
+        if (!state.pending) setSnapshotFailures((count) => count + 1);
+      } finally {
+        const finishedAt = performance.now();
+        // Equal build/idle time caps sustained duty at 50%; short builds idle 250 ms.
+        state.nextAllowedAt =
+          finishedAt + Math.max(250, finishedAt - startedAt);
+        state.inFlight = false;
+        if (state.active && state.pending) void refreshSnapshot();
+      }
+    },
+    [client],
+  );
 
   useEffect(() => {
-    const state = { client, active: true, inFlight: false, pending: false };
+    const state: NonNullable<typeof refreshState.current> = {
+      client,
+      active: true,
+      inFlight: false,
+      pending: false,
+      nextAllowedAt: 0,
+      gapTimer: null,
+    };
     refreshState.current = state;
     const unsubscribe = client.subscribe('session.snapshot-stale', () => {
       void refresh();
@@ -1652,6 +1670,7 @@ export function DesktopSharedSidebarHost({
     void refresh();
     return (): void => {
       state.active = false;
+      if (state.gapTimer !== null) clearTimeout(state.gapTimer);
       unsubscribe();
     };
   }, [client, refresh]);

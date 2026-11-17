@@ -26,14 +26,14 @@ import type {
   ReferenceEnrichmentMode,
 } from '@canopy/protocol/reference-previews';
 import {
+  TextLink,
   chatMessageLinkUrlProps,
-  InlineTextSkeleton,
+  InlineMeasuredSkeleton,
   LinearIssuePreviewCard,
   linearStatusGlyph,
   RichHoverTooltip,
   WordBoundaryTruncatedText,
   type LinearIssuePreviewCardView,
-  TRANSCRIPT_LINK_CLASS,
   INLINE_CHIP_CLASS,
   INLINE_CHIP_ICON_CLASS,
   PREVIEW_CARD_SURFACE,
@@ -205,11 +205,16 @@ function ReferenceLabel({
         // boundary near 36ch. The inset stands in for the `: ` separator. A
         // fixed width sizes the chip; `max-w-full` keeps it in the column.
         <span className="inline-block w-[calc(36ch+0.5rem)] max-w-full pl-2 empty:hidden">
-          <InlineTextSkeleton
-            active={pending.reading}
-            data-testid="linear-reference-title-placeholder"
+          <InlineMeasuredSkeleton
+            pulse={pending.reading}
+            testId="linear-reference-title-placeholder"
             className="w-full"
-          />
+          >
+            <WordBoundaryTruncatedText
+              text="A sample issue title on a single line"
+              className="inline-block max-w-full align-bottom"
+            />
+          </InlineMeasuredSkeleton>
         </span>
       )}
     </>
@@ -287,14 +292,14 @@ export function LinearReferencePreview({
   const supported = useCapabilities().referencePreviews === true;
   if (!supported || mode === 'off') {
     return href ? (
-      <a
+      <TextLink
         href={href}
         target="_blank"
         rel="noopener noreferrer"
-        className={TRANSCRIPT_LINK_CLASS}
+        variant="inline"
       >
         {children}
-      </a>
+      </TextLink>
     ) : (
       <>{children}</>
     );
@@ -345,16 +350,16 @@ function SupportedLinearReference({
       </ReferenceLabel>
     );
   const trigger = href ? (
-    <a
+    <TextLink
       ref={setTrigger}
       href={href}
       target="_blank"
       rel="noopener noreferrer"
       data-testid="linear-reference"
-      className={INLINE_CHIP_CLASS}
+      variant="mention"
     >
       {label}
-    </a>
+    </TextLink>
   ) : (
     <BareIdentifierLink ref={setTrigger} request={request}>
       {label}

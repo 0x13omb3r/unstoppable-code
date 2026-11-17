@@ -163,7 +163,7 @@ const USAGE_QUIET_ACTION_CLASS =
   'text-xs fg-secondary transition-colors hover:fg-primary';
 
 export const AGENT_SENT_TITLE_CLASS =
-  'pb-1 flex min-w-0 items-center gap-1.5 whitespace-nowrap text-3xs font-medium fg-secondary';
+  'pb-1 flex min-w-0 items-center gap-1.5 whitespace-nowrap text-xs font-medium fg-secondary';
 
 export const AGENT_SENT_INLINE_TITLE_CLASS =
   'flex min-w-0 items-center gap-1.5 whitespace-nowrap fg-tertiary';
@@ -284,6 +284,10 @@ export const RAIL_INSET_CLASSES = {
 
 /** Presentations for specialized shared widget controls. */
 export const SHARED_CONTROL_RECIPES = {
+  'disclosure-inline':
+    'focus-ring inline-flex max-w-full items-center gap-1 rounded-md py-0.5 pr-1 text-left text-xs font-medium fg-secondary hover:fg-primary',
+  'disclosure-box':
+    'focus-ring flex w-full items-center gap-2 rounded-lg px-4 py-3 text-left text-s font-medium fg-primary hover:bg-subtle',
   'archived-chat-row':
     'flex min-w-0 flex-1 items-center gap-2 self-stretch rounded-md py-2 pl-2 text-left focus:outline-none',
   'clickable-name': 'text-left group',

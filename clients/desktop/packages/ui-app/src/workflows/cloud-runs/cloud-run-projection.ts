@@ -182,6 +182,14 @@ export function cloudRunExecutionState(
   };
 }
 
+/** A step's statuses after which it starts no child. */
+const STEP_ENDED: ReadonlySet<string> = new Set([
+  'success',
+  'failure',
+  'cancelled',
+  'skipped',
+]);
+
 function detailStepOf(
   step: WorkerPipelineStepDetail,
   children: Readonly<Record<string, WorkerPipelineExecution>>,
@@ -192,14 +200,17 @@ function detailStepOf(
     step_id: step.stepId,
     name: step.name,
     status: step.status,
-    // A child run this step started (CAN-6868), named once it was read.
-    ...(childId !== null && {
-      child: {
-        execution_id: childId,
-        name: child?.name ?? 'Child workflow',
-        status: child?.status ?? null,
-      },
-    }),
+    // A child run this step started (CAN-6868), named once it was read. An
+    // ended step whose child was never read started none (its child was
+    // refused, so the id names no run) and shows no child row.
+    ...(childId !== null &&
+      (child !== undefined || !STEP_ENDED.has(step.status)) && {
+        child: {
+          execution_id: childId,
+          name: child?.name ?? 'Child workflow',
+          status: child?.status ?? null,
+        },
+      }),
   };
 }
 

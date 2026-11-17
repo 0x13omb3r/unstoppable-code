@@ -1,3 +1,4 @@
+import { CodeBlock } from '../CodeBlock';
 import { REPLAY_BLOCK_CLASS } from '../../lib/replay-privacy';
 import {
   memo,
@@ -143,11 +144,16 @@ function DelegatedAgentChanges({
           dataTestId="delegated-change"
         >
           {file.diff ? (
-            <pre
-              className={`${REPLAY_BLOCK_CLASS} max-h-48 overflow-auto whitespace-pre-wrap`}
+            <CodeBlock
+              variant="bare"
+              size="inherit"
+              wrap="words"
+              tone="inherit"
+              replay="block"
+              className="max-h-48"
             >
               {file.diff}
-            </pre>
+            </CodeBlock>
           ) : (
             <p>{DELEGATED_AGENT_NO_DIFF_LABEL}</p>
           )}
@@ -372,7 +378,9 @@ export const DelegatedAgentCard = memo(function DelegatedAgentCard({
               )}
               <Fact label="Harness">
                 {parentHarnessId} →{' '}
-                {route?.harnessId ?? delegatedAgentUnroutedLabel(snapshot)}
+                {route?.harnessId ??
+                  snapshot.reportedRoute?.harnessId ??
+                  delegatedAgentUnroutedLabel(snapshot)}
               </Fact>
               <Fact label="Execution">{executionMode}</Fact>
               {snapshot.resultIndex !== undefined && (

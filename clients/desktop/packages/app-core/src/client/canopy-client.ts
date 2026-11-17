@@ -1,3 +1,4 @@
+import type { WorkflowsPanelClient } from './workflows-panel-client';
 import type { OrchestratorSettingsDraftClient } from './orchestrator-settings';
 import type {
   WorktreeRecoveryListParams,
@@ -923,6 +924,8 @@ export type CommandName = keyof CommandMap;
  * `as` casts so the public contract stays honest.
  */
 export interface CanopyClient {
+  /** Workspace Workflows feed. Absent until the host implements it. */
+  readonly workflowsPanel?: WorkflowsPanelClient;
   /** Independent reads and acknowledged writes for the local settings draft. */
   readonly orchestratorSettingsDraft?: OrchestratorSettingsDraftClient;
   /** Host-local, once-per-incident notification receipts; absent on unsupported hosts. */

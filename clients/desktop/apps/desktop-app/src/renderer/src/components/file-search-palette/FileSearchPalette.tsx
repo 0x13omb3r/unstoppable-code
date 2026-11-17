@@ -5,6 +5,7 @@ import {
   useRef,
   useState,
   type JSX,
+  type ReactNode,
   type KeyboardEvent as ReactKeyboardEvent,
 } from 'react';
 import { useShallow } from 'zustand/shallow';
@@ -26,7 +27,12 @@ import {
   DialogModal,
   ErrorState,
   KeyHintFooter,
-  ListRow,
+  PickerMenuList,
+  PickerMenuOption,
+  PickerMenuOptionContent,
+  PickerMenuOptionDescription,
+  PickerMenuOptionLabel,
+  PickerMenuOptionTrailing,
   SearchField,
   Skeleton,
 } from '@canopy/ui-shared/components';
@@ -51,8 +57,28 @@ const SAMPLE_RESULTS = [
   { filename: 'README.md', path: 'README.md', repo: 'storefront' },
 ] as const;
 
+function FileSearchOptionContent({
+  filename,
+  path,
+  repo,
+}: {
+  readonly filename: ReactNode;
+  readonly path: ReactNode;
+  readonly repo: ReactNode;
+}): JSX.Element {
+  return (
+    <>
+      <PickerMenuOptionContent>
+        <PickerMenuOptionLabel>{filename}</PickerMenuOptionLabel>
+        <PickerMenuOptionDescription>{path}</PickerMenuOptionDescription>
+      </PickerMenuOptionContent>
+      <PickerMenuOptionTrailing>{repo}</PickerMenuOptionTrailing>
+    </>
+  );
+}
+
 /**
- * The result list while the file index loads: the same `ListRow` rows, from
+ * The result list while the file index loads: the same picker option rows, from
  * sample files, measured inside `Skeleton`.
  */
 function FileSearchResultsSkeleton(): JSX.Element {
@@ -63,15 +89,17 @@ function FileSearchResultsSkeleton(): JSX.Element {
         label="Loading files"
         testId="file-search-palette-loading"
       >
-        <ul className="px-2 py-2">
+        <div className="px-2 py-2">
           {SAMPLE_RESULTS.map((sample) => (
-            <li key={sample.path}>
-              <ListRow description={sample.path} trailing={sample.repo}>
-                {sample.filename}
-              </ListRow>
-            </li>
+            <PickerMenuOption key={sample.path}>
+              <FileSearchOptionContent
+                filename={sample.filename}
+                path={sample.path}
+                repo={sample.repo}
+              />
+            </PickerMenuOption>
           ))}
-        </ul>
+        </div>
       </Skeleton>
     </DelayedLoadingPlaceholder>
   );
@@ -91,7 +119,7 @@ export function FileSearchPalette({
   const inputRef = useRef<HTMLInputElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const selectionScrollRef = useRef(false);
-  const itemRefs = useRef<Map<number, HTMLLIElement>>(new Map());
+  const itemRefs = useRef<Map<number, HTMLDivElement>>(new Map());
   const deferredQuery = useDeferredValue(query);
 
   const selectedWorktree = useChatStore((state) => state.selectedWorktree);
@@ -403,7 +431,7 @@ export function FileSearchPalette({
             </div>
           )}
           {!showLoading && !error && allResults.length > 0 && (
-            <ul role="listbox" aria-label="Files" className="px-2 py-2">
+            <PickerMenuList presentation="palette" aria-label="Files">
               {results.map((result, visibleIndex) => {
                 const index = renderedVisibleStart + visibleIndex;
                 const isSelected = index === selectedIndex;
@@ -416,7 +444,8 @@ export function FileSearchPalette({
                   result.matchedIndices,
                 );
                 return (
-                  <li
+                  <div
+                    role="presentation"
                     key={`${result.repoId}:${result.absolutePath}`}
                     ref={(node): void => {
                       if (node) {
@@ -426,10 +455,10 @@ export function FileSearchPalette({
                       }
                     }}
                   >
-                    <ListRow
+                    <PickerMenuOption
                       role="option"
                       aria-selected={isSelected}
-                      selected={isSelected}
+                      active={isSelected}
                       data-testid="file-search-palette-result"
                       data-path={result.relativePath}
                       onMouseEnter={() =>
@@ -439,30 +468,32 @@ export function FileSearchPalette({
                         }))
                       }
                       onClick={() => handleSelect(result)}
-                      description={
-                        <HighlightedSegments segments={pathSegments} />
-                      }
-                      trailing={
-                        <span
-                          className={
-                            isCoworkWorkspaceFileRoot({
-                              id: result.repoId,
-                              kind: result.rootKind,
-                            })
-                              ? REPLAY_MASK_CLASS
-                              : undefined
-                          }
-                        >
-                          {result.repoName}
-                        </span>
-                      }
                     >
-                      <HighlightedSegments segments={filenameSegments} />
-                    </ListRow>
-                  </li>
+                      <FileSearchOptionContent
+                        filename={
+                          <HighlightedSegments segments={filenameSegments} />
+                        }
+                        path={<HighlightedSegments segments={pathSegments} />}
+                        repo={
+                          <span
+                            className={
+                              isCoworkWorkspaceFileRoot({
+                                id: result.repoId,
+                                kind: result.rootKind,
+                              })
+                                ? REPLAY_MASK_CLASS
+                                : undefined
+                            }
+                          >
+                            {result.repoName}
+                          </span>
+                        }
+                      />
+                    </PickerMenuOption>
+                  </div>
                 );
               })}
-            </ul>
+            </PickerMenuList>
           )}
         </div>
         <KeyHintFooter hints={pickerKeyHints('open')} />

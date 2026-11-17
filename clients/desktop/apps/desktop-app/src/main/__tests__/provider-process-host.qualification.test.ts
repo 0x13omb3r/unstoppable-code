@@ -1,5 +1,9 @@
 import { randomUUID } from 'node:crypto';
 import type * as ChildProcessModule from 'node:child_process';
+import {
+  spawn as spawnOwnedChild,
+  type ChildProcess,
+} from 'node:child_process';
 import { EventEmitter } from 'node:events';
 import { mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -53,6 +57,39 @@ jest.setTimeout(60_000);
 
 let dir = '';
 const strays = new Set<number>();
+/** Idle children that a case started to give a fake host a real pid. */
+const ownedChildren = new Set<ChildProcess>();
+
+/**
+ * Starts an idle child that this test owns. A fake host takes this real pid,
+ * never a literal one, so a signal path that reads it can reach only a
+ * process the test started. afterEach stops it by its own handle.
+ */
+async function startOwnedIdleChild(): Promise<number> {
+  const child = spawnOwnedChild(
+    process.execPath,
+    ['-e', 'setInterval(() => undefined, 1 << 30)'],
+    { stdio: 'ignore' },
+  );
+  ownedChildren.add(child);
+  await new Promise<void>((resolve, reject) => {
+    child.once('spawn', () => resolve());
+    child.once('error', reject);
+  });
+  const { pid } = child;
+  if (pid === undefined || pid <= 1) throw new Error('owned child has no pid');
+  return pid;
+}
+
+/** Stops a child this test started, by its own handle, and waits for it. */
+async function stopOwnedChild(child: ChildProcess): Promise<void> {
+  if (child.exitCode !== null || child.signalCode !== null) return;
+  const exited = new Promise<void>((resolve) => {
+    child.once('exit', () => resolve());
+  });
+  child.kill('SIGKILL');
+  await exited;
+}
 
 function present(pid: number): boolean {
   try {
@@ -319,9 +356,11 @@ beforeAll(() => {
   );
 });
 
-afterEach(() => {
+afterEach(async () => {
   for (const pid of Array.from(strays)) killStray(pid);
   strays.clear();
+  await Promise.all(Array.from(ownedChildren, stopOwnedChild));
+  ownedChildren.clear();
   jest.restoreAllMocks();
   jest.useRealTimers();
 });
@@ -686,13 +725,22 @@ describePosix('provider process host lifecycle', () => {
   });
 });
 
-/** A host that never starts until told: kill() is false before spawn. */
+/**
+ * A host that never starts until told: kill() is false before spawn. Its pid
+ * is a real idle child that the test owns, never a literal one.
+ */
 class UnstartedHost extends ReportedExecutionHost {
   private running = false;
   readonly kills = jest.fn();
+  private readonly ownedPid: number;
+
+  constructor(ownedPid: number) {
+    super();
+    this.ownedPid = ownedPid;
+  }
 
   get pid(): number | undefined {
-    return this.running ? 4242 : undefined;
+    return this.running ? this.ownedPid : undefined;
   }
 
   postMessage(): void {
@@ -892,9 +940,16 @@ describePosix('provider process host signals after exit', () => {
   });
 });
 
-/** A child the host spawns through an in-test spawner, fed by the test. */
+/**
+ * A child the host spawns through an in-test spawner, fed by the test. Its
+ * pid is a real idle child that the test started, so a host signal that
+ * reaches the pid can only reach the test's own child.
+ */
 class ScriptedChild extends EventEmitter implements ProviderProcess {
-  readonly pid = 4343;
+  constructor(readonly pid: number) {
+    super();
+  }
+
   readonly stdin = new PassThrough();
   readonly stdout = new PassThrough();
   readonly stderr = new PassThrough();
@@ -986,7 +1041,7 @@ describe('provider process host exit frames', () => {
 
 describe('provider process host stdout while stopping', () => {
   it('relayed stdout stays a prefix once a stopping child exceeds its credit', async () => {
-    const child = new StoppingChild();
+    const child = new StoppingChild(await startOwnedIdleChild());
     const posted: unknown[] = [];
     const listeners = new Set<(event: { data: unknown }) => void>();
     startProviderProcessHost(
@@ -1039,7 +1094,7 @@ describe('provider process host stdout while stopping', () => {
 
 describe('provider process host stderr', () => {
   it('relayed stderr stays a prefix once a chunk is dropped', async () => {
-    const child = new ScriptedChild();
+    const child = new ScriptedChild(await startOwnedIdleChild());
     const posted: unknown[] = [];
     const listeners = new Set<(event: { data: unknown }) => void>();
     startProviderProcessHost(
@@ -1083,8 +1138,9 @@ describe('provider process host stderr', () => {
 
 describe('provider process host shutdown before spawn', () => {
   it('shutdown stops a host that has not spawned yet', async () => {
+    const ownedPid = await startOwnedIdleChild();
     jest.useFakeTimers({ doNotFake: ['nextTick', 'queueMicrotask'] });
-    const host = new UnstartedHost();
+    const host = new UnstartedHost(ownedPid);
     const launch = jest.fn((): ExecutionHostProcess => host);
     const client = createProviderProcessHostClient(() => ({
       launch,

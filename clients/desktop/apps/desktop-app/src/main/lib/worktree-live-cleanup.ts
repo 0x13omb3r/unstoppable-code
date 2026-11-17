@@ -10,6 +10,39 @@ import { drainWorktreePipelines } from '../pipelines/worktree-cleanup';
 import { createElectronExecutionRuntime } from '../pipelines/execution-runtime';
 import { getWorktreeDir } from './paths';
 import { captureLinuxWorktreeWriterVerification } from './worktree-process-cleanup';
+import { destructiveFailureCode } from './destructive-failure-context';
+import { logMainProcessWarn } from './main-process-logging';
+
+type LiveStateOwner =
+  | 'writer-check'
+  | 'pipelines'
+  | 'shell-scripts'
+  | 'sessions'
+  | 'claude-terminal'
+  | 'worker-terminal';
+
+/**
+ * A live-state owner failed without a code of its own. Its code names the
+ * owner, so the journal and telemetry say which one; the original error is
+ * the cause and stays local.
+ */
+export class LiveStateTeardownError extends Error {
+  readonly code: `live-state:${LiveStateOwner}`;
+  constructor(
+    owner: LiveStateOwner,
+    readonly failure: unknown,
+  ) {
+    super(`Worktree live-state teardown failed at ${owner}.`);
+    this.code = `live-state:${owner}`;
+  }
+}
+
+function attributed(owner: LiveStateOwner, error: unknown): unknown {
+  const code = destructiveFailureCode(error);
+  return code === 'Error' || code === 'unknown'
+    ? new LiveStateTeardownError(owner, error)
+    : error;
+}
 
 /**
  * Stops everything in this process that can write into a worktree, in a fixed
@@ -39,43 +72,86 @@ export async function cleanupLiveWorktreeState(
       getWorktreeDir(projectId, worktreeId),
     );
   } catch (error) {
-    failures.push(error);
+    failures.push(attributed('writer-check', error));
   }
   stopTracking(projectId, worktreeId);
   cancelScheduledGeneration(projectId, worktreeId);
 
-  const steps: Array<() => Promise<void>> = [
-    () =>
-      drainWorktreePipelines(
-        projectId,
-        worktreeId,
-        createElectronExecutionRuntime(),
-      ),
-    () => drainWorktreeShellScripts(projectId, worktreeId),
-    async (): Promise<void> => {
-      await destroyWorktreeSessions(projectId, worktreeId);
-      onSessionsDestroyed?.();
-    },
+  const steps: Array<[LiveStateOwner, () => Promise<void>]> = [
+    [
+      'pipelines',
+      () =>
+        drainWorktreePipelines(
+          projectId,
+          worktreeId,
+          createElectronExecutionRuntime(),
+        ),
+    ],
+    ['shell-scripts', () => drainWorktreeShellScripts(projectId, worktreeId)],
+    [
+      'sessions',
+      async (): Promise<void> => {
+        await destroyWorktreeSessions(projectId, worktreeId);
+        onSessionsDestroyed?.();
+      },
+    ],
     // Terminal release fires an exit event that drops Claude runtime records.
     // Drain their transcript/watcher settlement while those records still exist.
-    () =>
-      getClaudeTerminalSessionService().cleanupWorktree(projectId, worktreeId),
-    () => workerTerminal.releaseWorktree({ projectId, worktreeId }),
+    [
+      'claude-terminal',
+      () =>
+        getClaudeTerminalSessionService().cleanupWorktree(
+          projectId,
+          worktreeId,
+        ),
+    ],
+    [
+      'worker-terminal',
+      () => workerTerminal.releaseWorktree({ projectId, worktreeId }),
+    ],
   ];
-  for (const step of steps) {
+  for (const [owner, step] of steps) {
     try {
       await step();
     } catch (error) {
-      failures.push(error);
+      failures.push(attributed(owner, error));
     }
   }
   if (failures.length > 0) {
+    reportLiveStateFailures(projectId, worktreeId, failures);
     const [failed] = failures;
     throw failed instanceof Error
       ? failed
       : new Error('Worktree resource cleanup failed.');
   }
-  await verifyWritersGone?.();
+  try {
+    await verifyWritersGone?.();
+  } catch (error) {
+    const failed = attributed('writer-check', error);
+    reportLiveStateFailures(projectId, worktreeId, [failed]);
+    throw failed;
+  }
+}
+
+/** The raw errors stay in this computer's log; the journal keeps only codes. */
+function reportLiveStateFailures(
+  projectId: string,
+  worktreeId: string,
+  failures: readonly unknown[],
+): void {
+  logMainProcessWarn('Worktree live-state teardown failed', {
+    projectId,
+    worktreeId,
+    failures: failures.map((failure) => {
+      const reported =
+        failure instanceof LiveStateTeardownError ? failure.failure : failure;
+      return {
+        code: destructiveFailureCode(failure),
+        message:
+          reported instanceof Error ? reported.message : String(reported),
+      };
+    }),
+  });
 }
 
 export async function purgeLiveWorktreeObservabilityData(

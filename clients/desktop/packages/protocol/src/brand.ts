@@ -1482,6 +1482,9 @@ export interface InjectedToolNamesForBrand {
     readonly manageDelegateWorktree: string;
     readonly messageDelegate: string;
     readonly requestSteering: string;
+    readonly requestSecrets: string;
+    readonly runWithSecrets: string;
+    readonly writeSecretsFile: string;
   };
   readonly codex: {
     readonly askUserQuestion: string;
@@ -1535,6 +1538,9 @@ export interface InjectedToolNamesForBrand {
     readonly manageDelegateWorktree: string;
     readonly messageDelegate: string;
     readonly requestSteering: string;
+    readonly requestSecrets: string;
+    readonly runWithSecrets: string;
+    readonly writeSecretsFile: string;
   };
   readonly appAdvisor: {
     readonly claudeNamespacePrefix: string;
@@ -1599,6 +1605,11 @@ export function buildInjectedToolNamesForBrand(
       manageDelegateWorktree: `mcp__${namespace}__ManageDelegateWorktree`,
       messageDelegate: `mcp__${namespace}__MessageDelegate`,
       requestSteering: `mcp__${namespace}__RequestSteering`,
+      // RequestSecrets waits on the person, so it lives on the long-timeout
+      // UI server beside AskUserQuestion.
+      requestSecrets: `mcp__${namespace}_ui__RequestSecrets`,
+      runWithSecrets: `mcp__${namespace}__RunWithSecrets`,
+      writeSecretsFile: `mcp__${namespace}__WriteSecretsFile`,
     },
     codex: {
       askUserQuestion: `${namespace}_ask_user_question`,
@@ -1652,6 +1663,9 @@ export function buildInjectedToolNamesForBrand(
       manageDelegateWorktree: `${namespace}_manage_delegate_worktree`,
       messageDelegate: `${namespace}_message_delegate`,
       requestSteering: `${namespace}_request_steering`,
+      requestSecrets: `${namespace}_request_secrets`,
+      runWithSecrets: `${namespace}_run_with_secrets`,
+      writeSecretsFile: `${namespace}_write_secrets_file`,
     },
     appAdvisor: {
       claudeNamespacePrefix: `mcp__${namespace}_app_advisor__`,

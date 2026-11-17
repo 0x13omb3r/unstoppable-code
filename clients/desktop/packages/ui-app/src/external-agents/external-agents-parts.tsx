@@ -1,5 +1,6 @@
 'use client';
 
+import { CodeBlock } from '@canopy/ui-shared/components/CodeBlock';
 import { ControlButton } from '@canopy/ui-shared/components';
 import { useState, type JSX, type ReactNode } from 'react';
 import type {
@@ -512,12 +513,17 @@ export function ConnectSection({
           }
         >
           <Surface variant="inset" className="max-w-full overflow-hidden">
-            <pre
+            <CodeBlock
               data-testid="external-agents-cursor-snippet"
-              className="overflow-x-auto whitespace-pre p-3 font-mono text-xs fg-secondary"
+              variant="document"
+              size="xs"
+              wrap="none"
+              tone="secondary"
+              replay="inherit"
+              overflow="horizontal"
             >
               {cursorMcpSnippet(servers, cursorClientId)}
-            </pre>
+            </CodeBlock>
           </Surface>
         </AgentSetup>
         <AgentSetup
@@ -710,9 +716,17 @@ function CommandBlock({
       {caption ? <span className="text-xs fg-tertiary">{caption}</span> : null}
       <Surface variant="inset" padding="compact" className="min-w-0">
         <div className="flex items-start gap-2">
-          <pre className="min-w-0 flex-1 whitespace-pre-wrap wrap-anywhere font-mono text-xs fg-secondary">
+          <CodeBlock
+            variant="bare"
+            size="xs"
+            wrap="anywhere"
+            tone="secondary"
+            replay="inherit"
+            overflow="visible"
+            className="min-w-0 flex-1"
+          >
             {value}
-          </pre>
+          </CodeBlock>
           <CopyButton
             value={value}
             ariaLabel={caption ? `Copy ${caption} command` : 'Copy'}

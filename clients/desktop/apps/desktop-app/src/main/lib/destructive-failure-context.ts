@@ -39,6 +39,17 @@ const safeCodes = new Set([
   'W5CommitLogError',
   'W5ProcessFileLockTimeoutError',
   'WorktreeRegistryUnreadableError',
+  // Live-state teardown (CAN-6899): which owner failed, or why the Linux
+  // writer check could not clear the worktree.
+  'WORKTREE_WRITERS_ACTIVE',
+  'WORKTREE_WRITER_INSPECTION_INCOMPLETE',
+  'WORKTREE_PROCESSES_ALIVE',
+  'live-state:writer-check',
+  'live-state:pipelines',
+  'live-state:shell-scripts',
+  'live-state:sessions',
+  'live-state:claude-terminal',
+  'live-state:worker-terminal',
   'identity-conflict',
   'revision-conflict',
   'key-reused',

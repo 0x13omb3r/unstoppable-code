@@ -16,10 +16,10 @@ import {
 } from '@canopy/protocol/billing';
 import type { ModelLibraryAccess } from '@canopy/protocol/models';
 import {
+  ButtonLink,
   AI_CREDITS_PROCESSING_COPY,
   AI_CREDITS_PURCHASE_LABEL,
   Button,
-  buttonClassName,
   DialogFormField,
   DialogModal,
   ErrorBanner,
@@ -127,12 +127,6 @@ const BREAKDOWN_PLACEHOLDER = '—';
 
 /** Free / no-plan list price, the fallback when no effective price is known. */
 const FREE_LIST_CREDIT_PRICE_USD = 0.6;
-
-/** The desktop return link keeps an `<a href>` and wears the primary Button. */
-const PRIMARY_LINK_CLASS = buttonClassName({
-  variant: 'primary',
-  size: 'compact',
-});
 
 function wait(ms: number): Promise<void> {
   return new Promise((resolve) => {
@@ -421,13 +415,16 @@ export function TopUpSheet({
               </Button>
             ) : null}
             {desktopReturnHref !== null ? (
-              <a
+              <ButtonLink
                 href={desktopReturnHref}
                 data-testid={tid('credits-top-up-desktop-return')}
-                className={PRIMARY_LINK_CLASS}
+                variant="primary"
+                size="compact"
+                target={undefined}
+                rel={undefined}
               >
                 {`Back to ${appName}`}
-              </a>
+              </ButtonLink>
             ) : null}
             <Button
               type="button"

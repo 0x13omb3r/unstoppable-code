@@ -41,6 +41,7 @@ import { useBranchDisplayStore } from '@/stores/branchDisplayStore';
 import { useBranchGroupingPreferenceStore } from '@/stores/branchGroupingPreferenceStore';
 import { mergeMappingsWithBuiltins } from '@canopy/desktop-shared/lib/branch-display-mapping';
 import {
+  TextLink,
   Stack,
   Button,
   Notice,
@@ -700,14 +701,14 @@ export function GitTab(): JSX.Element {
               <>
                 Archiving deletes the local branch when it is fully merged.
                 Unmerged branches ask first. To delete the remote branch,{' '}
-                <a
+                <TextLink
                   href="https://docs.github.com/en/repositories/configuring-branches-and-merges-in-your-repository/configuring-pull-request-merges/managing-the-automatic-deletion-of-branches"
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="underline transition-colors hover:fg-primary"
+                  variant="inherited-underlined"
                 >
                   configure it on GitHub
-                </a>
+                </TextLink>
                 .
               </>
             }

@@ -46,6 +46,8 @@ export const BackgroundServiceStatusSchema = z.strictObject({
   reason: z.enum(BACKGROUND_SERVICE_UNREACHABLE_REASONS).optional(),
   /** The latest Try again: `failed` until the service is reached again. */
   retry: z.enum(['idle', 'running', 'failed']),
+  /** A degraded startup handoff cannot be retried until the next launch. */
+  recovery: z.literal('restart_app').optional(),
   /** Increases with every change; a lower one is stale. */
   sequence: z.number().int().nonnegative(),
 });

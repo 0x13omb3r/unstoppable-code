@@ -30,6 +30,7 @@ import { accountMcpConnectionUnusableReason } from '../canopy-cloud/mcp-connecti
 import { createResourceInstallReceiptsStore } from '../lib/resource-install-receipts';
 
 type Resource = ResourceContextInput['resource'];
+type Refusal = Extract<ResourceContextDecision, { allow: false }>;
 const local: Resource = { owner: { shareScope: 'private' } };
 const missing: ResourceContextDecision = {
   allow: false,
@@ -40,11 +41,29 @@ const unknown: ResourceContextDecision = {
   reason: 'unknown-provenance',
 };
 /** Verification could not complete; not a verdict on the resource. */
-const unavailable: ResourceContextDecision = {
+const unavailable: Refusal = {
   allow: false,
   reason: 'unknown-provenance',
   transient: true,
 };
+/**
+ * A local inventory the resolver needs can't be used right now (CAN-6900).
+ * Its decision says whether that clears by itself: a catalog mid-migration or
+ * mid-write, or a file not written yet, is transient and retried; a catalog a
+ * newer build wrote is not. Never a grant.
+ */
+class InventoryRefusal extends Error {
+  constructor(readonly decision: Refusal) {
+    super('Capability inventory unavailable');
+    this.name = 'InventoryRefusal';
+  }
+}
+
+function isMissingOrTornFile(error: unknown): boolean {
+  return (
+    error instanceof SyntaxError || (isRecord(error) && error.code === 'ENOENT')
+  );
+}
 const RECEIPT_LOOKUP_PARTITION = 'background-capability-lookup';
 const LOCAL_PROVIDER_MARKETPLACE_SOURCE_TYPES = new Set([
   'github',
@@ -105,17 +124,41 @@ export function createBackgroundCapabilityResolver(
       const { loadSkills } = await import('../skills/skill-service');
       const result = loadSkills();
       if (!result.success || !result.data)
-        throw new Error('Skill inventory unavailable');
+        throw new InventoryRefusal(unavailable);
       return result.data;
     })());
   }
   function catalog(): Promise<ShareablePluginCatalog> {
     return (catalogPromise ??= (async (): Promise<ShareablePluginCatalog> => {
       // Defer plugin inventory and provider scans until a plugin is selected.
-      const { loadMarketplaces } = await import('../plugins/plugin-service');
+      const {
+        loadMarketplaces,
+        readPluginCatalogHealth,
+        readPluginIndexHealth,
+      } = await import('../plugins/plugin-service');
+      for (const health of [
+        readPluginCatalogHealth(),
+        readPluginIndexHealth(),
+      ]) {
+        // A newer build's catalog won't become readable by waiting.
+        if (health.state === 'unsupported')
+          throw new InventoryRefusal({
+            allow: false,
+            reason: 'plugin-catalog-newer',
+          });
+        // The catalog is rewritten in place, so a read during a write looks
+        // damaged too: retried first, it stands only if it stays damaged.
+        if (health.state === 'damaged')
+          throw new InventoryRefusal({
+            allow: false,
+            reason: 'plugin-catalog-damaged',
+            transient: true,
+          });
+      }
       const marketplaces = await loadMarketplaces();
+      // Mid-migration (legacy), unreadable, or a refresh that failed.
       if (!marketplaces.success || !marketplaces.data)
-        throw new Error('Plugin inventory unavailable');
+        throw new InventoryRefusal(unavailable);
       return {
         skills: await skills(),
         marketplaces: marketplaces.data.marketplaces,
@@ -429,10 +472,15 @@ export function createBackgroundCapabilityResolver(
     if (!id?.startsWith('agent_model_')) return { allow: true };
     // A chat route id is authorized as the Agent it pins.
     const agentId = parseAgentRouteModelId(id)?.agentId ?? id;
-    const agent = findConfiguredAgent(
-      JSON.parse(await readFile(getAgentModelsFilePath(), 'utf8')),
-      agentId,
-    );
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(await readFile(getAgentModelsFilePath(), 'utf8'));
+    } catch (error) {
+      // Not written yet, or read mid-write.
+      if (isMissingOrTornFile(error)) throw new InventoryRefusal(unavailable);
+      throw error;
+    }
+    const agent = findConfiguredAgent(parsed, agentId);
     if (!agent) return missing;
     const result = await installed(
       'agents',
@@ -476,6 +524,17 @@ export function createBackgroundCapabilityResolver(
   }
 
   return async (capabilities): Promise<ResourceContextDecision> => {
+    try {
+      return await resolve(capabilities);
+    } catch (error) {
+      if (error instanceof InventoryRefusal) return error.decision;
+      throw error;
+    }
+  };
+
+  async function resolve(
+    capabilities: BackgroundCapabilities,
+  ): Promise<ResourceContextDecision> {
     if (capabilities.sharedPipeline) {
       const origin = await sharedPipeline(capabilities.sharedPipeline.remoteId);
       if (!origin.allow) return origin;
@@ -590,5 +649,5 @@ export function createBackgroundCapabilityResolver(
       if (!result.allow) return result;
     }
     return { allow: true };
-  };
+  }
 }

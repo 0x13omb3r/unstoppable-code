@@ -1,5 +1,6 @@
 'use client';
 
+import { TextLink } from '@canopy/ui-shared/components';
 import {
   useCallback,
   useEffect,
@@ -141,11 +142,6 @@ const VERIFICATION_LABELS: Record<OrgProjectRepositoryVerification, string> = {
   STALE: 'Stale',
   UNVERIFIED: 'Unverified',
 };
-
-/** Class tokens joined without stray whitespace when one is empty. */
-function joinClasses(...classes: string[]): string {
-  return classes.filter(Boolean).join(' ');
-}
 
 /**
  * User content for a text-only slot (a dialog title). Blocked from session
@@ -1809,14 +1805,15 @@ function ProjectEditor({
             </Heading>
             {project.repository ? (
               <>
-                <a
-                  className={joinClasses('fg-accent underline', blockClassName)}
+                <TextLink
+                  variant="inline"
+                  replayBlock={blockClassName !== ''}
                   href={`https://github.com/${encodeURIComponent(project.repository.owner)}/${encodeURIComponent(project.repository.name)}`}
                   target="_blank"
                   rel="noopener noreferrer"
                 >
                   {project.repository.owner}/{project.repository.name}
-                </a>
+                </TextLink>
                 <p>
                   Default branch:{' '}
                   {project.repository.defaultBranch ?? 'Not set'}

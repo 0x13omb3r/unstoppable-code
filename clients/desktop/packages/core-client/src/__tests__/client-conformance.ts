@@ -26,6 +26,8 @@ type CanonicalClient = CanopyClient<
 export interface CanopyClientConformancePair {
   readonly client: CanopyFramedConnection;
   readonly server: CanopyFramedConnection;
+  /** Loses the next request's reply after the core answers it (CAN-6940). */
+  readonly loseNextReply?: () => void;
   close(): Promise<void>;
 }
 
@@ -38,6 +40,12 @@ export interface CanopyClientConformanceBinding {
   readonly serverClose?: boolean;
   /** Exact case names this binding cannot pass yet, each with its owning ticket. */
   readonly pending?: Readonly<Record<string, string>>;
+  /**
+   * True when the binding can lose one request's reply while its connection
+   * stands, and its pairs offer `loseNextReply` (HTTP). Otherwise the
+   * lost-reply case is `it.todo`.
+   */
+  readonly lostReplies?: boolean;
 }
 
 const NO_SERVER_CLOSE =
@@ -228,6 +236,7 @@ export function describeCanopyClientConformance(
       core: CanonicalCoreServer;
       connection: CanopyFramedConnection;
       server: CanopyFramedConnection;
+      loseNextReply: (() => void) | undefined;
       connecting: Promise<CanonicalClient>;
     }> {
       const pair = await createPair();
@@ -245,7 +254,13 @@ export function describeCanopyClientConformance(
         definitions: CANONICAL_DEFINITIONS,
         signal: options.signal,
       });
-      return { core, connection: pair.client, server: pair.server, connecting };
+      return {
+        core,
+        connection: pair.client,
+        server: pair.server,
+        loseNextReply: pair.loseNextReply,
+        connecting,
+      };
     }
     async function open(
       overrides?: CanonicalHandlers,
@@ -254,6 +269,7 @@ export function describeCanopyClientConformance(
       core: CanonicalCoreServer;
       connection: CanopyFramedConnection;
       server: CanopyFramedConnection;
+      loseNextReply: (() => void) | undefined;
       client: CanonicalClient;
     }> {
       const { connecting, ...connected } = await connect(overrides, options);
@@ -398,6 +414,51 @@ export function describeCanopyClientConformance(
         ).toMatchObject({ kind: 'internal', retry: { kind: 'never' } });
       expect(client.signal.aborted).toBe(false);
     });
+
+    const lostReplyCase = (title: string, body: () => Promise<void>): void => {
+      if (binding.lostReplies === true) conformance(title, false, body);
+      else it.todo(`${title} (no lost reply alone on this binding)`);
+    };
+
+    lostReplyCase(
+      "reads a reply the binding lost as a lost call, retried as the operation's idempotency allows (CAN-6940)",
+      async () => {
+        const { client, core, loseNextReply } = await open();
+        if (loseNextReply === undefined)
+          throw new Error('The binding offers no loseNextReply.');
+        loseNextReply();
+        // The core recorded it; only the reply was lost, so the call is
+        // retried with its key, never read as the core's answer.
+        expect(
+          await rejection(
+            client.instruction(
+              'core.test.record',
+              { value: 3 },
+              { metadata: { idempotencyKey: 'key-lost' } },
+            ),
+          ),
+        ).toMatchObject({
+          kind: 'unavailable',
+          retry: { kind: 'same_idempotency_key' },
+        });
+        expect(core.requests.at(-1)?.params).toEqual({
+          value: 3,
+          _meta: { idempotencyKey: 'key-lost' },
+        });
+        // A reply that arrives is the core's own.
+        await expect(
+          client.query('core.test.echo', { text: 'ok' }),
+        ).resolves.toEqual({ text: 'ok', length: 2 });
+        loseNextReply();
+        expect(
+          await rejection(client.query('core.test.echo', { text: 'lost' })),
+        ).toMatchObject({
+          kind: 'unavailable',
+          retry: { kind: 'same_request' },
+        });
+        expect(client.signal.aborted).toBe(false);
+      },
+    );
 
     it('maps an advertised but unimplemented core method to capability_unavailable', async () => {
       const base = canonicalInitializeResult();

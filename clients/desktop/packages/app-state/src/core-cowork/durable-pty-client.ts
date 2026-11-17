@@ -51,10 +51,15 @@ export interface DurableTerminalConnection {
 /**
  * Why a terminal closed; an exit by signal has no code. A sleeping sandbox
  * refused the shell (CAN-6690); `wakeAllowed` is the web core's, for a host
- * that can wake it.
+ * that can wake it. `gone`: the web core said the terminal no longer exists
+ * for this chat, rather than the connection failing.
  */
 export type DurablePtyCloseReason =
-  | { readonly kind: 'connection-lost'; readonly phase: 'connecting' | 'open' }
+  | {
+      readonly kind: 'connection-lost';
+      readonly phase: 'connecting' | 'open';
+      readonly gone?: true;
+    }
   | { readonly kind: 'sandbox-asleep'; readonly wakeAllowed: boolean }
   | { readonly kind: 'exit'; readonly code: number | null };
 
@@ -308,10 +313,11 @@ export class DurablePtyClient {
       stop();
       onClose(reason);
     };
-    const lost = (): void =>
+    const lost = (gone = false): void =>
       finish({
         kind: 'connection-lost',
         phase: state === 'open' ? 'open' : 'connecting',
+        ...(gone ? { gone: true } : {}),
       });
 
     const deliver = (
@@ -363,12 +369,9 @@ export class DurablePtyClient {
     const retry = (error: CanopyErrorPayload | null): void => {
       void stream?.close();
       stream = undefined;
-      if (
-        state === 'closed' ||
-        (error !== null && isGone(error)) ||
-        failures >= ATTEMPTS
-      ) {
-        lost();
+      const gone = error !== null && isGone(error);
+      if (state === 'closed' || gone || failures >= ATTEMPTS) {
+        lost(gone);
         return;
       }
       timer = schedule(() => {

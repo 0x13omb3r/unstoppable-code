@@ -3,7 +3,13 @@
 import type { ComponentPropsWithoutRef, JSX } from 'react';
 import type { DigestReportData } from '@canopy/protocol/settings';
 import { Markdown, markdownOptions } from '@canopy/ui-shared';
-import { Stack, Fact, FactList, Heading } from '@canopy/ui-shared/components';
+import {
+  TextLink,
+  Stack,
+  Fact,
+  FactList,
+  Heading,
+} from '@canopy/ui-shared/components';
 import type { MarkdownOverrides } from '@canopy/ui-shared';
 import {
   formatCountExact,
@@ -68,9 +74,14 @@ const INTERACTIVE_MARKDOWN_COMPONENTS: MarkdownOverrides = {
   img: inertImage,
   a({ children, href }: ComponentPropsWithoutRef<'a'>): JSX.Element {
     return typeof href === 'string' && GITHUB_PR_URL_PATTERN.test(href) ? (
-      <a href={href} target="_blank" rel="noreferrer noopener">
+      <TextLink
+        variant="inherited"
+        href={href}
+        target="_blank"
+        rel="noreferrer noopener"
+      >
         {children}
-      </a>
+      </TextLink>
     ) : (
       <span>{children}</span>
     );

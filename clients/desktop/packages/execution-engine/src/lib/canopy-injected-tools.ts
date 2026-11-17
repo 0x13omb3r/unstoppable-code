@@ -32,6 +32,8 @@
  *   - DetectChangedSymbols
  *   - CompareChangeImpact
  *   - GetReviewContext
+ *   - RequestSecrets, RunWithSecrets, WriteSecretsFile (registered only; no
+ *     surface offers them yet)
  *
  * Provider-accurate raw names:
  *   - Claude (MCP): all tool names are derived from `BRAND.tools.namespace`.
@@ -108,7 +110,26 @@ export type CanopyInjectedToolKey =
   | 'stop_delegate'
   | 'manage_delegate_worktree'
   | 'message_delegate'
-  | 'request_steering';
+  | 'request_steering'
+  | 'request_secrets'
+  | 'run_with_secrets'
+  | 'write_secrets_file';
+
+/**
+ * The agent secret request tools (RequestSecrets, RunWithSecrets,
+ * WriteSecretsFile). Registered so every host names and recognizes them
+ * alike, but on no surface allowlist yet: hosts offer them only behind the
+ * `canopy-shared-agent-secret-requests` flag once their executors exist.
+ */
+export const AGENT_SECRET_INJECTED_TOOL_KEYS: readonly CanopyInjectedToolKey[] =
+  ['request_secrets', 'run_with_secrets', 'write_secrets_file'];
+
+/** True for the agent secret request tools. */
+export function isAgentSecretInjectedToolKey(
+  key: CanopyInjectedToolKey,
+): boolean {
+  return AGENT_SECRET_INJECTED_TOOL_KEYS.includes(key);
+}
 
 /**
  * The nine code-graph injected tool keys. This is the single shared source of
@@ -256,7 +277,10 @@ export type CanopyInjectedToolDisplayName =
   | 'StopDelegate'
   | 'ManageDelegateWorktree'
   | 'MessageDelegate'
-  | 'RequestSteering';
+  | 'RequestSteering'
+  | 'RequestSecrets'
+  | 'RunWithSecrets'
+  | 'WriteSecretsFile';
 
 export type CanopyInjectedToolProvider =
   | 'claude'
@@ -286,7 +310,7 @@ const cursorMcpToolTitle = (
   displayName: CanopyInjectedToolDisplayName,
 ): string =>
   `${
-    displayName === 'AskUserQuestion'
+    displayName === 'AskUserQuestion' || displayName === 'RequestSecrets'
       ? `${BRAND.tools.namespace}_ui`
       : BRAND.tools.namespace
   }: ${displayName}`;
@@ -445,6 +469,10 @@ const HISTORICAL_CANOPY_NAMES: Readonly<
   ],
   message_delegate: [],
   request_steering: [],
+  // New agent secret request tools: never advertised under another name.
+  request_secrets: [],
+  run_with_secrets: [],
+  write_secrets_file: [],
 };
 
 function liveToolNamesFor(key: CanopyInjectedToolKey): readonly string[] {
@@ -679,6 +707,21 @@ function liveToolNamesFor(key: CanopyInjectedToolKey): readonly string[] {
         BRANDED_TOOL_NAMES.claude.requestSteering,
         BRANDED_TOOL_NAMES.codex.requestSteering,
       ];
+    case 'request_secrets':
+      return [
+        BRANDED_TOOL_NAMES.claude.requestSecrets,
+        BRANDED_TOOL_NAMES.codex.requestSecrets,
+      ];
+    case 'run_with_secrets':
+      return [
+        BRANDED_TOOL_NAMES.claude.runWithSecrets,
+        BRANDED_TOOL_NAMES.codex.runWithSecrets,
+      ];
+    case 'write_secrets_file':
+      return [
+        BRANDED_TOOL_NAMES.claude.writeSecretsFile,
+        BRANDED_TOOL_NAMES.codex.writeSecretsFile,
+      ];
     case 'stop_delegate':
       return [
         BRANDED_TOOL_NAMES.claude.stopDelegate,
@@ -778,6 +821,9 @@ const CANOPY_INJECTED_TOOL_DISPLAY_NAMES: Readonly<
   manage_delegate_worktree: 'ManageDelegateWorktree',
   message_delegate: 'MessageDelegate',
   request_steering: 'RequestSteering',
+  request_secrets: 'RequestSecrets',
+  run_with_secrets: 'RunWithSecrets',
+  write_secrets_file: 'WriteSecretsFile',
 };
 
 export const CANOPY_INJECTED_TOOL_REGISTRY: Record<
@@ -1152,6 +1198,30 @@ export const CANOPY_INJECTED_TOOL_REGISTRY: Record<
     codexToolName: BRANDED_TOOL_NAMES.codex.requestSteering,
     legacyToolNames: legacyAliasesFor('request_steering'),
   },
+  request_secrets: {
+    canonicalKey: 'request_secrets',
+    displayName: 'RequestSecrets',
+    cursorToolName: cursorMcpToolTitle('RequestSecrets'),
+    claudeToolName: BRANDED_TOOL_NAMES.claude.requestSecrets,
+    codexToolName: BRANDED_TOOL_NAMES.codex.requestSecrets,
+    legacyToolNames: legacyAliasesFor('request_secrets'),
+  },
+  run_with_secrets: {
+    canonicalKey: 'run_with_secrets',
+    displayName: 'RunWithSecrets',
+    cursorToolName: cursorMcpToolTitle('RunWithSecrets'),
+    claudeToolName: BRANDED_TOOL_NAMES.claude.runWithSecrets,
+    codexToolName: BRANDED_TOOL_NAMES.codex.runWithSecrets,
+    legacyToolNames: legacyAliasesFor('run_with_secrets'),
+  },
+  write_secrets_file: {
+    canonicalKey: 'write_secrets_file',
+    displayName: 'WriteSecretsFile',
+    cursorToolName: cursorMcpToolTitle('WriteSecretsFile'),
+    claudeToolName: BRANDED_TOOL_NAMES.claude.writeSecretsFile,
+    codexToolName: BRANDED_TOOL_NAMES.codex.writeSecretsFile,
+    legacyToolNames: legacyAliasesFor('write_secrets_file'),
+  },
   stop_delegate: {
     canonicalKey: 'stop_delegate',
     displayName: 'StopDelegate',
@@ -1248,6 +1318,9 @@ export const CANOPY_INJECTED_TOOL_ENTRIES: readonly CanopyInjectedToolExposure[]
     CANOPY_INJECTED_TOOL_REGISTRY.manage_delegate_worktree,
     CANOPY_INJECTED_TOOL_REGISTRY.message_delegate,
     CANOPY_INJECTED_TOOL_REGISTRY.request_steering,
+    CANOPY_INJECTED_TOOL_REGISTRY.request_secrets,
+    CANOPY_INJECTED_TOOL_REGISTRY.run_with_secrets,
+    CANOPY_INJECTED_TOOL_REGISTRY.write_secrets_file,
   ];
 
 const BRANDED_MCP_DISPLAY_TO_KEY: ReadonlyMap<string, CanopyInjectedToolKey> =
@@ -1321,6 +1394,9 @@ const BRANDED_CODEX_SUFFIX_TO_KEY: ReadonlyMap<string, CanopyInjectedToolKey> =
     ['message_delegate', 'message_delegate'],
     ['request_steering', 'request_steering'],
     ['manage_delegate', 'manage_delegate_worktree'],
+    ['request_secrets', 'request_secrets'],
+    ['run_with_secrets', 'run_with_secrets'],
+    ['write_secrets_file', 'write_secrets_file'],
   ]);
 
 function getBrandedAppToolKey(toolName: string): CanopyInjectedToolKey | null {
@@ -1339,7 +1415,7 @@ function getBrandedAppToolKey(toolName: string): CanopyInjectedToolKey | null {
   }
 
   const codexMatch = toolName.match(
-    /^(.+?)_(ask_user_question|get_script_output|get_git_preferences|save_memory|search_memory|search_chats|read_chat_excerpt|read_memory|read_pipeline_yaml|show_files|show_capabilities|show_visual|preview_visual|get_file_comments|respond_to_file_comment|search_actions|dispatch_action|search_watchers|setup_watchers|watch_github_items|get_github_pull_request_status|watch_command|schedule_wakeup|delete_watchers|set_auto_archive|set_chat_auto_archive|set_work_entry_auto_delete|set_base_branch|start_forked_agent|start_branched_agent|archive_chat|get_code_graph_context|build_or_update_code_graph|query_code_graph|search_code_graph|explain_code_symbol|get_impact_radius|detect_changed_symbols|compare_change_impact|get_review_context|search_deferred_tools|load_deferred_tools|add_feed_entry|search_feed_entries|update_feed_entry|add_ledger_entry|search_ledger_entries|update_ledger_entry|spawn_delegate|get_delegate_output|inspect_delegate|list_delegates|stop_delegate|manage_delegate_worktree|message_delegate|request_steering|manage_delegate)$/,
+    /^(.+?)_(ask_user_question|get_script_output|get_git_preferences|save_memory|search_memory|search_chats|read_chat_excerpt|read_memory|read_pipeline_yaml|show_files|show_capabilities|show_visual|preview_visual|get_file_comments|respond_to_file_comment|search_actions|dispatch_action|search_watchers|setup_watchers|watch_github_items|get_github_pull_request_status|watch_command|schedule_wakeup|delete_watchers|set_auto_archive|set_chat_auto_archive|set_work_entry_auto_delete|set_base_branch|start_forked_agent|start_branched_agent|archive_chat|get_code_graph_context|build_or_update_code_graph|query_code_graph|search_code_graph|explain_code_symbol|get_impact_radius|detect_changed_symbols|compare_change_impact|get_review_context|search_deferred_tools|load_deferred_tools|add_feed_entry|search_feed_entries|update_feed_entry|add_ledger_entry|search_ledger_entries|update_ledger_entry|spawn_delegate|get_delegate_output|inspect_delegate|list_delegates|stop_delegate|manage_delegate_worktree|message_delegate|request_steering|manage_delegate|request_secrets|run_with_secrets|write_secrets_file)$/,
   );
   if (codexMatch) {
     const namespace = codexMatch[1];

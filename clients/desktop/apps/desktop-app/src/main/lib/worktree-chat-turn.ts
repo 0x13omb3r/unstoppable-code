@@ -3548,9 +3548,16 @@ async function dispatchHeldWorktreeChatTurn<
         request.signal.throwIfAborted();
         if (!admission)
           throw new Error('The reload could not continue this chat.');
-        const { authorization: _consumedAuthorization, ...continuation } =
-          options;
+        // The first send claimed and retired this turn's delegate delivery.
+        // The continuation is the same accepted turn, so it carries no
+        // delivery id: a second claim of the retired id always fails.
+        const {
+          authorization: _consumedAuthorization,
+          managedDelegationDeliveryId: _retiredDeliveryId,
+          ...continuation
+        } = options;
         void _consumedAuthorization;
+        void _retiredDeliveryId;
         try {
           await getChatStateService().runWithScopeActivity(
             {

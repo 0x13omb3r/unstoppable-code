@@ -229,6 +229,7 @@ export const AgentDelegationSnapshotSchema = z.object({
   delegationId: text,
   status: AgentDelegationStatusSchema,
   routeSnapshot: PersistedAgentRouteSnapshotSchema.optional(),
+  reportedRoute: z.object({ harnessId: text.optional() }).optional(),
   requestedModelId: text.optional(),
   requestedModelLabel: text.optional(),
   control: z

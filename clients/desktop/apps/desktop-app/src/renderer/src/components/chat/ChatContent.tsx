@@ -38,6 +38,7 @@ import { LoadingSpinner } from '../shared/loading/spinners/LoadingSpinner';
 import { useTranscriptSearch } from '@/hooks/useTranscriptSearch';
 import { useScopeCapabilities } from '@/hooks/useScopeCapabilities';
 import { useContentSearch } from '@/hooks/useContentSearch';
+import { LegacyTranscriptSearchContext } from './transcript-search-reveal';
 import { createDomSearchExecutor } from '@/lib/dom-search-highlight';
 import { getSavedChatScrollPosition } from '@/lib/tab-scroll-positions';
 import {
@@ -618,55 +619,63 @@ export function ChatContent({
                 </div>
               }
             >
-              <ChatMessageList
-                canonicalSearch={canonicalSearchEnabled}
-                searchSelection={transcriptSearch.selection}
-                pagingControls={pageControls}
-                transcriptTurns={transcript.transcriptWindow?.turns}
-                onLoadTurn={loadTurn}
-                turnPageId={turnPageId}
-                turnLoading={pageLoading}
-                turnError={pageError}
-                messages={transcript.messages}
-                loadedBytesEstimate={estimateTranscriptWindowBytes(
-                  transcript.transcript ?? {
-                    committedByteLength: 0,
-                    committedMessageCount: 0,
-                  },
-                  transcript.messages.length,
-                )}
-                pendingTurnTimerId={transcript.pendingTurnTimerId}
-                startingTurnUserMessageId={transcript.startingTurnUserMessageId}
-                startingTurnPresentationKey={
-                  transcript.startingTurnPresentationKey
-                }
-                waitingForApproval={waitingForApproval}
-                queuedMessages={transcript.queuedMessages}
-                chatId={transcript.id}
-                agentUsage={transcript.agentUsage}
-                turnDiffs={transcript.turnDiffs}
-                memoryByMessageId={transcript.memoryByMessageId}
-                onClearQueuedMessage={onClearQueuedMessage}
-                onForceQueuedMessage={onForceQueuedMessage}
-                onEditQueuedMessage={onEditQueuedMessage}
-                pendingQueuedMessageEditId={
-                  transcript.pendingQueuedMessageEditId
-                }
-                editingQueuedMessageIndex={transcript.editingQueuedMessageIndex}
-                onResetToPoint={readOnly ? undefined : onResetToPoint}
-                targetOverride={targetOverride}
-                hideBranchActions={hideBranchActions}
-                containerRef={messageContainerRef}
-                searchActive={searchOpen}
-                suppressAutoScroll={searchOpen && search.totalCount > 0}
-                scheduledMessages={scheduledMessages}
-                onEditScheduledMessage={onEditScheduledMessage}
-                onClearScheduledMessage={onClearScheduledMessage}
-                onInterruptScheduledMessage={onInterruptScheduledMessage}
-                editingScheduledMessageId={editingScheduledMessageId}
-                runningScheduledMessageId={runningScheduledMessageId}
-                enableForkedFromLink
-              />
+              <LegacyTranscriptSearchContext.Provider
+                value={searchOpen && !canonicalSearchEnabled}
+              >
+                <ChatMessageList
+                  canonicalSearch={canonicalSearchEnabled}
+                  searchSelection={transcriptSearch.selection}
+                  pagingControls={pageControls}
+                  transcriptTurns={transcript.transcriptWindow?.turns}
+                  onLoadTurn={loadTurn}
+                  turnPageId={turnPageId}
+                  turnLoading={pageLoading}
+                  turnError={pageError}
+                  messages={transcript.messages}
+                  loadedBytesEstimate={estimateTranscriptWindowBytes(
+                    transcript.transcript ?? {
+                      committedByteLength: 0,
+                      committedMessageCount: 0,
+                    },
+                    transcript.messages.length,
+                  )}
+                  pendingTurnTimerId={transcript.pendingTurnTimerId}
+                  startingTurnUserMessageId={
+                    transcript.startingTurnUserMessageId
+                  }
+                  startingTurnPresentationKey={
+                    transcript.startingTurnPresentationKey
+                  }
+                  waitingForApproval={waitingForApproval}
+                  queuedMessages={transcript.queuedMessages}
+                  chatId={transcript.id}
+                  agentUsage={transcript.agentUsage}
+                  turnDiffs={transcript.turnDiffs}
+                  memoryByMessageId={transcript.memoryByMessageId}
+                  onClearQueuedMessage={onClearQueuedMessage}
+                  onForceQueuedMessage={onForceQueuedMessage}
+                  onEditQueuedMessage={onEditQueuedMessage}
+                  pendingQueuedMessageEditId={
+                    transcript.pendingQueuedMessageEditId
+                  }
+                  editingQueuedMessageIndex={
+                    transcript.editingQueuedMessageIndex
+                  }
+                  onResetToPoint={readOnly ? undefined : onResetToPoint}
+                  targetOverride={targetOverride}
+                  hideBranchActions={hideBranchActions}
+                  containerRef={messageContainerRef}
+                  searchActive={searchOpen}
+                  suppressAutoScroll={searchOpen && search.totalCount > 0}
+                  scheduledMessages={scheduledMessages}
+                  onEditScheduledMessage={onEditScheduledMessage}
+                  onClearScheduledMessage={onClearScheduledMessage}
+                  onInterruptScheduledMessage={onInterruptScheduledMessage}
+                  editingScheduledMessageId={editingScheduledMessageId}
+                  runningScheduledMessageId={runningScheduledMessageId}
+                  enableForkedFromLink
+                />
+              </LegacyTranscriptSearchContext.Provider>
             </Suspense>
             {scheduledMessageError && (
               <Surface variant="section" boundary="top">

@@ -69,5 +69,7 @@ export {
   createDurableTerminalClient,
   type DurableTerminalClient,
   type DurableTerminalClientOptions,
+  type DurableTerminalRecord,
+  type DurableTerminalRecordStore,
 } from './durable-terminal-client';
 export { createScopedTerminalClient } from './scoped-terminal-client';

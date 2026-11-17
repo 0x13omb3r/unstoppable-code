@@ -31,7 +31,9 @@ function unwrap<Value>(result: CostViewResult<Value>): Value {
     case 'ok':
       return result.value;
     case 'unavailable':
-      throw new CostServiceError(result.reason);
+      throw new CostServiceError(
+        result.reason === 'not_served' ? 'UNKNOWN' : result.reason,
+      );
     case 'error':
       throw new CostServiceError(mapErrorReason(result.reason), result.message);
   }

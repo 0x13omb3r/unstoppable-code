@@ -1,7 +1,8 @@
 'use client';
 
 import { memo, useEffect, useRef, type JSX } from 'react';
-import { LoadingSpinner } from '../LoadingSpinner';
+import { HistoryIcon } from '../../icons/AppIcons';
+import { StepRow } from './StepRow';
 import { Notice, NoticeButton } from '../Notice';
 import { TRY_AGAIN_LABEL } from '../useRetry';
 
@@ -65,13 +66,19 @@ export const TranscriptPagingControls = memo(function TranscriptPagingControls({
       data-testid="chat-transcript-paging"
     >
       {(loading || needsLoad) && !error ? (
-        <span className="inline-flex items-center gap-2 py-2" role="status">
-          <LoadingSpinner
-            decorative
-            dataTestId="chat-transcript-loading-spinner"
+        <div
+          className="w-full px-2"
+          role="status"
+          data-testid="chat-transcript-loading-spinner"
+        >
+          <StepRow
+            step
+            running
+            extent="fill"
+            label="Loading earlier steps"
+            icon={<HistoryIcon size="sm" aria-hidden="true" />}
           />
-          Loading messages…
-        </span>
+        </div>
       ) : error ? (
         // The same 8px room above and below as the loading status.
         <div className="w-full py-2">

@@ -2,8 +2,14 @@ import { hostOperatingSystem } from '@canopy/core-platform/host-platform';
 import { AsyncLocalStorage } from 'node:async_hooks';
 import { execFile } from 'node:child_process';
 import { readFile, readdir, readlink, realpath } from 'node:fs/promises';
-import { basename, dirname, resolve } from 'node:path';
+import { basename, dirname, join, resolve } from 'node:path';
 import { promisify } from 'node:util';
+import { Worker } from 'node:worker_threads';
+import type {
+  CapturedLinuxOwner,
+  LinuxWriterInspectionInput,
+  LinuxWriterInspectionResult,
+} from './linux-writer-inspection';
 
 const execFileAsync = promisify(execFile);
 const TERMINATION_GRACE_MS = 750;
@@ -12,16 +18,145 @@ const POSIX_COMMAND_READ_CONCURRENCY = 16;
 const EXIT_CHECK_COUNT = 20;
 const EXIT_CHECK_DELAY_MS = 25;
 
+/**
+ * Why cleanup stopped, as a privacy-safe code: an app-owned writer still
+ * holds the worktree, the inspection could not finish so nothing is proved,
+ * or a terminated process outlived its kill.
+ */
+export type WorktreeProcessCleanupCode =
+  | 'WORKTREE_WRITERS_ACTIVE'
+  | 'WORKTREE_WRITER_INSPECTION_INCOMPLETE'
+  | 'WORKTREE_PROCESSES_ALIVE';
+
 export class WorktreeProcessCleanupError extends Error {
-  readonly code = 'WORKTREE_WRITERS_ACTIVE';
+  constructor(
+    message: string,
+    readonly code: WorktreeProcessCleanupCode = 'WORKTREE_WRITERS_ACTIVE',
+  ) {
+    super(message);
+  }
 }
 
 interface LinuxWriterVerificationOps {
   findWriters(paths: readonly string[]): Promise<number[]>;
   delay(ms: number): Promise<void>;
-  procFs: LinuxProcFs;
+  inspect: LinuxWriterInspector;
   additionalPaths: readonly string[];
 }
+
+/** One inspection of the app's process tree for writers into the given paths. */
+export type LinuxWriterInspector = (
+  input: LinuxWriterInspectionInput,
+) => Promise<LinuxWriterInspectionResult>;
+
+// The walk runs on a worker thread with synchronous /proc reads, so its cost
+// no longer depends on how busy the main thread is (CAN-6899). Past either
+// bound nothing is proved, and removal is refused.
+const INSPECTION_BUDGET_MS = 10_000;
+const INSPECTION_TIMEOUT_MS = 15_000;
+const INCOMPLETE_INSPECTION_MESSAGE =
+  'App-owned writer inspection did not finish; cleanup is incomplete.';
+
+let inspectionWorkerEntry: string | undefined;
+let inspectionProcRoot = '/proc';
+let inspectionTimeoutMs = INSPECTION_TIMEOUT_MS;
+
+/** Test seam: the worker entry to run, the /proc tree it reads, and its time limit. */
+export function __setLinuxWriterInspectionWorkerForTests(
+  entry: string | undefined,
+  procRoot = '/proc',
+  timeoutMs = INSPECTION_TIMEOUT_MS,
+): void {
+  inspectionWorkerEntry = entry;
+  inspectionProcRoot = procRoot;
+  inspectionTimeoutMs = timeoutMs;
+}
+
+let inspectorForTests: LinuxWriterInspector | undefined;
+
+/**
+ * Test seam: Jest runs sources, where the bundled worker does not exist, so
+ * its setup inspects in-process with the same walk. A worker entry set
+ * through `__setLinuxWriterInspectionWorkerForTests` takes precedence.
+ */
+export function __setLinuxWriterInspectorForTests(
+  inspector: LinuxWriterInspector | undefined,
+): void {
+  inspectorForTests = inspector;
+}
+
+function incompleteInspection(message = INCOMPLETE_INSPECTION_MESSAGE): {
+  ok: false;
+  reason: 'incomplete';
+  message: string;
+} {
+  return { ok: false, reason: 'incomplete', message };
+}
+
+function isInspectionResult(
+  value: unknown,
+): value is LinuxWriterInspectionResult {
+  if (typeof value !== 'object' || value === null || !('ok' in value))
+    return false;
+  if (value.ok === true)
+    return (
+      'writers' in value &&
+      Array.isArray(value.writers) &&
+      value.writers.every((pid) => Number.isInteger(pid)) &&
+      'owners' in value &&
+      Array.isArray(value.owners)
+    );
+  return (
+    value.ok === false &&
+    'reason' in value &&
+    (value.reason === 'incomplete' || value.reason === 'error') &&
+    'message' in value &&
+    typeof value.message === 'string' &&
+    (!('owners' in value) || Array.isArray(value.owners))
+  );
+}
+
+/** Runs one inspection on its own worker; any failure to answer is incomplete. */
+/** The app inspects on its worker; see `__setLinuxWriterInspectorForTests`. */
+const defaultInspector: LinuxWriterInspector = (input) =>
+  inspectionWorkerEntry === undefined && inspectorForTests !== undefined
+    ? inspectorForTests(input)
+    : inspectOnWorker(input);
+
+const inspectOnWorker: LinuxWriterInspector = (input) =>
+  new Promise((resolveResult) => {
+    let settled = false;
+    let worker: Worker | undefined;
+    const finish = (result: LinuxWriterInspectionResult): void => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      void worker?.terminate().catch(() => undefined);
+      resolveResult(result);
+    };
+    const timer = setTimeout(
+      () => finish(incompleteInspection()),
+      inspectionTimeoutMs,
+    );
+    try {
+      worker = new Worker(
+        inspectionWorkerEntry ??
+          join(__dirname, 'linux-writer-inspection-worker.js'),
+        {
+          workerData: { input, procRoot: inspectionProcRoot },
+          name: 'linux-writer-inspection',
+        },
+      );
+    } catch {
+      finish(incompleteInspection());
+      return;
+    }
+    worker.once('message', (message: unknown) =>
+      finish(isInspectionResult(message) ? message : incompleteInspection()),
+    );
+    worker.once('error', () => finish(incompleteInspection()));
+    worker.once('exit', () => finish(incompleteInspection()));
+  });
 
 interface LinuxProcFs {
   readFile(path: string): Promise<string>;
@@ -35,16 +170,6 @@ const linuxProcFs: LinuxProcFs = {
   readdir,
 };
 
-function pathReferencesWorktree(
-  path: string,
-  worktreePaths: readonly string[],
-): boolean {
-  const entry = path.replace(/ \(deleted\)$/, '');
-  return worktreePaths.some(
-    (candidate) => entry === candidate || entry.startsWith(`${candidate}/`),
-  );
-}
-
 async function readProc<T>(read: () => Promise<T>): Promise<T | undefined> {
   try {
     return await read();
@@ -56,11 +181,6 @@ async function readProc<T>(read: () => Promise<T>): Promise<T | undefined> {
       return undefined;
     throw error;
   }
-}
-
-interface CapturedLinuxOwner {
-  identity: string;
-  worktreeRelated: boolean;
 }
 
 interface LinuxWriterTracking {
@@ -119,189 +239,46 @@ export async function withLinuxWorktreeWriterTracking<T>(
 async function inspectLinuxWriters(
   paths: readonly string[],
   tracking: LinuxWriterTracking,
-  procFs: LinuxProcFs,
+  inspect: LinuxWriterInspector,
 ): Promise<number[]> {
   for (const path of paths) tracking.paths.add(path);
   tracking.unresolved = true;
-  const writers = await findLinuxOwnedWriters(
-    [...tracking.paths],
-    tracking.owners,
-    procFs,
-  );
-  tracking.unresolved = writers.length > 0;
-  return writers;
-}
-
-/** Inspect only this app's process tree; unreadable unrelated terminals are not owners. */
-async function findLinuxOwnedWriters(
-  worktreePaths: readonly string[],
-  owners: Map<number, CapturedLinuxOwner>,
-  procFs: LinuxProcFs,
-): Promise<number[]> {
-  const pending: Array<{
-    pid: number;
-    worktreeRelated: boolean;
-    identity?: string;
-  }> = [{ pid: process.pid, worktreeRelated: false }];
-  const deadline = Date.now() + 2_000;
-  // Retain birth identities across reparenting without adopting reused PIDs.
-  for (const [pid, owner] of owners) {
-    if (Date.now() >= deadline)
-      throw new WorktreeProcessCleanupError(
-        'App-owned writer inspection exceeded its deadline; cleanup is incomplete.',
+  let timer: NodeJS.Timeout | undefined;
+  const result = await Promise.race<LinuxWriterInspectionResult>([
+    inspect({
+      rootPid: process.pid,
+      worktreePaths: [...tracking.paths],
+      owners: [...tracking.owners],
+      budgetMs: INSPECTION_BUDGET_MS,
+    }).catch(() => incompleteInspection()),
+    new Promise<LinuxWriterInspectionResult>((resolveTimeout) => {
+      timer = setTimeout(
+        () => resolveTimeout(incompleteInspection()),
+        inspectionTimeoutMs,
       );
-    try {
-      if ((await readLinuxProcessIdentity(pid, procFs)) === owner.identity)
-        pending.push({
-          pid,
-          worktreeRelated: owner.worktreeRelated,
-          identity: owner.identity,
-        });
-      else owners.delete(pid);
-    } catch (error) {
-      if (owner.worktreeRelated || !isProcPermissionError(error)) throw error;
-    }
+    }),
+  ]).finally(() => clearTimeout(timer));
+  // As far as the walk got, also when it failed: a writer it saw stays
+  // tracked through a reparent before the retry. A worker that never
+  // answered leaves the earlier owners as they were.
+  if (result.ok || result.owners !== undefined) {
+    tracking.owners.clear();
+    for (const [pid, owner] of result.owners ?? [])
+      tracking.owners.set(pid, owner);
   }
-  const seen = new Map<number, boolean>();
-  const writers = new Set<number>();
-  while (pending.length > 0) {
-    const candidate = pending.pop();
-    if (candidate === undefined) continue;
-    const previous = seen.get(candidate.pid);
-    if (previous === true || (previous === false && !candidate.worktreeRelated))
-      continue;
-    const { pid } = candidate;
-    if (Date.now() >= deadline)
+  if (!result.ok) {
+    if (result.reason === 'incomplete')
       throw new WorktreeProcessCleanupError(
-        'App-owned writer inspection exceeded its deadline; cleanup is incomplete.',
+        result.message,
+        'WORKTREE_WRITER_INSPECTION_INCOMPLETE',
       );
-    const root = `/proc/${pid}`;
-    let inspectionFailure: Error | undefined;
-    // A denied cwd must not hide readable argv, handles, or terminal ancestry.
-    const readEvidence = async <T>(
-      read: () => Promise<T>,
-    ): Promise<T | undefined> => {
-      try {
-        return await readProc(read);
-      } catch (error) {
-        if (!isProcPermissionError(error)) throw error;
-        inspectionFailure ??= error;
-        return undefined;
-      }
-    };
-    const identity = await readEvidence(() =>
-      readLinuxProcessIdentity(pid, procFs),
+    throw Object.assign(
+      new Error(result.message),
+      result.code === undefined ? {} : { code: result.code },
     );
-    if (identity === undefined && inspectionFailure === undefined) continue;
-    // A captured PID may be reused between the seed read and this inspection.
-    if (candidate.identity !== undefined && identity !== candidate.identity) {
-      if (
-        inspectionFailure &&
-        (candidate.worktreeRelated || pid === process.pid)
-      )
-        throw inspectionFailure;
-      continue;
-    }
-    const cwd = await readEvidence(() => procFs.readlink(`${root}/cwd`));
-    const command = await readEvidence(() =>
-      procFs.readFile(`${root}/cmdline`),
-    );
-    const commandReferencesWorktree =
-      command
-        ?.split('\0')
-        .some((arg) =>
-          pathReferencesWorktree(
-            arg.slice(arg.indexOf('=') + 1),
-            worktreePaths,
-          ),
-        ) ?? false;
-    let worktreeRelated =
-      candidate.worktreeRelated || commandReferencesWorktree;
-    let writing =
-      cwd !== undefined && pathReferencesWorktree(cwd, worktreePaths);
-    worktreeRelated ||= writing;
-    const handles = await readEvidence(() => procFs.readdir(`${root}/fd`));
-    for (const handle of handles ?? []) {
-      if (Date.now() >= deadline)
-        throw new WorktreeProcessCleanupError(
-          'App-owned writer inspection exceeded its deadline; cleanup is incomplete.',
-        );
-      const target = await readEvidence(() =>
-        procFs.readlink(`${root}/fd/${handle}`),
-      );
-      if (
-        target === undefined ||
-        !pathReferencesWorktree(target, worktreePaths)
-      )
-        continue;
-      worktreeRelated = true;
-      const info = await readEvidence(() =>
-        procFs.readFile(`${root}/fdinfo/${handle}`),
-      );
-      const flags =
-        info === undefined ? undefined : /^flags:\s+([0-7]+)/m.exec(info);
-      if (flags && (Number.parseInt(flags[1], 8) & 3) !== 0) writing = true;
-    }
-    const childrenToInspect: number[] = [];
-    const tasks = await readEvidence(() => procFs.readdir(`${root}/task`));
-    for (const task of tasks ?? []) {
-      const children = await readEvidence(() =>
-        procFs.readFile(`${root}/task/${task}/children`),
-      );
-      if (
-        children === undefined &&
-        !inspectionFailure &&
-        (await readEvidence(() =>
-          procFs.readFile(`${root}/task/${task}/stat`),
-        )) !== undefined
-      ) {
-        throw new WorktreeProcessCleanupError(
-          'Linux process-child inspection is unavailable; cleanup is incomplete.',
-        );
-      }
-      for (const child of children?.trim().split(/\s+/) ?? []) {
-        if (/^\d+$/.test(child)) childrenToInspect.push(Number(child));
-      }
-    }
-    let finalIdentity: string | undefined;
-    try {
-      finalIdentity = await readLinuxProcessIdentity(pid, procFs);
-    } catch (error) {
-      if (
-        !isProcPermissionError(error) ||
-        worktreeRelated ||
-        pid === process.pid
-      )
-        throw error;
-      continue;
-    }
-    // Do not retain descriptors or child PIDs read from a recycled process.
-    if (
-      finalIdentity === undefined ||
-      (identity !== undefined && finalIdentity !== identity)
-    )
-      continue;
-    seen.set(pid, worktreeRelated);
-    if (identity !== undefined) owners.set(pid, { identity, worktreeRelated });
-    for (const child of childrenToInspect)
-      pending.push({
-        pid: child,
-        // Main owns many worktrees. Its open files never implicate every PTY.
-        worktreeRelated: pid !== process.pid && worktreeRelated,
-      });
-    if (writing) {
-      writers.add(pid);
-    } else if (inspectionFailure && (worktreeRelated || pid === process.pid)) {
-      throw inspectionFailure;
-    }
   }
-  return [...writers];
-}
-
-function isProcPermissionError(error: unknown): error is NodeJS.ErrnoException {
-  return (
-    isErrnoException(error) && ['EACCES', 'EPERM'].includes(error.code ?? '')
-  );
+  tracking.unresolved = result.writers.length > 0;
+  return result.writers;
 }
 
 async function readLinuxProcessIdentity(
@@ -323,16 +300,16 @@ async function readLinuxProcessIdentity(
 /** Capture live owners before cancellation, including writers later reparented. */
 export async function captureLinuxWorktreeWriterVerification(
   worktreePath: string,
-  procFs: LinuxProcFs = linuxProcFs,
+  inspect: LinuxWriterInspector = defaultInspector,
 ): Promise<() => Promise<void>> {
   if (hostOperatingSystem() !== 'linux') return async (): Promise<void> => {};
   const paths = await resolveCleanupWorktreePaths(worktreePath);
   const tracking =
     linuxWriterTracking.getStore() ?? createLinuxWriterTracking();
-  await inspectLinuxWriters(paths, tracking, procFs);
+  await inspectLinuxWriters(paths, tracking, inspect);
   return async (): Promise<void> => {
     await withLinuxWorktreeRemovalVerification(worktreePath, async () => {}, {
-      findWriters: () => inspectLinuxWriters(paths, tracking, procFs),
+      findWriters: () => inspectLinuxWriters(paths, tracking, inspect),
     });
   };
 }
@@ -361,7 +338,7 @@ export async function withLinuxWorktreeRemovalVerification<T>(
       inspectLinuxWriters(
         candidates,
         tracking,
-        overrides.procFs ?? linuxProcFs,
+        overrides.inspect ?? defaultInspector,
       ));
   const delay =
     overrides.delay ??
@@ -729,6 +706,7 @@ export async function terminateProcessesReferencingPath(
       if (check >= EXIT_CHECK_COUNT || Date.now() >= deadline) {
         throw new WorktreeProcessCleanupError(
           `Worktree processes are still alive after termination (${alive.join(', ')}).`,
+          'WORKTREE_PROCESSES_ALIVE',
         );
       }
       await ops.delay(EXIT_CHECK_DELAY_MS);

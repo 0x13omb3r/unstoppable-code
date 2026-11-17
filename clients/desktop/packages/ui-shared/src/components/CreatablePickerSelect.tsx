@@ -1,14 +1,9 @@
 'use client';
 
+import { PickListSearch } from './PickList';
+
 import { ControlButton } from './Button';
-import {
-  useId,
-  useRef,
-  useState,
-  type KeyboardEvent,
-  type JSX,
-  type ReactNode,
-} from 'react';
+import { useId, useRef, useState, type JSX, type ReactNode } from 'react';
 import { ChevronDownMediumIcon, PlusIcon } from '../icons/AppIcons';
 import { FLOATING_MENU_GAP } from './FloatingMenu';
 import { Inline } from './Stack';
@@ -23,7 +18,6 @@ import {
   PickerMenuOptionLeading,
   PickerMenuOptionTrailing,
   PickerMenuSearchHeader,
-  PickerMenuSearchInput,
   PickerMenuSection,
   PickerMenuState,
 } from './PickerMenu';
@@ -234,52 +228,6 @@ export function CreatablePickerSelect({
     closeAndFocusTrigger();
   };
 
-  const handleSearchKeyDown = (
-    event: KeyboardEvent<HTMLInputElement>,
-  ): void => {
-    if (event.key === 'Escape') {
-      event.preventDefault();
-      event.stopPropagation();
-      closeAndFocusTrigger();
-      return;
-    }
-
-    if (event.key === 'Enter') {
-      if (!activeRow) return;
-      event.preventDefault();
-      event.stopPropagation();
-      chooseRow(activeRow);
-      return;
-    }
-
-    if (event.key !== 'ArrowDown' && event.key !== 'ArrowUp') return;
-    if (rows.length === 0) return;
-
-    event.preventDefault();
-    event.stopPropagation();
-    const currentIndex = activeRow
-      ? rows.findIndex(
-          (row) =>
-            pickerRowId(componentId, row) ===
-            pickerRowId(componentId, activeRow),
-        )
-      : -1;
-    const nextIndex =
-      event.key === 'ArrowDown'
-        ? (currentIndex + 1 + rows.length) % rows.length
-        : currentIndex <= 0
-          ? rows.length - 1
-          : currentIndex - 1;
-    const nextRow = rows[nextIndex];
-    if (!nextRow) return;
-    const nextRowId = pickerRowId(componentId, nextRow);
-    setActiveRowId(nextRowId);
-    // The picker may render in a detached window; resolve rows in its document.
-    (searchRef.current?.ownerDocument ?? document)
-      .getElementById(nextRowId)
-      ?.scrollIntoView?.({ block: 'nearest' });
-  };
-
   const handleSearchChange = (text: string): void => {
     setQuery(text);
     setActiveRowId(null);
@@ -476,18 +424,34 @@ export function CreatablePickerSelect({
         maximumWidth="max(20rem, var(--canopy-picker-trigger-width))"
       >
         <PickerMenuSearchHeader>
-          <PickerMenuSearchInput
+          <PickListSearch
             ref={searchRef}
             type="search"
             value={query}
             onChange={(event): void =>
               handleSearchChange(event.currentTarget.value)
             }
-            onKeyDown={handleSearchKeyDown}
             placeholder={searchPlaceholder}
             aria-label={searchPlaceholder}
-            aria-controls={listboxId}
-            aria-activedescendant={
+            keyboard={{
+              keys: rows.map((row) => pickerRowId(componentId, row)),
+              activeKey: activeRow ? pickerRowId(componentId, activeRow) : null,
+              onActiveKeyChange: (key) => {
+                setActiveRowId(key);
+                searchRef.current?.ownerDocument
+                  .getElementById(key)
+                  ?.scrollIntoView?.({ block: 'nearest' });
+              },
+              onPick: (key) => {
+                const row = rows.find(
+                  (item) => pickerRowId(componentId, item) === key,
+                );
+                if (row) chooseRow(row);
+              },
+              onEscape: closeAndFocusTrigger,
+            }}
+            listId={listboxId}
+            activeDescendant={
               activeRow ? pickerRowId(componentId, activeRow) : undefined
             }
             data-testid={testId === undefined ? undefined : `${testId}-search`}

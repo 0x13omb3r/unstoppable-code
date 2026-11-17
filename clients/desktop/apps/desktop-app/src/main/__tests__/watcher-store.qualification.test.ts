@@ -44,6 +44,7 @@ import {
 } from '../app-advisor/chat-watcher-storage';
 import { DelegationNoticeAckStore } from '../agents/delegation/notice-acks';
 import { migrateDelegateWatchersToNotices } from '../agents/delegation/notice-migration';
+import * as MainProcessLogging from '../lib/main-process-logging';
 
 const legacy = 'app-advisor-watchers.json';
 const canonical = 'app-advisor-watchers-canonical.json';
@@ -224,7 +225,48 @@ if (process.env.CAN4492_STAGE) {
         }),
       );
     };
-    if (stage === 'hold') {
+    if (stage === 'unsupported') {
+      const errorLog = jest.spyOn(MainProcessLogging, 'logMainProcessError');
+      const replayLogged = gate();
+      const warningLog = jest
+        .spyOn(MainProcessLogging, 'logMainProcessWarn')
+        .mockImplementation((message) => {
+          if (message === 'GitHub watcher replay unavailable.')
+            replayLogged.resolve();
+        });
+      const path = join(mockDirectory, isCanonical ? canonical : legacy);
+      const bytes = await readFile(path, 'utf8');
+      await expect(service.list()).rejects.toThrow('unsupported format');
+      await expect(register(isCanonical)).rejects.toThrow('unsupported format');
+      await expect(service.reconcileAtStartup()).resolves.toBeUndefined();
+      // Reconciliation does not join the detached GitHub replay.
+      await replayLogged.promise;
+      const unsupportedMessage: unknown =
+        expect.stringContaining('unsupported format');
+      expect(errorLog).toHaveBeenCalledWith(
+        'Failed to reconcile interrupted watchers:',
+        expect.objectContaining({
+          message: unsupportedMessage,
+        }),
+      );
+      expect(warningLog).toHaveBeenCalledWith(
+        'GitHub watcher replay unavailable.',
+        expect.objectContaining({
+          message: unsupportedMessage,
+        }),
+      );
+      expect(await readFile(path, 'utf8')).toBe(bytes);
+      expect(deliver).not.toHaveBeenCalled();
+      await writeFile(
+        join(mockDirectory, `result-${stage}.json`),
+        JSON.stringify({
+          pid: process.pid,
+          calls: [],
+          rows: [],
+          activeIds: [],
+        }),
+      );
+    } else if (stage === 'hold') {
       const setup = await register(isCanonical);
       expect(setup.ok).toBe(true);
       deliver.mockImplementation(async () => {
@@ -828,23 +870,101 @@ if (process.env.CAN4492_STAGE) {
     'pins missing, malformed, and unsupported-envelope behavior for %s',
     async (name) => {
       expect(await service.list()).toEqual([]);
-      await writeFile(join(mockDirectory, name), '{');
-      await expect(service.list()).rejects.toThrow();
-      await seed(name, [], { version: 2 });
-      if (name === canonical) {
-        await expect(service.list()).rejects.toThrow('unsupported format');
-        await expect(register()).rejects.toThrow('unsupported format');
-        expect(
-          JSON.parse(await readFile(join(mockDirectory, name), 'utf8')),
-        ).toMatchObject({ version: 2 });
-      } else {
-        expect(await service.list()).toEqual([]);
-        expect((await register()).ok).toBe(true);
-        expect(
-          JSON.parse(await readFile(join(mockDirectory, name), 'utf8')),
-        ).toMatchObject({ version: 1 });
+      for (const raw of ['', '{']) {
+        await writeFile(join(mockDirectory, name), raw);
+        await expect(service.list()).rejects.toThrow();
+        await expect(register()).rejects.toThrow();
+        expect(await readFile(join(mockDirectory, name), 'utf8')).toBe(raw);
       }
+      await seed(name, [], { version: 2 });
+      await expect(service.list()).rejects.toThrow('unsupported format');
+      await expect(register()).rejects.toThrow('unsupported format');
+      expect(
+        JSON.parse(await readFile(join(mockDirectory, name), 'utf8')),
+      ).toMatchObject({ version: 2 });
     },
+  );
+
+  it.each(
+    [legacy, canonical].flatMap((name) =>
+      [
+        'null',
+        '[]',
+        '42',
+        '{"watchers":[]}',
+        '{"version":0,"watchers":[{"older":"keep"}]}',
+        '{"version":2,"watchers":[{"future":"keep"}]}',
+        '{"version":"1","watchers":[]}',
+        '{"version":1}',
+        '{"version":1,"watchers":{}}',
+      ].map((raw) => ({ name, raw })),
+    ),
+  )(
+    'refuses $name envelope $raw without replacing either file',
+    async ({ name, raw }) => {
+      expect((await register()).ok).toBe(true);
+      expect((await register(true)).ok).toBe(true);
+      expect(await service.list()).toHaveLength(2);
+      const legacyId = rowSchema.parse((await disk(legacy)).watchers[0]).id;
+      const path = join(mockDirectory, name);
+      const previous = await readFile(path, 'utf8');
+      const otherPath = join(
+        mockDirectory,
+        name === legacy ? canonical : legacy,
+      );
+      const other = await readFile(otherPath, 'utf8');
+      await writeFile(path, raw);
+      mockRename.mockClear();
+      await Promise.all([
+        expect(service.list()).rejects.toThrow('unsupported format'),
+        expect(service.listCompleted()).rejects.toThrow('unsupported format'),
+        expect(service.listLegacyDelegateWatchers(destination)).rejects.toThrow(
+          'unsupported format',
+        ),
+      ]);
+      await expect(register(false, 'refused-legacy')).rejects.toThrow(
+        'unsupported format',
+      );
+      await expect(register(true, 'refused-canonical')).rejects.toThrow(
+        'unsupported format',
+      );
+      await expect(service.deleteWatcher(legacyId)).rejects.toThrow(
+        'unsupported format',
+      );
+      expect(await readFile(path, 'utf8')).toBe(raw);
+      expect(await readFile(otherPath, 'utf8')).toBe(other);
+      expect(mockRename).not.toHaveBeenCalled();
+      // A rejected queued mutation must not poison the next admitted version.
+      await writeFile(path, previous);
+      expect((await register(false, 'after-repair')).ok).toBe(true);
+      expect(await service.list()).toHaveLength(2);
+      await service.deleteWatcher(legacyId);
+      expect(await service.list()).toHaveLength(1);
+      expect(mockRename).toHaveBeenCalled();
+    },
+  );
+
+  it.each([legacy, canonical])(
+    'refuses unsupported %s bytes in a fresh process',
+    async (name) => {
+      const raw = '{ "version": 2, "watchers": [{ "future": "keep" }] }\n';
+      const path = join(mockDirectory, name);
+      await writeFile(path, raw);
+      const fresh = await child(
+        'unsupported',
+        mockDirectory,
+        false,
+        name === canonical,
+      );
+      expect(fresh.pid).not.toBe(process.pid);
+      expect(await readFile(path, 'utf8')).toBe(raw);
+      expect(
+        (await readdir(mockDirectory)).filter((file) =>
+          file.startsWith('app-advisor-watchers'),
+        ),
+      ).toEqual([name]);
+    },
+    60_000,
   );
 
   it('receipt release failure retains authority through another mutation; a later explicit release succeeds', async () => {
@@ -911,6 +1031,48 @@ if (process.env.CAN4492_STAGE) {
     await writeCanonicalWatcherStore(path, []);
     expect(await readCanonicalWatcherStore(path)).toEqual([]);
   });
+
+  it.each([false, true])(
+    'leaves unsupported legacy bytes intact during notice migration (baselined=%s)',
+    async (baselined) => {
+      const raw = '{"version":2,"watchers":[{"older":"keep"}]}';
+      const path = join(mockDirectory, legacy);
+      await writeFile(path, raw);
+      const store = new DelegationNoticeAckStore(mockDirectory);
+      await store.load();
+      if (baselined) {
+        store.markBaselined();
+        await store.flush();
+      }
+      const remove = jest.fn((ids: readonly string[]) =>
+        service.removeLegacyDelegateWatchers(ids),
+      );
+      const options = {
+        store,
+        records: [{ delegationId: 'delegate', latestResultIndex: 7 }],
+        watchers: {
+          list: (): ReturnType<typeof service.listLegacyDelegateWatchers> =>
+            service.listLegacyDelegateWatchers(destination),
+          remove,
+        },
+      };
+      await expect(migrateDelegateWatchersToNotices(options)).rejects.toThrow(
+        'unsupported format',
+      );
+      expect(remove).not.toHaveBeenCalled();
+      expect(await readFile(path, 'utf8')).toBe(raw);
+      const reopened = new DelegationNoticeAckStore(mockDirectory);
+      await reopened.load();
+      expect(reopened.isBaselined()).toBe(baselined);
+      expect(reopened.owed()).toEqual([]);
+      if (!baselined) expect(reopened.isBaselineCaptured()).toBe(true);
+      await seed(legacy, []);
+      expect(
+        await migrateDelegateWatchersToNotices({ ...options, store: reopened }),
+      ).toEqual({ owed: 0, removed: 0 });
+      expect(reopened.isBaselined()).toBe(true);
+    },
+  );
 
   it('flushes retired-delegate notice evidence before removal, and retries after a removal failure', async () => {
     const retired = {

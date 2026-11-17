@@ -201,6 +201,7 @@ export interface ChatPanelProps {
    * the desktop transcript ends with a Claude Mod's log notices.
    */
   readonly transcriptTail?: ReactNode;
+  readonly forkContext?: ChatTranscriptProps['forkContext'];
   readonly firstSendStartingEnabled?: boolean;
   /** The chat's worktree setup, for the first turn's starting status. */
   readonly worktreeSetup?: ChatTranscriptProps['worktreeSetup'];
@@ -321,6 +322,7 @@ export function ChatPanel({
   emptyState,
   footerStatus,
   transcriptTail,
+  forkContext,
   firstSendStartingEnabled = true,
   worktreeSetup,
   renderLatestTurnAction,
@@ -1089,6 +1091,7 @@ export function ChatPanel({
   // when the cancelled message was the chat's only content (CAN-6801).
   const showPlaceholder =
     !renderTranscript &&
+    (forkContext == null || emptyState != null) &&
     messages.length === 0 &&
     deliveringMessages.length === 0 &&
     footerStatus == null &&
@@ -1170,6 +1173,7 @@ export function ChatPanel({
                     error={error}
                     appIcon={appIcon}
                     emptyState={emptyState}
+                    forkContext={forkContext}
                     renderLatestTurnAction={renderLatestTurnAction}
                     footerSlot={
                       transcriptTail == null ? (

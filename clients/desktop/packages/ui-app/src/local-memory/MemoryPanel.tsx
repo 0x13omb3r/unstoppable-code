@@ -11,6 +11,7 @@ import {
   type ReactNode,
 } from 'react';
 import {
+  TextLink,
   Inline,
   Stack,
   Fact,
@@ -662,8 +663,11 @@ export function MemoryPanel({
         const web = href !== undefined && /^https?:\/\//i.test(href);
         if (!linked && !web) return <span>{children}</span>;
         return (
-          <a
-            href={href}
+          <TextLink
+            variant="inherited"
+            target={undefined}
+            rel={undefined}
+            href={href ?? ''}
             onClick={(event) => {
               event.preventDefault();
               if (linked) openDetail(linked);
@@ -671,7 +675,7 @@ export function MemoryPanel({
             }}
           >
             {children}
-          </a>
+          </TextLink>
         );
       },
     });

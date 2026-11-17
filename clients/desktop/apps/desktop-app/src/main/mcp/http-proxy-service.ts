@@ -984,6 +984,21 @@ export class McpHttpProxyService {
       return;
     }
 
+    // Authentication precedes the awaited body read. A replacement or
+    // teardown during that wait revokes the captured route before dispatch.
+    if (this.tools.route(route.sessionKey) !== route) {
+      writeJson(
+        res,
+        404,
+        jsonRpcError(
+          getJsonRpcId(payload),
+          -32004,
+          `${BRAND.displayName} worktree session not found`,
+        ),
+      );
+      return;
+    }
+
     const payloadRecord = isRecord(payload) ? payload : undefined;
     const isToolCall = payloadRecord?.method === 'tools/call';
     const params =

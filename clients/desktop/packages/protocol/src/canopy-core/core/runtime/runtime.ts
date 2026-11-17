@@ -130,6 +130,12 @@ export const CoreRuntimeManifestOperationSchema = z
     placement: z.enum(['core-only', 'worker-only', 'target-selectable']),
     requiredGrants: z.array(z.string()),
     available: z.boolean(),
+    /**
+     * For an operation that takes a `detail` param, the values this host
+     * serves (CAN-6941). Absent declares none, so a client turns on what
+     * needs a detail only when it is listed.
+     */
+    details: z.array(z.string()).optional(),
   })
   .catchall(json);
 export type CoreRuntimeManifestOperation = z.output<

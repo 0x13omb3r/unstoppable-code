@@ -1,30 +1,29 @@
 'use client';
 
 import { useId, useState, type JSX } from 'react';
-import type { CostSource } from '@canopy/protocol/cost-view';
+import type { CostBillingBasis, CostSource } from '@canopy/protocol/cost-view';
 import { UsageExpandableRow } from '../UsageIndicator';
-import { CostCurrencyContext } from './CostCurrencyContext';
+import { useCostCurrency } from './CostCurrencyContext';
 import { CostLegend } from './CostLegend';
 import { CostSplitBar } from './CostSplitBar';
-import {
-  costSourceSegments,
-  formatCostTotal,
-  USD_COST_CURRENCY,
-} from './cost-format';
+import { costSourceSegments, formatCostTotalIn } from './cost-format';
 
 /** The chat's stored cost row (`core.cost.chat.get`, detail `summary`). */
 export interface UsageCostPreview {
   readonly usd: number;
   readonly notPricedCount: number;
   readonly bySource: Readonly<Record<CostSource, number>>;
+  /** Decides credits or USD for the total; absent reads in USD. */
+  readonly byBilling?: Readonly<Record<CostBillingBasis, number>>;
 }
 
 /**
  * The chat's cost in the Usage popover: a disclosure like the Context row,
  * its source bar drawn closed and its list shown when opened. A host with a
  * cost read path passes it as the popover's `costPreview`; the popover itself
- * imports no cost code. It stays in USD, whatever the host's cost currency,
- * until CAN-6634 moves it to credits, so its total and breakdown never mix.
+ * imports no cost code. Amounts read in the host's cost currency, as the cost
+ * views do (CAN-6634): all AI Credits work in credits, with USD alongside
+ * unless the account bills only to AI Credits.
  */
 export function UsageCostPreviewRow({
   preview,
@@ -33,34 +32,29 @@ export function UsageCostPreviewRow({
 }): JSX.Element {
   const [open, setOpen] = useState(false);
   const detailsId = useId();
+  const currency = useCostCurrency();
   const segments = costSourceSegments(preview.bySource);
   return (
-    <CostCurrencyContext.Provider value={USD_COST_CURRENCY}>
-      <div className="flex flex-col gap-1.5">
-        <UsageExpandableRow
-          label="Cost"
-          value={formatCostTotal(preview)}
-          open={open}
-          onToggle={(): void => setOpen((value) => !value)}
-          bodyId={detailsId}
-          testId="usage-indicator-cost"
-        />
-        <CostSplitBar
-          segments={segments}
-          label="Cost by source"
-          size="summary"
-        />
-        {open ? (
-          <div id={detailsId}>
-            <CostLegend
-              layout="list"
-              showShare
-              segments={segments}
-              testId="usage-indicator-cost-breakdown"
-            />
-          </div>
-        ) : null}
-      </div>
-    </CostCurrencyContext.Provider>
+    <div className="flex flex-col gap-1.5">
+      <UsageExpandableRow
+        label="Cost"
+        value={formatCostTotalIn(preview, currency)}
+        open={open}
+        onToggle={(): void => setOpen((value) => !value)}
+        bodyId={detailsId}
+        testId="usage-indicator-cost"
+      />
+      <CostSplitBar segments={segments} label="Cost by source" size="summary" />
+      {open ? (
+        <div id={detailsId}>
+          <CostLegend
+            layout="list"
+            showShare
+            segments={segments}
+            testId="usage-indicator-cost-breakdown"
+          />
+        </div>
+      ) : null}
+    </div>
   );
 }

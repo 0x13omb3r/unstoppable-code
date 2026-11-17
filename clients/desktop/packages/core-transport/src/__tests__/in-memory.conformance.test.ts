@@ -61,9 +61,10 @@ it('registers the cases a message binding without a server close cannot run as t
       'bulk channel credit flow control (no byte wire on this binding)',
       'fails authentication closed (no byte wire on this binding)',
       'fails closed with an actionable error on a protocol-major mismatch (no server close reaches the client on this binding)',
+      'delivers a request whose reply it lost as a lost call, never as an answer (CAN-6940) (no lost reply alone on this binding)',
     ]),
   );
-  expect(todo).toHaveLength(8 + CANOPY_TRANSPORT_CONFORMANCE_PENDING.length);
+  expect(todo).toHaveLength(9 + CANOPY_TRANSPORT_CONFORMANCE_PENDING.length);
   expect(run).toContain('surfaces a disconnect mid-stream to both ends');
   expect(run).toContain('resumes a subscription after the acknowledged cursor');
 });

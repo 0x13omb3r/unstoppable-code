@@ -15,6 +15,10 @@ import {
   useToolApprovalWait,
 } from '@canopy/ui-shared/components';
 import { useTranscriptFileLinkInteraction } from './TranscriptFileLinks';
+import {
+  InlineReplyFilePreview,
+  isInlineReplyOutput,
+} from './InlineReplyFilePreview';
 
 /** Host adapter: reuse its existing authorized resolver and viewer. */
 export interface TranscriptTurnFilesInteraction {
@@ -218,6 +222,7 @@ export function TurnFiles({
     })),
   ]);
   if (!heading) return null;
+  const previewScope = interaction.previewScope;
   const entries = [
     ...located.map((entry) => (
       <TranscriptFileControl
@@ -237,13 +242,28 @@ export function TurnFiles({
     )),
   ];
   return (
-    <TurnFilesSummaryView
-      heading={heading}
-      turnId={turnId}
-      expanded={expanded}
-      onToggle={(): void => setExpanded((value) => !value)}
-    >
-      {entries}
-    </TurnFilesSummaryView>
+    <>
+      {complete && previewScope
+        ? located
+            .filter(({ file }) => isInlineReplyOutput(file))
+            .map(({ file, identity }) => (
+              <InlineReplyFilePreview
+                key={identity}
+                path={file.path}
+                readDocument={interaction.readPreviewDocument}
+                {...previewScope}
+                {...file.target}
+              />
+            ))
+        : null}
+      <TurnFilesSummaryView
+        heading={heading}
+        turnId={turnId}
+        expanded={expanded}
+        onToggle={(): void => setExpanded((value) => !value)}
+      >
+        {entries}
+      </TurnFilesSummaryView>
+    </>
   );
 }

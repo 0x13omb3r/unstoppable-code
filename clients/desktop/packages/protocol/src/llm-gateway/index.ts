@@ -201,6 +201,18 @@ export const AI_CREDITS_NO_BILLING_SOURCE_MESSAGE =
   'AI Credits are unavailable for this request.';
 
 /**
+ * The `message` on the hosted `session_budget_exhausted` 402 body: a session's
+ * AI Credits ceiling was reached, such as a cloud run's spend cap (CAN-6881).
+ *
+ * Shared because the Claude harness drops the marked body and keeps only
+ * `API Error: 402 <message>`, so the agent failure classifier restores the code
+ * from this exact copy. A step stopped by its run's spend cap then pauses for
+ * the budget instead of failing.
+ */
+export const AI_CREDITS_SESSION_BUDGET_EXHAUSTED_MESSAGE =
+  'The cowork session credit budget is exhausted.';
+
+/**
  * The `message` on the hosted `work_owner_not_member` 403 body (CAN-3462).
  *
  * Sent when the owner a request claims (or the owner of the Cloud workspace a

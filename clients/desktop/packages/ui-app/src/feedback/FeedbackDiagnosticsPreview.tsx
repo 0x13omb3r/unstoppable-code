@@ -1,5 +1,6 @@
 'use client';
 
+import { CodeBlock } from '@canopy/ui-shared/components/CodeBlock';
 import { useRef, useState, type JSX } from 'react';
 import {
   FeedbackDiagnosticsExpiredError,
@@ -13,8 +14,6 @@ import { REPLAY_BLOCK_CLASS } from '@canopy/ui-shared/lib/replay-privacy';
 
 /** The inventory can hold thousands of files; it grows on request. */
 const INVENTORY_PAGE_SIZE = 200;
-
-export const DIAGNOSTIC_TEXT_CLASS_NAME = `max-h-64 overflow-auto whitespace-pre-wrap break-words font-mono text-xs fg-secondary ${REPLAY_BLOCK_CLASS}`;
 
 const DOWNLOAD_REQUIRED_COPY: Record<
   Extract<
@@ -90,13 +89,14 @@ export function FeedbackDiagnosticsPreview({
       </p>
       {inlineContents ? (
         <Disclosure label="Manifest" dataTestId="feedback-diagnostics-manifest">
-          <pre
-            className={DIAGNOSTIC_TEXT_CLASS_NAME}
+          <CodeBlock
+            variant="bare"
+            className="max-h-64"
             data-dd-privacy="hidden"
             data-selectable
           >
             {snapshot.manifest}
-          </pre>
+          </CodeBlock>
         </Disclosure>
       ) : (
         <p className="text-xs fg-secondary">
@@ -189,13 +189,14 @@ function EntryBody({ view }: { readonly view: EntryView }): JSX.Element {
       </p>
     );
   return (
-    <pre
-      className={DIAGNOSTIC_TEXT_CLASS_NAME}
+    <CodeBlock
+      variant="bare"
+      className="max-h-64"
       data-dd-privacy="hidden"
       data-selectable
       data-testid="feedback-diagnostics-entry-text"
     >
       {view.content.text}
-    </pre>
+    </CodeBlock>
   );
 }

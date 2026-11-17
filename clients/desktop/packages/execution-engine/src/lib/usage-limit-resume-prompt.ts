@@ -106,6 +106,22 @@ function extractUserMessagePayload(
   };
 }
 
+function lastUserMessageIndex(
+  messages: readonly PersistedChatMessage[],
+): number {
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    if (messages[index]?.role === 'user') return index;
+  }
+  return -1;
+}
+
+/** Hidden orchestration inputs require an explicit recovery decision. */
+export function isLatestUserMessageHidden(
+  messages: readonly PersistedChatMessage[],
+): boolean {
+  return messages[lastUserMessageIndex(messages)]?.hidden === true;
+}
+
 /**
  * Decide what a usage-limit resume should dispatch into a chat.
  *
@@ -127,14 +143,8 @@ export function computeUsageLimitResumePrompt(
     resendsUserMessage: false,
   };
 
-  let lastUserIndex = -1;
-  for (let index = messages.length - 1; index >= 0; index -= 1) {
-    if (messages[index]?.role === 'user') {
-      lastUserIndex = index;
-      break;
-    }
-  }
-  if (lastUserIndex < 0) {
+  const lastUserIndex = lastUserMessageIndex(messages);
+  if (lastUserIndex < 0 || messages[lastUserIndex]?.hidden === true) {
     return fallback;
   }
 

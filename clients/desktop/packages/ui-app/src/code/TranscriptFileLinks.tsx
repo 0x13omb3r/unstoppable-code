@@ -23,6 +23,7 @@ import {
   type FileLinkLineLocation,
 } from '@canopy/ui-shared/lib/file-link-line-suffix';
 import type { TranscriptTurnFilesInteraction } from './TurnFiles';
+import type { InlineReplyDocumentReader } from './InlineReplyFilePreview';
 import {
   FileLinkStatus,
   fileLinkFailureOf,
@@ -42,6 +43,12 @@ export type { FileLinkLineLocation };
  */
 export interface TranscriptFileLinkInteraction {
   readonly turnFiles?: TranscriptTurnFilesInteraction;
+  readonly readPreviewDocument?: InlineReplyDocumentReader;
+  readonly previewScope?: {
+    projectId: string;
+    worktreeId: string;
+    chatId?: string;
+  };
   /**
    * Open `href` in the host's file viewer. Resolves `false` when the target is
    * not an existing file inside the workspace (outside the working directory,

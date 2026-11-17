@@ -8,6 +8,7 @@ import {
 } from '@canopy/protocol/canopy-core';
 import type { AppAdvisorWatcherDestination } from '@canopy/desktop-shared/types';
 import type { CoreWatcherHost } from '../core-watcher-adapter';
+import { BackgroundExecutionRefusedError } from '../../services/background-execution-refusal';
 import { createCoreOperationAdapter } from '../core-operation-adapter';
 import {
   createDesktopRuntime,
@@ -53,6 +54,9 @@ interface Calls {
   deletes: { ids: string[]; destination: AppAdvisorWatcherDestination }[];
 }
 
+/** Set to make the watcher service refuse a create by policy (CAN-6900). */
+let createRefusal: BackgroundExecutionRefusedError | undefined;
+
 function fakeHost(): { host: CoreWatcherHost; calls: Calls } {
   const calls: Calls = { lists: [], creates: [], deletes: [] };
   let created = 0;
@@ -68,6 +72,7 @@ function fakeHost(): { host: CoreWatcherHost; calls: Calls } {
         ...(call.createdBy ? { createdBy: call.createdBy } : {}),
       });
       created += 1;
+      if (createRefusal) return Promise.reject(createRefusal);
       return Promise.resolve(
         request.kind === 'github'
           ? {
@@ -92,6 +97,7 @@ let calls: Calls;
 
 beforeEach(() => {
   root = mkdtempSync(join(tmpdir(), 'core-watcher-'));
+  createRefusal = undefined;
   const fake = fakeHost();
   calls = fake.calls;
   runtime = createDesktopRuntime({
@@ -216,6 +222,27 @@ describe('core.initiatedWork.watcher on the desktop dispatcher (CAN-5994)', () =
       ),
     ).resolves.toMatchObject({ accepted: true });
     expect(calls.creates).toHaveLength(1);
+  });
+
+  it('answers a watcher its background authorization refused with the refusal, not a failed call (CAN-6900)', async () => {
+    const copy =
+      "Couldn't check access to what this watcher uses yet, so it wasn't set up. Try again in a moment.";
+    createRefusal = new BackgroundExecutionRefusedError(
+      copy,
+      'unknown-provenance',
+      true,
+    );
+    await expect(
+      runtime.instruction(
+        'core.initiatedWork.watcher.create',
+        {
+          recipient: RECIPIENT,
+          request: { kind: 'setup', input: { watchers: [] } },
+          _meta: meta('k6'),
+        },
+        { caller: WRITE, metadata: meta('k6') },
+      ),
+    ).resolves.toEqual({ accepted: false, report: copy });
   });
 
   it('reports a refusal and its integration failure without throwing', async () => {

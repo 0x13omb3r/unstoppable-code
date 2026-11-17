@@ -8,6 +8,7 @@ import type {
 } from '@canopy/protocol/canopy-core';
 import type { AppAdvisorWatcherDestination } from '@canopy/desktop-shared/types';
 import type { DesktopDomainAdapter } from './desktop-runtime';
+import { withBackgroundRefusalAsToolError } from '../services/background-execution-refusal';
 
 type ToolReport = AgentActionToolResult & {
   failure?: { code: string; message: string };
@@ -247,11 +248,15 @@ export function createCoreWatcherAdapter(
     instructions: {
       'core.initiatedWork.watcher.create': (params, context) =>
         creates.run(context, params, async () =>
+          // A policy refusal is the call's answer, with its copy, not a
+          // failed operation (CAN-6900).
           report(
-            await host.create(params.request, destinationOf(params.recipient), {
-              ...(params.createdBy ? { createdBy: params.createdBy } : {}),
-              signal: context.signal,
-            }),
+            await withBackgroundRefusalAsToolError(() =>
+              host.create(params.request, destinationOf(params.recipient), {
+                ...(params.createdBy ? { createdBy: params.createdBy } : {}),
+                signal: context.signal,
+              }),
+            ),
           ),
         ),
       'core.initiatedWork.watcher.delete': (params, context) =>

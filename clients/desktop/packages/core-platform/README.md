@@ -47,8 +47,10 @@ Failed rewrites remove stale evidence and fail Jest—even after its final hook,
 failed deletion, or caught I/O errors. Hosted `always()` cleanup still runs.
 Portable hook tests do not establish native callback/authentication teardown.
 T07–T11 are named reference-journal exclusions; T16 is the reference
-protocol-major mismatch exclusion because production closure differs. The seven
-pending declarations are named inventory-only exclusions, not qualifying skips.
+protocol-major mismatch exclusion because production closure differs. The eight
+`todo` declarations are named inventory-only exclusions, not qualifying skips:
+seven pending shared cases, and P08, the lost-reply case only a binding with one
+reply per request can run (CAN-6940).
 The existing POSIX control-plane tests reuse extracted clock and consumers.
 
 Shared-case limits: T02 checks framed IDs/payloads, not request promises; T14

@@ -1,3 +1,4 @@
+import { isProcessId, isProcessTableId } from './dev-script-pid.mjs';
 import { execFile, execFileSync } from 'node:child_process';
 import { promisify } from 'node:util';
 import { readFile } from 'node:fs/promises';
@@ -129,15 +130,24 @@ export function parseProcessTable(output) {
   return output.split('\n').flatMap((line) => {
     const match = line.trim().match(/^(\d+)\s+(\d+)\s+(\d+)\s+(.+)$/);
     if (!match) return [];
-    const [, pid, ppid, pgid, rest] = match;
+    const [, pidText, ppidText, pgidText, rest] = match;
+    const pid = Number(pidText);
+    const ppid = Number(ppidText);
+    const pgid = Number(pgidText);
+    // A row can become a signal or probe target, so its PID must be an
+    // integer in 2..2147483647 (never PID 0 or PID 1). The guard's own row
+    // stays as data; signal and probe boundaries refuse the guard's PID.
+    // PPID and PGID are data only, but must still be in range.
+    if (!isProcessId(pid) || !isProcessTableId(ppid) || !isProcessTableId(pgid))
+      return [];
     const dated = rest.match(
       /^([A-Z][a-z]{2} [A-Z][a-z]{2}\s+\d+ \d{2}:\d{2}:\d{2} \d{4})\s+(.+)$/,
     );
     return [
       {
-        pid: Number(pid),
-        ppid: Number(ppid),
-        pgid: Number(pgid),
+        pid,
+        ppid,
+        pgid,
         startedAt: dated?.[1] ?? null,
         command: dated?.[2] ?? rest,
       },

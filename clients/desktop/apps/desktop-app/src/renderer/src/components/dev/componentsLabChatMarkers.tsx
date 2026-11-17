@@ -6,6 +6,7 @@ import {
   ChatAppNoteSheet,
   DelegatedAgentCapabilitiesSheet,
   ForkContextNoticeSheet,
+  TranscriptEventSheet,
   UserBubbleCancelledNoteSheet,
 } from './componentsLabChatMarkersSheets';
 import {
@@ -19,6 +20,15 @@ import {
 
 /** Chat markers, notices, approvals and message editing, for the components lab. */
 export const CHAT_MARKERS_LAB_ENTRIES: readonly ComponentsLabEntry[] = [
+  {
+    id: 'chat-transcript-event',
+    name: 'Transcript events',
+    group: 'Unified',
+    note: 'A quiet marker or a step row that can reveal supporting details.',
+    source: 'packages/ui-shared/src/components/chat/TranscriptEventRow.tsx',
+    prs: [],
+    View: TranscriptEventSheet,
+  },
   {
     id: 'chat-agent-sent-marker',
     name: 'Agent sent marker',

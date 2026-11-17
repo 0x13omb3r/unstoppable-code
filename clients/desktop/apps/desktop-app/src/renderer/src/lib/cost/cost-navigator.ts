@@ -3,7 +3,11 @@
  * Each method acts on an `entry` scope only; a retained (archived or deleted)
  * entry's views are read-only, so every method ignores that scope.
  */
-import type { CostNavigator, CostSubagentTarget } from '@canopy/app-core';
+import type {
+  CanopyCapabilities,
+  CostNavigator,
+  CostSubagentTarget,
+} from '@canopy/app-core';
 import type { CostScopeRef } from '@canopy/protocol/cost-view';
 import type { SubagentKind } from '@canopy/protocol';
 import { isBotProjectId } from '@canopy/protocol/chat-targets';
@@ -225,11 +229,9 @@ function withEntry(
   void run(entry);
 }
 
-export const DESKTOP_COST_NAVIGATOR: CostNavigator = {
-  openSessionBreakdown: (scope, chatId) => {
-    withEntry(scope, (entry) => openSessionBreakdownPanel(entry, chatId));
-  },
-  openPipelineRun: (scope, executionId) => {
+/** Every action but the Session breakdown, which a scope may not serve. */
+const COST_NAVIGATOR_ACTIONS = {
+  openPipelineRun: (scope, executionId): void => {
     withEntry(scope, (entry) =>
       openPipelineExecutionFromUi({
         executionId,
@@ -238,16 +240,16 @@ export const DESKTOP_COST_NAVIGATOR: CostNavigator = {
       }),
     );
   },
-  openSubagent: (scope, target) => {
+  openSubagent: (scope, target): void => {
     withEntry(scope, (entry) => openSubagentWithRootChat(entry, target));
   },
-  openChat: (scope, chatId) => {
+  openChat: (scope, chatId): void => {
     withEntry(scope, (entry) => openCostChat(entry, chatId));
   },
-  openCostPanel: (scope) => {
+  openCostPanel: (scope): void => {
     withEntry(scope, (entry) => openCostPanel(entry));
   },
-  openPipelineJob: (scope, executionId, jobId) => {
+  openPipelineJob: (scope, executionId, jobId): void => {
     withEntry(scope, (entry) =>
       openPipelineExecutionFromUi({
         executionId,
@@ -256,4 +258,27 @@ export const DESKTOP_COST_NAVIGATOR: CostNavigator = {
       }),
     );
   },
+} satisfies CostNavigator;
+
+export const DESKTOP_COST_NAVIGATOR: CostNavigator = {
+  ...COST_NAVIGATOR_ACTIONS,
+  openSessionBreakdown: (scope, chatId) => {
+    withEntry(scope, (entry) => openSessionBreakdownPanel(entry, chatId));
+  },
 };
+
+/**
+ * The navigator for a scope that serves no Session breakdown (CAN-6941):
+ * the views render its chat rows without an action.
+ */
+export const DESKTOP_COST_NAVIGATOR_WITHOUT_SESSION_BREAKDOWN: CostNavigator =
+  COST_NAVIGATOR_ACTIONS;
+
+/** The cost navigator for a scope with `capabilities` (CAN-6941). */
+export function desktopCostNavigatorFor(
+  capabilities: Pick<CanopyCapabilities, 'sessionBreakdown'>,
+): CostNavigator {
+  return capabilities.sessionBreakdown === true
+    ? DESKTOP_COST_NAVIGATOR
+    : DESKTOP_COST_NAVIGATOR_WITHOUT_SESSION_BREAKDOWN;
+}

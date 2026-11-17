@@ -93,6 +93,7 @@ import type {
   PipelineModelAliasPreference,
   PipelineTriggerType,
   PipelineStatusReason,
+  PipelinePauseResponse,
   AgentRecoveryCheckpoint,
   ResolvedPipelineExecutionTarget,
   PipelinePackageCapabilityOverlay,
@@ -726,6 +727,8 @@ export interface RunStepOptions {
   childId?: string;
   resumeChildExecutionId?: string;
   resumeChildReasonIds?: string[];
+  /** Answers to the child's own pause, given on its parent (CAN-6868). */
+  resumeChildPauseResponses?: PipelinePauseResponse[];
   jobContext?: ExpressionJobState;
   canopy?: ExpressionCanopyContext;
   /** Resolved asset paths and data dirs; inherited by child runs. */
@@ -1647,9 +1650,11 @@ async function runNestedPipelineAction(
         }
       : undefined,
   };
-  const resumeChildExecutionId = options.resumeChildReasonIds?.length
-    ? options.resumeChildExecutionId
-    : undefined;
+  const resumeChildExecutionId =
+    options.resumeChildReasonIds?.length ||
+    options.resumeChildPauseResponses?.length
+      ? options.resumeChildExecutionId
+      : undefined;
   // A host that classified its launch without the child checks it here,
   // before the step names it (CAN-6868): on a resume, the stored snapshot
   // and inputs that run again, not the definition read now.
@@ -1704,7 +1709,12 @@ async function runNestedPipelineAction(
   const childHandle = resumeChildExecutionId
     ? await resumePipeline(resumeChildExecutionId, {
         ...childExecutionOptions,
-        statusReasonIds: options.resumeChildReasonIds,
+        ...(options.resumeChildReasonIds?.length
+          ? { statusReasonIds: options.resumeChildReasonIds }
+          : {}),
+        ...(options.resumeChildPauseResponses?.length
+          ? { pauseResponses: options.resumeChildPauseResponses }
+          : {}),
       })
     : await executePipeline(pipeline, {
         ...childExecutionOptions,
@@ -1760,6 +1770,8 @@ async function runNestedPipelineAction(
       dynamic_env: {},
       log_file: options.logFile,
       child_execution_id: childState.id,
+      // The child's first input, which its parent offers as this step's pause.
+      ...childInputPause(childState),
       pause_reasons:
         childState.status === 'paused'
           ? childState.status_reasons.map((reason) => ({
@@ -3070,6 +3082,33 @@ function createStepResult(
     pause_reasons: partial.pause_reasons,
     child_execution_id: partial.child_execution_id,
     selected_child_reason_ids: partial.selected_child_reason_ids,
+    child_pause: partial.child_pause,
+    child_pause_reason_id: partial.child_pause_reason_id,
+  };
+}
+
+/**
+ * A paused child's first input request and its status reason, which its
+ * `run-pipeline` step offers as its own pause (CAN-6868). Approvals are left
+ * to their own reasons, so each resumes the child's pause it names.
+ */
+function childInputPause(
+  childState: ExecutionState,
+): Pick<StepResult, 'child_pause' | 'child_pause_reason_id'> {
+  if (childState.status !== 'paused') return {};
+  const pause = childState.pending_pauses.find(
+    (checkpoint) => checkpoint.kind === 'input' && checkpoint.request,
+  );
+  if (pause === undefined) return {};
+  const reason = childState.status_reasons.find(
+    (candidate) =>
+      candidate.kind === 'input_required' &&
+      candidate.source.job_id === pause.job_id &&
+      candidate.source.step_id === pause.step_id,
+  );
+  return {
+    child_pause: structuredClone(pause),
+    ...(reason ? { child_pause_reason_id: reason.id } : {}),
   };
 }
 

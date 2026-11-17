@@ -1,3 +1,4 @@
+import { CodeBlock } from '@canopy/ui-shared/components/CodeBlock';
 import {
   type JSX,
   type ReactNode,
@@ -168,28 +169,26 @@ function ModelMetadataBlock({
   );
 }
 
-const MODEL_METADATA_PRE_CLASS_NAME =
-  'overflow-x-auto whitespace-pre-wrap font-mono fg-secondary';
-
 /** A metadata text block: a code-sample well inside the model's group. */
 function ModelMetadataPre({
   children,
-  className,
+  expanded = false,
 }: {
   children: ReactNode;
-  className?: string;
+  expanded?: boolean;
 }): JSX.Element {
   return (
     <Surface variant="inset" padding="tight">
-      <pre
-        className={
-          className
-            ? `${className} ${MODEL_METADATA_PRE_CLASS_NAME}`
-            : MODEL_METADATA_PRE_CLASS_NAME
-        }
+      <CodeBlock
+        variant="bare"
+        size="inherit"
+        tone="secondary"
+        overflow={expanded ? 'auto' : 'horizontal'}
+        replay="block"
+        className={expanded ? 'max-h-80' : undefined}
       >
         {children}
-      </pre>
+      </CodeBlock>
     </Surface>
   );
 }
@@ -348,9 +347,7 @@ export function OllamaModelCard({
           )}
           {model.show?.rawJson && (
             <ModelMetadataBlock title="Raw show() response">
-              <ModelMetadataPre className="max-h-80 overflow-auto">
-                {model.show.rawJson}
-              </ModelMetadataPre>
+              <ModelMetadataPre expanded>{model.show.rawJson}</ModelMetadataPre>
             </ModelMetadataBlock>
           )}
         </div>
@@ -1121,12 +1118,17 @@ export function OllamaTab(): JSX.Element {
               }
             >
               <Surface variant="inset">
-                <pre
-                  className="overflow-x-auto px-2.5 py-1.5 font-mono text-xs fg-primary"
+                <CodeBlock
+                  variant="command"
+                  size="xs"
+                  wrap="none"
+                  tone="primary"
+                  replay="block"
+                  overflow="horizontal"
                   data-testid="ollama-manual-command"
                 >
                   {manualCommand}
-                </pre>
+                </CodeBlock>
               </Surface>
               <p className="text-xs text-pretty fg-secondary">
                 Ollama normally uses port{' '}

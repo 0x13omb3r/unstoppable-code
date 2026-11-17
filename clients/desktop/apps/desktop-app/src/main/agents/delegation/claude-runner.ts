@@ -535,6 +535,9 @@ export function createClaudeDelegationRunner(options: {
             },
             settings: {
               permissions: { ask: ['*'], deny: privateReads },
+              // As Mod admission does: flag-tier env outranks settings-file
+              // env, so a plugin folder named there stays off.
+              env: { CLAUDE_CODE_PLUGIN_DIRS: '' },
               ...(prepared.ambientPluginIds?.length
                 ? {
                     enabledPlugins: Object.fromEntries(

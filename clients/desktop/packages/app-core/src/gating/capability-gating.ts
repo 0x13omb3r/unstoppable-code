@@ -88,6 +88,8 @@ export interface CapabilityRequirement {
   readonly itemGrouping?: true;
   /** Requires the host to read a work scope's observed cost. */
   readonly costInsights?: true;
+  /** Requires the host to serve a chat's full cost breakdown (CAN-6941). */
+  readonly sessionBreakdown?: true;
   /** Requires the host to stream a Claude session's Mod surface. */
   readonly claudeModSurface?: true;
 }
@@ -210,6 +212,12 @@ export function meetsCapabilityRequirement(
     return false;
   }
   if (
+    requirement.sessionBreakdown === true &&
+    capabilities.sessionBreakdown !== true
+  ) {
+    return false;
+  }
+  if (
     requirement.claudeModSurface === true &&
     capabilities.claudeModSurface !== true
   ) {
@@ -262,8 +270,10 @@ export function meetsCapabilityRequirement(
  *   capability fields, not on the panel kind.
  * - `ledger` — needs the `ledger` capability: only a host that reads the
  *   scope's Agent Ledger can render it.
- * - `cost` / `session-breakdown` — need the `costInsights` capability: only a
- *   host that reads the scope's observed cost can render them.
+ * - `cost` — needs the `costInsights` capability: only a host that reads the
+ *   scope's observed cost can render it.
+ * - `session-breakdown` — needs `sessionBreakdown` as well: a host that serves
+ *   only a chat's summary row has no breakdown to show (CAN-6941).
  * - `mod-pane` — needs `claudeModSurface`: only a host that streams a Claude
  *   session's Mod surface has a pane to draw.
  *
@@ -291,7 +301,7 @@ export const PANEL_CAPABILITY_REQUIREMENTS: Readonly<
   'subagent-chat': {},
   ledger: { ledger: true },
   cost: { costInsights: true },
-  'session-breakdown': { costInsights: true },
+  'session-breakdown': { costInsights: true, sessionBreakdown: true },
   // Desktop-only for now: the web panel grid has no new-tab picker yet.
   'new-tab': { localExecution: true },
   'mod-pane': { claudeModSurface: true },

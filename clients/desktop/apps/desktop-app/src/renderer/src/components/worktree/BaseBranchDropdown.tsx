@@ -1,3 +1,4 @@
+import { BaseBranchOptions } from './BaseBranchOptions';
 import {
   useCallback,
   useEffect,
@@ -6,32 +7,16 @@ import {
   useRef,
   useState,
   type JSX,
-  type KeyboardEvent,
 } from 'react';
 import {
   FloatingPickerMenu,
-  PickerMenuList,
-  PickerMenuOption,
-  PickerMenuOptionCheck,
-  PickerMenuOptionContent,
-  PickerMenuOptionLabel,
-  PickerMenuOptionLeading,
-  PickerMenuOptionTrailing,
-  PickerMenuSearchHeader,
-  PickerMenuSearchInput,
-  PickerMenuSampleOptions,
-  Skeleton,
-  PickerMenuState,
   PickerTrigger,
   PickerTriggerChevron,
 } from '@canopy/ui-shared';
-import { BranchIcon } from '@canopy/ui-shared/icons/AppIcons';
 import type { BranchEntry } from '@canopy/desktop-shared/types';
 import {
   collapseBranchDuplicates,
-  filterBranchesBySearch,
   findBranchPresence,
-  getBranchProvenanceBadge,
   preserveBranchOption,
 } from './branch-options';
 
@@ -58,11 +43,8 @@ export function BaseBranchDropdown({
   const [open, setOpen] = useState(false);
   const [branches, setBranches] = useState<BranchEntry[]>([]);
   const [loading, setLoading] = useState(false);
-  const [search, setSearch] = useState('');
-  const [activeIndex, setActiveIndex] = useState(0);
   const menuId = useId();
   const searchRef = useRef<HTMLInputElement>(null);
-  const listRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
 
   useEffect(() => {
@@ -92,16 +74,6 @@ export function BaseBranchDropdown({
     };
   }, [open, projectId, worktreeId, repoId]);
 
-  // Focus search when opened
-  useEffect(() => {
-    if (open) {
-      setActiveIndex(0);
-      setTimeout(() => searchRef.current?.focus(), 0);
-    } else {
-      setSearch('');
-    }
-  }, [open]);
-
   const collapsed = useMemo(
     () =>
       preserveBranchOption(
@@ -110,27 +82,6 @@ export function BaseBranchDropdown({
       ),
     [branches, currentValue],
   );
-
-  const filtered = useMemo(
-    () => filterBranchesBySearch(collapsed, search),
-    [collapsed, search],
-  );
-  const activeBranch = filtered[activeIndex];
-
-  useEffect(() => {
-    setActiveIndex(0);
-  }, [search]);
-
-  useEffect(() => {
-    if (!open || !activeBranch) return;
-    const rows =
-      listRef.current?.querySelectorAll<HTMLElement>('[data-branch-name]');
-    rows?.forEach((row) => {
-      if (row.dataset.branchName === activeBranch.name) {
-        row.scrollIntoView?.({ block: 'nearest' });
-      }
-    });
-  }, [activeBranch, open]);
 
   // Preserve current value even if it doesn't appear in the fetched list
   const displayValue = currentValue ?? 'none';
@@ -147,28 +98,6 @@ export function BaseBranchDropdown({
     },
     [branches, onChange],
   );
-
-  function handleSearchKeyDown(event: KeyboardEvent<HTMLInputElement>): void {
-    if (event.key === 'Escape') {
-      event.preventDefault();
-      setOpen(false);
-      triggerRef.current?.focus();
-      return;
-    }
-    if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
-      event.preventDefault();
-      if (filtered.length === 0) return;
-      const delta = event.key === 'ArrowDown' ? 1 : -1;
-      setActiveIndex(
-        (index) => (index + delta + filtered.length) % filtered.length,
-      );
-      return;
-    }
-    if (event.key === 'Enter' && activeBranch) {
-      event.preventDefault();
-      handleSelect(activeBranch.name);
-    }
-  }
 
   return (
     <>
@@ -206,68 +135,17 @@ export function BaseBranchDropdown({
         aria-label="Base branch selector"
         data-testid="base-branch-dropdown-menu"
       >
-        <PickerMenuSearchHeader>
-          <PickerMenuSearchInput
-            ref={searchRef}
-            type="text"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search branches…"
-            aria-label="Search branches"
-            aria-controls={`${menuId}-options`}
-            aria-activedescendant={
-              activeBranch
-                ? `${menuId}-option-${activeBranch.isRemote ? 'remote' : 'local'}-${activeBranch.name}`
-                : undefined
-            }
-            onKeyDown={handleSearchKeyDown}
-          />
-        </PickerMenuSearchHeader>
-        <PickerMenuList
-          ref={listRef}
-          id={`${menuId}-options`}
-          aria-label="Base branch options"
-        >
-          {loading ? (
-            <Skeleton loading label="Loading branches">
-              <PickerMenuSampleOptions rows={4} />
-            </Skeleton>
-          ) : filtered.length === 0 ? (
-            <PickerMenuState>No branches found</PickerMenuState>
-          ) : (
-            filtered.map((branch, index) => {
-              const provenanceBadge = getBranchProvenanceBadge(branch);
-              const isSelected = branch.name === currentValue;
-              return (
-                <PickerMenuOption
-                  key={`${branch.isRemote ? 'remote' : 'local'}-${branch.name}`}
-                  role="option"
-                  id={`${menuId}-option-${branch.isRemote ? 'remote' : 'local'}-${branch.name}`}
-                  aria-selected={isSelected}
-                  tabIndex={-1}
-                  onClick={() => handleSelect(branch.name)}
-                  onMouseEnter={() => setActiveIndex(index)}
-                  data-branch-name={branch.name}
-                  active={index === activeIndex}
-                  selected={isSelected}
-                >
-                  <PickerMenuOptionLeading>
-                    <BranchIcon size="md" />
-                  </PickerMenuOptionLeading>
-                  <PickerMenuOptionContent>
-                    <PickerMenuOptionLabel>{branch.name}</PickerMenuOptionLabel>
-                  </PickerMenuOptionContent>
-                  {provenanceBadge && (
-                    <PickerMenuOptionTrailing>
-                      {provenanceBadge}
-                    </PickerMenuOptionTrailing>
-                  )}
-                  <PickerMenuOptionCheck selected={isSelected} />
-                </PickerMenuOption>
-              );
-            })
-          )}
-        </PickerMenuList>
+        <BaseBranchOptions
+          branches={collapsed}
+          currentValue={currentValue}
+          inputRef={searchRef}
+          loading={loading}
+          onPick={handleSelect}
+          onEscape={() => {
+            setOpen(false);
+            triggerRef.current?.focus();
+          }}
+        />
       </FloatingPickerMenu>
     </>
   );

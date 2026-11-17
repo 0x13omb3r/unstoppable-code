@@ -18,7 +18,7 @@ import {
 } from '@canopy/desktop-instrumentation/client';
 import {
   Button,
-  InlineTextSkeleton,
+  InlineMeasuredSkeleton,
   SettingsSelect,
   ToggleSwitch,
   type SettingsSelectOption,
@@ -316,7 +316,9 @@ export function CloudDigestSettings(): JSX.Element | null {
                 retrying ? (
                   <SettingsDescriptionLoading />
                 ) : unresolved ? (
-                  <InlineTextSkeleton className="w-40" />
+                  <InlineMeasuredSkeleton pulse={false}>
+                    {cadence.describe(DEFAULT_DIGEST_PREFERENCES)}
+                  </InlineMeasuredSkeleton>
                 ) : (
                   cadence.describe(state.preferences)
                 )

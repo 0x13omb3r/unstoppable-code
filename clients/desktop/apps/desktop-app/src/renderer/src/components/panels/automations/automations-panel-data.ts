@@ -379,23 +379,6 @@ export function getAutomationNextRun(
     : null;
 }
 
-/**
- * Compact future-relative label for an Upcoming entry ("now", "in 3m",
- * "in 2h 15m", "in 3d"). Pure so the rounding rules are unit-testable.
- */
-export function formatTimeUntil(now: Date, occursAt: Date): string {
-  const deltaMs = occursAt.getTime() - now.getTime();
-  if (deltaMs <= 30_000) return 'now';
-  const minutes = Math.round(deltaMs / 60_000);
-  if (minutes < 60) return `in ${minutes}m`;
-  const hours = Math.floor(minutes / 60);
-  if (hours < 24) {
-    const remainder = minutes % 60;
-    return remainder > 0 ? `in ${hours}h ${remainder}m` : `in ${hours}h`;
-  }
-  return `in ${Math.floor(hours / 24)}d`;
-}
-
 /** The Library's type filter: every kind, or one. */
 export type LibraryTypeFilter =
   | 'all'

@@ -941,6 +941,16 @@ interface HomeComposerData {
   /** Drafts an earlier run left for another project (CAN-6798). */
   keptDrafts: readonly HomeKeptDraft[];
   /**
+   * The account's cloud answered that it can't stop an earlier send before
+   * Send again, so sending any again could deliver it twice (CAN-6856).
+   */
+  sendAgainMayDuplicate: boolean;
+  /**
+   * Chats that answered they can't stop a send, as conversation v1 chats do:
+   * only their messages could arrive twice (CAN-6856).
+   */
+  sendAgainMayDuplicateChats: readonly string[];
+  /**
    * The New Task draft of record (CAN-3794). It outlives every `HomeSurface`
    * editor: a newly mounted editor is seeded from it, and a hidden,
    * still-mounted one is re-synced from it when shown, so navigating away and
@@ -1166,6 +1176,8 @@ function createInitialData(): HomeComposerData {
     restoreNotice: null,
     outboxCards: [],
     keptDrafts: [],
+    sendAgainMayDuplicate: false,
+    sendAgainMayDuplicateChats: [],
     text: '',
     fileReferences: [],
     pendingAttachmentImportIds: [],
@@ -2237,6 +2249,8 @@ export const useHomeComposerStore = create<HomeComposerState>((set, get) => ({
       // outlive the draft: a new send doesn't settle them (CAN-6798).
       outboxCards: state.outboxCards,
       keptDrafts: state.keptDrafts,
+      sendAgainMayDuplicate: state.sendAgainMayDuplicate,
+      sendAgainMayDuplicateChats: state.sendAgainMayDuplicateChats,
       draftGeneration: state.draftGeneration + 1,
       workspaceSelectionGeneration: state.workspaceSelectionGeneration + 1,
     }));
@@ -2249,6 +2263,25 @@ export const useHomeComposerStore = create<HomeComposerState>((set, get) => ({
 useWorkspaceContextStore.subscribe((current, previous): void => {
   if (current.accountEpoch !== previous.accountEpoch) {
     useHomeComposerStore.getState().reset();
-    useHomeComposerStore.setState({ outboxCards: [], keptDrafts: [] });
+    useHomeComposerStore.setState({
+      outboxCards: [],
+      keptDrafts: [],
+      sendAgainMayDuplicate: false,
+      sendAgainMayDuplicateChats: [],
+    });
   }
 });
+
+/** Whether sending a message to this chat again could deliver it twice. */
+export function sendAgainMayDuplicateTo(
+  state: Pick<
+    HomeComposerState,
+    'sendAgainMayDuplicate' | 'sendAgainMayDuplicateChats'
+  >,
+  destination: HomeCloudDestination,
+): boolean {
+  return (
+    state.sendAgainMayDuplicate ||
+    state.sendAgainMayDuplicateChats.includes(destination.chatId)
+  );
+}

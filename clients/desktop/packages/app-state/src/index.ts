@@ -304,5 +304,6 @@ export * from './sidebar-placement/create-sidebar-placement-store';
 
 export * from './work-entry-auto-delete/create-work-entry-auto-delete-store';
 
+export { useWorkflowsPanelFeed } from './useWorkflowsPanelFeed';
 export * from './orchestrator/use-orchestrator-settings-draft';
 export * from './orchestrator/use-orchestrator-remote-settings';

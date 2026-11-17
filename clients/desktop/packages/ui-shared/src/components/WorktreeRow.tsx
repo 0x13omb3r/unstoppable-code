@@ -1,3 +1,4 @@
+import { TextLink, type WorktreePrLinkTone } from './TextLink';
 import type { WorkEntryAutoDeleteRowState } from '@canopy/protocol';
 import { SidebarAutoDeleteBadge } from './SidebarAutoDeleteBadge';
 import { Dot, type DotTone } from './Badge';
@@ -1200,7 +1201,7 @@ function mergeQueueTooltipLabel(status: WorktreeRowPrStatus): string {
 }
 
 /** Focused rows color the PR label only when it needs action. */
-function focusedPrStatusColor(status: WorktreeRowPrStatus): string {
+function focusedPrStatusColor(status: WorktreeRowPrStatus): WorktreePrLinkTone {
   return status.checkStatus === 'failing' || status.hasConflicts === true
     ? 'fg-destructive'
     : '';
@@ -1295,7 +1296,7 @@ function previewPrDetail(
   return details.length ? details.join(' · ') : undefined;
 }
 
-function classicPrStatusColor(status: WorktreeRowPrStatus): string {
+function classicPrStatusColor(status: WorktreeRowPrStatus): WorktreePrLinkTone {
   // Queued: GitHub is running the queue's checks, so it reads as pending.
   if (status.hasConflicts !== true && isPrStatusInMergeQueue(status)) {
     return 'fg-warning';
@@ -2407,19 +2408,19 @@ function WorktreeRowImpl(
         }
       >
         {lastKnownPrStatus.url ? (
-          <a
+          <TextLink
             href={lastKnownPrStatus.url}
             target="_blank"
             rel="noopener noreferrer"
             onClick={(event) => event.stopPropagation()}
-            className="inline-flex items-center whitespace-nowrap text-2xs font-normal leading-4"
+            variant="worktree-pr-badge"
             data-testid={withTestIdSuffix(
               'worktree-row-pr-badge',
               testIdSuffix,
             )}
           >
             <PrBadgeContent label={prLabel} testIdSuffix={testIdSuffix} />
-          </a>
+          </TextLink>
         ) : (
           <span
             className="inline-flex items-center whitespace-nowrap text-2xs font-normal leading-4"
@@ -2528,7 +2529,7 @@ function WorktreeRowImpl(
       subtitleBody
     );
 
-  const prMetadataColor =
+  const prMetadataColor: WorktreePrLinkTone =
     lastKnownPrStatus === undefined
       ? ''
       : focusedStatus
@@ -2548,12 +2549,13 @@ function WorktreeRowImpl(
         }
       >
         {lastKnownPrStatus.url ? (
-          <a
+          <TextLink
             href={lastKnownPrStatus.url}
             target="_blank"
             rel="noopener noreferrer"
             onClick={(event) => event.stopPropagation()}
-            className={`inline-flex h-4 items-center gap-1 whitespace-nowrap rounded px-0.5 align-bottom font-normal leading-4 transition-colors ${prMetadataColor}`}
+            variant="worktree-pr-metadata"
+            tone={prMetadataColor}
             data-testid={withTestIdSuffix(
               'worktree-row-pr-badge',
               testIdSuffix,
@@ -2583,7 +2585,7 @@ function WorktreeRowImpl(
                 }
               />
             )}
-          </a>
+          </TextLink>
         ) : (
           <span
             className={`inline-flex h-4 items-center gap-1 whitespace-nowrap align-bottom font-normal leading-4 ${prMetadataColor}`}

@@ -1,4 +1,5 @@
-import { ControlButton } from '@canopy/ui-shared/components';
+import { StepRow } from '@canopy/ui-shared/components';
+import { RevertIcon } from '@canopy/ui-shared/icons/AppIcons';
 import {
   StickyTurnBacking,
   RevertedTurnSurface,
@@ -84,8 +85,6 @@ import {
   AgentIcon,
   AppAdvisorIcon,
   AppAdvisorWatcherIcon,
-  ChevronDownIcon,
-  ChevronRightIcon,
   ClaudeLogo,
   CodeBracketsIcon,
   DocumentIcon,
@@ -1878,45 +1877,30 @@ export const TurnGroupRenderer = memo(function TurnGroupRenderer({
     />
   );
 
-  if (isReverted && isRevertedCollapsed) {
-    return wrapReverted(
-      <ControlButton
-        type="button"
-        onClick={(): void => setIsRevertedCollapsed(false)}
-        aria-expanded={false}
-        aria-label="Expand reverted turn"
-        presentation="reverted-turn-toggle"
-      >
-        <span className="flex-shrink-0">
-          <ChevronRightIcon />
-        </span>
-        <span className="font-medium fg-primary/80">Reverted</span>
-        {userPromptPreview ? (
-          <span className="truncate">— {userPromptPreview}</span>
-        ) : null}
-      </ControlButton>,
-    );
-  }
+  const revertedHeader = isReverted ? (
+    <div className="px-2">
+      <StepRow
+        step
+        expandable
+        isOpen={!isRevertedCollapsed}
+        onToggle={(): void => setIsRevertedCollapsed((value) => !value)}
+        ariaLabel={
+          isRevertedCollapsed
+            ? 'Expand reverted turn'
+            : 'Collapse reverted turn'
+        }
+        icon={<RevertIcon size="sm" aria-hidden="true" />}
+        label="Reverted turn"
+        detail={userPromptPreview}
+      />
+    </div>
+  ) : null;
+  if (isRevertedCollapsed && revertedHeader)
+    return wrapReverted(revertedHeader);
 
   return wrapReverted(
     <ToolApprovalWaitProvider value={approvalWait}>
-      {isReverted && (
-        <ControlButton
-          type="button"
-          onClick={(): void => setIsRevertedCollapsed(true)}
-          aria-expanded={true}
-          aria-label="Collapse reverted turn"
-          presentation="reverted-turn-toggle"
-        >
-          <span className="flex-shrink-0">
-            <ChevronDownIcon />
-          </span>
-          <span className="font-medium fg-primary/80">Reverted</span>
-          {userPromptPreview ? (
-            <span className="truncate">— {userPromptPreview}</span>
-          ) : null}
-        </ControlButton>
-      )}
+      {revertedHeader}
       {!hideUserMessage && (
         <ChatMessageItem
           message={group.userMessage}
@@ -2108,6 +2092,7 @@ export const TurnGroupRenderer = memo(function TurnGroupRenderer({
             group.isComplete && !hideTurnDiffSummary ? turnDiff : undefined
           }
           files={locatedTurnFiles}
+          complete={group.isComplete}
           pendingFiles={pendingTurnFiles}
           fileTarget={routedChatTarget}
           turnId={group.userMessage.id}

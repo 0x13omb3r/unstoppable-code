@@ -4,13 +4,13 @@ import { memo, type ReactNode } from 'react';
 import {
   MARKDOWN_ROOT_PROPS,
   useChatMessageContextMenu,
+  WakeTurnBoundary,
 } from '@canopy/ui-shared/components';
 import type { AppliedOrgMemoryTurn, PendingQuestion } from '@/stores/chatStore';
 import { ChatBlockRenderer, ChatVisualResult } from './ChatBlockRenderer';
 import { getDisplayBlockKey } from './display-block-keys';
 import { LAYOUT_BLOCK_TYPES } from '@canopy/desktop-shared/lib/transcript-fingerprint';
 import { UserBubble } from './UserBubble';
-import { WakeTurnBoundary } from '@canopy/ui-shared/components';
 import type { DisplayMessage } from './types';
 
 /** What started a wake's task: its tool call, else the prompt that made it. */
@@ -97,6 +97,7 @@ export const ChatMessageItem = memo(function ChatMessageItem({
         event={wake.taskEvent === true}
         scheduled={wake.scheduled === true}
         toolsLoaded={wake.toolsLoaded === true}
+        timestamp={message.timestamp}
         onShowSpawningTurn={
           (target.toolUseId !== undefined ||
             target.userMessageId !== undefined) &&

@@ -1,6 +1,6 @@
+import { TextLink } from './TextLink';
 import {
   CAPABILITY_TILE_CELL_CLASS,
-  INTERACTIVE_CLASS,
   ROW_TRIGGER_CLASS,
   TRIGGER_CLASS,
 } from './control-button-shared';
@@ -393,13 +393,12 @@ export const CapabilityTile = memo(function CapabilityTile({
       statusTooltip={statusTooltip}
     />
   );
-  const interactiveClass = row ? ROW_TRIGGER_CLASS : INTERACTIVE_CLASS;
   const staticClass = row ? ROW_TRIGGER_CLASS : TRIGGER_CLASS;
   let trigger: ReactElement<TooltipTriggerProps>;
   if (action.kind === 'link') {
     const { href, onNavigate } = action;
     trigger = (
-      <a
+      <TextLink
         href={href}
         aria-label={label}
         onClick={
@@ -411,14 +410,17 @@ export const CapabilityTile = memo(function CapabilityTile({
               }
             : undefined
         }
-        className={interactiveClass}
+        variant="capability"
+        row={row}
+        target={undefined}
+        rel={undefined}
         data-testid={testId}
         {...(action.external
           ? { target: '_blank', rel: 'noopener noreferrer' }
           : {})}
       >
         {body}
-      </a>
+      </TextLink>
     );
   } else if (action.kind === 'action') {
     trigger = (

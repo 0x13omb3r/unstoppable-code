@@ -49,6 +49,10 @@ import {
   type ManagedDelegationToolKey,
 } from '../tools/managed-delegation';
 import {
+  PAGED_SEARCH_MEMORY_JSON_SCHEMA,
+  PAGED_READ_MEMORY_JSON_SCHEMA,
+  pagedSearchMemoryInputSchema,
+  pagedReadMemoryInputSchema,
   READ_MEMORY_JSON_SCHEMA,
   readMemoryDescription,
   readMemoryInputSchema,
@@ -570,7 +574,7 @@ export function createAgentActionSurface<H, THook extends string = string>(
             }
           : null;
       case 'save_memory':
-        return memory && memoryReach
+        return memory && memoryReach && !capabilities.memoryReadOnly
           ? {
               key,
               name,
@@ -579,21 +583,25 @@ export function createAgentActionSurface<H, THook extends string = string>(
             }
           : null;
       case 'search_memory':
-        return memory && memoryReach
+        return memory && memoryReach && !capabilities.memoryWriteOnly
           ? {
               key,
               name,
               description: searchMemoryDescription(memoryReach),
-              inputSchema: SEARCH_MEMORY_JSON_SCHEMA,
+              inputSchema: capabilities.memoryPagination
+                ? PAGED_SEARCH_MEMORY_JSON_SCHEMA
+                : SEARCH_MEMORY_JSON_SCHEMA,
             }
           : null;
       case 'read_memory':
-        return memory && memoryReach
+        return memory && memoryReach && !capabilities.memoryWriteOnly
           ? {
               key,
               name,
               description: readMemoryDescription(memoryReach),
-              inputSchema: READ_MEMORY_JSON_SCHEMA,
+              inputSchema: capabilities.memoryPagination
+                ? PAGED_READ_MEMORY_JSON_SCHEMA
+                : READ_MEMORY_JSON_SCHEMA,
             }
           : null;
       case 'add_ledger_entry':
@@ -808,22 +816,30 @@ export function createAgentActionSurface<H, THook extends string = string>(
           );
         }
         case 'save_memory': {
-          if (!memory) return unavailable(key);
+          if (!memory || capabilities.memoryReadOnly) return unavailable(key);
           const parsed = saveMemoryInputSchema.safeParse(rawArgs);
           return parsed.success
             ? memory.save(parsed.data, call)
             : invalidAgentActionArguments(AGENT_ACTION_TOOL_DISPLAY_NAMES[key]);
         }
         case 'search_memory': {
-          if (!memory) return unavailable(key);
-          const parsed = searchMemoryInputSchema.safeParse(rawArgs);
+          if (!memory || capabilities.memoryWriteOnly) return unavailable(key);
+          const parsed = (
+            capabilities.memoryPagination
+              ? pagedSearchMemoryInputSchema
+              : searchMemoryInputSchema
+          ).safeParse(rawArgs);
           return parsed.success
             ? memory.search(parsed.data, call)
             : invalidAgentActionArguments(AGENT_ACTION_TOOL_DISPLAY_NAMES[key]);
         }
         case 'read_memory': {
-          if (!memory) return unavailable(key);
-          const parsed = readMemoryInputSchema.safeParse(rawArgs);
+          if (!memory || capabilities.memoryWriteOnly) return unavailable(key);
+          const parsed = (
+            capabilities.memoryPagination
+              ? pagedReadMemoryInputSchema
+              : readMemoryInputSchema
+          ).safeParse(rawArgs);
           return parsed.success
             ? memory.read(parsed.data, call)
             : invalidAgentActionArguments(AGENT_ACTION_TOOL_DISPLAY_NAMES[key]);

@@ -3,6 +3,7 @@ import {
   CoreChatCommandReceiptSchema,
   CoreChatSnapshotGetResultSchema,
   CoreChatSendReceiptResultSchema,
+  CoreChatSendSupersedeResultSchema,
   CoreChatTranscriptSearchResultSchema,
   type CanopyErrorPayload,
   type CoreChatSandbox,
@@ -545,6 +546,21 @@ const isSnapshotRequired = (error: unknown): boolean =>
 /** How often a queued edit's hold is renewed, within Core's lease (CAN-6651). */
 const EDIT_HOLD_RENEW_MS = 20_000;
 
+/**
+ * A supersede that fails for now (a call deadline, or a lapsed fence lease)
+ * is asked again for the same send, a bounded number of times, before
+ * Send again or Discard reports it couldn't tell (CAN-6856).
+ */
+const SUPERSEDE_ATTEMPTS = 3;
+const SUPERSEDE_BACKOFF_MS = 250;
+const SUPERSEDE_MAX_DELAY_MS = 2_000;
+
+function delay(ms: number): Promise<void> {
+  return new Promise((resolve) => {
+    setTimeout(resolve, ms);
+  });
+}
+
 /** A queued entry this window holds while its editor is open (CAN-6651). */
 interface QueuedEditHold {
   readonly entry: ChatQueueEntryRequest;
@@ -785,6 +801,14 @@ export interface WebCoreChatBackendCore {
     target: ChatTarget,
     commandId: string,
   ) => Promise<CloudSendReceiptOutcome>;
+  /**
+   * Stops the send posted to a chat as `commandId` from ever applying, before
+   * its text is sent again under another command (CAN-6856).
+   */
+  readonly supersedeSend: (
+    target: ChatTarget,
+    commandId: string,
+  ) => Promise<CloudSendSupersedeOutcome>;
 }
 
 /**
@@ -797,6 +821,22 @@ export type CloudSendReceiptOutcome =
   | 'taken'
   | 'refused'
   | 'not_taken'
+  | 'unknown';
+
+/**
+ * Where a superseded send stands (CAN-6856): `superseded` when it never
+ * applied and never will; `applied` when its chat took it first; `gone`
+ * when its chat no longer exists; `unfenced` when the cloud can't fence a
+ * send, as an Agentic Core without send fences, so a resend could arrive
+ * twice; `chatUnfenced` when only this chat can't, as a conversation v1
+ * chat; `unknown` when the cloud couldn't say.
+ */
+export type CloudSendSupersedeOutcome =
+  | 'superseded'
+  | 'applied'
+  | 'gone'
+  | 'unfenced'
+  | 'chatUnfenced'
   | 'unknown';
 
 type ChatTarget = {
@@ -3892,6 +3932,44 @@ export function createWebCoreChatBackendCore(
       : 'refused';
   }
 
+  async function supersedeSend(
+    target: ChatTarget,
+    commandId: string,
+  ): Promise<CloudSendSupersedeOutcome> {
+    let reply: unknown;
+    for (let attempt = 1; ; attempt += 1) {
+      try {
+        reply = await request('core.chat.send.supersede', {
+          scope: bareScope(target),
+          chatId: ids.chatToCore(target.chatId),
+          commandId,
+        });
+        break;
+      } catch (error) {
+        if (error instanceof CoreCoworkRequestError) {
+          const { kind, code, retry } = error.payload;
+          if (kind === 'not_found') return 'gone';
+          if (code === 'core.chat.send.supersede.invalidState')
+            return 'chatUnfenced';
+          if (kind === 'capability_unavailable') return 'unfenced';
+          if (retry.kind === 'same_request' && attempt < SUPERSEDE_ATTEMPTS) {
+            await delay(
+              Math.min(
+                retry.delayMs ?? SUPERSEDE_BACKOFF_MS * attempt,
+                SUPERSEDE_MAX_DELAY_MS,
+              ),
+            );
+            continue;
+          }
+        }
+        reportClientAppError(error);
+        return 'unknown';
+      }
+    }
+    const result = CoreChatSendSupersedeResultSchema.safeParse(reply);
+    return result.success ? result.data.outcome : 'unknown';
+  }
+
   /**
    * The attachments a send carries: each pending attachment the web core
    * holds by id. A local file, or more than a message takes, is refused
@@ -4991,5 +5069,6 @@ export function createWebCoreChatBackendCore(
     releaseSandboxStates,
     uploadAttachment,
     readSendReceipt,
+    supersedeSend,
   };
 }

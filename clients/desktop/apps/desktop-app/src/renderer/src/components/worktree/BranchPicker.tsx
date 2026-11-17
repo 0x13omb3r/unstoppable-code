@@ -7,6 +7,9 @@ import {
   Button,
   FloatingMenu,
   ListRow,
+  PickerMenuOption,
+  PickerMenuOptionCheck,
+  PickerMenuOptionTrailing,
 } from '@canopy/ui-shared/components';
 import {
   useCallback,
@@ -584,7 +587,7 @@ export function BranchPicker({
                 {baseFilteredBranches.map((b) => {
                   const provenanceBadge = getBranchProvenanceBadge(b);
                   return (
-                    <ListRow
+                    <PickerMenuOption
                       key={`base-${b.isRemote ? 'remote' : 'local'}-${b.name}`}
                       role="option"
                       aria-selected={b.name === newBaseBranch}
@@ -599,10 +602,19 @@ export function BranchPicker({
                         );
                         setShowBasePicker(false);
                       }}
-                      trailing={provenanceBadge || undefined}
                     >
-                      <span className="font-mono">{b.name}</span>
-                    </ListRow>
+                      <span className="min-w-0 flex-1 truncate font-mono">
+                        {b.name}
+                      </span>
+                      {provenanceBadge && (
+                        <PickerMenuOptionTrailing>
+                          {provenanceBadge}
+                        </PickerMenuOptionTrailing>
+                      )}
+                      <PickerMenuOptionCheck
+                        selected={b.name === newBaseBranch}
+                      />
+                    </PickerMenuOption>
                   );
                 })}
               </FloatingMenu>

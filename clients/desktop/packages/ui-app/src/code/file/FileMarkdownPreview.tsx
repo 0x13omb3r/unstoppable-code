@@ -12,6 +12,7 @@ import {
 } from 'react';
 import { Button } from '@canopy/ui-shared/components/Button';
 import {
+  TextLink,
   MARKDOWN_ROOT_PROPS,
   DocumentProse,
   Markdown,
@@ -134,9 +135,14 @@ export function useFileMarkdownOptions(
         const target = typeof href === 'string' ? href : '';
         if (!target || isExternalHref(target)) {
           return (
-            <a href={target} target="_blank" rel="noreferrer noopener">
+            <TextLink
+              variant="inherited"
+              href={target}
+              target="_blank"
+              rel="noreferrer noopener"
+            >
               {children}
-            </a>
+            </TextLink>
           );
         }
         if (onOpenRelativePath) {

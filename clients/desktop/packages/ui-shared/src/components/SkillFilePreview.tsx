@@ -1,3 +1,4 @@
+import { CodeBlock } from './CodeBlock';
 import { Stack } from './Stack';
 import type { JSX } from 'react';
 import { ErrorBanner } from './StatusBlocks';
@@ -48,9 +49,17 @@ export function SkillFilePreview({
       {markdown ? (
         <SkillMarkdownBody markdown={state.data.content} />
       ) : (
-        <pre className="overflow-x-auto rounded-lg bg-fg-primary/[0.06] px-3 py-2 text-xs leading-relaxed fg-primary/90 whitespace-pre-wrap break-words">
+        <CodeBlock
+          variant="output-preview"
+          size="xs"
+          wrap="words"
+          tone="muted-primary"
+          replay="inherit"
+          overflow="horizontal"
+          proseLeading
+        >
           {state.data.content}
-        </pre>
+        </CodeBlock>
       )}
       {state.data.truncated && (
         <p className="text-xs fg-secondary italic">

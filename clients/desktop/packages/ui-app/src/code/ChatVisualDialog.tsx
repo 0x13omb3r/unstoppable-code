@@ -1,5 +1,6 @@
 'use client';
 
+import { CodeBlock } from '@canopy/ui-shared/components/CodeBlock';
 import { useCallback, useId, useState, type JSX } from 'react';
 import {
   AgentVisualFrame,
@@ -8,10 +9,7 @@ import {
   SegmentedControl,
 } from '@canopy/ui-shared/components';
 import type { AgentVisualTheme } from '@canopy/ui-shared/lib';
-import {
-  REPLAY_BLOCK_CLASS,
-  REPLAY_MASK_CLASS,
-} from '@canopy/ui-shared/lib/replay-privacy';
+import { REPLAY_MASK_CLASS } from '@canopy/ui-shared/lib/replay-privacy';
 import {
   CHAT_VISUAL_TEST_IDS,
   type ChatVisualHost,
@@ -135,15 +133,20 @@ export function ChatVisualDialog({
               variant="group"
               className="flex min-h-0 flex-1 overflow-hidden"
             >
-              <pre
+              <CodeBlock
                 data-testid={CHAT_VISUAL_TEST_IDS.sourceView}
-                className={`${REPLAY_BLOCK_CLASS} min-h-0 flex-1 overflow-auto whitespace-pre-wrap break-all p-3 font-mono text-xs fg-primary`}
+                variant="document"
+                size="xs"
+                wrap="all"
+                tone="primary"
+                replay="block"
+                className="min-h-0 flex-1"
                 aria-label="Visual source"
               >
                 {document.length > 100000
                   ? `${document.slice(0, 100000)}\n… Source preview limited to 100,000 characters.`
                   : document}
-              </pre>
+              </CodeBlock>
             </Surface>
           )}
         </div>

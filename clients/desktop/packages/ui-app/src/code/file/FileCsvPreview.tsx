@@ -1,5 +1,6 @@
 'use client';
 
+import { CodeBlock } from '@canopy/ui-shared/components/CodeBlock';
 import { AttachedNotice, CsvPreviewTable } from '@canopy/ui-shared/components';
 import { memo, useMemo, type JSX } from 'react';
 import { REPLAY_BLOCK_CLASS } from '@canopy/ui-shared/lib/replay-privacy';
@@ -20,7 +21,7 @@ const MAX_CSV_TABLE_CELLS = 100_000;
 const CSV_TABLE_LIMIT_ERROR =
   'CSV table limit exceeded (maximum 10,000 rows or 100,000 cells)';
 
-function parseCsvRows(content: string): string[][] {
+function parseCsvRows(content: string, delimiter: string): string[][] {
   const rows: string[][] = [];
   let row: string[] = [];
   let cellCount = 0;
@@ -65,7 +66,7 @@ function parseCsvRows(content: string): string[][] {
       continue;
     }
     if (quoteClosed) {
-      if (character === ',') appendField();
+      if (character === delimiter) appendField();
       else if (character === '\n') appendRow();
       else if (character === '\r') {
         if (content.charAt(index + 1) === '\n') index += 1;
@@ -81,7 +82,7 @@ function parseCsvRows(content: string): string[][] {
       inQuotes = true;
       fieldStarted = true;
       rowHasContent = true;
-    } else if (character === ',') {
+    } else if (character === delimiter) {
       rowHasContent = true;
       appendField();
     } else if (character === '\n' || character === '\r') {
@@ -107,12 +108,15 @@ function parseCsvRows(content: string): string[][] {
   return rows;
 }
 
-export function parseCsvTableContent(content: string): {
+export function parseCsvTableContent(
+  content: string,
+  delimiter = ',',
+): {
   readonly rows: string[][] | null;
   readonly error: string | null;
 } {
   try {
-    return { rows: parseCsvRows(content), error: null };
+    return { rows: parseCsvRows(content, delimiter), error: null };
   } catch (error) {
     return {
       rows: null,
@@ -156,14 +160,19 @@ function FileCsvPreviewImpl({
             ? `Could not parse as CSV: ${parsed.error}. Showing raw text.`
             : 'No CSV rows detected. Showing raw text.'}
         </AttachedNotice>
-        <pre
+        <CodeBlock
           ref={scrollBinding?.ref}
           onScroll={scrollBinding?.onScroll}
           data-testid="file-viewer-csv-raw-scroll"
-          className={`${REPLAY_BLOCK_CLASS} min-h-0 flex-1 overflow-auto whitespace-pre px-4 py-4 font-mono text-xs fg-primary`}
+          variant="file-document"
+          size="xs"
+          wrap="none"
+          tone="primary"
+          replay="block"
+          className="min-h-0 flex-1"
         >
           {content}
-        </pre>
+        </CodeBlock>
       </div>
     );
   }

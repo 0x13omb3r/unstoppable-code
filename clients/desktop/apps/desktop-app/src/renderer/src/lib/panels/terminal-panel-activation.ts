@@ -136,6 +136,22 @@ function terminalBindingOf(
   return tab?.kind === 'terminal' ? tab.instance?.terminalId : undefined;
 }
 
+/** Every terminal session id a worktree's panels bind, in any of its layouts. */
+export function getTerminalPanelBindings(worktreeKey: string): string[] {
+  const bound: string[] = [];
+  const layouts = usePanelLayoutStore.getState().layouts;
+  for (const [layoutKey, layout] of Object.entries(layouts)) {
+    if (!isFamilyLayout(worktreeKey, layoutKey)) continue;
+    for (const group of Object.values(layout.groups))
+      for (const tab of group.tabs ?? []) {
+        const terminalId = terminalBindingOf(tab);
+        if (terminalId !== undefined && !bound.includes(terminalId))
+          bound.push(terminalId);
+      }
+  }
+  return bound;
+}
+
 /**
  * Translate an explicit panel-tab selection/reveal into a one-shot terminal
  * caret request. Passive store changes (workspace restore, maximize, layout

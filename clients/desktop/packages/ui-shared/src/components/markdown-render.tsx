@@ -11,7 +11,7 @@ import { RuleType, type MarkdownToJSX } from 'markdown-to-jsx';
 import { Checkbox } from './Choice';
 import { DeferredMarkdownMath } from './DeferredMarkdownMath';
 import { MarkdownCodeBlock } from './MarkdownCodeBlock';
-import { TEXT_LINK_INLINE_CLASS } from './TextLink';
+import { TextLink, TEXT_LINK_INLINE_CLASS } from './TextLink';
 import { MarkdownImage } from './MarkdownImage';
 import { MarkdownMermaid } from './MarkdownMermaid';
 import { MAX_MERMAID_BLOCKS } from './markdown-mermaid-policy';
@@ -257,9 +257,15 @@ export function TranscriptMarkdownAnchor({
 }: AnchorProps): JSX.Element {
   if (typeof href === 'string' && isNavigableTranscriptHref(href)) {
     return (
-      <a {...props} href={href} className={TRANSCRIPT_LINK_CLASS}>
+      <TextLink
+        target={undefined}
+        rel={undefined}
+        {...props}
+        href={href}
+        variant="inline"
+      >
         {children}
-      </a>
+      </TextLink>
     );
   }
 

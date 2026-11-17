@@ -8,17 +8,32 @@
  */
 const countsByDocument = new WeakMap<Document, number>();
 
-/**
- * Whether any menu surface currently holds the flag.
- *
- * A closed menu's trigger reads this to tell "the user is switching from
- * another open menu" from "the user is opening the first menu". That matters
- * because the open menu dismisses on `pointerdown` and swallows the click that
- * press would otherwise complete (see `suppressNextClick`), so a trigger that
- * only opens on `click` would need a second press to take over.
- */
-export function isMenuOpenBodyFlagSet(doc: Document): boolean {
-  return doc.body.dataset.sidebarMenuOpen === 'true';
+type DismissalClickGuard = (target: EventTarget | null) => boolean;
+const clickGuardsByDocument = new WeakMap<Document, Set<DismissalClickGuard>>();
+
+/** Open a replacement menu on pointerdown when its click will be consumed. */
+export function menuDismissalSwallowsClick(
+  doc: Document,
+  target: EventTarget | null,
+): boolean {
+  const guards = clickGuardsByDocument.get(doc);
+  return guards ? [...guards].some((guard) => guard(target)) : false;
+}
+
+export function registerMenuDismissalClickGuard(
+  doc: Document,
+  guard: DismissalClickGuard,
+): () => void {
+  let guards = clickGuardsByDocument.get(doc);
+  if (!guards) {
+    guards = new Set();
+    clickGuardsByDocument.set(doc, guards);
+  }
+  const registered = guards;
+  registered.add(guard);
+  return (): void => {
+    registered.delete(guard);
+  };
 }
 
 export function pushMenuOpenBodyFlag(doc: Document): () => void {

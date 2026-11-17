@@ -3,7 +3,10 @@
 Client for the Canopy core daemon.
 
 `@canopy/core-client` (`src/index.ts`) is browser-safe. Production code
-imports only `@canopy/protocol` and `@canopy/core-transport/types`. It exports:
+imports only `@canopy/protocol`, `@canopy/core-transport/types` and
+`@canopy/core-transport/lost-reply`. A reply the binding tagged as lost is a
+lost call, retried as the operation's idempotency allows (CAN-6940). It
+exports:
 
 - the typed client contracts (`CanopyClient`, `CanopyClientOptions`, the
   effective manifest and runtime identity types, structurally compatible with

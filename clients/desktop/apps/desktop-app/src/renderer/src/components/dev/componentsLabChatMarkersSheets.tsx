@@ -14,9 +14,12 @@ import {
   DelegatedAgentCapabilities,
   FactList,
   ForkContextNotice,
+  TranscriptEventMarker,
+  TranscriptEventRow,
   UserBubble,
   UserBubbleCancelledNote,
 } from '@canopy/ui-shared/components';
+import { ShieldIcon, TimeFliesIcon } from '@canopy/ui-shared/icons/AppIcons';
 import {
   SpecimenCell,
   SpecimenGrid,
@@ -26,6 +29,35 @@ import {
 const LONG_NAME = `an-extremely-long-agent-name-${'x'.repeat(80)}`;
 const RESUMED_AT = new Date(2026, 9, 25, 21, 41).getTime();
 const noop = (): void => undefined;
+
+export function TranscriptEventSheet(): JSX.Element {
+  return (
+    <SpecimenPanel title="Transcript events">
+      <SpecimenGrid min={260}>
+        <SpecimenCell label="Marker">
+          <TranscriptEventMarker icon={<TimeFliesIcon size="sm" />}>
+            Started by automation · 9:41 PM
+          </TranscriptEventMarker>
+        </SpecimenCell>
+        <SpecimenCell label="Row without details">
+          <TranscriptEventRow
+            icon={<ShieldIcon size="sm" aria-hidden="true" />}
+            label="Approved 1 request"
+          />
+        </SpecimenCell>
+        <SpecimenCell label="Expandable row">
+          <TranscriptEventRow
+            icon={<ShieldIcon size="sm" aria-hidden="true" />}
+            label="Approved 1 request"
+            detail="Under Full access"
+          >
+            Read the project files
+          </TranscriptEventRow>
+        </SpecimenCell>
+      </SpecimenGrid>
+    </SpecimenPanel>
+  );
+}
 
 const RESUME_REASONS: readonly AutoResumeReason[] = [
   'app_shutdown',

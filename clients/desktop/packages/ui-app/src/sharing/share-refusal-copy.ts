@@ -12,6 +12,11 @@ const REFUSAL_SENTENCES: ReadonlyMap<string, string> = new Map([
   ['access-removed', 'You no longer have access to this share.'],
   ['unknown-provenance', "This share's owner couldn't be confirmed."],
   ['missing-dependency', "A dependency of this share isn't available."],
+  [
+    'plugin-catalog-newer',
+    'The plugin catalog was written by a newer version of the app. Update the app, then try again.',
+  ],
+  ['plugin-catalog-damaged', 'The plugin catalog is damaged.'],
 ]);
 
 const IPC_INVOKE_WRAPPER = /^error invoking remote method '[^']*':\s*/i;

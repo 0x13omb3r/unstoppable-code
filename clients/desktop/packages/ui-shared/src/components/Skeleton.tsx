@@ -2,10 +2,12 @@ import {
   useLayoutEffect,
   useRef,
   useSyncExternalStore,
+  type CSSProperties,
   type JSX,
   type ReactNode,
 } from 'react';
 import { Skeleton as MeasuredSkeleton } from 'skullet/react';
+import { Ghost } from 'skullet/internal';
 
 const REDUCED_MOTION_QUERY = '(prefers-reduced-motion: reduce)';
 
@@ -423,5 +425,50 @@ export function Skeleton({
         </div>
       )}
     </div>
+  );
+}
+
+/**
+ * Measured prose or a text figure inside an existing inline formatting
+ * context. Skullet's React wrapper uses divs, so this uses the same measured
+ * layer with phrasing elements that are valid inside paragraphs and controls.
+ * The sample is decorative. Let the surrounding UI announce the pending state.
+ */
+export function InlineMeasuredSkeleton({
+  children,
+  pulse = true,
+  className,
+  testId,
+  style,
+}: {
+  readonly children: ReactNode;
+  readonly pulse?: boolean;
+  readonly className?: string;
+  readonly testId?: string;
+  readonly style?: CSSProperties;
+}): JSX.Element {
+  const rootRef = useRef<HTMLSpanElement>(null);
+  const reducedMotion = useReducedMotion();
+  useLayoutEffect(() => {
+    if (!rootRef.current) return undefined;
+    const ghost = new Ghost(rootRef.current, { exact: true });
+    return (): void => ghost.destroy();
+  }, [pulse, reducedMotion]);
+
+  return (
+    <span
+      ref={rootRef}
+      skullet-loading=""
+      data-inline-static={!pulse || reducedMotion ? '' : undefined}
+      data-testid={testId}
+      aria-hidden="true"
+      inert
+      className={`inline-block max-w-full select-none ${className ?? ''}`}
+      style={style}
+    >
+      <span skullet-ghost="">{children}</span>
+      <span skullet-snapshot="" />
+      <span skullet-layer="" />
+    </span>
   );
 }

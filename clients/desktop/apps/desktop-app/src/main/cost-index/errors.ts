@@ -1,7 +1,8 @@
 import type { CostViewUnavailableReason } from '@canopy/protocol/cost-view';
 
+/** The local cost service serves every read, so it is never `not_served`. */
 export type CostServiceErrorReason =
-  | CostViewUnavailableReason
+  | Exclude<CostViewUnavailableReason, 'not_served'>
   | 'NOT_FOUND'
   | 'SCOPE_SEALED'
   | 'UNKNOWN';

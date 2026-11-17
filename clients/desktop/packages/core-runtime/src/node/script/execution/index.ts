@@ -1,6 +1,7 @@
 export {
   CORE_SCRIPT_RUN_KIND,
   CoreScriptRuns,
+  type CoreScriptRunLookup,
   type CoreScriptRunOptions,
   type CoreScriptRunRequest,
   type CoreScriptRunResult,

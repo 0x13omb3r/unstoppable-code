@@ -58,6 +58,7 @@ import {
 import type { ApprovalRule } from '@canopy/execution-engine/types/approvals';
 import { validateId } from '@canopy/execution-engine/node/lib/validation';
 import { isMissingFileError } from './fs-utils';
+import { recordMetadataRead } from '../work-counters';
 import {
   isErrnoException,
   isRecord,
@@ -91,6 +92,7 @@ export async function readCanopyJson(
   }
 
   try {
+    recordMetadataRead('config.read.project-config');
     const raw = await readFile(filePath, 'utf8');
     return parseCanopyJson(raw, filePath);
   } catch (error) {
@@ -166,6 +168,7 @@ export async function findExistingProjectConfigFile(
 ): Promise<string | null> {
   for (const candidate of getProjectConfigFileCandidates(repoPath)) {
     try {
+      recordMetadataRead('config.probe.project-config');
       await access(candidate);
       return candidate;
     } catch {

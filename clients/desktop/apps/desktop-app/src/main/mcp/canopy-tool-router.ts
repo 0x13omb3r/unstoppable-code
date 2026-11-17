@@ -188,6 +188,16 @@ export interface CanopyWorktreeSessionRoute {
   workerMemoryToolExposure?: ClaudeWorkerMemoryToolExposure;
 }
 
+/** Worktree chat actions keyed by their tool call (CAN-5830). */
+const KEYED_BY_TOOL_CALL: ReadonlySet<string> = new Set([
+  'pipeline.run',
+  'hook.pause',
+  'hook.resume',
+  'worktree.run_script',
+  'pipeline.execution_cancel',
+  'pipeline.execution_resume',
+]);
+
 export interface CanopyToolRouterOptions {
   readonly interfaceRequests: InterfaceToolRequests;
 }
@@ -711,19 +721,21 @@ export class CanopyToolRouter {
       // than this Claude HTTP proxy. SetBaseBranch also suppresses the
       // transport id because its renderer request id has process-wide
       // deduplication scope.
-      // A pipeline run replays by tool call. The bare request id restarts
-      // per connection, so it takes Claude's tool_use id, which a retry
-      // resends, or this registration's id, as App Advisor's calls do.
-      const pipelineRun =
+      // A pipeline run, cancel or resume, hook pause or resume, or script run
+      // replays by tool call. The bare request id restarts per connection, so it takes
+      // Claude's tool_use id, which a retry resends, or this registration's
+      // id, as App Advisor's calls do.
+      const keyedByToolCall =
         canonicalKey === 'dispatch_action' &&
         isRecord(args.action) &&
-        args.action.type === 'pipeline.run';
+        typeof args.action.type === 'string' &&
+        KEYED_BY_TOOL_CALL.has(args.action.type);
       const toolCallOptions: CanopyInjectedToolContext = {
         ...(canonicalKey !== 'ask_user_question' &&
         canonicalKey !== 'set_base_branch' &&
         (typeof id === 'string' || typeof id === 'number')
           ? {
-              toolUseId: pipelineRun
+              toolUseId: keyedByToolCall
                 ? this.assistantToolUseId(route, id, params._meta)
                 : canonicalKey === 'schedule_wakeup' ||
                     canonicalKey === 'watch_command'

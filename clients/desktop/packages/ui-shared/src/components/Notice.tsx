@@ -388,13 +388,12 @@ export type NoticeShape = 'default' | 'composer' | 'toast' | 'settings';
 const NoticeShapeContext = createContext<NoticeShape>('default');
 
 /**
- * A notice's action size: a toast's buttons are the 32px pill, a settings
- * notice takes the settings page's compact capsule, and every other notice
- * keeps the 28px pill.
+ * Composer and settings actions use the 13px compact pill. Toast actions
+ * have a taller target. The default uses the 14px label.
  */
 const ACTION_SIZE_BY_SHAPE: Record<NoticeShape, NoticeButtonSize> = {
   default: 'sm',
-  composer: 'sm',
+  composer: 'compact',
   toast: 'md',
   settings: 'compact',
 };
@@ -402,7 +401,7 @@ const ACTION_SIZE_BY_SHAPE: Record<NoticeShape, NoticeButtonSize> = {
 /** The tray's corners: the composer box, a toast card, a settings card. */
 const TRAY_RADIUS_BY_SHAPE: Record<NoticeShape, string> = {
   default: 'rounded-xl',
-  composer: 'rounded-2xl',
+  composer: 'rounded-xl',
   toast: 'rounded-2xl',
   settings: 'rounded-lg',
 };
@@ -430,8 +429,8 @@ export function NoticeShapeProvider({
  * spacing owner per group), every notice takes the composer's corners, and
  * it collapses entirely (`empty:hidden`) when none render, so nothing reserves
  * space above the box. Hosts place it inside their composer gutter; the
- * stack owns the same 16px side inset as ComposerDrawer. Both use the host's
- * composer shell gutter; never add a banner-only horizontal inset.
+ * stack owns the transcript's 12px text inset within the host's composer
+ * shell gutter.
  */
 export function ComposerNoticeStack({
   children,
@@ -444,7 +443,8 @@ export function ComposerNoticeStack({
     <NoticeShapeProvider shape="composer">
       <div
         data-testid={testId}
-        className="flex flex-col gap-2 px-4 pb-2 empty:hidden"
+        data-composer-notice-stack
+        className="flex flex-col gap-2 px-3 pb-2 empty:hidden"
       >
         {children}
       </div>

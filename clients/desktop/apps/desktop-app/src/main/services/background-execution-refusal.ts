@@ -30,3 +30,23 @@ export function backgroundRefusalToolResult(
     ? { text: error.message, isError: true }
     : undefined;
 }
+
+/**
+ * Runs an injected tool so an expected policy refusal reaches the model as an
+ * actionable tool error with its copy (CAN-6900), in Orchestrator and worktree
+ * chats alike. Any other failure still fails the call and is logged by the
+ * transport.
+ */
+export async function withBackgroundRefusalAsToolError<
+  Result extends { text: string; isError?: boolean },
+>(
+  run: () => Promise<Result>,
+): Promise<Result | { text: string; isError: true }> {
+  try {
+    return await run();
+  } catch (error) {
+    const refusal = backgroundRefusalToolResult(error);
+    if (refusal) return refusal;
+    throw error;
+  }
+}

@@ -3,7 +3,7 @@ import { join, relative } from 'node:path';
 
 const srcRoot = join(__dirname, '..');
 const allowedImport =
-  /^(\.{1,2}(\/|$)|@canopy\/protocol(\/|$)|@canopy\/core-transport\/types$)/;
+  /^(\.{1,2}(\/|$)|@canopy\/protocol(\/|$)|@canopy\/core-transport\/(types|lost-reply)$)/;
 
 function productionFiles(dir: string): string[] {
   return readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
@@ -25,7 +25,7 @@ function specifiers(source: string): string[] {
 }
 
 describe('browser-safe root', () => {
-  it('imports only protocol, transport types, and siblings', () => {
+  it('imports only protocol, transport types and lost replies, and siblings', () => {
     const offenders = productionFiles(srcRoot).flatMap((file) =>
       specifiers(readFileSync(file, 'utf8'))
         .filter((specifier) => !allowedImport.test(specifier))

@@ -16,6 +16,11 @@ export interface WebCoreScopeOptions {
    * section, so the two are on or off together.
    */
   readonly costInsights?: boolean;
+  /**
+   * The web core serves a cloud chat's full cost breakdown, as its manifest
+   * declares (CAN-6941). It turns on the Session breakdown panel.
+   */
+  readonly sessionBreakdown?: boolean;
 }
 
 /**
@@ -119,6 +124,7 @@ function buildWebCoreScopeCapabilities(
     ledger: false,
     ledgerLocal: false,
     costInsights: options.costInsights === true,
+    sessionBreakdown: options.sessionBreakdown === true,
     // Unset would mean "every section the workspace type shows" and "the
     // whole worktree's diff". A cloud scope shows the sections the web core
     // feeds: its agent tasks and background processes, which the web core
@@ -158,7 +164,7 @@ export function webCoreScopeCapabilities(
     entry = new Map();
     cache.set(host, entry);
   }
-  const key = `${String(options.durableTerminals)}:${String(options.costInsights === true)}`;
+  const key = `${String(options.durableTerminals)}:${String(options.costInsights === true)}:${String(options.sessionBreakdown === true)}`;
   let capabilities = entry.get(key);
   if (capabilities === undefined) {
     capabilities = buildWebCoreScopeCapabilities(host, options);

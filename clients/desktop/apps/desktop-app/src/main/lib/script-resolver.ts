@@ -33,6 +33,7 @@ import {
   validateCanopyJson,
 } from './canopy-json';
 import { readConductorJson } from './conductor-json';
+import { recordMetadataRead } from '@canopy/desktop-shared/node/work-counters';
 import {
   readWorkspaceCanopyManifest,
   readWorkspaceRepoLayerContext,
@@ -183,6 +184,7 @@ async function readConfigCandidateSources(
 
   for (const filePath of getProjectConfigFileCandidates(repoPath)) {
     try {
+      recordMetadataRead('config.read.project-config-layer');
       const raw = await readFile(filePath, 'utf8');
       const parsed = JSON.parse(raw) as unknown;
       candidates.push({

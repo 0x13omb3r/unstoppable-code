@@ -42,6 +42,7 @@ import {
   SharedChatAuthorHeader,
   UserBubble,
   UserBubbleCancelledNote,
+  WakeTurnBoundary,
   hasSteeringChatPart,
   MARKDOWN_ROOT_PROPS,
   splitSubagentReference,
@@ -526,6 +527,7 @@ function ChatMessageViewImpl({
   if (message.role === 'user') {
     const isSteering = hasSteeringChatPart(message.parts);
     const body = userBody;
+    const watcher = message.agentSent ? undefined : watcherFired;
     // Only trusted relay provenance marks a resume; `promptSource` alone
     // never does, and the prompt's text is never consulted.
     const autoResume =
@@ -590,9 +592,11 @@ function ChatMessageViewImpl({
           dataStatus={message.status}
           contextMenu={contextMenuTarget}
           variant={
-            steeringRequest?.variant ?? (autoResume ? 'muted' : 'default')
+            watcher
+              ? 'transcript-row'
+              : (steeringRequest?.variant ?? (autoResume ? 'muted' : 'default'))
           }
-          {...(header ? { header } : {})}
+          {...(!watcher && header ? { header } : {})}
           {...(attachmentSplit.media.length > 0
             ? {
                 media: (
@@ -606,9 +610,19 @@ function ChatMessageViewImpl({
               }
             : {})}
         >
-          <div className={`${REPLAY_BLOCK_CLASS} ${PROSE_CLASSES}`}>
-            <Prose text={body} options={USER_MARKDOWN_OPTIONS} />
-          </div>
+          {watcher ? (
+            <div data-chat-message-id={message.messageId}>
+              <WakeTurnBoundary
+                watcher={watcher}
+                followUp={body}
+                timestamp={message.createdAtMs}
+              />
+            </div>
+          ) : (
+            <div className={`${REPLAY_BLOCK_CLASS} ${PROSE_CLASSES}`}>
+              <Prose text={body} options={USER_MARKDOWN_OPTIONS} />
+            </div>
+          )}
           {message.status === 'cancelled' && <UserBubbleCancelledNote />}
         </UserBubble>
         {contextMenu}

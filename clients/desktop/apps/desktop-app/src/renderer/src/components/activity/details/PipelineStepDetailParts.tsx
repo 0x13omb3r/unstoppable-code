@@ -1,3 +1,4 @@
+import { CodeBlock } from '@canopy/ui-shared/components/CodeBlock';
 import { useEffect, useState, type JSX, type ReactNode } from 'react';
 import {
   formatTimingTimestamp,
@@ -10,7 +11,6 @@ import type {
   StepResult,
 } from '@canopy/execution-engine/types/pipeline';
 import { PipelineTimer } from '../PipelineTimer';
-import { POSTHOG_REPLAY_BLOCK_CLASS } from '@canopy/desktop-instrumentation/posthog-replay-privacy';
 import {
   Stack,
   Disclosure,
@@ -192,11 +192,16 @@ export function ShellCommandContent({
         </div>
       </Surface>
       {/* Commands can carry interpolated credentials. */}
-      <pre
-        className={`${POSTHOG_REPLAY_BLOCK_CLASS} max-h-80 overflow-auto whitespace-pre-wrap break-words px-3 py-2 font-mono text-2xs leading-5 fg-primary/80`}
+      <CodeBlock
+        variant="log-tail"
+        size="2xs"
+        wrap="words"
+        tone="soft"
+        replay="block"
+        className="max-h-80"
       >
         {command}
-      </pre>
+      </CodeBlock>
     </Surface>
   );
 }

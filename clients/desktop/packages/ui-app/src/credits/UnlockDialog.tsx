@@ -91,10 +91,9 @@ export interface UnlockDialogGuest {
    */
   readonly subject: GuestModelGateSubject;
   /**
-   * The host's sign-in control (a link on the web, a button on desktop),
-   * with the shared primary styling in `className`.
+   * The host's sign-in control (a link on the web, a button on desktop).
    */
-  readonly renderSignIn: (label: string, className: string) => ReactNode;
+  readonly renderSignIn: (label: string) => ReactNode;
   /** A guest model the host can select right now instead. */
   readonly fallback?: {
     readonly label: string;

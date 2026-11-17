@@ -1,7 +1,18 @@
 import { createW5RecordImageRepositories } from '@canopy/core-runtime/node/w5/record-image-repositories';
 import { withW5RepositoryLock } from './w5-repository-locks';
-import { withW5Commit, type W5CommitOptions } from './w5-commit-log-file-store';
+import {
+  withW5Commit,
+  W5FileWriteRefusedError,
+  W5RevisionConflictError,
+  type W5CommitOptions,
+} from './w5-commit-log-file-store';
+import {
+  W5CommitLogError,
+  W5CommitRefusedError,
+  W5ProcessFileLockTimeoutError,
+} from '@canopy/core-runtime/node/w5/commit-log/errors';
 import { deferUntilW5ReadViewCloses } from './w5-read-view';
+import { W5DaemonHandoffError } from './w5-handoff-store';
 import { afterW5Apply, afterW5Commit, onW5Abort } from './w5-commit-scope';
 import { LOCAL_DESKTOP_AUTHORITY_ID } from '../canopy-runtime/desktop-runtime-identity';
 import {
@@ -557,6 +568,9 @@ async function writeAdmittedWorktreesFile(
   // Browser retirement and other registry readers do not take this writer's
   // in-process lock. Never expose a truncated or partially written registry.
   let prepared = false;
+  const commit = options?.w5Commit;
+  // Unscoped replace can decide internally; nested scopes decide after we return.
+  let scopedDecisionNotSubmitted = Boolean(commit);
   let serialized: string;
   let releaseSelfWrite = (): void => undefined;
   try {
@@ -567,12 +581,32 @@ async function writeAdmittedWorktreesFile(
     onW5Abort(releaseSelfWrite);
     const replaceWorktreeList = (): Promise<string> =>
       worktreeListRepository.replace(workspaceId, worktrees, previous);
-    serialized = options?.w5Commit
-      ? await withW5Commit(options.w5Commit, replaceWorktreeList)
+    serialized = commit
+      ? await withW5Commit(
+          {
+            ...commit,
+            beforeDecision: () => {
+              commit.beforeDecision?.();
+              scopedDecisionNotSubmitted = false;
+            },
+          },
+          replaceWorktreeList,
+        )
       : await replaceWorktreeList();
   } catch (error) {
     releaseSelfWrite();
-    if (prepared && reconciliation?.rollback) {
+    // Transport failure can follow application. Keep intent until the owner
+    // can reconcile it; only a proven no-effect refusal permits rollback.
+    const refused =
+      scopedDecisionNotSubmitted ||
+      error instanceof W5RevisionConflictError ||
+      error instanceof W5FileWriteRefusedError ||
+      error instanceof W5CommitLogError ||
+      error instanceof W5ProcessFileLockTimeoutError ||
+      error instanceof W5DaemonHandoffError ||
+      (error instanceof W5CommitRefusedError &&
+        error.reason !== 'recovery-required');
+    if (prepared && refused && reconciliation?.rollback) {
       try {
         await reconciliation.rollback();
       } catch (rollbackError) {

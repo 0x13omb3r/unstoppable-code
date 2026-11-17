@@ -17,6 +17,8 @@ import { SegmentedControl } from './SegmentedControl';
 import { COMPOSER_ROW_MENU_GAP, FloatingMenu } from './FloatingMenu';
 import { UsageMeter, formatUsagePercent } from './usage-indicator-meter';
 import { ValueRow, ValueRows } from './settings/ValueRows';
+import { useCostCurrency } from './cost/CostCurrencyContext';
+import { formatCostCredits } from './cost/cost-format';
 import type {
   UsageIndicatorUsage,
   UsageIndicatorResponse,
@@ -277,6 +279,14 @@ export default function UsagePopover({
   // Codex app-server usage carries no cost of its own, so a Codex chat hides
   // the row unless the host priced the turn itself: cloud Core bills every
   // turn through the gateway and reports the figure regardless of harness.
+  // A credits-only account reads every amount in credits (CAN-6634). These
+  // rows carry no billing split, so everyone else reads USD; the host's cost
+  // row shows AI Credits work in credits from the chat's recorded billing.
+  const currency = useCostCurrency();
+  const formatChatCost = (usd: number): string =>
+    currency.kind === 'credits' && currency.creditsOnly
+      ? formatCostCredits(usd, currency.usdPerCredit)
+      : formatCost(usd);
   const showCost =
     !hideCost &&
     !responseUsage &&
@@ -315,7 +325,10 @@ export default function UsagePopover({
   const sessionFigures = (
     <ValueRows dataTestId="usage-indicator-details">
       {showCost && !hasCostPreview ? (
-        <ValueRow label="Cost" value={formatCost(usage.totalCostUsd ?? 0)} />
+        <ValueRow
+          label="Cost"
+          value={formatChatCost(usage.totalCostUsd ?? 0)}
+        />
       ) : null}
       {showDuration && (
         <ValueRow
@@ -413,7 +426,7 @@ export default function UsagePopover({
                       responseUsage.usage.estimatedCostUsd !== undefined && (
                         <ValueRow
                           label="Estimated cost"
-                          value={formatCost(
+                          value={formatChatCost(
                             responseUsage.usage.estimatedCostUsd,
                           )}
                         />

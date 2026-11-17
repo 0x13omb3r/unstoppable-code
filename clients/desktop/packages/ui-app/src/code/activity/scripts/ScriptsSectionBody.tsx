@@ -1,5 +1,6 @@
 'use client';
 
+import { CodeBlock } from '@canopy/ui-shared/components/CodeBlock';
 import { ControlButton } from '@canopy/ui-shared/components';
 import { CompletedRunSurface } from '@canopy/ui-shared/components';
 import { useEffect, useState, type JSX, type ReactNode } from 'react';
@@ -706,11 +707,16 @@ export function ScriptsSectionBody({
               entry.script.command ? (
                 // Script command lines can carry arguments and secrets.
                 <Surface variant="inset" className="overflow-hidden">
-                  <pre
-                    className={`${REPLAY_BLOCK_CLASS} max-h-20 overflow-auto whitespace-pre-wrap break-words px-2 py-1.5 font-mono text-2xs fg-secondary`}
+                  <CodeBlock
+                    variant="activity-command"
+                    size="2xs"
+                    wrap="words"
+                    tone="secondary"
+                    replay="block"
+                    className="max-h-20"
                   >
                     {entry.script.command}
-                  </pre>
+                  </CodeBlock>
                 </Surface>
               ) : undefined
             }

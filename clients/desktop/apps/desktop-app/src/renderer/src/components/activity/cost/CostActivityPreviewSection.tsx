@@ -2,7 +2,7 @@ import type { JSX } from 'react';
 import type { CostScopeStore } from '@canopy/app-state/cost';
 import type { CostScopeRef } from '@canopy/protocol/cost-view';
 import { CostActivityPreview } from '@canopy/ui-app/cost';
-import { DESKTOP_COST_NAVIGATOR } from '@/lib/cost/cost-navigator';
+import { useDesktopCostNavigator } from '@/hooks/useDesktopCostNavigator';
 import { desktopCostClient } from '@/lib/cost/ipc-cost-client';
 
 export interface CostActivityPreviewSectionProps {
@@ -19,10 +19,11 @@ export function CostActivityPreviewSection({
   maxRows,
   expandedCard = false,
 }: CostActivityPreviewSectionProps): JSX.Element {
+  const navigator = useDesktopCostNavigator(scope);
   const preview = (
     <CostActivityPreview
       client={desktopCostClient}
-      navigator={DESKTOP_COST_NAVIGATOR}
+      navigator={navigator}
       scope={scope}
       store={store}
       maxRows={maxRows}

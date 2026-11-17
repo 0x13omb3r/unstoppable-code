@@ -30,6 +30,10 @@ export type ButtonLinkProps = Omit<
     multiline?: boolean;
     /** Renders the link without its `href`, so it cannot be followed. */
     disabled?: boolean;
+    /** Dim a disabled link when its capsule remains visible as a placeholder. */
+    disabledAppearance?: 'dimmed';
+    /** A little more separation for a large brand glyph. */
+    iconGap?: 'roomy';
     /** Placement only (`self-start`, `max-w-full`); never colour or type. */
     className?: string;
   };
@@ -49,6 +53,8 @@ export const ButtonLink = forwardRef<HTMLAnchorElement, ButtonLinkProps>(
       iconOnly = false,
       leadingIcon = false,
       disabled = false,
+      disabledAppearance,
+      iconGap,
       className = '',
       onClick,
       ...props
@@ -73,7 +79,15 @@ export const ButtonLink = forwardRef<HTMLAnchorElement, ButtonLinkProps>(
           multiline,
           iconOnly,
           leadingIcon,
-          className,
+          className: [
+            iconGap === 'roomy' && 'gap-2',
+            disabled &&
+              disabledAppearance === 'dimmed' &&
+              'pointer-events-none opacity-50',
+            className,
+          ]
+            .filter(Boolean)
+            .join(' '),
         })}
       />
     );

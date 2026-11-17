@@ -113,3 +113,4 @@ export {
   feedToolJsonSchema,
   type AgentFeedToolKey,
 } from './feed';
+export * from './secrets';

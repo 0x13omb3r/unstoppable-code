@@ -460,8 +460,11 @@ function expectedToolKeys(
     capabilities.watcherTriggers.includes('scheduled_wakeup')
   )
     keys.push('schedule_wakeup');
-  if (capabilities.memory !== undefined)
-    keys.push('save_memory', 'search_memory', 'read_memory');
+  if (capabilities.memory !== undefined) {
+    if (!capabilities.memoryReadOnly) keys.push('save_memory');
+    if (!capabilities.memoryWriteOnly)
+      keys.push('search_memory', 'read_memory');
+  }
   if (capabilities.feed === true)
     keys.push(
       'add_ledger_entry',

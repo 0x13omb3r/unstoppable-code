@@ -51,9 +51,7 @@ export function BrowserRecordingPanel({
         <div className="flex items-center gap-2 px-2 py-1">
           {isRecording ? (
             <span className="flex items-center gap-1.5 text-2xs font-medium">
-              <span className="inline-flex animate-pulse">
-                <Dot tone="danger" />
-              </span>
+              <Dot tone="danger" pulse />
               <StatusLabel>Recording</StatusLabel>
             </span>
           ) : (

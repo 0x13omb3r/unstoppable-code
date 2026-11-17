@@ -1,3 +1,4 @@
+import { TextLink } from './TextLink';
 import type { JSX } from 'react';
 import {
   mcpClientSetupCollectsClient,
@@ -64,15 +65,16 @@ export function McpClientSetupDetails({
         </div>
       )}
       {docsUrl && (
-        <a
+        <TextLink
           href={docsUrl}
           target="_blank"
           rel="noopener noreferrer"
-          className="self-start text-xs fg-accent hover:underline"
+          size="xs"
+          className="self-start"
           data-testid={`${dataTestId}-docs`}
         >
           {serverName} docs
-        </a>
+        </TextLink>
       )}
     </div>
   );

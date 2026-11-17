@@ -298,6 +298,12 @@
       "kind": "todo",
       "reason": "Pending shared-kit scope; not required Lane J fixture evidence.",
       "id": "P07"
+    },
+    {
+      "title": "delivers a request whose reply it lost as a lost call, never as an answer (CAN-6940) (no lost reply alone on this binding)",
+      "kind": "todo",
+      "reason": "Only a binding with one reply per request (HTTP) can lose one alone; a framed pipe cannot.",
+      "id": "P08"
     }
   ],
   "sourceFiles": [

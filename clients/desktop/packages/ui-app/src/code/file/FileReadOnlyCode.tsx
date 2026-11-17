@@ -1,9 +1,9 @@
 'use client';
 
+import { CodeBlock } from '@canopy/ui-shared/components/CodeBlock';
 import { FileLineRangeHighlight } from '@canopy/ui-shared/components';
 
 import { useCallback, useEffect, useMemo, useRef, type JSX } from 'react';
-import { REPLAY_BLOCK_CLASS } from '@canopy/ui-shared/lib/replay-privacy';
 import {
   resolveFileLineRange,
   splitFileLineRange,
@@ -90,10 +90,15 @@ export function FileReadOnlyCode({
   }, [fileIdentity, revealKey, revealReady]);
 
   return (
-    <pre
+    <CodeBlock
       ref={setScroller}
       onScroll={scrollBinding?.onScroll}
-      className={`${REPLAY_BLOCK_CLASS} min-h-0 flex-1 overflow-auto whitespace-pre px-4 py-3 font-mono text-xs leading-5 fg-primary/80`}
+      variant="pane"
+      size="xs"
+      wrap="none"
+      tone="soft"
+      replay="block"
+      className="min-h-0 flex-1"
       data-testid="file-viewer-raw-text-scroll"
     >
       {highlight === null ? (
@@ -124,6 +129,6 @@ export function FileReadOnlyCode({
           {highlight.segments.after}
         </>
       )}
-    </pre>
+    </CodeBlock>
   );
 }

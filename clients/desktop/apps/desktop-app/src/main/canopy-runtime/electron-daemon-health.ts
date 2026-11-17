@@ -57,6 +57,8 @@ export interface ElectronDaemonHealth {
    * failed one re-arms it unless the service was reached meanwhile.
    */
   isLatched(): boolean;
+  /** A degraded startup handoff can recover only on the next app launch. */
+  requireRestart(): void;
   /** Recovery handoff: one-way latch; no Try again or late reach can lift it. */
   beginRecovery(): void;
   /** Quit: ignores every later event and retry. */
@@ -92,16 +94,20 @@ export function createElectronDaemonHealth(
   let latched = false;
   let reaches = 0;
   let recoveries = 0;
+  let restartRequired = false;
 
   const update = (
     state: BackgroundServiceStatus['state'],
     retry: BackgroundServiceStatus['retry'],
     reason?: BackgroundServiceUnreachableReason,
   ): void => {
+    const recovery =
+      state === 'unavailable' && restartRequired ? 'restart_app' : undefined;
     if (
       state === status.state &&
       reason === status.reason &&
-      retry === status.retry
+      retry === status.retry &&
+      recovery === status.recovery
     )
       return;
     const previous = status;
@@ -109,6 +115,7 @@ export function createElectronDaemonHealth(
       state,
       ...(reason && { reason }),
       retry,
+      ...(recovery && { recovery }),
       sequence: previous.sequence + 1,
     };
     if (status.reason && status.reason !== previous.reason)
@@ -124,6 +131,12 @@ export function createElectronDaemonHealth(
     }
   };
   const reached = (): void => {
+    // A late connection cannot repair the already-settled W5 handoff.
+    if (restartRequired && consumers.size > 0) {
+      latched = true;
+      update('unavailable', 'idle', 'start_failed');
+      return;
+    }
     if (status.state !== 'ok') recoveries += 1;
     reaches += 1;
     latched = false;
@@ -170,6 +183,14 @@ export function createElectronDaemonHealth(
         update('unavailable', status.retry, reason);
     },
     isLatched: () => latched,
+    requireRestart(): void {
+      if (stopped) return;
+      restartRequired = true;
+      if (consumers.size > 0) {
+        latched = true;
+        update('unavailable', 'idle', 'start_failed');
+      }
+    },
     beginRecovery(): void {
       latched = true;
       stopped = true;
@@ -178,9 +199,11 @@ export function createElectronDaemonHealth(
       if (enabled) consumers.add(consumer);
       else consumers.delete(consumer);
       if (consumers.size === 0 && !stopped) reached();
+      else if (restartRequired && !stopped) unreachable('start_failed');
     },
     retry(attempt): Promise<BackgroundServiceStatus> {
-      if (stopped || consumers.size === 0) return Promise.resolve(status);
+      if (stopped || restartRequired || consumers.size === 0)
+        return Promise.resolve(status);
       if (retrying) return retrying;
       const wasLatched = latched;
       const reachesBefore = reaches;
@@ -190,13 +213,15 @@ export function createElectronDaemonHealth(
         let live = false;
         try {
           // Deferred, so `retrying` is set before even a synchronous throw ends it.
-          live = await Promise.resolve().then(attempt);
+          live = await Promise.resolve().then(() =>
+            restartRequired ? false : attempt(),
+          );
         } catch {
           // The attempt's own unreachable event already set the reason; a
           // refusal from a reached service leaves nothing to show.
         }
         retrying = undefined;
-        if (stopped || consumers.size === 0) return status;
+        if (stopped || restartRequired || consumers.size === 0) return status;
         if (live) reached();
         else {
           if (wasLatched && reaches === reachesBefore) latched = true;

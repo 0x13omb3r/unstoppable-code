@@ -57,6 +57,8 @@ import { resolveCoworkWorkspaceId } from '../lib/cowork-migration-map';
 import { validateId } from '../lib/validation';
 import { assertWritableScope } from '../lib/read-only-scope';
 import { notifyPortalStructureChanged } from '../portal/portal-event-bus';
+import { getW5IdentityStore } from '../lib/w5-commit-log-file-store';
+import { W5CommitRefusedError } from '@canopy/core-runtime/node/w5/commit-log/errors';
 
 const id = z.string().transform((value) => {
   validateId(value, 'sidebar id');
@@ -201,6 +203,32 @@ async function transaction<T>(
   );
 }
 
+async function requireAppliedWorktreeInventory(
+  workspaceId: string,
+): Promise<void> {
+  const store = getW5IdentityStore();
+  // Only explicitly injected legacy test stores have no commit log.
+  if (!store) return;
+  if (!store.capture) throw new Error('W5 inventory capture is unavailable');
+  const { capture } = await store.capture({
+    files: [{ kind: 'worktrees', workspaceId }],
+    discoverWorkspaces: false,
+  });
+  const unresolved = capture.log.files.find(
+    ({ file, state }) =>
+      file.kind === 'worktrees' &&
+      file.workspaceId === workspaceId &&
+      state !== 'applied',
+  );
+  // Installed rows cannot disprove membership held by a saved decision.
+  if (unresolved)
+    throw new W5CommitRefusedError(
+      'unapplied-change',
+      'An earlier change to the worktree list has not finished saving.',
+      { commitId: unresolved.commitId },
+    );
+}
+
 async function registryTransaction<T>(
   scope: SidebarItemGroupScope,
   mutate: boolean,
@@ -288,6 +316,7 @@ async function registryTransaction<T>(
       source: 'sidebar_item_groups',
       workspaceId: resolved.workspaceId,
       decide: async (worktrees) => {
+        await requireAppliedWorktreeInventory(resolved.workspaceId);
         const preferences = await readPreferencesFile();
         const ungroupItemIds = new Set<string>();
         const stackUnits = (): string[][] =>
@@ -813,6 +842,7 @@ async function reconcileRegistry<T extends SidebarGroupRegistryItem>(
   options?: WorkEntryRegistryWriteOptions,
   previousUnits?: string[][],
   retainedItemIds: readonly string[] = [],
+  requireAppliedInventory?: () => Promise<void>,
 ): Promise<SidebarGroupRegistryReconciliation<T>> {
   if (options?.groupMutation) return { rows };
   if (options?.sidebarItemGroupId) groupId.parse(options.sidebarItemGroupId);
@@ -976,6 +1006,8 @@ async function reconcileRegistry<T extends SidebarGroupRegistryItem>(
   const changed =
     JSON.stringify(envelope) !== JSON.stringify({ version: 1, groups }) &&
     (envelope !== undefined || groups.length > 0);
+  // Metadata-only registry writes need no sidecar completeness evidence.
+  if (changed) await requireAppliedInventory?.();
   const persist = changed
     ? (): Promise<void> =>
         writeSidebarItemGroups(workspaceId, groups, inventory)
@@ -1018,6 +1050,7 @@ export function initializeSidebarItemGroups(): void {
         options,
         sidebarGroupStackUnits(current, preferences.groupChildBranchesWithBase),
         retainedItemIds,
+        () => requireAppliedWorktreeInventory(workspaceId),
       );
     },
   );

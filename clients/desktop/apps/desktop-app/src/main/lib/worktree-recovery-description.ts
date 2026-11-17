@@ -1,3 +1,4 @@
+import { recordMetadataWork } from '@canopy/desktop-shared/node/work-counters';
 import { readArchiveRecoveryHolds } from './archive-recovery-refs';
 import type {
   WorktreeRecoveryListParams,
@@ -29,6 +30,7 @@ import {
   canFinishArchiveCleanup,
   canResumeFailedChildArchive,
   canResumeInterruptedArchive,
+  inFlightDestructiveOperationIds,
   isRecoveryProjectUnreplaced,
   isDestructiveRecoveryOwnerless,
   isVerifiedProtectedPathIdentity,
@@ -708,9 +710,18 @@ async function describeWorktreeRecoveryFromInspection(
 export async function listWorktreeRecovery(
   request: WorktreeRecoveryListParams,
 ): Promise<WorktreeRecoveryListResult> {
+  recordMetadataWork('recovery.list');
+  // CAN-6948: a running archive is `active` on disk but needs no review. An
+  // owner joins before its first save and leaves after its last, so sampling
+  // both sides of the scan misses no archive that ran during it.
+  const running = new Set(inFlightDestructiveOperationIds());
   const scan = await readArchiveJournalOperations(request.workspaceId);
+  for (const id of inFlightDestructiveOperationIds()) running.add(id);
   const entries: WorktreeRecoveryDescription[] = [];
   for (const operation of scan.operations) {
+    // A caller that names the operation still gets its description.
+    if (!request.operationId && running.has(operation.record.operationId))
+      continue;
     // A completed/delete representative must not hide a conflicting archive copy.
     const record = operation.records.find(
       (entry) =>

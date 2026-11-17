@@ -1,5 +1,6 @@
 'use client';
 
+import { ListRowFrame } from './ListRow';
 import { archivedOverviewRowClassName } from './control-button-shared';
 export { ARCHIVED_ROW_ACTIONS_RESERVE_WIDE } from './control-button-shared';
 import { ControlButton } from './Button';
@@ -121,8 +122,8 @@ export function OverviewListRow({
     </>
   );
   return (
-    <div
-      className="group relative flex w-full items-center rounded-md transition-colors hover:bg-fg-primary/[0.04] pointer-coarse:min-h-11"
+    <ListRowFrame
+      layout="archive-overview"
       data-testid={testId}
       data-state={state}
       aria-busy={busy ? 'true' : undefined}
@@ -143,7 +144,7 @@ export function OverviewListRow({
       <span className="absolute inset-y-0 right-1 flex items-center">
         {actions}
       </span>
-    </div>
+    </ListRowFrame>
   );
 }
 

@@ -1,3 +1,4 @@
+import { CodeBlock } from '@canopy/ui-shared/components/CodeBlock';
 import { useEffect, useMemo, useState, type JSX } from 'react';
 import type { ReportOutputs } from '@canopy/execution-engine/types/pipeline';
 import { formatPipelineReportContent } from '@/lib/pipelineExecutionDetail';
@@ -170,9 +171,16 @@ export function PipelineReportView({
               ) : renderAsMarkdown ? (
                 <PipelineReportMarkdown content={reportState.content ?? ''} />
               ) : (
-                <pre className="overflow-auto whitespace-pre-wrap break-words font-mono text-xs leading-relaxed fg-primary/80">
+                <CodeBlock
+                  variant="bare"
+                  size="xs"
+                  wrap="words"
+                  tone="soft"
+                  replay="block"
+                  proseLeading
+                >
                   {reportState.content ?? ''}
-                </pre>
+                </CodeBlock>
               )}
             </div>
           );

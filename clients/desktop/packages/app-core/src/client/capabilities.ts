@@ -39,6 +39,8 @@ export type WorktreeRemovalCapability = false | 'archive' | 'delete';
  * readonly: capabilities are fixed for the lifetime of a client instance.
  */
 export interface CanopyCapabilities {
+  /** Workspace Workflows feed. Unset/unavailable defaults to denied. */
+  readonly workflowsPanel?: boolean;
   /** Locked Work Entry archive. Unconfigured or unavailable hosts default-deny. */
   readonly standaloneChatArchive?: boolean;
   /** Host can disarm agent-armed work entry removal and answer branch questions. Default-deny. */
@@ -688,10 +690,17 @@ export interface CanopyCapabilities {
   readonly ledgerLocal?: boolean;
   /**
    * Host can read a work scope's observed cost through a `CostClient`.
-   * Optional and default-deny: a host without one offers no Cost panel, no
-   * Session breakdown and no cost row in the usage popover.
+   * Optional and default-deny: a host without one offers no Cost panel and
+   * no cost row in the usage popover.
    */
   readonly costInsights?: boolean;
+  /**
+   * Host serves a chat's full cost breakdown (`core.cost.chat.get` with
+   * detail `full`), which the Session breakdown panel reads (CAN-6941).
+   * Optional and default-deny: a host that serves only the summary row
+   * offers no Session breakdown.
+   */
+  readonly sessionBreakdown?: boolean;
   /**
    * Host answers the `referencePreview.*` reads through its own provider
    * connections. Default-deny: transcripts render references as plain text.

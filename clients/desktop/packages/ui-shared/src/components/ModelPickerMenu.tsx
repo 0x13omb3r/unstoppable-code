@@ -50,6 +50,7 @@ import {
   type IconSize,
 } from '../icons/AppIcons';
 import {
+  DropdownMenuControl,
   DropdownMenuItem,
   type DropdownMenuSurfaceShell,
 } from './DropdownMenu';
@@ -69,12 +70,13 @@ import {
   PickerMenuOptionDescription,
   PickerMenuOptionLabel,
   PickerMenuOptionLeading,
-  PickerMenuSearchInput,
+  MenuSearchInput,
+  menuSearchKeyHandler,
   PickerMenuSampleOption,
   type PickerMenuOptionTrailingSlots,
   type PickerMenuSampleLabelWidth,
 } from './PickerMenu';
-import { ControlButton, Button } from './Button';
+import { Button } from './Button';
 import { Fact, FactList } from './FactList';
 import { RichHoverCard, RichHoverTooltip } from './RichHoverTooltip';
 import { SearchField } from './SearchField';
@@ -2322,9 +2324,8 @@ export function ModelPickerMenu({
               </span>
             }
           >
-            <ControlButton
+            <DropdownMenuControl
               type="button"
-              role="menuitem"
               tabIndex={-1}
               hidden={hidden}
               aria-label="Cursor experimental features"
@@ -2345,7 +2346,7 @@ export function ModelPickerMenu({
               presentation="model-picker-experimental"
             >
               <ExperimentIcon size="sm" aria-hidden="true" />
-            </ControlButton>
+            </DropdownMenuControl>
           </Tooltip>
         ) : undefined
       }
@@ -3074,16 +3075,15 @@ export function ModelPickerMenu({
                       <span className="pointer-events-none absolute right-0 top-1/2 h-6 w-0.5 -translate-y-1/2 rounded-l bg-accent" />
                     ) : null;
                   const tabButton = (
-                    <ControlButton
+                    <DropdownMenuControl
                       key={pickerChrome ? undefined : tab.id}
                       type="button"
-                      role="menuitemradio"
                       aria-label={
                         tab.connected
                           ? tab.label
                           : `${tab.label}. Connect to use its models.`
                       }
-                      aria-checked={active}
+                      choice={{ type: 'radio', checked: active }}
                       hidden={pickerChrome ? undefined : Boolean(modelSearch)}
                       data-testid={`${testIdPrefix}-harness-tab-${tab.id}`}
                       onMouseDown={(event): void => event.preventDefault()}
@@ -3111,7 +3111,7 @@ export function ModelPickerMenu({
                     >
                       {tab.icon}
                       {pickerChrome ? null : indicator}
-                    </ControlButton>
+                    </DropdownMenuControl>
                   );
                   const labelledTabButton = tab.tooltip ? (
                     <Tooltip
@@ -3160,38 +3160,14 @@ export function ModelPickerMenu({
                     // Auto sits there; then both follow the field in turn.
                     className={`relative flex h-9 shrink-0 items-center ${autoToggle ? 'gap-1 pr-2' : modelSearch ? 'pr-8' : ''} pl-1`}
                   >
-                    <PickerMenuSearchInput
+                    <MenuSearchInput
                       ref={searchRef}
                       type="search"
                       value={modelSearch}
                       onChange={(event): void =>
                         setModelSearch(event.target.value)
                       }
-                      onKeyDown={(event): void => {
-                        if (
-                          event.key === 'ArrowDown' ||
-                          event.key === 'ArrowUp'
-                        ) {
-                          const options = event.currentTarget
-                            .closest('[role="menu"]')
-                            ?.querySelectorAll<HTMLButtonElement>(
-                              SEARCH_ENTRY_ROW_SELECTOR,
-                            );
-                          const row =
-                            event.key === 'ArrowDown'
-                              ? options?.[0]
-                              : options?.[options.length - 1];
-                          event.preventDefault();
-                          event.stopPropagation();
-                          row?.focus();
-                          row?.scrollIntoView({ block: 'nearest' });
-                        } else if (
-                          event.key !== 'Escape' &&
-                          event.key !== 'Tab'
-                        ) {
-                          event.stopPropagation();
-                        }
-                      }}
+                      itemSelector={SEARCH_ENTRY_ROW_SELECTOR}
                       placeholder="Search models"
                       aria-label="Search models"
                       data-testid={`${testIdPrefix}-search`}
@@ -3234,31 +3210,9 @@ export function ModelPickerMenu({
                       onValueChange={setModelSearch}
                       // Escape closes the picker, as it does from its rows.
                       clearOnEscape={false}
-                      onKeyDown={(event): void => {
-                        if (
-                          event.key === 'ArrowDown' ||
-                          event.key === 'ArrowUp'
-                        ) {
-                          const options = event.currentTarget
-                            .closest('[role="menu"]')
-                            ?.querySelectorAll<HTMLButtonElement>(
-                              SEARCH_ENTRY_ROW_SELECTOR,
-                            );
-                          const row =
-                            event.key === 'ArrowDown'
-                              ? options?.[0]
-                              : options?.[options.length - 1];
-                          event.preventDefault();
-                          event.stopPropagation();
-                          row?.focus();
-                          row?.scrollIntoView({ block: 'nearest' });
-                        } else if (
-                          event.key !== 'Escape' &&
-                          event.key !== 'Tab'
-                        ) {
-                          event.stopPropagation();
-                        }
-                      }}
+                      onKeyDown={menuSearchKeyHandler(
+                        SEARCH_ENTRY_ROW_SELECTOR,
+                      )}
                       placeholder="Search models"
                       data-testid={`${testIdPrefix}-search`}
                     />

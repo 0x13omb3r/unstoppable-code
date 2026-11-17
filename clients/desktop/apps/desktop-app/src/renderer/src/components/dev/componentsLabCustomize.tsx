@@ -1,5 +1,6 @@
 import type { JSX } from 'react';
 import {
+  TextLink,
   Button,
   CustomizeBreadcrumbs,
   CustomizeInstalledRow,
@@ -689,14 +690,15 @@ export function CustomizePartsSpecimen(): JSX.Element {
               },
               { key: 'skill', label: 'Review changes' },
             ]}
-            renderLink={({ href, className, children }) => (
-              <a
+            renderLink={({ href, shrink, children }) => (
+              <TextLink
                 href={href}
-                className={className}
+                variant="breadcrumb"
+                shrink={shrink}
                 onClick={(event) => event.preventDefault()}
               >
                 {children}
-              </a>
+              </TextLink>
             )}
           />
         </SpecimenCell>

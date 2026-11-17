@@ -1,3 +1,7 @@
+import {
+  spawn as spawnOwnedChild,
+  type ChildProcess,
+} from 'node:child_process';
 import { EventEmitter } from 'node:events';
 import {
   existsSync,
@@ -69,6 +73,40 @@ const HOST_EXIT_ERROR =
 let dir = '';
 const strays = new Set<number>();
 const hostPids = new Set<number>();
+/** Idle children that a case started to give a fake process a real pid. */
+const ownedChildren = new Set<ChildProcess>();
+
+/**
+ * Starts an idle child that this test owns. A fake process handed to the
+ * host takes this real pid, never a literal one, so a signal path that
+ * escapes the mocks can reach only a process the test started. afterEach
+ * stops it by its own handle.
+ */
+async function startOwnedIdleChild(): Promise<number> {
+  const child = spawnOwnedChild(
+    process.execPath,
+    ['-e', 'setInterval(() => undefined, 1 << 30)'],
+    { stdio: 'ignore' },
+  );
+  ownedChildren.add(child);
+  await new Promise<void>((resolve, reject) => {
+    child.once('spawn', () => resolve());
+    child.once('error', reject);
+  });
+  const { pid } = child;
+  if (pid === undefined || pid <= 1) throw new Error('owned child has no pid');
+  return pid;
+}
+
+/** Stops a child this test started, by its own handle, and waits for it. */
+async function stopOwnedChild(child: ChildProcess): Promise<void> {
+  if (child.exitCode !== null || child.signalCode !== null) return;
+  const exited = new Promise<void>((resolve) => {
+    child.once('exit', () => resolve());
+  });
+  child.kill('SIGKILL');
+  await exited;
+}
 
 /** Linux only: a process's state letter and parent, from /proc. */
 function procStat(pid: number): { state: string; parent: number } | undefined {
@@ -303,11 +341,13 @@ beforeAll(() => {
   });
 });
 
-afterEach(() => {
+afterEach(async () => {
   for (const pid of Array.from(strays))
     if (present(pid)) process.kill(pid, 'SIGKILL');
   strays.clear();
   hostPids.clear();
+  await Promise.all(Array.from(ownedChildren, stopOwnedChild));
+  ownedChildren.clear();
 });
 
 afterAll(() => {
@@ -475,7 +515,7 @@ describe('Claude process host in-process: a post-spawn error', () => {
     'a child that errors after it spawned stays tracked until it exits',
     async () => {
       const fake = Object.assign(new EventEmitter(), {
-        pid: 4242,
+        pid: await startOwnedIdleChild(),
         stdin: new PassThrough(),
         stdout: new PassThrough(),
         stderr: new PassThrough(),
@@ -506,7 +546,8 @@ describe('Claude process host in-process: a post-spawn error', () => {
           ...jest.requireActual<object>('node:child_process'),
           spawn,
         }));
-        // The fake pid must never reach a real process group.
+        // The fake's pid (an idle child this test owns) must never reach a
+        // real process group.
         jest.doMock('../lib/process-kill', () => ({
           ...jest.requireActual<object>('../lib/process-kill'),
           killChildProcessGroup: jest.fn(

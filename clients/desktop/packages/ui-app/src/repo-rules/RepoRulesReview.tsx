@@ -1,5 +1,6 @@
 'use client';
 
+import { CodeBlock } from '@canopy/ui-shared/components/CodeBlock';
 import {
   useCallback,
   useEffect,
@@ -1088,14 +1089,19 @@ const noop = (): void => undefined;
 function RulePreviewText({ body }: { readonly body: string }): JSX.Element {
   return (
     <Surface variant="group" size="small" className="overflow-hidden">
-      <pre
-        className={`max-h-64 overflow-auto whitespace-pre-wrap p-2 font-mono text-xs fg-secondary ${REPLAY_BLOCK_CLASS}`}
+      <CodeBlock
+        variant="compact-document"
+        size="xs"
+        wrap="words"
+        tone="secondary"
+        replay="block"
+        className="max-h-64"
         data-testid="repo-rules-preview"
       >
         {body.length > PREVIEW_CHAR_LIMIT
           ? `${body.slice(0, PREVIEW_CHAR_LIMIT)}\n…`
           : body || '(empty)'}
-      </pre>
+      </CodeBlock>
     </Surface>
   );
 }

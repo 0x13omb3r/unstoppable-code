@@ -36,10 +36,23 @@ export type CodeBlockVariant =
   | 'card'
   | 'pane'
   | 'warning'
-  | 'audit-transcript';
+  | 'audit-transcript'
+  | 'document'
+  | 'command'
+  | 'output-preview'
+  | 'compact-document'
+  | 'file-document'
+  | 'command-preview'
+  | 'log-tail'
+  | 'activity-command'
+  | 'catalog-source'
+  | 'approval-document'
+  | 'approval-preview'
+  | 'error-detail'
+  | 'tool-output-section';
 
 /** The type size. `inherit` takes the size of the text around the block. */
-export type CodeBlockSize = 'inherit' | '2xs' | 'xs' | 's';
+export type CodeBlockSize = 'inherit' | '3xs' | '2xs' | 'xs' | 's';
 
 /**
  * How long lines behave. `none` keeps them and scrolls sideways, `words`
@@ -53,6 +66,7 @@ export type CodeBlockTone =
   | 'inherit'
   | 'primary'
   | 'soft'
+  | 'muted-primary'
   | 'secondary'
   | 'tertiary'
   | 'destructive'
@@ -75,23 +89,30 @@ const VARIANT_CLASS_NAMES: Record<CodeBlockVariant, string> = {
   pane: 'px-4 py-3 leading-5',
   warning: 'bg-warning-subtle px-2 py-1',
   'audit-transcript': 'min-h-60 rounded-lg border bg-base/40 p-4 leading-6',
+  document: 'p-3',
+  command: 'px-2.5 py-1.5',
+  'output-preview': 'rounded-lg bg-fg-primary/[0.06] px-3 py-2',
+  'compact-document': 'p-2',
+  'file-document': 'p-4',
+  'command-preview': 'px-2 py-1',
+  'log-tail': 'px-3 py-2 leading-5',
+  'activity-command': 'px-2 py-1.5',
+  'catalog-source':
+    'rounded-md ring-1 ring-inset ring-line-base bg-secondary p-3',
+  'approval-document': 'rounded-md bg-fg-primary/[0.06] px-3 py-2.5',
+  'approval-preview': 'rounded bg-fg-primary/[0.06] px-2 py-1.5',
+  'error-detail': 'rounded-md bg-base p-2 leading-snug',
+  'tool-output-section': 'border-t px-2.5 py-2',
 };
 
-const DEFAULT_SIZES: Record<CodeBlockVariant, CodeBlockSize> = {
-  bare: 'xs',
-  row: 'xs',
+const DEFAULT_SIZES: Partial<Record<CodeBlockVariant, CodeBlockSize>> = {
   snippet: '2xs',
-  panel: 'xs',
-  tint: 'xs',
-  well: 'xs',
   card: 's',
-  pane: 'xs',
-  warning: 'xs',
-  'audit-transcript': 'xs',
 };
 
 const SIZE_CLASS_NAMES: Record<CodeBlockSize, string> = {
   inherit: '',
+  '3xs': 'text-3xs',
   '2xs': 'text-2xs',
   xs: 'text-xs',
   s: 'text-s',
@@ -108,6 +129,7 @@ const TONE_CLASS_NAMES: Record<CodeBlockTone, string> = {
   inherit: '',
   primary: 'fg-primary',
   soft: 'fg-primary/80',
+  'muted-primary': 'fg-primary/90',
   secondary: 'fg-secondary',
   tertiary: 'fg-tertiary',
   destructive: 'fg-destructive/80',
@@ -122,6 +144,8 @@ export interface PlainCodeBlockProps extends ComponentPropsWithRef<'pre'> {
   size?: CodeBlockSize;
   /** A 20px line height, for long blocks people read line by line. */
   relaxed?: boolean;
+  /** Match a surrounding document with more generous line spacing. */
+  proseLeading?: boolean;
   /** How long lines behave (default: `words`). */
   wrap?: CodeBlockWrap;
   /** The ink (default: `secondary`). */
@@ -130,8 +154,8 @@ export interface PlainCodeBlockProps extends ComponentPropsWithRef<'pre'> {
   font?: 'mono' | 'sans';
   /** Whether the block marks its content for session replay (default: `block`). */
   replay?: CodeBlockReplay;
-  /** `hidden` clips a collapsed block; the block scrolls otherwise. */
-  overflow?: 'auto' | 'hidden';
+  /** Auto scrolls in both directions by default. Use hidden when collapsed. */
+  overflow?: 'auto' | 'hidden' | 'horizontal' | 'vertical' | 'visible';
   /** Keeps the text selectable inside a host that turns selection off. */
   selectable?: boolean;
   /** Placement and height in the host. The surface is not the caller's. */
@@ -160,10 +184,22 @@ function withoutFormat<Props extends { format?: string }>(
   return rest;
 }
 
+const OVERFLOW_CLASS_NAMES: Record<
+  NonNullable<PlainCodeBlockProps['overflow']>,
+  string
+> = {
+  auto: 'overflow-auto',
+  hidden: 'overflow-hidden',
+  horizontal: 'overflow-x-auto',
+  vertical: 'overflow-y-auto',
+  visible: '',
+};
+
 function PlainCodeBlock({
   variant = 'panel',
-  size = DEFAULT_SIZES[variant],
+  size = DEFAULT_SIZES[variant] ?? 'xs',
   relaxed = false,
+  proseLeading = false,
   wrap = 'words',
   tone = 'secondary',
   font = 'mono',
@@ -175,11 +211,11 @@ function PlainCodeBlock({
 }: Omit<PlainCodeBlockProps, 'format'>): JSX.Element {
   const classes = [
     replay === 'block' ? REPLAY_BLOCK_CLASS : '',
-    overflow === 'auto' ? 'overflow-auto' : 'overflow-hidden',
+    OVERFLOW_CLASS_NAMES[overflow],
     font === 'mono' ? 'font-mono' : 'font-sans',
     VARIANT_CLASS_NAMES[variant],
     SIZE_CLASS_NAMES[size],
-    relaxed ? 'leading-5' : '',
+    relaxed ? 'leading-5' : proseLeading ? 'leading-relaxed' : '',
     WRAP_CLASS_NAMES[wrap],
     TONE_CLASS_NAMES[tone],
     selectable ? 'select-text' : '',

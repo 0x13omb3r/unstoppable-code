@@ -913,7 +913,7 @@ describe('secured-pipe kit registration', () => {
     ).toEqual(['T07', 'T08', 'T09', 'T10', 'T11', 'T16']);
     expect(
       inventory.exclusions.filter((entry) => entry.kind === 'todo'),
-    ).toHaveLength(7);
+    ).toHaveLength(8);
     expect(() => kits(registration)).toThrow('Duplicate');
   });
   it('replays exact suite ancestry and original kit callbacks without invoking them', () => {

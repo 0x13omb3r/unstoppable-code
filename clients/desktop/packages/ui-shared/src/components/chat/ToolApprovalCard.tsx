@@ -1,5 +1,6 @@
 'use client';
 
+import { CodeBlock } from '../CodeBlock';
 import { Badge } from '../Badge';
 import {
   memo,
@@ -200,15 +201,20 @@ function ApprovalContentPreview({
   const preview = previewApprovalContent(content);
   return (
     <>
-      <pre
+      <CodeBlock
         data-testid="tool-approval-content-preview"
-        className="overflow-x-auto whitespace-pre-wrap break-all rounded bg-fg-primary/[0.06] px-2 py-1.5 font-mono text-2xs fg-primary/80"
+        variant="approval-preview"
+        size="2xs"
+        wrap="all"
+        tone="soft"
+        replay="inherit"
+        overflow="horizontal"
       >
         <code>
           {preview.text}
           {preview.truncated ? '…' : ''}
         </code>
-      </pre>
+      </CodeBlock>
       {preview.truncated && (
         <div className="pt-1 text-2xs">
           <Button

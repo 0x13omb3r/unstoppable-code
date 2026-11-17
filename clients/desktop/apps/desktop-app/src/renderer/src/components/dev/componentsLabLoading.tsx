@@ -11,7 +11,7 @@ import {
   Button,
   CenteredLoadingSpinner,
   DelayedLoadingPlaceholder,
-  InlineTextSkeleton,
+  InlineMeasuredSkeleton,
   LoadingButton,
   LoadingIndicatorStyleProvider,
   LoadingSpinner,
@@ -62,13 +62,11 @@ export function LoadingSpecimen(): JSX.Element {
   return (
     <div className="flex flex-col gap-6">
       <SpecimenPanel title="Inline text: a bar on the text's own line">
-        <SpecimenCell
-          label="InlineTextSkeleton (active), inside a sentence"
-          wide
-        >
+        <SpecimenCell label="Measured text inside a sentence" wide>
           <p className="text-s fg-secondary">
-            Last synced <InlineTextSkeleton active className="w-16" /> by the
-            daemon.
+            Last synced{' '}
+            <InlineMeasuredSkeleton>today at noon</InlineMeasuredSkeleton> by
+            the daemon.
           </p>
         </SpecimenCell>
       </SpecimenPanel>

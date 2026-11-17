@@ -1,6 +1,10 @@
 import { useCallback, useEffect, useState } from 'react';
 import { TRY_AGAIN_LABEL, TRYING_AGAIN_LABEL } from '@canopy/ui-shared';
-import { backgroundServiceNoticeCopy } from '@canopy/ui-shared/lib';
+import {
+  BACKGROUND_SERVICE_RESTART_LABEL,
+  BACKGROUND_SERVICE_RESTARTING_LABEL,
+  backgroundServiceNoticeCopy,
+} from '@canopy/ui-shared/lib';
 import type {
   BackgroundServiceApi,
   BackgroundServiceStatus,
@@ -18,9 +22,10 @@ const TOAST_ID = 'background-service';
 
 /**
  * A warning card in the toast stack while this computer's background service
- * can't be reached, with Try again (CAN-5541). It stays until the service is
- * reached again or the person closes it; a closed card stays closed until the
- * service has been reached and lost again. Renders nothing itself, and never
+ * can't be reached, with Try again or Restart app for a degraded startup
+ * handoff. It stays until the service is reached again or the person closes
+ * it; a closed card stays closed until the service has been reached and lost
+ * again. Renders nothing itself, and never
  * calls the blocked channels in a window that shows another computer.
  */
 export function BackgroundServiceUnavailableNotice(): null {
@@ -29,6 +34,7 @@ export function BackgroundServiceUnavailableNotice(): null {
   );
   const [status, setStatus] = useState<BackgroundServiceStatus | null>(null);
   const [closed, setClosed] = useState(false);
+  const [restartUnavailable, setRestartUnavailable] = useState(false);
 
   // Pushes, the first read and retry answers can land in any order.
   const accept = useCallback((next: BackgroundServiceStatus): void => {
@@ -50,13 +56,18 @@ export function BackgroundServiceUnavailableNotice(): null {
   // Reached again: a later loss shows its card even if this one was closed.
   if (!unavailable && closed) setClosed(false);
   const retry = unavailable && !closed ? status.retry : null;
+  const recovery = unavailable ? status.recovery : undefined;
 
   useEffect(() => {
     if (retry === null) {
       unpinToast(TOAST_ID);
       return;
     }
-    const copy = backgroundServiceNoticeCopy(retry);
+    const copy = backgroundServiceNoticeCopy(
+      retry,
+      recovery,
+      restartUnavailable,
+    );
     pinToast({
       id: TOAST_ID,
       type: 'warning',
@@ -64,22 +75,36 @@ export function BackgroundServiceUnavailableNotice(): null {
       testId: 'background-service-notice',
       meta: {
         title: copy.title,
-        action: {
-          label: TRY_AGAIN_LABEL,
-          busyLabel: TRYING_AGAIN_LABEL,
-          testId: 'background-service-notice-retry',
-          // The card answers the retry itself: it leaves once the service is
-          // reached and says so when it still can't be.
-          keepOpen: true,
-          onClick: () =>
-            getApi()
-              ?.retry()
-              .then(accept, () => undefined),
-        },
+        action:
+          recovery === 'restart_app'
+            ? {
+                label: BACKGROUND_SERVICE_RESTART_LABEL,
+                busyLabel: BACKGROUND_SERVICE_RESTARTING_LABEL,
+                testId: 'background-service-notice-restart',
+                keepOpen: true,
+                onClick: (): Promise<void> =>
+                  window.api.restartApp().then(
+                    (scheduled) => {
+                      if (!scheduled) setRestartUnavailable(true);
+                    },
+                    () => setRestartUnavailable(true),
+                  ),
+              }
+            : {
+                label: TRY_AGAIN_LABEL,
+                busyLabel: TRYING_AGAIN_LABEL,
+                testId: 'background-service-notice-retry',
+                // Keep the failure visible until the service is reached.
+                keepOpen: true,
+                onClick: (): Promise<void> | undefined =>
+                  getApi()
+                    ?.retry()
+                    .then(accept, () => undefined),
+              },
       },
       onDismiss: () => setClosed(true),
     });
-  }, [retry, accept]);
+  }, [retry, recovery, restartUnavailable, accept]);
 
   useEffect(() => (): void => unpinToast(TOAST_ID), []);
 

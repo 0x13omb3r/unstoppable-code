@@ -600,3 +600,13 @@ export {
   type ChatHistoryAction,
   type AgentChatHistoryPort,
 } from './families/chat-history';
+
+export {
+  createMemoryActionFamily,
+  MEMORY_READ_ACTION_TYPES,
+  MEMORY_WRITE_ACTION_TYPES,
+} from './families/memory';
+
+// RequestSecrets, RunWithSecrets and WriteSecretsFile: schemas, results and
+// fixed texts. No surface offers them yet.
+export * from './tools/secrets';

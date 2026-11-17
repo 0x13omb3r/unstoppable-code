@@ -120,6 +120,7 @@ import type {
 } from '../chat-queue-service';
 import type * as ChatQueueServiceModule from '../chat-queue-service';
 import type * as AppAdvisorWatchersModule from '../../app-advisor/watchers';
+import type * as TransientRetryModule from '../../lib/transient-error-retry-service';
 import { ChatStateV2Repository as ChatStateRepository } from '../chat-state-v2-repository';
 import type { ChatStateV2RepositoryOptions } from '../chat-state-v2-repository';
 import type { ChatScopeKey } from '../chat-state-contracts';
@@ -39828,5 +39829,159 @@ describe('hook chat creation (CAN-4138)', () => {
       archived.archivesFile.archived.filter((entry) => entry.tab.id === tab.id),
     ).toHaveLength(1);
     expect(archived.archivesFile.archived[0]?.tab.title).toBe(tab.title);
+  });
+});
+
+// Managed-delegate upward deliveries persist as hidden user messages. Automatic
+// recovery must never replay that host-issued text as if the user typed it.
+describe('automatic recovery of a hidden latest user input', () => {
+  const retryTarget = {
+    projectId: 'hidden-retry-project',
+    worktreeId: 'hidden-retry-worktree',
+    chatId: 'hidden-retry-chat',
+  };
+  const overloaded = { type: 'error', error: 'overloaded_error' };
+  const hiddenInputTab = (hidden: boolean): PersistedChatTab =>
+    ({
+      id: retryTarget.chatId,
+      title: 'Chat',
+      model: 'claude-sonnet-4-5',
+      messages: [
+        {
+          id: 'visible-ask',
+          role: 'user',
+          blocks: [{ type: 'text', text: 'visible ask' }],
+          timestamp: 1,
+        },
+        {
+          id: 'assistant-reply',
+          role: 'assistant',
+          blocks: [{ type: 'text', text: 'ok' }],
+          timestamp: 2,
+        },
+        {
+          id: 'latest-input',
+          role: 'user',
+          blocks: [{ type: 'text', text: 'delegate delivery' }],
+          timestamp: 3,
+          ...(hidden ? { hidden: true } : {}),
+        },
+      ],
+    }) as PersistedChatTab;
+
+  let retry: typeof TransientRetryModule;
+  type DispatchRetry =
+    TransientRetryModule.TransientErrorRetryServiceDependencies['dispatchRetry'];
+  beforeEach(async () => {
+    jest.useFakeTimers();
+    retry = await import('../../lib/transient-error-retry-service');
+    retry.resetTransientRetryServiceForTests();
+  });
+  afterEach(() => {
+    retry.resetTransientRetryServiceForTests();
+    jest.restoreAllMocks();
+    jest.useRealTimers();
+  });
+
+  /** Fails one turn transiently and runs the first scheduled setTimeout retry. */
+  async function failAndRunScheduledRetry(): Promise<void> {
+    retry.noteChatSessionEvent(retryTarget, 'claude', overloaded);
+    await jest.advanceTimersByTimeAsync(31_000);
+  }
+
+  function initRetry(
+    readChatTab: () => Promise<PersistedChatTab>,
+    dispatchRetry?: jest.Mock,
+  ): void {
+    retry.initTransientErrorRetryService(() => null, {
+      readPreferences: async () => ({ autoRetryTransientErrorsChats: true }),
+      readChatTab,
+      getActiveSessions: () => [],
+      ...(dispatchRetry ? { dispatchRetry } : {}),
+      emitState: () => undefined,
+    });
+  }
+
+  it('does not schedule-dispatch a transient retry of a hidden latest input', async () => {
+    const dispatchRetry = jest.fn<
+      ReturnType<DispatchRetry>,
+      Parameters<DispatchRetry>
+    >(async () => undefined);
+    initRetry(async () => hiddenInputTab(true), dispatchRetry);
+    await failAndRunScheduledRetry();
+    expect(dispatchRetry).not.toHaveBeenCalled();
+    expect(retry.getTransientRetryStateSnapshot()).toEqual([]);
+  });
+
+  it('retries a visible latest input by re-sending it', async () => {
+    const dispatchRetry = jest.fn<
+      ReturnType<DispatchRetry>,
+      Parameters<DispatchRetry>
+    >(async () => undefined);
+    initRetry(async () => hiddenInputTab(false), dispatchRetry);
+    await failAndRunScheduledRetry();
+    expect(dispatchRetry).toHaveBeenCalledTimes(1);
+    expect(dispatchRetry.mock.calls[0]?.[1]).toMatchObject({
+      text: 'delegate delivery',
+      resendsUserMessage: true,
+    });
+  });
+
+  it('re-reads the canonical tab and refuses a hidden input that lands before dispatch', async () => {
+    const chatService = await import('../chat-service');
+    jest
+      .spyOn(chatService, 'buildExistingTabDispatchOptions')
+      .mockResolvedValue({});
+    const send = jest
+      .spyOn(chatService, 'sendWorktreeChatMessage')
+      .mockResolvedValue(undefined as never);
+    const reads = [hiddenInputTab(false), hiddenInputTab(true)];
+    initRetry(async () => reads.shift() ?? hiddenInputTab(true));
+    await failAndRunScheduledRetry();
+    expect(send).not.toHaveBeenCalled();
+    expect(reads).toEqual([]);
+    expect(retry.getTransientRetryStateSnapshot()).toEqual([]);
+  });
+
+  it('dispatches a visible latest input through the canonical send', async () => {
+    const chatService = await import('../chat-service');
+    jest
+      .spyOn(chatService, 'buildExistingTabDispatchOptions')
+      .mockResolvedValue({});
+    const send = jest
+      .spyOn(chatService, 'sendWorktreeChatMessage')
+      .mockResolvedValue(undefined as never);
+    initRetry(async () => hiddenInputTab(false));
+    await failAndRunScheduledRetry();
+    expect(send).toHaveBeenCalledTimes(1);
+    expect(send.mock.calls[0]?.[0]).toMatchObject({
+      ...retryTarget,
+      text: 'delegate delivery',
+      initiationSource: 'automation',
+    });
+  });
+
+  // The usage-limited-chats:resume handler and authentication recovery build
+  // their prompt with buildTrustedAutoResume.
+  it('usage-limited-chats:resume sends Continue instead of a hidden latest input', async () => {
+    const { buildTrustedAutoResume } =
+      await import('../../lib/trusted-auto-resume');
+    const { isLatestUserMessageHidden } =
+      await import('@canopy/execution-engine/lib/usage-limit-resume-prompt');
+    const hiddenTab = hiddenInputTab(true);
+    expect(isLatestUserMessageHidden(hiddenTab.messages)).toBe(true);
+    expect(buildTrustedAutoResume(hiddenTab, 'usage_limit')).toMatchObject({
+      text: 'Continue',
+      resendsUserMessage: false,
+      autoResume: { resendsUserMessage: false },
+    });
+
+    const visibleTab = hiddenInputTab(false);
+    expect(isLatestUserMessageHidden(visibleTab.messages)).toBe(false);
+    expect(buildTrustedAutoResume(visibleTab, 'usage_limit')).toMatchObject({
+      text: 'delegate delivery',
+      resendsUserMessage: true,
+      autoResume: { resendsUserMessage: true },
+    });
   });
 });

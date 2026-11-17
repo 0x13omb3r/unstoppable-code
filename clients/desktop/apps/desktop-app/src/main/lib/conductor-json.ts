@@ -1,6 +1,7 @@
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { isMissingFileError } from './fs-utils';
+import { recordMetadataRead } from '@canopy/desktop-shared/node/work-counters';
 import { isRecord } from './type-guards';
 
 export interface ConductorJsonScripts {
@@ -15,6 +16,7 @@ export async function readConductorJson(
   const filePath = getConductorJsonPath(repoPath);
 
   try {
+    recordMetadataRead('config.read.conductor');
     const raw = await readFile(filePath, 'utf8');
     return parseConductorJson(raw);
   } catch (error) {

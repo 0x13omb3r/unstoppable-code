@@ -12,7 +12,10 @@ import type {
 } from '@canopy/desktop-shared/node/archive-recovery-store';
 import type { ArchiveRecoverySettlementPorts } from '../archive-recovery-settlement';
 import type { WorktreeRecoveryResolveParams } from '@canopy/protocol/canopy-core';
-import { journalSchema } from '@canopy/desktop-shared/node/w5-destructive-journal';
+import {
+  journalSchema,
+  type DestructiveRecoveryRecord,
+} from '@canopy/desktop-shared/node/w5-destructive-journal';
 // CAN-5598: W5 deletion boundary equivalence through the real worker.
 // Preserves the CAN-4961/CAN-4975 admission and atomic-removal contracts.
 import type * as CostLifecycle from '../../cost-index/lifecycle';
@@ -135,8 +138,10 @@ import {
   mkdirSync,
   readdirSync,
   readFileSync,
+  realpathSync,
   renameSync,
   rmSync,
+  symlinkSync,
   writeFileSync,
 } from 'node:fs';
 import { join, dirname } from 'node:path';
@@ -176,6 +181,8 @@ import { resetChatStateServiceForTests } from '../../services/chat-state-service
 import { getAppAdvisorWatcherService } from '../../app-advisor/watchers';
 import { setDelegationActivity } from '../../agents/delegation/activity';
 import * as sessionManager from '../../agents/session-manager';
+import * as hostPlatform from '@canopy/core-platform/host-platform';
+import * as instrumentation from '@canopy/desktop-instrumentation/electron/main';
 import * as coworkWorkEntries from '../cowork-work-entries';
 import { acquireWorkspaceDeletionLease } from '../../services/split-lock-service';
 import * as atomicFile from '../atomic-file';
@@ -335,6 +342,423 @@ afterEach(async () => {
   else process.env.CANOPY_DATA_DIR = originalDataDir;
   rmSync(dir, { recursive: true, force: true });
   jest.restoreAllMocks();
+});
+
+describe('CAN-6899 live-state teardown failure', () => {
+  const checkout = (): string => join(root, 'a', 'worktrees', 'one');
+  /** Every entry under a directory with its kind, size and bytes. */
+  const tree = (path: string): string[] => {
+    const entries: string[] = [];
+    const walk = (dir: string, prefix: string): void => {
+      for (const name of readdirSync(dir).sort()) {
+        const full = join(dir, name);
+        const info = lstatSync(full);
+        const rel = `${prefix}${name}`;
+        if (info.isDirectory()) {
+          entries.push(`${rel}/`);
+          walk(full, `${rel}/`);
+        } else if (info.isSymbolicLink()) entries.push(`${rel} -> link`);
+        else
+          entries.push(
+            `${rel} ${String(info.size)} ${readFileSync(full).toString('base64')}`,
+          );
+      }
+    };
+    walk(path, '');
+    return entries;
+  };
+  /** Archive `one` the way an agent's auto-delete does, failing live state. */
+  async function failLiveState(): Promise<void> {
+    const { WorktreeProcessCleanupError } =
+      await import('../worktree-process-cleanup');
+    const { archiveSingleRepoWorktree } = await import('../worktree-service');
+    await expect(
+      archiveSingleRepoWorktree({
+        workspaceId: 'a',
+        worktreeId: 'one',
+        repoPath: repo,
+        archiveTrigger: 'agent',
+        runAutoArchiveTeardown: () => Promise.resolve(),
+        observabilityMode: 'live-service',
+        liveServices: {
+          cleanupLiveState: () =>
+            Promise.reject(
+              new WorktreeProcessCleanupError(
+                'App-owned writer inspection exceeded its deadline; cleanup is incomplete.',
+                'WORKTREE_WRITER_INSPECTION_INCOMPLETE',
+              ),
+            ),
+        },
+      }),
+    ).rejects.toThrow('inspection exceeded its deadline');
+  }
+  async function journal(): Promise<DestructiveRecoveryRecord | null> {
+    const { readDestructiveRecovery } =
+      await import('../w5-destructive-recovery');
+    return readDestructiveRecovery('a', 'one');
+  }
+
+  it('records why live state could not be torn down, and keeps the worktree', async () => {
+    const before = tree(checkout());
+    await failLiveState();
+    expect(await journal()).toMatchObject({
+      operation: 'worktree-archive',
+      state: 'recovery-required',
+      steps: [
+        { phase: 'teardown-script', state: 'done' },
+        {
+          phase: 'live-state-teardown',
+          state: 'pending',
+          code: 'WORKTREE_WRITER_INSPECTION_INCOMPLETE',
+        },
+      ],
+    });
+    // Nothing on disk changed and the worktree is still listed.
+    expect(tree(checkout())).toEqual(before);
+    const { readWorkspaceWorktrees } = await import('../workspace-persistence');
+    expect(
+      (await readWorkspaceWorktrees('a')).some((entry) => entry.id === 'one'),
+    ).toBe(true);
+  });
+
+  it('names the live-state owner that failed when it has no code of its own', async () => {
+    const { cleanupLiveWorktreeState } =
+      await import('../worktree-live-cleanup');
+    const writerCheck = await import('../worktree-process-cleanup');
+    // This computer's own processes are not under test here.
+    jest
+      .spyOn(writerCheck, 'captureLinuxWorktreeWriterVerification')
+      .mockResolvedValue(() => Promise.resolve());
+    jest
+      .spyOn(sessionManager, 'destroyWorktreeSessions')
+      .mockRejectedValue(
+        new Error(
+          'session provider 48213 in /home/someone/private would not stop',
+        ),
+      );
+    const telemetry = jest
+      .spyOn(instrumentation, 'captureDesktopInstrumentationError')
+      .mockImplementation(() => undefined);
+    const before = tree(checkout());
+    const { archiveSingleRepoWorktree } = await import('../worktree-service');
+    await expect(
+      archiveSingleRepoWorktree({
+        workspaceId: 'a',
+        worktreeId: 'one',
+        repoPath: repo,
+        archiveTrigger: 'agent',
+        runAutoArchiveTeardown: () => Promise.resolve(),
+        observabilityMode: 'live-service',
+        liveServices: { cleanupLiveState: cleanupLiveWorktreeState },
+      }),
+    ).rejects.toThrow();
+    expect((await journal())?.steps).toEqual([
+      { phase: 'teardown-script', state: 'done' },
+      {
+        phase: 'live-state-teardown',
+        state: 'pending',
+        code: 'live-state:sessions',
+      },
+    ]);
+    expect(tree(checkout())).toEqual(before);
+    // Telemetry carries the code, never the owner's raw error: no message,
+    // path or process id.
+    const payloads = JSON.stringify(telemetry.mock.calls);
+    expect(payloads).toContain('live-state:sessions');
+    expect(payloads).not.toContain('/home/someone/private');
+    expect(payloads).not.toContain('would not stop');
+    expect(payloads).not.toContain('48213');
+  });
+
+  it('finishes the archive on retry once live state tears down', async () => {
+    await failLiveState();
+    const { archiveSingleRepoWorktree } = await import('../worktree-service');
+    await archiveSingleRepoWorktree({
+      workspaceId: 'a',
+      worktreeId: 'one',
+      repoPath: repo,
+      archiveTrigger: 'agent',
+      runAutoArchiveTeardown: () => Promise.resolve(),
+      observabilityMode: 'live-service',
+      liveServices: { cleanupLiveState: () => Promise.resolve() },
+    });
+    const { readWorkspaceWorktrees } = await import('../workspace-persistence');
+    expect(
+      (await readWorkspaceWorktrees('a')).some((entry) => entry.id === 'one'),
+    ).toBe(false);
+    expect(existsSync(checkout())).toBe(false);
+    expect((await journal())?.state ?? 'completed').toBe('completed');
+  });
+
+  it('keeps the worktree on request, closing only the journal and touching no file', async () => {
+    await failLiveState();
+    const record = await journal();
+    if (!record) throw new Error('Missing journal');
+    const before = tree(checkout());
+    const dataBefore = existsSync(getWorktreeDataDir('a', 'one'))
+      ? tree(getWorktreeDataDir('a', 'one'))
+      : null;
+    const { listWorktreeRecovery } =
+      await import('../worktree-recovery-description');
+    const [entry] = (
+      await listWorktreeRecovery({
+        workspaceId: 'a',
+        operationId: record.operationId,
+      })
+    ).entries;
+    expect(entry?.diagnosis?.verdict).toBe('keep-worktree');
+    expect(entry?.actions.keepWorktree).toEqual({ eligible: true });
+    expect(entry?.actions.retry).toEqual({ eligible: true });
+    if (!entry?.diagnosis) throw new Error('Missing diagnosis');
+    const { resolveWorktreeArchive } =
+      await import('../worktree-archive-resolution');
+    expect(
+      await resolveWorktreeArchive({
+        workspaceId: 'a',
+        operationId: record.operationId,
+        revision: entry.diagnosis.revision,
+        action: 'keep-worktree',
+      }),
+    ).toMatchObject({ status: 'worktree-kept' });
+    expect(tree(checkout())).toEqual(before);
+    expect(
+      existsSync(getWorktreeDataDir('a', 'one'))
+        ? tree(getWorktreeDataDir('a', 'one'))
+        : null,
+    ).toEqual(dataBefore);
+    const { readWorkspaceWorktrees } = await import('../workspace-persistence');
+    expect(
+      (await readWorkspaceWorktrees('a')).some((entry) => entry.id === 'one'),
+    ).toBe(true);
+    // The journal no longer blocks the worktree.
+    const after = await journal();
+    expect(after === null || after.operationId !== record.operationId).toBe(
+      true,
+    );
+  });
+
+  it('refuses to keep or retry a journal recorded for another incarnation, touching nothing', async () => {
+    await failLiveState();
+    const record = await journal();
+    if (!record) throw new Error('Missing journal');
+    // The listed worktree is not the one the journal was written for.
+    for (const name of readdirSync(getW5DestructiveLifecycleDir())) {
+      const path = join(getW5DestructiveLifecycleDir(), name);
+      const parsed = journalSchema.parse(
+        JSON.parse(readFileSync(path, 'utf8')),
+      );
+      if (parsed.operationId !== record.operationId) continue;
+      writeFileSync(
+        path,
+        JSON.stringify({ ...parsed, createdAt: '2000-01-01T00:00:00.000Z' }),
+      );
+    }
+    const before = tree(checkout());
+    const { listWorktreeRecovery } =
+      await import('../worktree-recovery-description');
+    const [entry] = (
+      await listWorktreeRecovery({
+        workspaceId: 'a',
+        operationId: record.operationId,
+      })
+    ).entries;
+    expect(entry?.actions.keepWorktree.eligible).toBe(false);
+    expect(entry?.actions.retry.eligible).toBe(false);
+    const { archiveSingleRepoWorktree } = await import('../worktree-service');
+    await expect(
+      archiveSingleRepoWorktree({
+        workspaceId: 'a',
+        worktreeId: 'one',
+        repoPath: repo,
+        observabilityMode: 'live-service',
+        liveServices: { cleanupLiveState: () => Promise.resolve() },
+      }),
+    ).rejects.toThrow();
+    expect(tree(checkout())).toEqual(before);
+  });
+});
+
+describe('CAN-6899 Linux writer inspection off the main thread', () => {
+  // The inspection runs on a real Worker thread against a /proc tree built
+  // here; its timeouts (setTimeout) refuse rather than wait.
+  const worker = join(__dirname, '..', 'linux-writer-inspection-worker.ts');
+  const hungWorker = join(
+    __dirname,
+    'fixtures',
+    'hung-linux-writer-inspection-worker.ts',
+  );
+  const checkout = (): string => join(root, 'a', 'worktrees', 'one');
+  let proc: string;
+
+  /** One fake process under `proc`, as Linux exposes it. */
+  function fakeProcess(
+    pid: number,
+    options: {
+      children?: readonly number[];
+      cwd?: string;
+      handles?: ReadonlyArray<{ target: string; writable: boolean }>;
+    } = {},
+  ): void {
+    const base = join(proc, String(pid));
+    mkdirSync(join(base, 'fd'), { recursive: true });
+    mkdirSync(join(base, 'fdinfo'), { recursive: true });
+    mkdirSync(join(base, 'task', String(pid)), { recursive: true });
+    const fields = ['S', ...Array.from({ length: 18 }, () => '0'), String(pid)];
+    writeFileSync(join(base, 'stat'), `${pid} (fake) ${fields.join(' ')}\n`);
+    writeFileSync(join(base, 'cmdline'), 'fake\0');
+    symlinkSync(options.cwd ?? '/', join(base, 'cwd'));
+    (options.handles ?? []).forEach((handle, index) => {
+      symlinkSync(handle.target, join(base, 'fd', String(index)));
+      writeFileSync(
+        join(base, 'fdinfo', String(index)),
+        `pos:\t0\nflags:\t${handle.writable ? '0100001' : '0100000'}\n`,
+      );
+    });
+    writeFileSync(
+      join(base, 'task', String(pid), 'children'),
+      (options.children ?? []).join(' '),
+    );
+    writeFileSync(join(base, 'task', String(pid), 'stat'), '');
+  }
+
+  /** The app's process tree: `count` agents with `handles` open files each, none in the worktree. */
+  function fakeAppTree(count: number, handles: number): number[] {
+    const agents = Array.from({ length: count }, (_, index) => 900_000 + index);
+    fakeProcess(process.pid, { children: agents });
+    for (const pid of agents)
+      fakeProcess(pid, {
+        cwd: '/elsewhere',
+        handles: Array.from({ length: handles }, (_, index) => ({
+          target: `/elsewhere/file-${index}`,
+          writable: true,
+        })),
+      });
+    return agents;
+  }
+
+  async function archiveAsAgent(): Promise<unknown> {
+    const { cleanupLiveWorktreeState } =
+      await import('../worktree-live-cleanup');
+    const { archiveSingleRepoWorktree } = await import('../worktree-service');
+    return archiveSingleRepoWorktree({
+      workspaceId: 'a',
+      worktreeId: 'one',
+      repoPath: repo,
+      archiveTrigger: 'agent',
+      runAutoArchiveTeardown: () => Promise.resolve(),
+      observabilityMode: 'live-service',
+      liveServices: { cleanupLiveState: cleanupLiveWorktreeState },
+    });
+  }
+
+  async function journalCode(): Promise<string | undefined> {
+    const { readDestructiveRecovery } =
+      await import('../w5-destructive-recovery');
+    return (await readDestructiveRecovery('a', 'one'))?.steps.find(
+      (step) => step.phase === 'live-state-teardown',
+    )?.code;
+  }
+
+  beforeEach(async () => {
+    proc = join(dir, 'proc');
+    jest.spyOn(hostPlatform, 'hostOperatingSystem').mockReturnValue('linux');
+    jest
+      .spyOn(sessionManager, 'destroyWorktreeSessions')
+      .mockResolvedValue(undefined);
+    const { __setLinuxWriterInspectionWorkerForTests } =
+      await import('../worktree-process-cleanup');
+    __setLinuxWriterInspectionWorkerForTests(worker, proc);
+  });
+  afterEach(async () => {
+    const { __setLinuxWriterInspectionWorkerForTests } =
+      await import('../worktree-process-cleanup');
+    __setLinuxWriterInspectionWorkerForTests(undefined);
+  });
+
+  it('removes the worktree while the main thread is blocked during the inspection and the app runs hundreds of processes', async () => {
+    fakeAppTree(200, 50);
+    const { startedWorkers } = jest.requireActual<typeof TsxWorkerThreads>(
+      '../../ledger/__tests__/fixtures/tsx-worker-threads',
+    );
+    const inspections = (): number =>
+      startedWorkers.filter((started) =>
+        String(started.filename).includes('linux-writer-inspection-worker'),
+      ).length;
+    const before = inspections();
+    const removal = archiveAsAgent();
+    const nextTurn = (): Promise<void> =>
+      new Promise((resolve) => setImmediate(resolve));
+    const inspectionStarted = async (): Promise<void> => {
+      if (inspections() > before) return;
+      await nextTurn();
+      return inspectionStarted();
+    };
+    // An inspection on the main thread starts no worker, and this waits out
+    // the test's timeout.
+    await inspectionStarted();
+    // Block the main thread, while that inspection is under way, longer than
+    // the old main-thread walk's deadline.
+    const until = Date.now() + 2_500;
+    while (Date.now() < until);
+    await removal;
+    expect(existsSync(checkout())).toBe(false);
+  }, 20_000);
+
+  it('keeps the worktree while an app-owned process still writes into it', async () => {
+    const [agent] = fakeAppTree(3, 2);
+    if (agent === undefined) throw new Error('Missing agent');
+    rmSync(join(proc, String(agent)), { recursive: true, force: true });
+    fakeProcess(agent, {
+      cwd: '/elsewhere',
+      handles: [
+        { target: join(realpathSync(checkout()), 'notes.txt'), writable: true },
+      ],
+    });
+    await expect(archiveAsAgent()).rejects.toThrow('writers are still active');
+    expect(await journalCode()).toBe('WORKTREE_WRITERS_ACTIVE');
+    expect(existsSync(checkout())).toBe(true);
+  });
+
+  it('keeps refusing a writer an inspection found before it failed, after the writer is reparented', async () => {
+    const writer = 910_001;
+    const broken = 910_002;
+    fakeProcess(process.pid, { children: [broken, writer] });
+    fakeProcess(writer, {
+      handles: [
+        { target: join(realpathSync(checkout()), 'notes.txt'), writable: true },
+      ],
+    });
+    // A /proc entry that cannot be read: the inspection fails after it has
+    // already seen the writer.
+    mkdirSync(join(proc, String(broken)), { recursive: true });
+    fakeProcess(broken);
+    rmSync(join(proc, String(broken), 'cwd'));
+    writeFileSync(join(proc, String(broken), 'cwd'), '');
+    await expect(archiveAsAgent()).rejects.toThrow();
+    expect(existsSync(checkout())).toBe(true);
+
+    // The writer leaves the app's tree, and the unreadable entry is gone.
+    rmSync(proc, { recursive: true, force: true });
+    fakeProcess(process.pid);
+    fakeProcess(writer, {
+      handles: [
+        { target: join(realpathSync(checkout()), 'notes.txt'), writable: true },
+      ],
+    });
+    await expect(archiveAsAgent()).rejects.toThrow('writers are still active');
+    expect(await journalCode()).toBe('WORKTREE_WRITERS_ACTIVE');
+    expect(existsSync(checkout())).toBe(true);
+  });
+
+  it('refuses the removal, and keeps the worktree, when the inspection never answers', async () => {
+    fakeAppTree(3, 2);
+    const { __setLinuxWriterInspectionWorkerForTests } =
+      await import('../worktree-process-cleanup');
+    __setLinuxWriterInspectionWorkerForTests(hungWorker, proc, 500);
+    await expect(archiveAsAgent()).rejects.toThrow('did not finish');
+    expect(await journalCode()).toBe('WORKTREE_WRITER_INSPECTION_INCOMPLETE');
+    expect(existsSync(checkout())).toBe(true);
+  });
 });
 
 describe('removed worktree browser data', () => {

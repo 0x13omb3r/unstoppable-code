@@ -58,8 +58,6 @@ let w5HandoffPhase: 'pending' | 'ready' | 'degraded' | 'cancelled' | undefined;
 let windowsPreparation:
   | { readonly scope: W5RootEvidenceScope; readonly pending: Promise<void> }
   | undefined;
-let filesConsumerEnabled = false;
-let w5DegradationAwaitingFiles = false;
 // W5e: every client instance id this process ever leased, so its subscriber
 // skips the commit events of its own commits (a session may end first).
 const ownClientInstances = new Set<string>();
@@ -288,8 +286,6 @@ export function getElectronDaemonConnections(): ElectronDaemonConnectionService<
       if (!stopped) getDaemonExecutionStatus().observe(session);
     },
     onReachability: (event) => {
-      // A later consumer must not replay a handoff failure already recovered.
-      if (event.kind === 'reached') w5DegradationAwaitingFiles = false;
       getElectronDaemonHealth().observe(event);
     },
     // The handoff waits a refused daemon out and settles any attach it
@@ -314,23 +310,13 @@ export function noteElectronW5Handoff(
   phase: 'pending' | 'ready' | 'degraded' | 'cancelled',
 ): void {
   w5HandoffPhase = phase;
-  w5DegradationAwaitingFiles = phase === 'degraded' && !filesConsumerEnabled;
-  if (phase === 'degraded')
-    getElectronDaemonHealth().observe({
-      kind: 'unreachable',
-      reason: 'start_failed',
-    });
+  if (phase === 'degraded') getElectronDaemonHealth().requireRestart();
 }
 
-/** Replay an early flip failure once Files actually depends on the service. */
+/** Health remembers an early flip failure until a consumer depends on it. */
 export function setElectronDaemonFilesConsumerEnabled(enabled: boolean): void {
-  filesConsumerEnabled = enabled;
   const health = getElectronDaemonHealth();
   health.setConsumerEnabled('files_reads', enabled);
-  if (enabled && w5DegradationAwaitingFiles) {
-    w5DegradationAwaitingFiles = false;
-    health.observe({ kind: 'unreachable', reason: 'start_failed' });
-  }
 }
 
 /** Files reads bypass the daemon meanwhile, with nothing shown. */

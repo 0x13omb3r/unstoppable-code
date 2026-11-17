@@ -29,3 +29,4 @@ export type {
   PptxTextBody,
   PptxTextRun,
 } from './pptx-parse';
+export { parseOfficeDocument } from './office-parse-client';

@@ -1,6 +1,9 @@
 'use client';
 
-import { TranscriptViewport } from '@canopy/ui-shared/components';
+import {
+  ForkContextNotice,
+  TranscriptViewport,
+} from '@canopy/ui-shared/components';
 import type { CanopyClient } from '@canopy/app-core';
 import {
   foldToolResultsIntoToolUses,
@@ -19,6 +22,7 @@ import {
 } from 'react';
 import type {
   PortalChatMessage,
+  PortalChatSummaryEntity,
   PortalChatTurnGroup,
   PortalAskUserQuestionState,
 } from '@canopy/protocol/portal';
@@ -93,6 +97,7 @@ export interface ChatTranscriptProps {
   readonly appIcon?: ReactNode;
   /** Overrides the default empty-state placeholder. */
   readonly emptyState?: ReactNode;
+  readonly forkContext?: PortalChatSummaryEntity['forkContext'];
   /**
    * Renders the turn-level thumbs up/down control (CAN-1521) for one turn,
    * keyed by the turn's `localMessageId` (the desktop renderer's per-turn
@@ -287,6 +292,7 @@ export function ChatTranscript({
   error,
   appIcon,
   emptyState,
+  forkContext,
   renderTurnFeedback,
   turnNotices,
   renderLatestTurnAction,
@@ -762,6 +768,7 @@ export function ChatTranscript({
   if (
     messages.length === 0 &&
     delivering.length === 0 &&
+    (forkContext == null || emptyState != null) &&
     footerSlot == null &&
     transcriptStatus == null
   ) {
@@ -872,6 +879,9 @@ export function ChatTranscript({
         ref={columnRef}
         className="mx-auto flex w-full max-w-[var(--chat-reading-width)] chat-width-transition shrink-0 flex-col gap-2"
       >
+        {turnGroups.length === 0 && forkContext ? (
+          <ForkContextNotice mode={forkContext} />
+        ) : null}
         <div
           ref={contentRef}
           className={virtualized ? 'relative shrink-0' : 'flex flex-col gap-2'}
@@ -889,6 +899,7 @@ export function ChatTranscript({
           ).map((item) => {
             const index = item.index;
             const turnGroup = turnGroups[index];
+            const startContext = index === 0 ? forkContext : undefined;
             return (
               <div
                 key={turnGroup.userMessageId}
@@ -898,13 +909,16 @@ export function ChatTranscript({
                 data-turn-id={turnGroup.userMessageId}
                 data-index={index}
                 ref={virtualized ? virtualizer.measureElement : undefined}
-                className={virtualized ? 'absolute top-0 w-full' : undefined}
+                className={`${virtualized ? 'absolute top-0 w-full' : ''} ${startContext ? 'flex flex-col gap-2' : ''}`}
                 style={
                   virtualized
                     ? { transform: `translateY(${item.start}px)` }
                     : undefined
                 }
               >
+                {startContext ? (
+                  <ForkContextNotice mode={startContext} />
+                ) : null}
                 <TurnGroupView
                   key={turnGroup.userMessageId}
                   turnGroup={turnGroup}

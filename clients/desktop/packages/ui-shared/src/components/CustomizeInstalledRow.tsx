@@ -1,3 +1,4 @@
+import { ListRowFrame } from './ListRow';
 import { ControlButton } from './Button';
 import type { ComponentType, JSX, MouseEvent, ReactNode } from 'react';
 import {
@@ -877,10 +878,12 @@ export function CustomizeInstalledRow({
     </span>
   );
   return (
-    <li
+    <ListRowFrame
+      layout="customize-installed"
+      as="li"
+      state={compactMcp ? 'compact-control' : 'wrapping-control'}
       data-testid={`customize-${sectionId}-row-${entry.id}`}
       data-dimmed={dimmed ? 'true' : undefined}
-      className={`group/skill-row relative -ml-4 flex min-w-0 ${compactMcp ? 'flex-nowrap' : 'flex-wrap'} items-center gap-2 rounded-xl pr-4 transition-colors hover:bg-subtle`}
     >
       {content}
       <span
@@ -927,6 +930,6 @@ export function CustomizeInstalledRow({
           </span>
         )}
       </div>
-    </li>
+    </ListRowFrame>
   );
 }

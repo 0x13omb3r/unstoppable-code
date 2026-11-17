@@ -22,6 +22,15 @@ export interface TranscriptOverlayBase {
     message: PersistedChatMessage,
   ): Promise<'absent' | 'identical' | 'different'>;
   hasCommittedMessage(chatId: string, messageId: string): Promise<boolean>;
+  /**
+   * The writers' rule for an open row against a committed row with its id:
+   * the same row, or its final form (CAN-6902).
+   */
+  matchesCommitted(
+    chatId: string,
+    open: PersistedChatMessage,
+    committed: PersistedChatMessage,
+  ): Promise<boolean>;
   activeMessages(chatId: string): Promise<PersistedChatMessage[]>;
   activeSnapshot?(chatId: string): Promise<{
     messages: PersistedChatMessage[];
@@ -311,7 +320,8 @@ export class ChatTranscriptOverlay {
         ? this.patches.get(message.id)
         : undefined);
     if (existing)
-      return messageDigest(existing) === messageDigest(message)
+      return messageDigest(existing) === messageDigest(message) ||
+        (await this.base.matchesCommitted(this.chatId, message, existing))
         ? 'identical'
         : 'different';
     if (!this.hasBase || this.removed.has(message.id)) return 'absent';

@@ -26,6 +26,12 @@ export interface CanopyFramedPair {
   readonly server: CanopyFramedConnection;
   /** Raw client-side byte writer, for partial and malformed frame cases. */
   readonly clientWire: { write(chunk: Uint8Array): unknown };
+  /**
+   * Loses the next request's reply on its way back to the client, after the
+   * server has answered it (CAN-6940). Only a binding with one reply per
+   * request, such as HTTP, can lose one alone.
+   */
+  readonly loseNextReply?: () => void;
 }
 
 const DEFAULT_DATA_ROOT_HASH = '0'.repeat(64);

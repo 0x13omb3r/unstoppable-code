@@ -1,6 +1,7 @@
 'use client';
 
 import {
+  TextLink,
   OrganizationFeedActivityMark,
   OrganizationFeedCard,
   Surface,
@@ -338,15 +339,15 @@ function FeedCardShell({
               </SettingsLink>
             )}
             {externalLink && (
-              <a
+              <TextLink
                 href={externalLink.href}
                 target="_blank"
                 rel="noreferrer"
-                className="inline-flex items-center gap-1 fg-accent hover:underline"
+                withIcon
               >
                 {externalLink.label}
                 <ExternalLink size={12} />
-              </a>
+              </TextLink>
             )}
           </div>
           {children && (
@@ -564,15 +565,17 @@ function PrMergedCard({
             ))}
         </MetaRow>
         {item.runUrl && (
-          <a
+          <TextLink
             href={item.runUrl}
             target="_blank"
             rel="noreferrer"
-            className="inline-flex self-start items-center gap-1 text-xs fg-accent hover:underline"
+            size="xs"
+            withIcon
+            className="self-start"
           >
             View run
             <ExternalLink size={11} />
-          </a>
+          </TextLink>
         )}
         {item.summary && <p>{item.summary}</p>}
       </div>

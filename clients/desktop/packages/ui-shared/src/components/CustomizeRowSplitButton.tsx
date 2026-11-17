@@ -1,4 +1,11 @@
-import { Fragment, useId, useRef, useState, type JSX } from 'react';
+import {
+  Fragment,
+  useId,
+  useRef,
+  useState,
+  type JSX,
+  type PointerEvent,
+} from 'react';
 import type {
   InstalledItemStatus,
   InstalledItemTarget,
@@ -9,7 +16,7 @@ import {
   INSTALLED_ITEM_STATUS_ORDER,
   installedItemStatusDescription,
 } from '../lib/installed-item-status';
-import { isMenuOpenBodyFlagSet } from '../lib/menu-open-body-flag';
+import { menuDismissalSwallowsClick } from '../lib/menu-open-body-flag';
 import { SECONDARY_SURFACE_SHELL_CLASS } from '../lib/row-chips';
 import { ControlButton } from './Button';
 import type { CustomizeRowMenuItem } from './CustomizeRowMenu';
@@ -140,8 +147,15 @@ export function CustomizeRowSplitButton({
   const toggle = (): void => setOpen((value) => !value);
   // A menu open elsewhere on the page swallows the click that dismisses it,
   // so a press opens this one at once (as the ⋯ menu does).
-  const openOnPress = (): void => {
-    if (!open && isMenuOpenBodyFlagSet(document)) setOpen(true);
+  const openOnPress = (event: PointerEvent<HTMLButtonElement>): void => {
+    if (
+      !open &&
+      menuDismissalSwallowsClick(
+        event.currentTarget.ownerDocument,
+        event.target,
+      )
+    )
+      setOpen(true);
   };
   const primaryOpensMenu = action.onPrimary === undefined && hasMenu;
   const main = (

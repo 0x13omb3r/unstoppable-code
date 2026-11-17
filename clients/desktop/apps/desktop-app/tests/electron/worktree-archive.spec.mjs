@@ -20,6 +20,110 @@ import { seedWorktreeChat } from './seeders/index.mjs';
 const WORKTREE_BRANCH = 'demo-main';
 const WORKSPACE_ID = 'demo-ts-pnpm-vite';
 
+test('shared rail stays current during continuous snapshot invalidations', async () => {
+  test.setTimeout(60_000);
+  const userDataDir = mkdtempSync(
+    path.join(os.tmpdir(), 'canopy-rail-freshness-'),
+  );
+  seedDemoWorkspaces({ userDataDir, apps: ['ts-pnpm-vite'] });
+  const { electronApp } = await launchCanopy({ userDataDir });
+  try {
+    const window = await electronApp.firstWindow();
+    const app = new CanopyAppDriver(window);
+    await app.waitForShell();
+    await app.openMainPage();
+    const row = window.locator(
+      '[data-testid="worktree-row"][data-branch="demo-main"]',
+    );
+    await expect(row).toBeVisible();
+    const setLabel = (revision) =>
+      window.evaluate(
+        (label) =>
+          window.api.setWorktreeLabel({
+            projectId: 'demo-ts-pnpm-vite',
+            worktreeId: 'demo-main',
+            label,
+          }),
+        `Snapshot revision ${revision}`,
+      );
+    await setLabel(0);
+    await window.evaluate(() => window.api.invalidateDesktopSessionSnapshot());
+    await expect(row).toContainText('Snapshot revision 0');
+
+    await electronApp.evaluate(({ ipcMain }) => {
+      const channel = 'desktop:session-snapshot';
+      // Electron has no public handler getter; retain real captures, delaying only replies.
+      const original = ipcMain._invokeHandlers.get(channel);
+      if (!original) throw new Error('Missing snapshot handler');
+      ipcMain.removeHandler(channel);
+      ipcMain.handle(channel, async (event, ...args) => {
+        const snapshot = await original(event, ...args);
+        await new Promise((resolve) => setTimeout(resolve, 300));
+        return snapshot;
+      });
+      globalThis.__restoreRailFreshness = () => {
+        ipcMain.removeHandler(channel);
+        ipcMain.handle(channel, original);
+      };
+    });
+    await window.evaluate(() => {
+      const state = { stales: 0, errors: [], running: true };
+      state.unsubscribe = window.api.onDesktopSessionSnapshotStale(() => {
+        state.stales += 1;
+      });
+      state.timer = setInterval(() => {
+        window.api.invalidateDesktopSessionSnapshot().catch((error) => {
+          state.errors.push(String(error));
+        });
+      }, 25);
+      window.__railFreshness = state;
+    });
+    await expect
+      .poll(() => window.evaluate(() => window.__railFreshness.stales))
+      .toBeGreaterThanOrEqual(2);
+    // Recovery also queries this channel on staleness, so total invokes cannot
+    // attribute the rail's bounded rate; scratch coverage owns that assertion.
+    for (let revision = 1; revision <= 3; revision += 1) {
+      const stales = await window.evaluate(() => window.__railFreshness.stales);
+      await setLabel(revision);
+      await expect(row).toContainText(`Snapshot revision ${revision}`, {
+        timeout: 5_000,
+      });
+      const stream = await window.evaluate(() => ({
+        running: window.__railFreshness.running,
+        stales: window.__railFreshness.stales,
+      }));
+      expect(stream.running).toBe(true);
+      expect(stream.stales).toBeGreaterThan(stales);
+    }
+
+    await setLabel(4);
+    await window.evaluate(async () => {
+      clearInterval(window.__railFreshness.timer);
+      window.__railFreshness.running = false;
+      await window.api.invalidateDesktopSessionSnapshot();
+    });
+    // The final stale signal must still refresh the rail after the stream stops.
+    await expect(row).toContainText('Snapshot revision 4', { timeout: 5_000 });
+    const errors = await window.evaluate(() => window.__railFreshness.errors);
+    expect(errors).toEqual([]);
+  } finally {
+    try {
+      const window = electronApp.windows()[0];
+      await window?.evaluate(() => {
+        clearInterval(window.__railFreshness?.timer);
+        window.__railFreshness?.unsubscribe();
+      });
+    } finally {
+      try {
+        await electronApp.evaluate(() => globalThis.__restoreRailFreshness?.());
+      } finally {
+        await closeCanopy(electronApp, userDataDir);
+      }
+    }
+  }
+});
+
 /**
  * Whether main's desktop session snapshot lists the worktree. The portal
  * overview is built by the same enumerator, so this is what a paired browser

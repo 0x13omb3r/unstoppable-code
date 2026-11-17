@@ -1,3 +1,4 @@
+import { CodeBlock } from '@canopy/ui-shared/components/CodeBlock';
 import { QuestionPlaygroundPhase } from '@canopy/ui-shared/components';
 import { useEffect, useState, type JSX } from 'react';
 import { ChatContent } from '../chat/ChatContent';
@@ -240,9 +241,16 @@ export function ChatQuestionPlayground(): JSX.Element {
                     padding="compact"
                     className="overflow-auto"
                   >
-                    <pre className="whitespace-pre-wrap break-words text-xs fg-primary">
+                    <CodeBlock
+                      variant="bare"
+                      size="xs"
+                      wrap="words"
+                      tone="primary"
+                      replay="inherit"
+                      overflow="visible"
+                    >
                       {JSON.stringify(safeAnswers, null, 2)}
-                    </pre>
+                    </CodeBlock>
                   </Surface>
                 </Disclosure>
               </div>

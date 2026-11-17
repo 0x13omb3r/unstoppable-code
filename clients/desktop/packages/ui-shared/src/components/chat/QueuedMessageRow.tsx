@@ -1,3 +1,4 @@
+import { ListRowFrame } from '../ListRow';
 import {
   createContext,
   forwardRef,
@@ -26,10 +27,7 @@ import {
   PencilIcon,
   TrashIcon,
 } from '../../icons/AppIcons';
-import {
-  DRAWER_ITEM_ACTIONS_CLASS,
-  DRAWER_ITEM_GROUP_CLASS,
-} from '../../lib/drawer-reveal';
+import { DRAWER_ITEM_ACTIONS_CLASS } from '../../lib/drawer-reveal';
 import { REPLAY_BLOCK_CLASS } from '../../lib/replay-privacy';
 import { ActionTooltip } from '../ActionTooltip';
 import { Button } from '../Button';
@@ -229,12 +227,6 @@ export interface QueuedMessageRowProps extends Omit<
    */
   readonly surface?: 'tray' | 'drawer';
 }
-
-/** The row's own inset, hover and lifted fill, per surface. */
-const ROW_SURFACE_CLASS = {
-  tray: 'px-3',
-  drawer: `${DRAWER_ITEM_GROUP_CLASS} rounded-drawer-row pl-2.75 pr-1 hover:bg-subtle data-[dragging]:bg-muted`,
-} as const;
 
 /**
  * In the drawer, Steer and the menu show on hover, focus or touch, flush
@@ -617,15 +609,16 @@ export const QueuedMessageRow = forwardRef<
       />
     ) : null;
   return (
-    <div
+    <ListRowFrame
+      layout={
+        surface === 'drawer' ? 'queued-message-drawer' : 'queued-message-tray'
+      }
       {...props}
       {...gesture}
       ref={ref}
       role="listitem"
       data-dragging={reorder?.dragging ? '' : undefined}
-      className={`flex h-9 min-w-0 items-center gap-2.5 text-s ${
-        ROW_SURFACE_CLASS[surface]
-      } ${className}`}
+      className={className}
     >
       {reorder ? (
         // The drag handle: the row's leading slot, the shared quiet icon
@@ -739,6 +732,6 @@ export const QueuedMessageRow = forwardRef<
           />
         ) : null}
       </span>
-    </div>
+    </ListRowFrame>
   );
 });

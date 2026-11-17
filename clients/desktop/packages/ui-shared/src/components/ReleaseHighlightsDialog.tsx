@@ -1,9 +1,10 @@
 'use client';
 
+import { ButtonLink } from './ButtonLink';
 import type { JSX, RefObject } from 'react';
 import { useRef } from 'react';
 import type { ReleaseNotesEntry } from '@canopy/protocol/release-notes';
-import { Button, buttonClassName } from './Button';
+import { Button } from './Button';
 import { DialogModal } from './DialogModal';
 import { ReleaseHighlightsList } from './ReleaseHighlightsList';
 
@@ -63,15 +64,16 @@ export function ReleaseHighlightsDialog({
     );
   } else if (fullNotesHref) {
     fullNotesAction = (
-      <a
+      <ButtonLink
         href={fullNotesHref}
         target="_blank"
         rel="noopener noreferrer"
-        className={buttonClassName({ variant: 'secondary', size: 'lg' })}
+        variant="secondary"
+        size="lg"
         data-testid="release-highlights-full-notes"
       >
         View full release notes
-      </a>
+      </ButtonLink>
     );
   }
 

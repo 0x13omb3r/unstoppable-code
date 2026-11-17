@@ -9,6 +9,10 @@ const FORBIDDEN_CHAT_INPUT_FIELDS = [
   'agentSendSetup',
   'agentSteeringActor',
   'delegationNoticeBatchId',
+  // Host-issued managed delegation delivery identity: only the delegation
+  // service creates these rows.
+  'managedDelegationDeliveryId',
+  'internalRow',
   'watcherPartSnapshots',
   'turnOverride',
   'automationDispatch',

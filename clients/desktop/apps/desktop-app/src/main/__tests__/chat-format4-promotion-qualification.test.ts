@@ -42,6 +42,9 @@ import {
   streaming,
 } from './helpers/chat-delta-journal-scope';
 
+// Real syncs dominate: 79% of case time is F_FULLFSYNC on macOS, about 5x slower on the CI runner (CAN-6971).
+jest.setTimeout(60_000);
+
 const scope = { projectId: 'project', worktreeId: 'scope' };
 
 const pathsAt = (
@@ -340,8 +343,6 @@ describe('promotion crash images', () => {
         expect(await resumed.getRevision(scope)).toBe(published ? 3 : 1);
       }
     },
-    // Real syncs on two scope copies; allow for a loaded host.
-    60_000,
   );
 });
 
@@ -566,7 +567,7 @@ describe('rollback round trip', () => {
     const second = repository(PROMOTION_OFF);
     await expectEveryStream(second);
     expect(await store.format()).toBe('v4');
-  }, 60_000);
+  });
 });
 
 describe('the new production defaults are inert while promotion is off (CAN-6192)', () => {

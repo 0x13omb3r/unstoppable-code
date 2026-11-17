@@ -61,10 +61,18 @@ export function deltaJournalWriterDiagnostic(
   scope: ChatScopeKey,
   diagnostic: DeltaJournalDiagnostic,
 ): ChatStateStorageDiagnostic {
-  return {
+  const common = {
     occurredAt: new Date().toISOString(),
-    storageAuthority: 'v2',
+    storageAuthority: 'v2' as const,
     ...scope,
-    ...diagnostic,
   };
+  if (diagnostic.kind === 'delta_journal_conflicting_echo_quarantined')
+    return {
+      ...common,
+      kind: diagnostic.kind,
+      journalBytes: 0,
+      recordCount: diagnostic.rowCount,
+      journalQuarantineFile: diagnostic.journalQuarantineFile,
+    };
+  return { ...common, ...diagnostic };
 }

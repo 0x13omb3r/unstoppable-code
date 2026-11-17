@@ -700,6 +700,16 @@ export const CLIENT_FEATURE_FLAGS = {
     description:
       'Shows the External agents (MCP) row in the desktop account menu, which opens the hosted page through the authenticated Portal.',
   },
+  canopySharedAgentSecretRequests: {
+    key: 'canopy-shared-agent-secret-requests',
+    // On without LaunchDarkly, so development builds and tests can reach the
+    // feature; off when LaunchDarkly is configured but unavailable, and
+    // production stays off until the flag serves true there.
+    launchDarklyDisabledDefaultValue: true,
+    launchDarklyEnabledUnavailableValue: false,
+    description:
+      'Agent secret requests: the RequestSecrets, RunWithSecrets and WriteSecretsFile tools, the secret request form, and the secret_requests capability cloud clients advertise.',
+  },
 } as const;
 
 /**
@@ -826,6 +836,7 @@ export type ClientFeatureFlagValues = {
   [CLIENT_FEATURE_FLAGS.canopyDesktopSkillSuggestions.key]: boolean;
   [CLIENT_FEATURE_FLAGS.canopyDesktopDaemonFilesReads.key]: boolean;
   [CLIENT_FEATURE_FLAGS.canopyWebCoreClient.key]: boolean;
+  [CLIENT_FEATURE_FLAGS.canopySharedAgentSecretRequests.key]: boolean;
 };
 
 /**
@@ -1086,6 +1097,9 @@ export const CLIENT_FEATURE_FLAG_LAUNCHDARKLY_DISABLED_DEFAULTS: ClientFeatureFl
         .launchDarklyDisabledDefaultValue,
     [CLIENT_FEATURE_FLAGS.canopyWebCoreClient.key]:
       CLIENT_FEATURE_FLAGS.canopyWebCoreClient.launchDarklyDisabledDefaultValue,
+    [CLIENT_FEATURE_FLAGS.canopySharedAgentSecretRequests.key]:
+      CLIENT_FEATURE_FLAGS.canopySharedAgentSecretRequests
+        .launchDarklyDisabledDefaultValue,
   };
 
 /**
@@ -1333,6 +1347,9 @@ export const CLIENT_FEATURE_FLAG_LAUNCHDARKLY_ENABLED_UNAVAILABLE_DEFAULTS: Clie
         .launchDarklyEnabledUnavailableValue,
     [CLIENT_FEATURE_FLAGS.canopyWebCoreClient.key]:
       CLIENT_FEATURE_FLAGS.canopyWebCoreClient
+        .launchDarklyEnabledUnavailableValue,
+    [CLIENT_FEATURE_FLAGS.canopySharedAgentSecretRequests.key]:
+      CLIENT_FEATURE_FLAGS.canopySharedAgentSecretRequests
         .launchDarklyEnabledUnavailableValue,
   };
 

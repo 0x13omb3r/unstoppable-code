@@ -35,7 +35,6 @@ import {
 } from '@canopy/desktop-shared/types';
 import { accountProxyHarnessForChat } from '@canopy/desktop-shared/lib/account-proxy';
 import { useNavigationStore } from '@/stores/navigationStore';
-import { useAiCreditsOnlyBilling } from '@/hooks/useAiCreditsOnlyBilling';
 import { useChatAccountSource } from '@/stores/accountProxyStore';
 import { desktopCostClient } from '@/lib/cost/ipc-cost-client';
 import { openSessionBreakdownPanel } from '@/lib/cost/open-cost-panels';
@@ -207,10 +206,10 @@ export function UsageIndicator({
     isCostWorkScope(contextTarget.projectId, contextTarget.worktreeId)
       ? contextTarget
       : undefined;
-  // An account that bills every turn to AI Credits sees no USD for a chat
-  // billed that way: AI Credits is its only money figure (CAN-5028).
-  const creditsOnly = useAiCreditsOnlyBilling();
-  const costHidden = hideCost || (creditsOnly && aiCreditsBilled);
+  // An account that bills every turn to AI Credits sees its cost in credits,
+  // never USD (CAN-5028): the root's DesktopCostCurrencyProvider sets the
+  // units the popover reads (CAN-6634). Only a cloud chat hides its cost.
+  const costHidden = hideCost;
   const costScope: CostScopeRef = {
     kind: 'entry',
     projectId: costTarget?.projectId ?? '',

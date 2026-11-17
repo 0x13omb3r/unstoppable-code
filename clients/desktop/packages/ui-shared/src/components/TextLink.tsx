@@ -1,5 +1,19 @@
 import { forwardRef, type AnchorHTMLAttributes, type JSX } from 'react';
 import { buttonClassName } from './Button';
+import { MCP_ROW_ACTION_CLASS_NAME } from '../lib/mcp-card-display';
+import { REPLAY_BLOCK_CLASS } from '../lib/replay-privacy';
+import { SECONDARY_SURFACE_CLASS } from '../lib/row-chips';
+import {
+  CUSTOMIZE_CRUMB_CLASS,
+  INLINE_CHIP_CLASS,
+  INTERACTIVE_CLASS,
+  ROW_TRIGGER_CLASS,
+  STORE_BADGE_CONTROL_CLASS,
+} from './control-button-shared';
+import {
+  sidebarNavIconItemClassName,
+  sidebarNavItemClassName,
+} from './sidebar-item-classes';
 
 /**
  * - `accent`: a link that stands on its own (a row's "View on GitHub").
@@ -14,7 +28,22 @@ export type TextLinkVariant =
   | 'quiet'
   | 'quiet-underlined'
   | 'inline'
-  | 'pull-request-header';
+  | 'pull-request-header'
+  | 'muted'
+  | 'informational'
+  | 'inherited'
+  | 'inherited-underlined'
+  | 'inherited-hover'
+  | 'mention'
+  | 'breadcrumb'
+  | 'capability'
+  | 'mcp-title'
+  | 'mcp-action'
+  | 'merge-queue-github'
+  | 'store-badge'
+  | 'worktree-pr-badge'
+  | 'worktree-pr-metadata'
+  | 'sidebar-navigation';
 
 /** The prose link look, shared with agent transcripts. */
 export const TEXT_LINK_INLINE_CLASS =
@@ -28,11 +57,57 @@ const VARIANT_CLASS_NAMES: Record<TextLinkVariant, string> = {
   inline: TEXT_LINK_INLINE_CLASS,
   'pull-request-header':
     'electron-no-drag inline-flex h-7 shrink-0 items-center gap-1.5 whitespace-nowrap rounded-md px-2.5 text-xs font-normal fg-primary transition-colors hover:bg-subtle',
+  muted: 'focus-ring rounded fg-primary/80 transition-colors hover:fg-primary',
+  informational: 'focus-ring rounded fg-info hover:underline',
+  inherited: '',
+  'inherited-underlined': 'underline transition-colors hover:fg-primary',
+  'inherited-hover': 'underline-offset-2 hover:underline',
+  mention: INLINE_CHIP_CLASS,
+  breadcrumb: CUSTOMIZE_CRUMB_CLASS,
+  capability: INTERACTIVE_CLASS,
+  'mcp-title':
+    'focus-ring rounded text-left hover:underline min-w-0 break-words fg-primary',
+  'mcp-action': `${MCP_ROW_ACTION_CLASS_NAME} ${SECONDARY_SURFACE_CLASS} fg-primary`,
+  'merge-queue-github':
+    'focus-ring inline-flex h-6 shrink-0 items-center gap-1.5 rounded-md text-2xs fg-primary transition-colors hover:bg-subtle',
+  'store-badge': STORE_BADGE_CONTROL_CLASS,
+  'worktree-pr-badge':
+    'inline-flex items-center whitespace-nowrap text-2xs font-normal leading-4',
+  'worktree-pr-metadata':
+    'inline-flex h-4 items-center gap-1 whitespace-nowrap rounded px-0.5 align-bottom font-normal leading-4 transition-colors',
+  'sidebar-navigation': '',
 };
 
-export interface TextLinkProps extends AnchorHTMLAttributes<HTMLAnchorElement> {
+const LINK_SIZE_CLASSES = { xs: 'text-xs', s: 'text-s' } as const;
+
+export type WorktreePrLinkTone =
+  | ''
+  | 'fg-destructive'
+  | 'fg-warning'
+  | 'fg-success'
+  | 'fg-secondary';
+
+export interface TextLinkProps extends Omit<
+  AnchorHTMLAttributes<HTMLAnchorElement>,
+  'size'
+> {
   href: string;
   variant?: TextLinkVariant;
+  size?: keyof typeof LINK_SIZE_CLASSES;
+  emphasis?: 'medium';
+  /** Align an icon beside the link label. */
+  withIcon?: boolean;
+  shrink?: boolean;
+  row?: boolean;
+  compact?: boolean;
+  iconOnly?: boolean;
+  tone?: WorktreePrLinkTone;
+  navigation?: {
+    selected: boolean;
+    touch: boolean;
+    layout: 'row' | 'icon' | 'label';
+  };
+  replayBlock?: boolean;
   /** Placement only (`self-start`, `shrink-0`, margins); never colour or type. */
   className?: string;
 }
@@ -60,10 +135,50 @@ export function textLinkClassName(
  */
 export const TextLink = forwardRef<HTMLAnchorElement, TextLinkProps>(
   function TextLink(
-    { href, variant = 'accent', className = '', ...props },
+    {
+      href,
+      variant = 'accent',
+      className = '',
+      size,
+      emphasis,
+      withIcon,
+      shrink,
+      row,
+      compact,
+      iconOnly,
+      tone,
+      navigation,
+      replayBlock,
+      ...props
+    },
     ref,
   ): JSX.Element {
     const external = opensInNewTab(href);
+    let recipe = VARIANT_CLASS_NAMES[variant];
+    if (variant === 'breadcrumb' && shrink) recipe += ' max-w-full';
+    if (variant === 'capability' && row) recipe = ROW_TRIGGER_CLASS;
+    if (variant === 'mcp-title' && !compact) recipe += ' text-s font-medium';
+    if (variant === 'merge-queue-github')
+      recipe += iconOnly ? ' w-6 justify-center' : ' px-2';
+    if (variant === 'worktree-pr-metadata' && tone) recipe += ` ${tone}`;
+    if (variant === 'sidebar-navigation' && navigation) {
+      recipe =
+        navigation.layout === 'row'
+          ? sidebarNavItemClassName(navigation.selected, navigation.touch)
+          : sidebarNavIconItemClassName(navigation.selected);
+      if (navigation.layout === 'label')
+        recipe += ' w-auto min-w-0 px-2 text-s';
+    }
+    const classes = [
+      recipe,
+      size && LINK_SIZE_CLASSES[size],
+      emphasis && 'font-medium',
+      withIcon && 'inline-flex items-center gap-1',
+      replayBlock && REPLAY_BLOCK_CLASS,
+      className,
+    ]
+      .filter(Boolean)
+      .join(' ');
     return (
       <a
         ref={ref}
@@ -71,7 +186,7 @@ export const TextLink = forwardRef<HTMLAnchorElement, TextLinkProps>(
         target={external ? '_blank' : undefined}
         rel={external ? 'noopener noreferrer' : undefined}
         {...props}
-        className={textLinkClassName(variant, className)}
+        className={classes}
       />
     );
   },

@@ -31,6 +31,7 @@ export interface CustomizeBreadcrumbsProps {
   readonly renderLink?: (props: {
     href: string;
     className: string;
+    shrink: boolean;
     testId?: string;
     entryKind?: string;
     children: ReactNode;
@@ -83,6 +84,7 @@ export function CustomizeBreadcrumbs({
             crumb = renderLink({
               href: item.href,
               className: navigable,
+              shrink: item.shrink === true,
               testId: item.testId,
               entryKind: item.entryKind,
               children: label,

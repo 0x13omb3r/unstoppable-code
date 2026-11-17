@@ -14,6 +14,7 @@ import {
   withSharedLifecycleJournalAccess,
 } from './w5-destructive-recovery';
 import { getW5DestructiveLifecycleDir } from './paths';
+import { recordMetadataWork } from '@canopy/desktop-shared/node/work-counters';
 
 export interface ArchiveJournalOperation {
   record: DestructiveRecoveryRecord;
@@ -34,6 +35,7 @@ export function readArchiveJournalOperations(workspaceId: string): Promise<{
   readable: boolean;
   directoryUnreadable: boolean;
 }> {
+  recordMetadataWork('recovery.journalScan');
   return withSharedLifecycleJournalAccess(async () => {
     try {
       const inspection = await inspectDestructiveJournals(getCanopyDataDir());

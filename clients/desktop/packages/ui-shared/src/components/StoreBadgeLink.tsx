@@ -1,4 +1,4 @@
-import { STORE_BADGE_CONTROL_CLASS } from './control-button-shared';
+import { TextLink } from './TextLink';
 import { ControlButton } from './Button';
 import type { JSX } from 'react';
 
@@ -63,16 +63,16 @@ export function StoreBadgeLink({
 
   if (activation.kind === 'anchor') {
     return (
-      <a
+      <TextLink
         data-testid={`store-badge-${link.store}`}
         data-dd-action-name={alt}
         href={link.url}
         target="_blank"
         rel="noreferrer noopener"
-        className={STORE_BADGE_CONTROL_CLASS}
+        variant="store-badge"
       >
         {image}
-      </a>
+      </TextLink>
     );
   }
 

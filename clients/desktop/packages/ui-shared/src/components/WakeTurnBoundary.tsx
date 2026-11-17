@@ -1,91 +1,114 @@
 import type { JSX } from 'react';
-import { ListStartIcon, MessageCircleDashedIcon } from '../icons/AppIcons';
+import { AppAdvisorWatcherIcon } from '../icons/AppIcons';
+import type { ChatWatcherFiredInfo } from '@canopy/protocol/portal';
 import { Button } from './Button';
-import { Tooltip } from './Tooltip';
-import { REPLAY_BLOCK_CLASS } from '../lib/replay-privacy';
+import { REPLAY_BLOCK_CLASS, REPLAY_MASK_CLASS } from '../lib/replay-privacy';
+import { TranscriptEventRow } from './chat/TranscriptEventRow';
 
 export interface WakeTurnBoundaryProps {
-  /**
-   * The finished task, from its tool call's description, command or prompt;
-   * absent when the provider doesn't name it. Blocked in session replay.
-   */
+  /** The task's description, command or prompt. Blocked in session replay. */
   taskLabel?: string;
-  /** The task reported an event and keeps running, rather than finishing. */
+  /** The task reported an event and keeps running. */
   event?: boolean;
-  /** A scheduled prompt (a cron job) fired; `taskLabel` is its prompt. */
   scheduled?: boolean;
-  /** The agent continued after Canopy restarted it to load tools. */
   toolsLoaded?: boolean;
-  /** Shows the turn that started the task; absent when it isn't in view. */
+  watcher?: ChatWatcherFiredInfo;
+  followUp?: string;
+  timestamp?: number;
+  forceOpen?: boolean;
   onShowSpawningTurn?: () => void;
 }
 
-/**
- * The head row of an autonomous (wake) turn: the agent continued on its own
- * after background work finished or reported an event (turn-state D2), for
- * a scheduled prompt that fired, or after loading tools.
- */
+/** The shared transcript row for an agent turn started by a wake event. */
 export function WakeTurnBoundary({
   taskLabel,
   event,
   scheduled,
   toolsLoaded,
+  watcher,
+  followUp,
+  timestamp,
+  forceOpen,
   onShowSpawningTurn,
 }: WakeTurnBoundaryProps): JSX.Element {
+  const watchers = watcher?.combinedWatchers ?? [];
+  const summary = watcher
+    ? watchers.length > 1
+      ? `${watchers.length} watchers`
+      : watcher.kind
+    : toolsLoaded
+      ? 'Loaded tools'
+      : scheduled
+        ? 'Scheduled prompt'
+        : event
+          ? 'Background task reported'
+          : 'Background task finished';
+  const time =
+    timestamp !== undefined && Number.isFinite(timestamp)
+      ? new Date(timestamp).toLocaleTimeString([], {
+          hour: 'numeric',
+          minute: '2-digit',
+        })
+      : undefined;
+
   return (
-    <div
-      data-testid="wake-turn-boundary"
-      className="flex items-center gap-2 rounded-lg border bg-fg-primary/[0.03] px-3 py-1.5 text-xs fg-secondary"
-    >
-      <MessageCircleDashedIcon
-        size={14}
-        aria-hidden="true"
-        className="flex-shrink-0"
-      />
-      <span className="min-w-0 flex-1 truncate">
-        {toolsLoaded ? (
-          'Continued after loading tools'
-        ) : scheduled ? (
-          taskLabel ? (
-            <>
-              Continued for the scheduled prompt{' '}
-              <strong className={REPLAY_BLOCK_CLASS}>{taskLabel}</strong>
-            </>
-          ) : (
-            'Continued for a scheduled prompt'
-          )
-        ) : event ? (
-          taskLabel ? (
-            <>
-              Continued after an event from{' '}
-              <strong className={REPLAY_BLOCK_CLASS}>{taskLabel}</strong>
-            </>
-          ) : (
-            'Continued after a background event'
-          )
-        ) : taskLabel ? (
+    <TranscriptEventRow
+      dataTestId="wake-turn-boundary"
+      forceOpen={forceOpen}
+      icon={<AppAdvisorWatcherIcon size="sm" aria-hidden="true" />}
+      label={
+        <>
+          Woke up:{' '}
+          <span className={watcher ? REPLAY_MASK_CLASS : undefined}>
+            {summary}
+          </span>
+        </>
+      }
+      detail={
+        taskLabel ? (
           <>
-            Continued after{' '}
-            <strong className={REPLAY_BLOCK_CLASS}>{taskLabel}</strong> finished
+            <span className={REPLAY_BLOCK_CLASS}>{taskLabel}</span>
+            {time ? <> · {time}</> : null}
           </>
         ) : (
-          'Continued after background work finished'
-        )}
-      </span>
-      {onShowSpawningTurn ? (
-        <Tooltip label="Show where it started">
-          <Button
-            variant="ghost"
-            size="sm"
-            iconOnly
-            aria-label="Show where it started"
-            data-testid="wake-turn-boundary-show-spawning-turn"
-            onClick={onShowSpawningTurn}
-          >
-            <ListStartIcon size={14} aria-hidden="true" />
-          </Button>
-        </Tooltip>
+          time
+        )
+      }
+    >
+      {taskLabel || followUp || watchers.length > 0 || onShowSpawningTurn ? (
+        <div className="flex min-w-0 flex-col items-start gap-2">
+          {taskLabel ? (
+            <div className={REPLAY_BLOCK_CLASS}>{taskLabel}</div>
+          ) : null}
+          {watchers.length > 0 ? (
+            watchers.map(({ kind, text }, index) => (
+              <div key={`${kind}-${index}`} className="min-w-0">
+                <div className={REPLAY_MASK_CLASS}>{kind}</div>
+                <div
+                  className={`${REPLAY_BLOCK_CLASS} whitespace-pre-wrap break-words`}
+                >
+                  {text}
+                </div>
+              </div>
+            ))
+          ) : followUp ? (
+            <div
+              className={`${REPLAY_BLOCK_CLASS} whitespace-pre-wrap break-words`}
+            >
+              {followUp}
+            </div>
+          ) : null}
+          {onShowSpawningTurn ? (
+            <Button
+              variant="link"
+              data-testid="wake-turn-boundary-show-spawning-turn"
+              onClick={onShowSpawningTurn}
+            >
+              Show where it started
+            </Button>
+          ) : null}
+        </div>
       ) : null}
-    </div>
+    </TranscriptEventRow>
   );
 }

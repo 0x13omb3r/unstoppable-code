@@ -20,7 +20,7 @@ import {
   PickerMenuOptionLeading,
   PickerMenuOptionTrailing,
   PickerMenuSearchHeader,
-  PickerMenuSearchInput,
+  PickListSearch,
   PickerMenuSection,
   PickerMenuSectionLabel,
   PickerMenuState,
@@ -1292,28 +1292,6 @@ function BranchTargetPicker({
     scrollPickerOptionIntoView(listRef.current, activeKey, 'data-option-key');
   }, [isOpen, activeKey, consumeActiveOptionScrollIntent]);
 
-  function handleSearchKeyDown(event: KeyboardEvent<HTMLInputElement>): void {
-    if (event.key === 'Escape') {
-      event.preventDefault();
-      closePicker();
-      return;
-    }
-    if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
-      event.preventDefault();
-      if (navOptions.length === 0) return;
-      const delta = event.key === 'ArrowDown' ? 1 : -1;
-      markActiveOptionScrollIntent();
-      setActiveIndex(
-        (index) => (index + delta + navOptions.length) % navOptions.length,
-      );
-      return;
-    }
-    if (event.key === 'Enter') {
-      event.preventDefault();
-      navOptions[activeIndex]?.onSelect();
-    }
-  }
-
   // Auto-detect on change (never effect-driven): only an UNAMBIGUOUS PR
   // reference — a full GitHub PR URL, or an explicit `#123` — jumps to the
   // PRs tab. A Linear identifier/URL jumps to Issues even without a Linear
@@ -1480,16 +1458,28 @@ function BranchTargetPicker({
       data-testid={worktreeHost?.['data-testid'] ?? 'home-branch-picker-menu'}
     >
       <PickerMenuSearchHeader>
-        <PickerMenuSearchInput
+        <PickListSearch
           ref={searchRef}
           type="text"
           value={search}
           onChange={(event) => handleSearchChange(event.target.value)}
-          onKeyDown={handleSearchKeyDown}
           placeholder={searchPlaceholder}
           aria-label={searchPlaceholder}
-          aria-controls="home-branch-picker-options"
-          aria-activedescendant={
+          keyboard={{
+            keys: navOptions.map(({ key }) => key),
+            activeKey,
+            onActiveKeyChange: (key) => {
+              markActiveOptionScrollIntent();
+              setActiveIndex(
+                navOptions.findIndex((option) => option.key === key),
+              );
+            },
+            onPick: (key) =>
+              navOptions.find((option) => option.key === key)?.onSelect(),
+            onEscape: closePicker,
+          }}
+          listId="home-branch-picker-options"
+          activeDescendant={
             activeKey ? `home-branch-picker-option-${activeKey}` : undefined
           }
           data-testid="home-branch-picker-search"

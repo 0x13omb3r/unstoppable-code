@@ -275,7 +275,7 @@ test('desktop preload avoids renderer vm and still exposes the IPC bridge', asyn
 test.describe('native background service recovery', () => {
   test.describe.configure({ retries: 0 });
 
-  test('Try again recovers the service and delivers the sidebar invalidation through preload', async () => {
+  async function exerciseRecovery(degradedStartup) {
     // Allow startup, the lease's 30 s failure-delivery bound, and recovery waits.
     test.setTimeout(150_000);
     test.skip(
@@ -364,6 +364,8 @@ test.describe('native background service recovery', () => {
         worktreeId,
         tabs: [{ id: 'empty', title: 'Recovery proof' }],
       });
+      if (degradedStartup)
+        expect(bridge.remove('packaged daemon')).toBe('removed');
       launched = await launchCanopy({
         rootPath: runtimeRoot,
         userDataDir,
@@ -378,6 +380,50 @@ test.describe('native background service recovery', () => {
           (request) => window.api.getFileTreeRoots(request),
           target,
         );
+      if (degradedStartup) {
+        // A failed handoff closes its W5 lease and disables that consumer.
+        // Files is lazy: the first read enables it and replays the failure.
+        expect((await readRoots()).roots.length).toBeGreaterThan(0);
+        const notice = window.getByTestId('background-service-notice');
+        await expect(notice).toBeVisible({ timeout: 45_000 });
+        await expect
+          .poll(() =>
+            window.evaluate(() => window.api.backgroundService.getStatus()),
+          )
+          .toMatchObject({
+            state: 'unavailable',
+            reason: 'start_failed',
+            recovery: 'restart_app',
+          });
+        const mainLogPath = path.join(userDataDir, 'logs/main.log');
+        await expect
+          .poll(() =>
+            existsSync(mainLogPath) ? readFileSync(mainLogPath, 'utf8') : '',
+          )
+          .toContain(
+            'W5 startup handoff failed; workspace records are read-only',
+          );
+        await test.info().attach('degraded-handoff-main-log', {
+          path: mainLogPath,
+          contentType: 'text/plain',
+        });
+        await expect(notice).toContainText('Restart the app');
+        await expect(
+          window.getByTestId('background-service-notice-retry'),
+        ).toHaveCount(0);
+        const restart = window.getByTestId('background-service-notice-restart');
+        await expect(restart).toHaveText('Restart app');
+        expect((await readRoots()).roots.length).toBeGreaterThan(0);
+        expect(bridge.restage('packaged daemon')).toBe('restaged');
+        // Restaging cannot repair the one-shot startup handoff in this process.
+        expect((await readRoots()).roots.length).toBeGreaterThan(0);
+        expect(existsSync(descriptorPath)).toBe(false);
+        // The unpackaged app refuses automatic restart through the real IPC.
+        await restart.click();
+        await expect(notice).toContainText('Quit and reopen the app');
+        await expect(notice).toContainText('Save any unsaved changes first.');
+        return;
+      }
       expect((await readRoots()).roots.length).toBeGreaterThan(0);
       await expect
         .poll(
@@ -514,5 +560,13 @@ test.describe('native background service recovery', () => {
         await removeTestDataDir(owner);
       }
     }
+  }
+
+  test('Try again recovers the service and delivers the sidebar invalidation through preload', async () => {
+    await exerciseRecovery(false);
+  });
+
+  test('degraded startup offers Restart app and preserves in-process Files reads', async () => {
+    await exerciseRecovery(true);
   });
 });

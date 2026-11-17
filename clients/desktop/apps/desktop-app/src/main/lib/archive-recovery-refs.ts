@@ -7,6 +7,7 @@ import {
   ArchiveRecoveryRefusedError,
   type ArchiveRecoveryReceipt,
 } from '@canopy/desktop-shared/node/archive-recovery-store';
+import { recordMetadataWork } from '@canopy/desktop-shared/node/work-counters';
 
 export function archiveRecoveryStore(): ArchiveRecoveryStore {
   return new ArchiveRecoveryStore(getCanopyDataDir());
@@ -27,6 +28,7 @@ export async function archiveRecoveryRepositoryIdentity(
 export async function readArchiveRecoveryHolds(
   workspaceId: string,
 ): Promise<ArchiveRecoveryReceipt[]> {
+  recordMetadataWork('recovery.holdsRead');
   return archiveRecoveryStore().list(workspaceId);
 }
 

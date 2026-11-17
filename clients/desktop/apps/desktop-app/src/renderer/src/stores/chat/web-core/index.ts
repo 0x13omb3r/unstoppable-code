@@ -8,6 +8,7 @@ import {
   createWebCoreChatBackendCore,
   webCoreUnavailable,
   type CloudSendReceiptOutcome,
+  type CloudSendSupersedeOutcome,
   type CloudTabModel,
   type WebCoreAttachmentFile,
   type WebCoreChatBackendCore,
@@ -333,6 +334,18 @@ export function readWebCoreSendReceipt(
 ): Promise<CloudSendReceiptOutcome> {
   webCoreChatBackend();
   return core?.readSendReceipt(target, commandId) ?? Promise.resolve('unknown');
+}
+
+/**
+ * Stops the send posted to a chat as `commandId` from ever applying, before
+ * it is sent again (CAN-6856); `unknown` while the cloud can't say.
+ */
+export function supersedeWebCoreSend(
+  target: { projectId: string; worktreeId: string; chatId: string },
+  commandId: string,
+): Promise<CloudSendSupersedeOutcome> {
+  webCoreChatBackend();
+  return core?.supersedeSend(target, commandId) ?? Promise.resolve('unknown');
 }
 
 /** Ends every web core stream: the connection went offline or was turned off. */

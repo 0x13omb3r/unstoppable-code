@@ -9,7 +9,10 @@ import {
 } from 'react';
 import { derivePlanTitle } from '@canopy/protocol/plans';
 import {
+  PickListField,
+  PickerMenuList,
   PickerMenuOption,
+  usePickListKeys,
   Badge,
   Button,
   DelayedLoadingPlaceholder,
@@ -17,7 +20,6 @@ import {
   Disclosure,
   ErrorState,
   HighlightedSegments,
-  SearchField,
   Skeleton,
   Surface,
   splitMatchSegments,
@@ -390,39 +392,29 @@ export function ImportPlanPicker({
     onImport(item);
   }
 
-  function moveSelection(delta: 1 | -1): void {
-    if (items.length === 0) return;
-    const current = selectedItem ? items.indexOf(selectedItem) : -1;
-    const next = Math.min(items.length - 1, Math.max(0, current + delta));
-    setSelectedKey(itemKey(items[next]));
-  }
+  const keyboard = {
+    keys: items.map(itemKey),
+    activeKey: selectedItemKey,
+    onActiveKeyChange: setSelectedKey,
+    onPick: (): void => runPrimary(selectedItem),
+    onEscape: onClose,
+    clampEdges: true,
+  };
+  const handlePickListKeys = usePickListKeys(keyboard);
 
   function handleKeyDown(event: ReactKeyboardEvent<HTMLDivElement>): void {
-    // An IME composition owns Escape, the arrow keys and Enter until it ends,
-    // so its Escape must not reach the dialog's own Escape either.
+    // Composition owns Escape even if the outer dialog also listens for it.
     if (event.nativeEvent.isComposing) {
       if (event.key === 'Escape') event.stopPropagation();
       return;
     }
-    if (event.key === 'Escape') {
-      event.preventDefault();
-      onClose();
-      return;
-    }
     const target = event.target;
-    const fromList =
-      target === inputRef.current ||
+    if (
+      event.key === 'Escape' ||
       (target instanceof HTMLElement &&
-        target.getAttribute('role') === 'option');
-    if (!fromList) return;
-    if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
-      event.preventDefault();
-      moveSelection(event.key === 'ArrowDown' ? 1 : -1);
-      return;
-    }
-    if (event.key === 'Enter') {
-      event.preventDefault();
-      runPrimary(selectedItem);
+        target.getAttribute('role') === 'option')
+    ) {
+      handlePickListKeys(event);
     }
   }
 
@@ -527,7 +519,7 @@ export function ImportPlanPicker({
       <div className="flex min-h-0 flex-1 flex-col" onKeyDown={handleKeyDown}>
         <Surface variant="section" boundary="bottom">
           <div className="px-6 py-3">
-            <SearchField
+            <PickListField
               ref={inputRef}
               size="lg"
               clearOnEscape={false}
@@ -535,11 +527,9 @@ export function ImportPlanPicker({
               onValueChange={onQueryChange}
               placeholder="Search files (.md or .txt)…"
               aria-label="Search plan files"
-              role="combobox"
-              aria-autocomplete="list"
-              aria-expanded={hasRows}
-              aria-controls={hasRows ? listboxId : undefined}
-              aria-activedescendant={
+              keyboard={keyboard}
+              listId={hasRows ? listboxId : undefined}
+              activeDescendant={
                 selectedItemKey === null
                   ? undefined
                   : optionIds.get(selectedItemKey)
@@ -556,11 +546,10 @@ export function ImportPlanPicker({
         >
           <div className="max-h-104 min-w-0 flex-1 overflow-y-auto">
             {hasRows && (
-              <div
-                role="listbox"
+              <PickerMenuList
+                presentation="grouped-files"
                 id={listboxId}
                 aria-label="Plan files"
-                className="py-1"
               >
                 {suggestions.length > 0 && (
                   <div
@@ -645,7 +634,7 @@ export function ImportPlanPicker({
                     ))}
                   </div>
                 )}
-              </div>
+              </PickerMenuList>
             )}
             {showFilesLoading && (
               <DelayedLoadingPlaceholder slowNote="Still loading files…">

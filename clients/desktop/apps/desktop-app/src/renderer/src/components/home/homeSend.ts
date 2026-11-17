@@ -45,6 +45,8 @@ import {
   noteHomeSendDispatched,
   returnHomeDraft,
   stillMissingBeforeSendAgain,
+  supersedeHomeOutboxEntry,
+  dropHomeOutboxEntry,
 } from './homeDraftPersistence';
 import {
   INSERT_CHAT_TEXT_EVENT,
@@ -116,6 +118,7 @@ import {
   homeSendUsesSourceHead,
   resolveHomeEffectiveModelSettings,
   resolveHomeSpeed,
+  sendAgainMayDuplicateTo,
   sourceNoCommitsSendFailure,
   useHomeComposerStore,
   type HomeBranchTarget,
@@ -799,6 +802,8 @@ const CLOUD_ATTACHMENTS_SEND_ERROR =
   "Files staged for a local project can't go to a cloud project. Remove them, then attach them again.";
 const CLOUD_SEND_AGAIN_UNCHECKED_ERROR =
   "Couldn't check whether your earlier message arrived. Try again in a moment.";
+const CLOUD_DISCARD_UNCHECKED_ERROR =
+  "Couldn't stop your earlier message from arriving. Try again in a moment.";
 const CLOUD_SCHEDULE_SEND_ERROR =
   "A cloud project can't take a scheduled message. Remove the schedule, then send.";
 
@@ -1135,9 +1140,12 @@ async function sendHomeCloudMessage(
 
 /**
  * Sends a message an earlier run left, which hasn't arrived and may still,
- * again under a new command (CAN-6798): the person chose to, knowing it may
- * arrive twice. It goes to its own task while that is listed, or else as a
- * new task. A message with files never goes again: their bytes weren't kept.
+ * again under a new command (CAN-6798). The earlier send is stopped first,
+ * so it can never arrive as well (CAN-6856). Where the cloud can't stop it,
+ * the card says so first, and Send again then sends it knowing it may
+ * arrive twice, as before. It goes to its own task while that is listed, or
+ * else as a new task. A message with files never goes again: their bytes
+ * weren't kept.
  */
 export async function sendHomeOutboxEntryAgain(id: string): Promise<boolean> {
   const state = useHomeComposerStore.getState();
@@ -1156,10 +1164,31 @@ export async function sendHomeOutboxEntryAgain(id: string): Promise<boolean> {
     return refuse(CLOUD_PROJECT_GONE_SEND_ERROR);
   const submittedAccountEpoch =
     useWorkspaceContextStore.getState().accountEpoch;
-  // Asked once more first: one that arrived or was refused meanwhile is
-  // settled instead, never sent a second time.
   useHomeComposerStore.setState({ isSending: true });
-  const standing = await stillMissingBeforeSendAgain(entry);
+  let standing: 'missing' | 'gone' | 'settled' | 'unknown';
+  if (
+    sendAgainMayDuplicateTo(useHomeComposerStore.getState(), entry.destination)
+  ) {
+    // The cloud can't stop the earlier send: asked once more instead, so one
+    // that arrived or was refused meanwhile is settled, never sent twice.
+    standing = await stillMissingBeforeSendAgain(entry);
+  } else {
+    const fence = await supersedeHomeOutboxEntry(entry);
+    if (!isHomeSendAccountCurrent(submittedAccountEpoch)) return false;
+    // Not sent: the card first says it could arrive twice.
+    if (fence === 'unfenced') {
+      useHomeComposerStore.setState({ isSending: false });
+      return false;
+    }
+    standing =
+      fence === 'superseded'
+        ? 'missing'
+        : fence === 'gone'
+          ? 'gone'
+          : fence === 'settled'
+            ? 'settled'
+            : 'unknown';
+  }
   if (!isHomeSendAccountCurrent(submittedAccountEpoch)) return false;
   useHomeComposerStore.setState({ isSending: false });
   if (standing === 'settled') return false;
@@ -1182,6 +1211,35 @@ export async function sendHomeOutboxEntryAgain(id: string): Promise<boolean> {
   if (handedOff === null) return refuse(CLOUD_OFFLINE_SEND_ERROR);
   return handedOff;
 }
+/**
+ * The person let a message that may still arrive go (CAN-6856): it is
+ * stopped first, so a discarded message never arrives later. One whose task
+ * took it first shows as sent. Where the cloud can't say, the card stays,
+ * with why; where it can't stop sends at all, it goes as before.
+ */
+export async function discardHomeOutboxEntry(id: string): Promise<void> {
+  const state = useHomeComposerStore.getState();
+  const card = state.outboxCards.find((each) => each.entry.id === id);
+  if (card === undefined) return;
+  if (
+    card.state !== 'missing' ||
+    sendAgainMayDuplicateTo(state, card.entry.destination)
+  ) {
+    dropHomeOutboxEntry(id);
+    return;
+  }
+  if (state.isSending) return;
+  const submittedAccountEpoch =
+    useWorkspaceContextStore.getState().accountEpoch;
+  useHomeComposerStore.setState({ isSending: true });
+  const fence = await supersedeHomeOutboxEntry(card.entry);
+  if (!isHomeSendAccountCurrent(submittedAccountEpoch)) return;
+  useHomeComposerStore.setState({ isSending: false });
+  if (fence === 'unknown')
+    useHomeComposerStore.getState().setSendError(CLOUD_DISCARD_UNCHECKED_ERROR);
+  else if (fence !== 'settled') dropHomeOutboxEntry(id);
+}
+
 export async function dispatchHomeSend(): Promise<boolean> {
   // Whatever way the send ends, even before it is dispatched, New task's
   // draft is no longer the send's (CAN-6798).

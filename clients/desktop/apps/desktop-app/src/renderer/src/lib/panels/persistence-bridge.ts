@@ -106,6 +106,7 @@ import {
   ensureTerminalWorktreeHydrated,
   useTerminalStore,
 } from '@/stores/terminalStore';
+import { ensureTerminalDrawerExitSubscription } from '@/components/terminal/terminalDrawerExitSubscription';
 import { chatTabToPanelSeed } from './chat-panel-binding';
 import { browserPanelIdFor } from './browser-panel-identity';
 import { terminalPanelIdFor } from './terminal-panel-identity';
@@ -1012,6 +1013,9 @@ export function ensureWorktreePanelLayout(worktreeKey: string): Promise<void> {
       layoutScopeServesPanelKind(worktreeKey, 'terminal')
     ) {
       const { projectId, worktreeId } = splitWorktreeKey(worktreeKey);
+      // Hydration can reattach a cloud shell before any pane mounts; its
+      // exit must still reach the store (CAN-6939).
+      ensureTerminalDrawerExitSubscription();
       await ensureTerminalWorktreeHydrated(projectId, worktreeId).catch(
         () => undefined,
       );

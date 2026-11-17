@@ -552,7 +552,8 @@ function syncPendingPauseForJob(
   const definition = state.job_definitions[physicalJobId];
   if (!job || !definition) return;
   const pausedStep = Object.entries(job.steps).find(
-    ([, step]) => step.input_request || step.pause_requested,
+    ([, step]) =>
+      step.input_request || step.pause_requested || step.child_pause,
   );
   if (job.status !== 'paused' || !pausedStep) {
     state.pending_pauses = state.pending_pauses.filter(
@@ -561,6 +562,9 @@ function syncPendingPauseForJob(
     return;
   }
   const [stepId, step] = pausedStep;
+  // A run-pipeline step's child pause is offered as the step's own, under the
+  // child's checkpoint id, so an answer on the parent names the child's pause.
+  const childPause = step.child_pause;
   const existing = state.pending_pauses.find(
     (checkpoint) =>
       checkpoint.job_id === physicalJobId && checkpoint.step_id === stepId,
@@ -572,9 +576,11 @@ function syncPendingPauseForJob(
       (candidate.kind === 'input_required' ||
         candidate.kind === 'action_paused'),
   );
+  const request = childPause ? childPause.request : step.input_request;
   const checkpoint = {
-    id: existing?.id ?? randomUUID(),
-    kind: step.input_request ? ('input' as const) : ('action' as const),
+    id: childPause?.id ?? existing?.id ?? randomUUID(),
+    kind:
+      childPause?.kind ?? (request ? ('input' as const) : ('action' as const)),
     job_id: physicalJobId,
     logical_job_id: definition.logical_job_id,
     step_id: stepId,
@@ -582,7 +588,7 @@ function syncPendingPauseForJob(
     iteration: reason?.source.iteration ?? job.iteration_count ?? 1,
     detected_at:
       existing?.detected_at ?? reason?.detected_at ?? new Date().toISOString(),
-    ...(step.input_request ? { request: step.input_request } : {}),
+    ...(request ? { request } : {}),
   };
   state.pending_pauses = [
     ...state.pending_pauses.filter(
@@ -1794,11 +1800,13 @@ function executeState(
       );
     }
     const selectedJobIds = new Set<string>();
+    // A child's approval resumes with its own reason, not as this run's pause.
     const pauseReasonIds = new Set(
       currentState.status_reasons
         .filter(
           (reason) =>
-            reason.kind === 'input_required' || reason.kind === 'action_paused',
+            reason.kind === 'input_required' ||
+            (reason.kind === 'action_paused' && !reason.source.child_reason_id),
         )
         .map((reason) => reason.id),
     );
@@ -1837,34 +1845,38 @@ function executeState(
       ...pauseResponses,
       ...implicitActionPauseResponses,
     ];
+    // Answers and reasons are applied to copies, and the run takes them only
+    // once both are, so a refusal of either leaves the run as it was. A job
+    // an answer requeued can still take a reason of the same resume, such as
+    // its child's approval beside its child's input (CAN-6868).
+    let resumed: ExecutionState = currentState;
+    const answeredJobIds = new Set<string>();
     if (allPauseResponses.length > 0) {
       const applied = applyPauseResponses(currentState, allPauseResponses);
+      resumed = applied.state;
       for (const jobId of applied.selectedJobIds) {
-        currentState.jobs[jobId] = applied.state.jobs[jobId];
+        answeredJobIds.add(jobId);
         selectedJobIds.add(jobId);
       }
-      currentState.pending_pauses = applied.state.pending_pauses;
-      currentState.status_reasons = applied.state.status_reasons;
     }
-
-    if (statusReasonIds.length > 0) {
-      const providerReasonIds = statusReasonIds.filter(
-        (id) => !pauseReasonIds.has(id),
-      );
-      if (providerReasonIds.length > 0) {
-        const prepared = prepareActiveExecutionResume(currentState, {
-          statusReasonIds: providerReasonIds,
-        });
-        for (const reason of currentState.status_reasons) {
-          if (providerReasonIds.includes(reason.id)) {
-            selectedJobIds.add(reason.source.job_id);
-            currentState.jobs[reason.source.job_id] =
-              prepared.jobs[reason.source.job_id];
-          }
-        }
-        currentState.pending_pauses = prepared.pending_pauses;
-        currentState.status_reasons = prepared.status_reasons;
+    const providerReasonIds = statusReasonIds.filter(
+      (id) => !pauseReasonIds.has(id),
+    );
+    if (providerReasonIds.length > 0) {
+      resumed = prepareActiveExecutionResume(resumed, {
+        statusReasonIds: providerReasonIds,
+        requeuedJobIds: answeredJobIds,
+      });
+      for (const reason of currentState.status_reasons) {
+        if (providerReasonIds.includes(reason.id))
+          selectedJobIds.add(reason.source.job_id);
       }
+    }
+    if (resumed !== currentState) {
+      for (const jobId of selectedJobIds)
+        currentState.jobs[jobId] = resumed.jobs[jobId];
+      currentState.pending_pauses = resumed.pending_pauses;
+      currentState.status_reasons = resumed.status_reasons;
     }
     await persistState('execution.updated', () => {
       if (authorization?.executionContext !== undefined) {

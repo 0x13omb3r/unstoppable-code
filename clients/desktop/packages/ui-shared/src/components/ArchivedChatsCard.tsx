@@ -1,3 +1,4 @@
+import { ListRowFrame } from './ListRow';
 import type { CSSProperties, JSX, ReactNode } from 'react';
 import { CHAT_UNIT_LABEL } from '@canopy/protocol';
 import { SummaryIcon, UnarchiveIcon } from '../icons/AppIcons';
@@ -69,10 +70,10 @@ function ArchivedChatsCardRow({
     // The row is a menu row: 8px corners nested in the card's 12px under its
     // 4px inset, the menu hover, and the arrow cursor. Opening the transcript
     // and the two actions are sibling buttons, so no control nests in another.
-    <div
+    <ListRowFrame
+      layout="archive-menu"
       data-testid="chat-tab-archive-popover-row"
       data-archived-chat-id={item.id}
-      className="flex w-full items-center gap-2 rounded-md pr-2 transition-colors hover:bg-subtle has-[>button:first-child:focus-visible]:bg-subtle"
     >
       <ControlButton
         type="button"
@@ -142,7 +143,7 @@ function ArchivedChatsCardRow({
           </Button>
         </Tooltip>
       </span>
-    </div>
+    </ListRowFrame>
   );
 }
 

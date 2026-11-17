@@ -20,7 +20,7 @@ import {
   PickerMenuOptionLabel,
   PickerMenuOptionLeading,
   PickerMenuSearchHeader,
-  PickerMenuSearchInput,
+  PickListSearch,
   PickerMenuState,
   PickerTrigger,
   PickerTriggerChevron,
@@ -367,31 +367,6 @@ export function WorkspaceDropdown({
     }
   }
 
-  function handleSearchKeyDown(event: KeyboardEvent<HTMLInputElement>): void {
-    if (event.key === 'Escape') {
-      event.preventDefault();
-      closePickerToTrigger();
-      return;
-    }
-    if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
-      event.preventDefault();
-      if (filtered.length === 0) return;
-      const delta = event.key === 'ArrowDown' ? 1 : -1;
-      markActiveOptionScrollIntent();
-      setActiveIndex((index) => {
-        const currentIndex = index ?? (delta > 0 ? -1 : 0);
-        return (currentIndex + delta + filtered.length) % filtered.length;
-      });
-      return;
-    }
-    if (event.key === 'Enter') {
-      event.preventDefault();
-      if (activeWorkspace) {
-        handleSelect(activeWorkspace.id);
-      }
-    }
-  }
-
   function handleSearchChange(value: string): void {
     setQuery(value);
     setActiveIndex(0);
@@ -536,16 +511,25 @@ export function WorkspaceDropdown({
         data-testid={`${testIdPrefix}-popover`}
       >
         <PickerMenuSearchHeader>
-          <PickerMenuSearchInput
+          <PickListSearch
             ref={searchRef}
             value={query}
             onChange={(event) => handleSearchChange(event.target.value)}
-            onKeyDown={handleSearchKeyDown}
             placeholder={searchPlaceholder}
             data-testid={`${testIdPrefix}-search`}
             aria-label="Search projects"
-            aria-controls={`${testIdPrefix}-listbox`}
-            aria-activedescendant={
+            keyboard={{
+              keys: filtered.map(({ id }) => id),
+              activeKey: activeWorkspace?.id ?? null,
+              onActiveKeyChange: (id) => {
+                markActiveOptionScrollIntent();
+                setActiveIndex(filtered.findIndex((item) => item.id === id));
+              },
+              onPick: handleSelect,
+              onEscape: closePickerToTrigger,
+            }}
+            listId={`${testIdPrefix}-listbox`}
+            activeDescendant={
               activeWorkspace
                 ? `${testIdPrefix}-option-${activeWorkspace.id}`
                 : undefined

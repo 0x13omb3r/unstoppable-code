@@ -1,4 +1,4 @@
-import { AdvisorCodeExcerpt } from '@canopy/ui-shared/components';
+import { TextLink, AdvisorCodeExcerpt } from '@canopy/ui-shared/components';
 import { InlineCode } from '@canopy/ui-shared/components';
 import type { JSX } from 'react';
 import {
@@ -17,14 +17,14 @@ const ADVISOR_MARKDOWN_COMPONENTS: MarkdownOverrides = {
       return <span>{children}</span>;
     }
     return (
-      <a
+      <TextLink
         href={href}
         target="_blank"
         rel="noopener noreferrer"
-        className="fg-accent underline decoration-accent/40 underline-offset-2"
+        variant="inline"
       >
         {children}
-      </a>
+      </TextLink>
     );
   },
   code({ children, className }): JSX.Element {

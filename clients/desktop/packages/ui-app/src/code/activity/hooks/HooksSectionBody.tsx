@@ -1,5 +1,6 @@
 'use client';
 
+import { CodeBlock } from '@canopy/ui-shared/components/CodeBlock';
 import { ControlButton } from '@canopy/ui-shared/components';
 import { CompletedRunSurface } from '@canopy/ui-shared/components';
 import { useEffect, useState, type JSX, type ReactNode } from 'react';
@@ -26,7 +27,6 @@ import {
 } from '@canopy/ui-shared/icons/AppIcons';
 import { ChevronIcon } from '@canopy/ui-shared/icons';
 import { PAUSED_HOOK_LABEL_CLASSES } from '@canopy/ui-shared/lib';
-import { REPLAY_BLOCK_CLASS } from '@canopy/ui-shared/lib/replay-privacy';
 import { Notice } from '@canopy/ui-shared/components/Notice';
 import { Surface } from '@canopy/ui-shared/components';
 
@@ -414,11 +414,14 @@ export function HooksSectionBody({
                     variant="inset"
                     className="overflow-hidden"
                   >
-                    <pre
-                      className={`${action.type === 'pipeline' ? '' : REPLAY_BLOCK_CLASS} max-h-20 overflow-auto whitespace-pre-wrap break-words px-2 py-1.5 font-mono text-2xs fg-secondary`}
+                    <CodeBlock
+                      variant="activity-command"
+                      size="2xs"
+                      replay={action.type === 'pipeline' ? 'inherit' : 'block'}
+                      className="max-h-20"
                     >
                       {action.label}
-                    </pre>
+                    </CodeBlock>
                   </Surface>
                 ))}
               </div>

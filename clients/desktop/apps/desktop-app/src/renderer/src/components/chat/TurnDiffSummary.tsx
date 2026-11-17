@@ -22,6 +22,14 @@ import { useChatStore } from '@/stores/chatStore';
 import { requestFilePanelPlacementBesideChat } from '@/lib/panels/chat-panel-sync';
 import { TurnDiffPopover } from './TurnDiffPopover';
 import { TurnFileControl } from './TurnFiles';
+import {
+  InlineReplyFilePreview,
+  isInlineReplyOutput,
+  readInlineReplyDocument,
+} from '@canopy/ui-app';
+import { resolveDesktopDocumentBytes } from '@/lib/file-viewer/desktop-document-bytes';
+import { resolveDesktopPdfPreviewAssets } from '@/lib/pdf-preview-assets';
+import { workspaceFileSourceFor } from '@/lib/files/workspace-file-source';
 import { openFileInDiff } from '@/lib/panels/open-file-diff';
 import {
   Button,
@@ -48,6 +56,7 @@ interface TurnDiffSummaryProps {
   fileTarget?: { projectId: string; worktreeId: string; chatId: string };
   turnId?: string;
   isLastTurnGroup: boolean;
+  complete?: boolean;
   originChatTabId?: string;
   /**
    * Clean chat look: rolls the worktree back to before this turn, offered as
@@ -72,6 +81,60 @@ function LineCounts({
     >
       <GroupedDiffStats insertions={insertions} deletions={deletions} />
     </span>
+  );
+}
+
+function DesktopInlineReplyPreview({
+  file,
+  projectId,
+  worktreeId,
+}: {
+  readonly file: TurnFileLocation;
+  readonly projectId: string;
+  readonly worktreeId: string;
+}): JSX.Element {
+  const readPreview = useCallback(
+    async (signal: AbortSignal) => {
+      const extension = file.path.split('.').pop()?.toLowerCase();
+      const fileSource = workspaceFileSourceFor(worktreeId);
+      if (!fileSource.onThisComputer) return null;
+      if (extension === 'pdf' || extension === 'xlsx') {
+        const result = await resolveDesktopDocumentBytes(
+          () =>
+            window.api.readFileDocumentBytes({
+              absolutePath: file.absolutePath,
+              workspaceTarget: { projectId, worktreeId },
+            }),
+          signal,
+        );
+        if (result.status !== 'ready') return null;
+        const { createDesktopOfficeWorker } =
+          await import('@/lib/file-viewer/desktop-office-worker');
+        return readInlineReplyDocument({
+          kind: extension,
+          bytes: result.bytes,
+          signal,
+          createOfficeWorker: createDesktopOfficeWorker,
+          resolvePdfAssets: resolveDesktopPdfPreviewAssets,
+        });
+      }
+      const response = await fileSource.readFileContent({
+        absolutePath: file.absolutePath,
+        workspaceTarget: { projectId, worktreeId },
+      });
+      return response.kind === 'missing' || response.kind === 'unsupported'
+        ? null
+        : { content: response.content, truncated: response.truncated };
+    },
+    [file.absolutePath, file.path, projectId, worktreeId],
+  );
+  return (
+    <InlineReplyFilePreview
+      path={file.path}
+      projectId={projectId}
+      worktreeId={worktreeId}
+      readPreview={readPreview}
+    />
   );
 }
 
@@ -173,6 +236,7 @@ const HOVER_CLOSE_DELAY = 150;
 export const TurnDiffSummary = memo(function TurnDiffSummary({
   turnDiff,
   files = NO_FILES,
+  complete = false,
   pendingFiles = NO_PENDING,
   fileTarget,
   turnId,
@@ -468,6 +532,18 @@ export const TurnDiffSummary = memo(function TurnDiffSummary({
 
   return (
     <>
+      {fileTarget && complete
+        ? files
+            .filter(isInlineReplyOutput)
+            .map((file) => (
+              <DesktopInlineReplyPreview
+                key={`${file.target?.projectId ?? ''}/${file.target?.worktreeId ?? ''}:${file.path}`}
+                file={file}
+                {...fileTarget}
+                {...file.target}
+              />
+            ))
+        : null}
       <TurnFilesSummaryView
         heading={cleanTitle}
         singleFile={singleContent}

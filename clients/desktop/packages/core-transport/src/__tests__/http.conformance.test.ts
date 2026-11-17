@@ -11,4 +11,5 @@ runCanopyTransportConformance({
   todo: it.todo,
   byteWire: false,
   serverClose: false,
+  lostReplies: true,
 });

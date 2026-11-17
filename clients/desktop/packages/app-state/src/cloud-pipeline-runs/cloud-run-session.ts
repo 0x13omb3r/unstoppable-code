@@ -62,6 +62,13 @@ export const CLOUD_RUN_COST_REREAD_MS = 60_000;
  * parent's stream sends; a read that failed is tried again then too.
  */
 export const CLOUD_RUN_CHILD_REREAD_MS = 10_000;
+/** A step's statuses after which it starts no child. */
+const STEP_ENDED: ReadonlySet<string> = new Set([
+  'success',
+  'failure',
+  'cancelled',
+  'skipped',
+]);
 /** Stream reopens in a row that may fail before the run reads offline. */
 const STREAM_REOPENS_MAX = 3;
 const STREAM_REOPEN_MS = 2_000;
@@ -314,6 +321,17 @@ export function createCloudPipelineRunSession({
 
   /** The child reads in flight, by execution id. */
   const childReads = new Set<string>();
+  /**
+   * Children the web core answered `not_found` for after their step had
+   * ended: most likely never started (refused), so not read again on the
+   * timer, only once more with each newer detail. The runner names a child
+   * before its record exists, so a miss while its step runs counts for
+   * nothing, and any successful read clears the mark.
+   */
+  const childrenMissing = new Set<string>();
+  // Bumped as a newer detail clears the misses: a miss from a read sent
+  // before it is stale, and that child is read again instead.
+  let missGeneration = 0;
   let childTimer: Timer | null = null;
   const scheduleChildren = (): void => {
     if (closed || childTimer !== null) return;
@@ -337,12 +355,20 @@ export function createCloudPipelineRunSession({
       for (const variant of job.variants)
         for (const step of variant.steps) {
           const childId = step.childExecutionId;
-          if (childId === null) continue;
+          if (
+            childId === null ||
+            (childrenMissing.has(childId) && STEP_ENDED.has(step.status))
+          )
+            continue;
           const read = known[childId];
           if (read !== undefined && isTerminalCloudRun(read)) continue;
           anyOpen = true;
           if (childReads.has(childId)) continue;
           childReads.add(childId);
+          // Only a read sent after its step ended can show the child never
+          // started; one sent while it ran may come before its record.
+          const stepEnded = STEP_ENDED.has(step.status);
+          const generation = missGeneration;
           void requestCloud(
             invoker,
             'worker.pipeline.execution.get',
@@ -351,6 +377,7 @@ export function createCloudPipelineRunSession({
           )
             .then((child) => {
               if (closed) return;
+              childrenMissing.delete(childId);
               store.setState({
                 children: {
                   ...store.getState().children,
@@ -359,8 +386,20 @@ export function createCloudPipelineRunSession({
               });
             })
             // An unreadable child stays as it was until it is read again.
-            .catch(() => undefined)
-            .finally(() => childReads.delete(childId));
+            .catch((error: unknown) => {
+              if (
+                stepEnded &&
+                generation === missGeneration &&
+                cloudErrorOf(error).kind === 'not_found'
+              )
+                childrenMissing.add(childId);
+            })
+            .finally(() => {
+              childReads.delete(childId);
+              const current = store.getState().view;
+              if (!closed && generation !== missGeneration && current !== null)
+                readChildren(current);
+            });
         }
     if (anyOpen) scheduleChildren();
   };
@@ -376,6 +415,15 @@ export function createCloudPipelineRunSession({
       view.detail === undefined && current?.detail !== undefined
         ? { ...view, detail: current.detail }
         : view;
+    // A newer detail may come with a child recorded after its step ended:
+    // each child missed so far is read once more.
+    if (
+      view.detail !== undefined &&
+      view.detail.revision !== current?.detail?.revision
+    ) {
+      childrenMissing.clear();
+      missGeneration += 1;
+    }
     store.setState({ view: next, error: null });
     onView?.(next);
     readChildren(next);

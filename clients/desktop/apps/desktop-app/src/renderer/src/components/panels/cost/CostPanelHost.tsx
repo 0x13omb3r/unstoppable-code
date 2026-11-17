@@ -4,7 +4,7 @@ import type { CostScopeStore } from '@canopy/app-state/cost';
 import type { CostScopeRef } from '@canopy/protocol/cost-view';
 import { CostScopeView, useCostScopeStore } from '@canopy/ui-app/cost';
 import { useCurrentUiStateReporter } from '@/hooks/useCurrentUiStateReporter';
-import { DESKTOP_COST_NAVIGATOR } from '@/lib/cost/cost-navigator';
+import { useDesktopCostNavigator } from '@/hooks/useDesktopCostNavigator';
 import {
   costPanelUiState,
   costPanelUiStateKey,
@@ -44,6 +44,7 @@ function CostPanelBody({
     [projectId, worktreeId],
   );
   const store = useCostScopeStore(desktopCostClient, scope);
+  const navigator = useDesktopCostNavigator(scope);
   return (
     <>
       <CostPanelUiStateReporter
@@ -53,7 +54,7 @@ function CostPanelBody({
       />
       <CostScopeView
         client={desktopCostClient}
-        navigator={DESKTOP_COST_NAVIGATOR}
+        navigator={navigator}
         scope={scope}
         store={store}
       />

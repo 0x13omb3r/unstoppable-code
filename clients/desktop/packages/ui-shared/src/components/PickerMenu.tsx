@@ -6,6 +6,7 @@ import {
   type CSSProperties,
   type HTMLAttributes,
   type InputHTMLAttributes,
+  type ComponentPropsWithoutRef,
   type JSX,
   type ReactNode,
 } from 'react';
@@ -354,6 +355,47 @@ export const PickerMenuSearchInput = forwardRef<
 
 PickerMenuSearchInput.displayName = 'PickerMenuSearchInput';
 
+/** The search field in a menu that moves DOM focus onto matching rows. */
+export function menuSearchKeyHandler(
+  itemSelector: string,
+): (event: React.KeyboardEvent<HTMLInputElement>) => void {
+  return (event): void => {
+    if (event.nativeEvent.isComposing) {
+      event.stopPropagation();
+      return;
+    }
+    if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+      const rows = event.currentTarget
+        .closest('[role="menu"]')
+        ?.querySelectorAll<HTMLElement>(itemSelector);
+      const row =
+        event.key === 'ArrowDown' ? rows?.[0] : rows?.[rows.length - 1];
+      event.preventDefault();
+      event.stopPropagation();
+      row?.focus();
+      row?.scrollIntoView?.({ block: 'nearest' });
+    } else if (event.key !== 'Escape' && event.key !== 'Tab') {
+      // Keep typing away from the parent menu's typeahead.
+      event.stopPropagation();
+    }
+  };
+}
+
+export const MenuSearchInput = forwardRef<
+  HTMLInputElement,
+  Omit<ComponentPropsWithoutRef<typeof PickerMenuSearchInput>, 'onKeyDown'> & {
+    readonly itemSelector: string;
+  }
+>(function MenuSearchInput({ itemSelector, ...props }, ref): JSX.Element {
+  return (
+    <PickerMenuSearchInput
+      {...props}
+      ref={ref}
+      onKeyDown={menuSearchKeyHandler(itemSelector)}
+    />
+  );
+});
+
 export const PickerMenuTabList = forwardRef<
   HTMLDivElement,
   HTMLAttributes<HTMLDivElement>
@@ -410,6 +452,15 @@ export const PickerMenuTab = forwardRef<HTMLButtonElement, PickerMenuTabProps>(
 
 PickerMenuTab.displayName = 'PickerMenuTab';
 
+const NATIVE_PICKER_LIST_CLASS_NAMES = {
+  palette: 'p-2',
+  'grouped-files': 'py-1',
+  'bounded-options':
+    'grid max-h-40 grid-cols-1 content-start gap-1 overflow-y-auto',
+  'scrolling-tabs':
+    'canopy-panel-tab-list-rows min-h-0 overflow-y-auto outline-none',
+} as const;
+
 type PickerMenuListProps = HTMLAttributes<HTMLDivElement> & {
   /**
    * Which surface edges the list cancels padding on. `right` keeps a 4px
@@ -420,6 +471,8 @@ type PickerMenuListProps = HTMLAttributes<HTMLDivElement> & {
   edgeFadeSize?: number;
   /** `scrollbar` keeps rows clear of an always-visible scrollbar. */
   gutter?: 'none' | 'scrollbar';
+  /** Lists integrated into a native viewport use the matching spacing and focus treatment. */
+  presentation?: keyof typeof NATIVE_PICKER_LIST_CLASS_NAMES;
 };
 
 export const PickerMenuList = forwardRef<HTMLDivElement, PickerMenuListProps>(
@@ -430,11 +483,24 @@ export const PickerMenuList = forwardRef<HTMLDivElement, PickerMenuListProps>(
       edges = 'both',
       edgeFadeSize = 0,
       gutter = 'none',
+      presentation,
       children,
       ...props
     },
     ref,
   ): JSX.Element {
+    if (presentation) {
+      return (
+        <div
+          {...props}
+          ref={ref}
+          role={role}
+          className={`${NATIVE_PICKER_LIST_CLASS_NAMES[presentation]} ${className}`}
+        >
+          {children}
+        </div>
+      );
+    }
     // Overlay scrollbar: the native scrollbar is hidden and never participates
     // in layout, so option rows keep symmetric left/right insets; the shared
     // 6px thumb clears the surface corners at both scroll extremes.

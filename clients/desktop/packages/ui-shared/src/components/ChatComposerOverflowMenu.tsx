@@ -12,7 +12,8 @@ import {
 } from 'react';
 import { CheckIcon, MoreHorizontalIcon } from '../icons/AppIcons';
 import { focusMenuRow } from '../lib/input-modality';
-import { DropdownMenuItem, DropdownMenuSurface } from './DropdownMenu';
+import { DropdownMenuItem } from './DropdownMenu';
+import { FloatingMenu } from './FloatingMenu';
 import { Tooltip } from './Tooltip';
 import { useOverlayEscape } from './useOverlayEscape';
 
@@ -141,7 +142,7 @@ export function ChatComposerOverflowMenu({
   const [open, setOpen] = useState(false);
   const [activeIndex, setActiveIndex] = useState(0);
   const menuId = useId();
-  const containerRef = useRef<HTMLDivElement | null>(null);
+  const initialItemRef = useRef<HTMLButtonElement | null>(null);
   const triggerRef = useRef<HTMLButtonElement | null>(null);
   const itemRefs = useRef<Array<HTMLButtonElement | null>>([]);
 
@@ -188,21 +189,6 @@ export function ChatComposerOverflowMenu({
     const item = itemRefs.current[activeIndex];
     if (item) focusMenuRow(item);
   }, [open, activeIndex]);
-
-  // Outside pointer-down dismisses the menu (no focus return — the pointer is
-  // taking focus elsewhere).
-  useEffect(() => {
-    if (!open) return;
-    const onPointerDown = (event: MouseEvent): void => {
-      if (!containerRef.current?.contains(event.target as Node)) {
-        setOpen(false);
-      }
-    };
-    document.addEventListener('mousedown', onPointerDown);
-    return (): void => {
-      document.removeEventListener('mousedown', onPointerDown);
-    };
-  }, [open]);
 
   const selectItem = useCallback(
     (item: ChatComposerOverflowMenuItemConfig): void => {
@@ -304,18 +290,18 @@ export function ChatComposerOverflowMenu({
           closeAndReturnFocus();
           break;
         case 'Tab':
-          // Let focus move naturally, but dismiss the menu behind it.
-          close();
+          // Continue the document's tab order from the composer trigger.
+          closeAndReturnFocus();
           break;
         default:
           break;
       }
     },
-    [items, activeIndex, selectItem, closeAndReturnFocus, close],
+    [items, activeIndex, selectItem, closeAndReturnFocus],
   );
 
   return (
-    <div ref={containerRef} className="relative shrink-0">
+    <div className="relative shrink-0">
       {/* Suppressed while open so the tooltip never sits over the menu the
           trigger just revealed. */}
       <Tooltip label={triggerTitle ?? triggerAriaLabel} suppressed={open}>
@@ -345,61 +331,72 @@ export function ChatComposerOverflowMenu({
           <MoreHorizontalIcon />
         </ControlButton>
       </Tooltip>
-      {open && (
-        <DropdownMenuSurface
-          id={menuId}
-          data-canopy-browser-native-overlay="true"
-          data-testid={menuDataTestId}
-          aria-label={triggerAriaLabel}
-          aria-orientation="vertical"
-          onKeyDown={onMenuKeyDown}
-          className="absolute bottom-[calc(100%+0.5rem)] right-0 z-30 min-w-48"
-        >
-          {items.map((item, index) => (
-            <DropdownMenuItem
-              key={item.key}
-              ref={(node) => {
-                itemRefs.current[index] = node;
-              }}
-              presentation="composer-overflow"
-              selected={item.active}
-              role={item.role ?? 'menuitemcheckbox'}
-              aria-checked={
-                (item.role ?? 'menuitemcheckbox') === 'menuitemcheckbox'
-                  ? item.active
-                  : undefined
-              }
-              aria-label={item.ariaLabel}
-              disabled={item.disabled}
-              tabIndex={index === activeIndex ? 0 : -1}
-              data-testid={item.dataTestId}
-              onClick={() => selectItem(item)}
-            >
-              <span className="flex h-4 w-4 shrink-0 items-center justify-center">
-                {item.icon}
-              </span>
-              <span className="flex-1 truncate">{item.label}</span>
-              <span className="shrink-0 text-xs fg-secondary">
-                {item.stateLabel}
-              </span>
-              <span className="flex h-4 w-4 shrink-0 items-center justify-center fg-accent">
-                {item.active ? <CheckIcon size="sm" /> : null}
-              </span>
-            </DropdownMenuItem>
-          ))}
-          {footerSlot ? (
-            <div
-              // `presentation` strips the implicit row semantics rather than
-              // announcing a menu item that cannot be activated.
-              role="presentation"
-              className="flex min-h-11 items-center gap-2.5 px-3 text-s fg-secondary"
-              data-testid="chat-composer-overflow-footer"
-            >
-              {footerSlot}
-            </div>
-          ) : null}
-        </DropdownMenuSurface>
-      )}
+      <FloatingMenu
+        id={menuId}
+        open={open}
+        onOpenChange={setOpen}
+        anchorRef={triggerRef}
+        initialFocusRef={initialItemRef}
+        openOnArrowKeys={false}
+        outsidePressSwallowsClick={false}
+        placement="top-right"
+        gap={8}
+        motion="none"
+        interaction="manual"
+        role="menu"
+        sizing="custom"
+        data-canopy-browser-native-overlay="true"
+        data-testid={menuDataTestId}
+        aria-label={triggerAriaLabel}
+        aria-orientation="vertical"
+        onKeyDown={onMenuKeyDown}
+        className="min-w-48"
+      >
+        {items.map((item, index) => (
+          <DropdownMenuItem
+            key={item.key}
+            ref={(node) => {
+              itemRefs.current[index] = node;
+              if (index === activeIndex) initialItemRef.current = node;
+            }}
+            presentation="composer-overflow"
+            selected={item.active}
+            role={item.role ?? 'menuitemcheckbox'}
+            aria-checked={
+              (item.role ?? 'menuitemcheckbox') === 'menuitemcheckbox'
+                ? item.active
+                : undefined
+            }
+            aria-label={item.ariaLabel}
+            disabled={item.disabled}
+            tabIndex={index === activeIndex ? 0 : -1}
+            data-testid={item.dataTestId}
+            onClick={() => selectItem(item)}
+          >
+            <span className="flex h-4 w-4 shrink-0 items-center justify-center">
+              {item.icon}
+            </span>
+            <span className="flex-1 truncate">{item.label}</span>
+            <span className="shrink-0 text-xs fg-secondary">
+              {item.stateLabel}
+            </span>
+            <span className="flex h-4 w-4 shrink-0 items-center justify-center fg-accent">
+              {item.active ? <CheckIcon size="sm" /> : null}
+            </span>
+          </DropdownMenuItem>
+        ))}
+        {footerSlot ? (
+          <div
+            // `presentation` strips the implicit row semantics rather than
+            // announcing a menu item that cannot be activated.
+            role="presentation"
+            className="flex min-h-11 items-center gap-2.5 px-3 text-s fg-secondary"
+            data-testid="chat-composer-overflow-footer"
+          >
+            {footerSlot}
+          </div>
+        ) : null}
+      </FloatingMenu>
     </div>
   );
 }

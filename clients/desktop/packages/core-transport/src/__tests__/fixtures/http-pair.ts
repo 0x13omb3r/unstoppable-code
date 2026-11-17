@@ -39,6 +39,8 @@ export interface HttpTestServer {
   readonly fetch: (path: string, init?: RequestInit) => Promise<Response>;
   /** Ends a connection as a lapsed one ends; its next call answers 404. */
   end(connectionId: string): void;
+  /** The next request's response is lost after the server answers it. */
+  loseNextReply(): void;
   readonly connectionIds: () => readonly string[];
 }
 
@@ -52,6 +54,7 @@ export function createHttpTestServer(
 ): HttpTestServer {
   const connections = new Map<string, BridgedConnection>();
   let opened = 0;
+  let loseNext = false;
   const wakeAll = (bridged: BridgedConnection): void => {
     bridged.wake.forEach((wake) => wake());
     bridged.wake.clear();
@@ -158,6 +161,11 @@ export function createHttpTestServer(
     );
     await bridged.relay.send(message);
     const answered = await reply;
+    // The server answered, but the response never reaches the client.
+    if (answered && loseNext) {
+      loseNext = false;
+      throw new TypeError('fetch failed');
+    }
     return answered ? Response.json(answered) : gone();
   };
 
@@ -168,6 +176,9 @@ export function createHttpTestServer(
       if (bridged) end(id, bridged);
     },
     connectionIds: () => Array.from(connections.keys()),
+    loseNextReply: () => {
+      loseNext = true;
+    },
   };
 }
 
@@ -195,5 +206,10 @@ export async function createHttpFramedPair(
       throw new Error('HTTP has no byte wire.');
     },
   };
-  return { client, server, clientWire };
+  return {
+    client,
+    server,
+    clientWire,
+    loseNextReply: () => http.loseNextReply(),
+  };
 }

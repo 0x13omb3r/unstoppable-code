@@ -1,3 +1,4 @@
+import { isProcessId, isSignalablePid } from './dev-script-pid.mjs';
 import { execFileSync } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import {
@@ -139,7 +140,13 @@ export function getAvailableMemoryMb() {
 }
 
 function processIsAlive(pid) {
-  if (!Number.isSafeInteger(pid) || pid < 1) return false;
+  // Holder metadata comes from a file. A value that is not an integer in
+  // 2..2147483647 is malformed: it names no live process, so its lease is
+  // stale. The guard never probes it.
+  if (!isProcessId(pid)) return false;
+  // This process is alive. Find it by its own PID, never by a signal probe.
+  if (pid === process.pid) return true;
+  if (!isSignalablePid(pid)) return false;
   try {
     process.kill(pid, 0);
     return true;

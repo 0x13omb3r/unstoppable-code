@@ -690,6 +690,10 @@ const localMemoryParseWorkerEntry = resolve(
   repoRoot,
   'apps/desktop-app/src/main/memory/local/parse-worker.ts',
 );
+const linuxWriterInspectionWorkerEntry = resolve(
+  repoRoot,
+  'apps/desktop-app/src/main/lib/linux-writer-inspection-worker.ts',
+);
 
 const memorySyncMergeWorkerEntry = resolve(
   repoRoot,
@@ -794,6 +798,7 @@ function utilityWorkerPlugin(define: Record<string, string>): Plugin {
       this.addWatchFile(interruptedWorkScanWorkerEntry);
       this.addWatchFile(archiveIoWorkerEntry);
       this.addWatchFile(localMemoryParseWorkerEntry);
+      this.addWatchFile(linuxWriterInspectionWorkerEntry);
       // Import-free by design, so nothing in main's graph retriggers it.
       this.addWatchFile(cursorRuntimeHashWorkerEntry);
       this.addWatchFile(
@@ -865,6 +870,10 @@ function utilityWorkerPlugin(define: Record<string, string>): Plugin {
           {
             entry: localMemoryParseWorkerEntry,
             outfile: 'local-memory-parse-worker.js',
+          },
+          {
+            entry: linuxWriterInspectionWorkerEntry,
+            outfile: 'linux-writer-inspection-worker.js',
           },
           {
             entry: memorySyncMergeWorkerEntry,
