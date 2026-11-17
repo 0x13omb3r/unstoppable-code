@@ -71,7 +71,7 @@ List<WorkItem> projectWork({
         kind: WorkKind.message,
         title: workText(row['text']) ?? 'Queued message',
         status: row['retryBlockedReason'] == 'insufficient_credits'
-            ? 'Buy AI Credits first'
+            ? 'Switch provider to send this'
             : switch (row['waitingReason']) {
                 'background_work' => 'Waiting for background work',
                 'steer_unavailable' => 'Waiting for current step',

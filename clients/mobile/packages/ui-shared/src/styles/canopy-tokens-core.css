@@ -526,6 +526,14 @@
 @custom-variant option-focus-visible-inside (:where(.group\/option):has(:focus-visible) &);
 @custom-variant workspace-header-actions-focused (:where(.group\/workspace-header):has([data-workspace-header-actions]:focus-within) &);
 
+/* Inline chips scale with the surrounding text and sit on its baseline. */
+@utility canopy-inline-chip-geometry {
+  padding: 0.125em 0.5em 0.042em 0.417em;
+  vertical-align: 0.0625em;
+  font-size: 0.857em;
+  line-height: 1.5;
+}
+
 /* Literal foreground utilities. These intentionally use `fg-*` instead of
  * Tailwind's overloaded `text-*` namespace, and support the same opacity
  * modifiers and variants as built-in color utilities. */
@@ -2287,6 +2295,76 @@ body {
   margin-block: calc(var(--spacing) * 1.5);
 }
 
+/* Rendered Markdown retains its document rhythm, including nested lists and
+ * adjacent block margins that collapse in prose flow. */
+.prose.canopy-description-prose
+  :where(p, ul, ol, blockquote):not(
+    :where([class~='not-prose'], [class~='not-prose'] *)
+  ) {
+  margin-block: var(--spacing);
+}
+
+.prose.canopy-description-prose > :first-child {
+  margin-block-start: 0;
+}
+
+.prose.canopy-description-prose > :last-child {
+  margin-block-end: 0;
+}
+
+.prose.canopy-readme-prose :is(h1, h2, h3) {
+  margin-block: var(--readme-heading-start) var(--readme-heading-end);
+}
+
+.canopy-readme-prose h1 {
+  --readme-heading-start: calc(var(--spacing) * 4);
+  --readme-heading-end: calc(var(--spacing) * 2);
+}
+
+.canopy-readme-prose h2 {
+  --readme-heading-start: calc(var(--spacing) * 3);
+  --readme-heading-end: calc(var(--spacing) * 1.5);
+}
+
+.canopy-readme-prose h3 {
+  --readme-heading-start: calc(var(--spacing) * 2);
+  --readme-heading-end: var(--spacing);
+}
+
+.prose.canopy-readme-prose :is(p, ul, ol) {
+  margin-block: calc(var(--spacing) * 1.5);
+}
+
+.canopy-composer-work-drawer {
+  --radius-drawer-row: var(--radius-lg);
+  --radius-drawer: var(--radius-xl);
+}
+
 .canopy-feed-summary-prose {
   margin-top: var(--spacing);
+}
+
+.canopy-memory-prose p + p {
+  margin-block-start: calc(var(--spacing) * 2);
+}
+
+.canopy-memory-prose pre {
+  margin-block: var(--spacing);
+}
+
+/* Active status marks communicate ongoing work without changing their size. */
+@keyframes canopy-status-pulse {
+  50% {
+    opacity: 0.5;
+  }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .canopy-status-pulse {
+    animation: canopy-status-pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+  }
+}
+
+[skullet-loading][data-inline-static] {
+  --skullet-animation: none;
 }

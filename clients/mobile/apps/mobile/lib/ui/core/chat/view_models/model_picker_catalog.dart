@@ -236,7 +236,7 @@ String? modelLibraryUnlockLabel(String? lock) =>
 /// `modelLibraryUnlockHint`; null for anything else.
 String? modelLibraryUnlockHint(String? lock) => switch (lock) {
   'needs_sign_in' => 'Unlock with sign-in',
-  'needs_sign_in_then_purchase' => 'Unlock with sign-in and AI Credit purchase',
+  'needs_sign_in_then_purchase' => 'Unlock with sign-in and a credits purchase',
   _ => null,
 };
 
@@ -269,8 +269,8 @@ ModelAutoRow? modelAutoRow({
   return (
     selected: selected,
     reason: switch (availability) {
-      ModelRoutingAvailability.loading => 'Checking AI Credits…',
-      ModelRoutingAvailability.noCredits => 'Buy AI Credits to use this',
+      ModelRoutingAvailability.loading => 'Checking credits…',
+      ModelRoutingAvailability.noCredits => 'Runs on credits',
       _ when candidates.length < 2 => 'Needs two or more models',
       _ => null,
     },
